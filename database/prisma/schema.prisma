@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OpportunityStatus {
+  DISCOVERED
+  NORMALIZED
+  EVALUATED
+  RECOMMENDED
+  SAVED
+  APPLIED
+  REJECTED_BY_USER
+  CLOSED
+  ARCHIVED
+}
+
+enum SourceType {
+  MANUAL
+  BROWSER_EXTENSION
+  PUBLIC_SEARCH
+  ATS
+  API
+  COMPANY_WATCHLIST
+  OTHER
+}
+
+enum DuplicateDecision {
+  MATCH
+  PROBABLE_MATCH
+  NO_MATCH
+}
+
+enum EvaluationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum EvidenceLevel {
+  CONFIRMED
+  STRONG_EVIDENCE
+  POSSIBLE
+  UNKNOWN
+  CONFLICTING
+}
+
+model Company {
+  id              String        @id @default(uuid()) @db.Uuid
+  name            String
+  normalizedName  String?
+  brand           String?
+  industry        String?
+  headquarters    String?
+  companySize     String?
+  parentCompanyId String?       @db.Uuid
+  parentCompany   Company?      @relation("CompanyHierarchy", fields: [parentCompanyId], references: [id], onDelete: SetNull)
+  subsidiaries    Company[]     @relation("CompanyHierarchy")
+  opportunities   Opportunity[]
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([normalizedName])
+  @@index([parentCompanyId])
+}
+
+model Opportunity {
+  id                String    @id @default(uuid()) @db.Uuid
+  domain            String
+  externalListingId String?
+  atsRequisitionId  String?
+  canonicalUrl      String?   @db.Text
+  applicationUrl    String?   @db.Text
+  originalSource    String?
+  discoveredAt      DateTime  @default(now()) @db.Timestamptz(3)
+  sourceUpdatedAt   DateTime? @db.Timestamptz(3)
+  firstSeenAt       DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  companyId String?  @db.Uuid
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  title          String?
+  department     String?
+  employmentType String?
+  seniority      String?
+
+  location             String?
+  remoteStatus         String?
+  timeZoneRequirements String?
+
+  salaryMin         Decimal? @db.Decimal(12, 2)
+  salaryMax         Decimal? @db.Decimal(12, 2)
+  salaryText        String?
+  bonus             String?
+  equity            String?
+  currency          String?
+  compensationNotes String?  @db.Text
+
+  postingDate DateTime?   @db.Timestamptz(3)
+  closingDate DateTime?   @db.Timestamptz(3)
+  source      String?
+  sourceType  SourceType?
+  atsPlatform String?
+
+  jobDescription   String? @db.Text
+  responsibilities String? @db.Text
+  requirements     String? @db.Text
+  benefits         String? @db.Text
+  additionalNotes  String? @db.Text
+
+  status                OpportunityStatus    @default(DISCOVERED)
+  sourceRecords         SourceRecord[]
+  fieldProvenance       FieldProvenance[]
+  evaluations           Evaluation[]
+  evidenceRecords       EvidenceRecord[]
+  recommendations       Recommendation[]
+  duplicateReferences   DuplicateReference[] @relation("DuplicateReferenceSource")
+  referencedAsDuplicate DuplicateReference[] @relation("DuplicateReferenceTarget")
+  createdAt             DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime             @updatedAt @db.Timestamptz(3)
+
+  @@index([domain, status])
+  @@index([companyId])
+  @@index([externalListingId])
+  @@index([atsRequisitionId])
+  @@index([postingDate])
+}
+
+model SourceRecord {
+  id                String            @id @default(uuid()) @db.Uuid
+  opportunityId     String?           @db.Uuid
+  opportunity       Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  source            String
+  sourceType        SourceType
+  sourceUrl         String?           @db.Text
+  externalId        String?
+  requisitionId     String?
+  rawTitle          String?
+  rawCompany        String?
+  rawLocation       String?
+  rawDescription    String?           @db.Text
+  rawSalaryText     String?
+  rawEmploymentType String?
+  rawPostingDate    String?
+  sourceMetadata    Json?
+  rawPayload        Json?
+  discoveredAt      DateTime          @default(now()) @db.Timestamptz(3)
+  lastObservedAt    DateTime          @default(now()) @db.Timestamptz(3)
+  normalizedAt      DateTime?         @db.Timestamptz(3)
+  fieldProvenance   FieldProvenance[]
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
+
+  @@index([opportunityId])
+  @@index([source, externalId])
+  @@index([requisitionId])
+}
+
+model FieldProvenance {
+  id              String        @id @default(uuid()) @db.Uuid
+  opportunityId   String        @db.Uuid
+  opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  sourceRecordId  String?       @db.Uuid
+  sourceRecord    SourceRecord? @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  fieldName       String
+  normalizedValue Json?
+  sourceReference String?       @db.Text
+  sourceText      String?       @db.Text
+  collectedAt     DateTime?     @db.Timestamptz(3)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@index([opportunityId, fieldName])
+  @@index([sourceRecordId])
+}
+
+model DuplicateReference {
+  id                   String            @id @default(uuid()) @db.Uuid
+  opportunityId        String            @db.Uuid
+  opportunity          Opportunity       @relation("DuplicateReferenceSource", fields: [opportunityId], references: [id], onDelete: Cascade)
+  relatedOpportunityId String            @db.Uuid
+  relatedOpportunity   Opportunity       @relation("DuplicateReferenceTarget", fields: [relatedOpportunityId], references: [id], onDelete: Cascade)
+  decision             DuplicateDecision
+  confidence           Decimal?          @db.Decimal(5, 4)
+  evidence             Json?
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+
+  @@unique([opportunityId, relatedOpportunityId])
+  @@index([relatedOpportunityId])
+}
+
+model UserProfile {
+  id                      String       @id @default(uuid()) @db.Uuid
+  label                   String
+  version                 Int          @default(1)
+  careerGoals             Json?
+  experience              Json?
+  skills                  Json?
+  transferableSkills      Json?
+  locationPreferences     Json?
+  compensationPreferences Json?
+  workPreferences         Json?
+  companyPreferences      Json?
+  domainPreferences       Json?
+  evaluations             Evaluation[]
+  createdAt               DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime     @updatedAt @db.Timestamptz(3)
+}
+
+model Evaluation {
+  id                 String           @id @default(uuid()) @db.Uuid
+  opportunityId      String           @db.Uuid
+  opportunity        Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  userProfileId      String?          @db.Uuid
+  userProfile        UserProfile?     @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  domain             String
+  status             EvaluationStatus @default(PENDING)
+  evaluationVersion  String
+  domainVersion      String
+  promptVersion      String?
+  userProfileVersion Int?
+  stageResults       StageResult[]
+  evidenceRecords    EvidenceRecord[]
+  contradictions     Contradiction[]
+  recommendation     Recommendation?
+  errorMessage       String?          @db.Text
+  startedAt          DateTime?        @db.Timestamptz(3)
+  completedAt        DateTime?        @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
+  @@index([userProfileId])
+  @@index([domain, status])
+}
+
+model StageResult {
+  id              String           @id @default(uuid()) @db.Uuid
+  evaluationId    String           @db.Uuid
+  evaluation      Evaluation       @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  stageId         String
+  position        Int
+  status          EvaluationStatus @default(PENDING)
+  result          Json?
+  errorMessage    String?          @db.Text
+  evidenceRecords EvidenceRecord[]
+  contradictions  Contradiction[]
+  startedAt       DateTime?        @db.Timestamptz(3)
+  completedAt     DateTime?        @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@unique([evaluationId, stageId])
+  @@unique([evaluationId, position])
+}
+
+model EvidenceRecord {
+  id              String        @id @default(uuid()) @db.Uuid
+  opportunityId   String        @db.Uuid
+  opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  evaluationId    String?       @db.Uuid
+  evaluation      Evaluation?   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  stageResultId   String?       @db.Uuid
+  stageResult     StageResult?  @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
+  stageId         String?
+  criterionId     String?
+  claim           String        @db.Text
+  sourceType      String
+  sourceReference String?       @db.Text
+  sourceText      String?       @db.Text
+  evidenceLevel   EvidenceLevel
+  collectedAt     DateTime?     @db.Timestamptz(3)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@index([opportunityId])
+  @@index([evaluationId, stageId])
+  @@index([stageResultId])
+  @@index([evidenceLevel])
+}
+
+model Contradiction {
+  id             String       @id @default(uuid()) @db.Uuid
+  evaluationId   String       @db.Uuid
+  evaluation     Evaluation   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  stageResultId  String?      @db.Uuid
+  stageResult    StageResult? @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
+  claimA         String       @db.Text
+  claimB         String       @db.Text
+  interpretation String       @db.Text
+  significance   String?
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([evaluationId])
+  @@index([stageResultId])
+}
+
+model Recommendation {
+  id                 String      @id @default(uuid()) @db.Uuid
+  opportunityId      String      @db.Uuid
+  opportunity        Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  evaluationId       String      @unique @db.Uuid
+  evaluation         Evaluation  @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  decision           String
+  scoreSummary       Json?
+  strongestPositives Json?
+  strongestConcerns  Json?
+  unknowns           Json?
+  contradictions     Json?
+  explanation        String      @db.Text
+  evaluationVersion  String
+  createdAt          DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
+  @@index([decision])
+}

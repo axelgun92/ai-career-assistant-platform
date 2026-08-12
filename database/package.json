@@ -1,0 +1,20 @@
+{
+  "name": "@ai-career/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/client.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-career/shared": "workspace:*",
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.21.0",
+    "typescript": "6.0.3"
+  }
+}

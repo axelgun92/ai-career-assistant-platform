@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+  - domains/*
+  - database
+allowBuilds:
+  '@prisma/engines': true
+  prisma: true
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - pg-protocol@1.16.0
+  - pg@8.23.0
