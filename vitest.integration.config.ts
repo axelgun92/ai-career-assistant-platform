@@ -11,6 +11,12 @@ export default defineConfig({
       "@ai-career/database": fileURLToPath(
         new URL("./database/src/index.ts", import.meta.url),
       ),
+      "@ai-career/evaluation": fileURLToPath(
+        new URL("./packages/evaluation/src/index.ts", import.meta.url),
+      ),
+      "@ai-career/evidence": fileURLToPath(
+        new URL("./packages/evidence/src/index.ts", import.meta.url),
+      ),
       "@ai-career/normalization": fileURLToPath(
         new URL("./packages/normalization/src/index.ts", import.meta.url),
       ),

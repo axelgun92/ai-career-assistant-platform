@@ -55,6 +55,17 @@ enum ProvenanceKind {
   DETERMINISTIC
 }
 
+enum EvidenceOrigin {
+  EXPLICIT
+  DERIVED
+  INFERRED
+}
+
+enum ContradictionResolutionStatus {
+  UNRESOLVED
+  RESOLVED
+}
+
 model Company {
   id              String        @id @default(uuid()) @db.Uuid
   name            String
@@ -159,6 +170,7 @@ model SourceRecord {
   lastObservedAt    DateTime          @default(now()) @db.Timestamptz(3)
   normalizedAt      DateTime?         @db.Timestamptz(3)
   fieldProvenance   FieldProvenance[]
+  evidenceRecords   EvidenceRecord[]
   createdAt         DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
 
@@ -168,19 +180,20 @@ model SourceRecord {
 }
 
 model FieldProvenance {
-  id              String         @id @default(uuid()) @db.Uuid
-  opportunityId   String         @db.Uuid
-  opportunity     Opportunity    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  sourceRecordId  String?        @db.Uuid
-  sourceRecord    SourceRecord?  @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  id              String           @id @default(uuid()) @db.Uuid
+  opportunityId   String           @db.Uuid
+  opportunity     Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  sourceRecordId  String?          @db.Uuid
+  sourceRecord    SourceRecord?    @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
   fieldName       String
   sourceField     String
   kind            ProvenanceKind
   normalizedValue Json?
-  sourceReference String?        @db.Text
-  sourceText      String?        @db.Text
-  collectedAt     DateTime?      @db.Timestamptz(3)
-  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  sourceReference String?          @db.Text
+  sourceText      String?          @db.Text
+  collectedAt     DateTime?        @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  evidenceRecords EvidenceRecord[]
 
   @@index([opportunityId, fieldName])
   @@index([sourceRecordId])
@@ -230,8 +243,10 @@ model Evaluation {
   status             EvaluationStatus @default(PENDING)
   evaluationVersion  String
   domainVersion      String
+  ruleVersion        String
   promptVersion      String?
   userProfileVersion Int?
+  executionMetadata  Json?
   stageResults       StageResult[]
   evidenceRecords    EvidenceRecord[]
   contradictions     Contradiction[]
@@ -254,6 +269,12 @@ model StageResult {
   stageId         String
   position        Int
   status          EvaluationStatus @default(PENDING)
+  stageVersion    String
+  ruleVersion     String
+  promptVersion   String?
+  attempt         Int              @default(1)
+  retryable       Boolean          @default(false)
+  failureCode     String?
   result          Json?
   errorMessage    String?          @db.Text
   evidenceRecords EvidenceRecord[]
@@ -268,40 +289,56 @@ model StageResult {
 }
 
 model EvidenceRecord {
-  id              String        @id @default(uuid()) @db.Uuid
-  opportunityId   String        @db.Uuid
-  opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  evaluationId    String?       @db.Uuid
-  evaluation      Evaluation?   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-  stageResultId   String?       @db.Uuid
-  stageResult     StageResult?  @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
+  id              String           @id @default(uuid()) @db.Uuid
+  opportunityId   String           @db.Uuid
+  opportunity     Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  evaluationId    String?          @db.Uuid
+  evaluation      Evaluation?      @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  stageResultId   String?          @db.Uuid
+  stageResult     StageResult?     @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
   stageId         String?
   criterionId     String?
-  claim           String        @db.Text
+  claim           String           @db.Text
   sourceType      String
-  sourceReference String?       @db.Text
-  sourceText      String?       @db.Text
+  sourceRecordId  String?          @db.Uuid
+  sourceRecord    SourceRecord?    @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  provenanceId    String?          @db.Uuid
+  provenance      FieldProvenance? @relation(fields: [provenanceId], references: [id], onDelete: SetNull)
+  sourceField     String?
+  sourceReference String?          @db.Text
+  sourceText      String?          @db.Text
+  evidenceType    String
+  origin          EvidenceOrigin
   evidenceLevel   EvidenceLevel
-  collectedAt     DateTime?     @db.Timestamptz(3)
-  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  collectedAt     DateTime?        @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
 
   @@index([opportunityId])
   @@index([evaluationId, stageId])
   @@index([stageResultId])
+  @@index([sourceRecordId])
+  @@index([provenanceId])
   @@index([evidenceLevel])
 }
 
 model Contradiction {
-  id             String       @id @default(uuid()) @db.Uuid
-  evaluationId   String       @db.Uuid
-  evaluation     Evaluation   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-  stageResultId  String?      @db.Uuid
-  stageResult    StageResult? @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
-  claimA         String       @db.Text
-  claimB         String       @db.Text
-  interpretation String       @db.Text
-  significance   String?
-  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  id               String                        @id @default(uuid()) @db.Uuid
+  evaluationId     String                        @db.Uuid
+  evaluation       Evaluation                    @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  stageResultId    String?                       @db.Uuid
+  stageResult      StageResult?                  @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
+  claimA           String                        @db.Text
+  claimB           String                        @db.Text
+  interpretation   String                        @db.Text
+  relevantField    String?
+  stageId          String?
+  significance     String?
+  evidenceIdsA     String[]                      @db.Uuid
+  evidenceIdsB     String[]                      @db.Uuid
+  resolutionStatus ContradictionResolutionStatus @default(UNRESOLVED)
+  resolutionNote   String?                       @db.Text
+  resolvedAt       DateTime?                     @db.Timestamptz(3)
+  createdAt        DateTime                      @default(now()) @db.Timestamptz(3)
 
   @@index([evaluationId])
   @@index([stageResultId])

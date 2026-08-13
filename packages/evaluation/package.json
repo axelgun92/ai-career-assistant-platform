@@ -6,5 +6,10 @@
   "exports": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-career/core": "workspace:*",
+    "@ai-career/evidence": "workspace:*",
+    "zod": "4.4.3"
   }
 }

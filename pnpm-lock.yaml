@@ -32,6 +32,9 @@ importers:
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(jiti@2.7.0))
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   apps/web:
     dependencies:
@@ -69,6 +72,12 @@ importers:
       '@ai-career/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@ai-career/evaluation':
+        specifier: workspace:*
+        version: link:../packages/evaluation
+      '@ai-career/evidence':
+        specifier: workspace:*
+        version: link:../packages/evidence
       '@ai-career/shared':
         specifier: workspace:*
         version: link:../packages/shared
@@ -109,7 +118,17 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/evaluation: {}
+  packages/evaluation:
+    dependencies:
+      '@ai-career/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ai-career/evidence':
+        specifier: workspace:*
+        version: link:../evidence
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/evidence:
     dependencies:

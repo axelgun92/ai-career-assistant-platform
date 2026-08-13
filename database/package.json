@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@ai-career/core": "workspace:*",
+    "@ai-career/evaluation": "workspace:*",
+    "@ai-career/evidence": "workspace:*",
     "@ai-career/shared": "workspace:*",
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
