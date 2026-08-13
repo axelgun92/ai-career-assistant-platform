@@ -23,12 +23,17 @@ export const opportunitySourceTypeSchema = z.enum([
 ]);
 
 const nullableText = z.string().trim().min(1).nullable();
+const nullablePreservedText = z
+  .string()
+  .min(1)
+  .refine((value) => value.trim().length > 0, "Must contain visible text")
+  .nullable();
 const nullableUrl = z.url().nullable();
 const nullableDate = z.coerce.date().nullable();
 const nullableAmount = z.number().nonnegative().nullable();
 
 export const normalizedOpportunitySchema = z.object({
-  domain: z.string().trim().min(1),
+  domain: nullableText,
 
   externalListingId: nullableText,
   atsRequisitionId: nullableText,
@@ -70,7 +75,7 @@ export const normalizedOpportunitySchema = z.object({
   sourceType: opportunitySourceTypeSchema.nullable(),
   atsPlatform: nullableText,
 
-  jobDescription: nullableText,
+  jobDescription: nullablePreservedText,
   responsibilities: nullableText,
   requirements: nullableText,
   benefits: nullableText,

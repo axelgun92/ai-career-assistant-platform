@@ -11,9 +11,12 @@
   },
   "dependencies": {
     "@ai-career/core": "workspace:*",
+    "@ai-career/database": "workspace:*",
+    "@ai-career/normalization": "workspace:*",
     "next": "16.3.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/react": "19.2.18",

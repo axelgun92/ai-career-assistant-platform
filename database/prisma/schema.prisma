@@ -50,6 +50,11 @@ enum EvidenceLevel {
   CONFLICTING
 }
 
+enum ProvenanceKind {
+  DIRECT
+  DETERMINISTIC
+}
+
 model Company {
   id              String        @id @default(uuid()) @db.Uuid
   name            String
@@ -71,7 +76,7 @@ model Company {
 
 model Opportunity {
   id                String    @id @default(uuid()) @db.Uuid
-  domain            String
+  domain            String?
   externalListingId String?
   atsRequisitionId  String?
   canonicalUrl      String?   @db.Text
@@ -163,17 +168,19 @@ model SourceRecord {
 }
 
 model FieldProvenance {
-  id              String        @id @default(uuid()) @db.Uuid
-  opportunityId   String        @db.Uuid
-  opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  sourceRecordId  String?       @db.Uuid
-  sourceRecord    SourceRecord? @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  id              String         @id @default(uuid()) @db.Uuid
+  opportunityId   String         @db.Uuid
+  opportunity     Opportunity    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  sourceRecordId  String?        @db.Uuid
+  sourceRecord    SourceRecord?  @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
   fieldName       String
+  sourceField     String
+  kind            ProvenanceKind
   normalizedValue Json?
-  sourceReference String?       @db.Text
-  sourceText      String?       @db.Text
-  collectedAt     DateTime?     @db.Timestamptz(3)
-  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  sourceReference String?        @db.Text
+  sourceText      String?        @db.Text
+  collectedAt     DateTime?      @db.Timestamptz(3)
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
 
   @@index([opportunityId, fieldName])
   @@index([sourceRecordId])
