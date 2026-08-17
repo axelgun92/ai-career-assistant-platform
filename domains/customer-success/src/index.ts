@@ -5,6 +5,10 @@ export * from "./schemas/maps";
 export * from "./schemas/results";
 export * from "./schemas/company-alignment";
 export * from "./schemas/organizational-maturity";
+export * from "./schemas/alex-fit";
+export * from "./schemas/burnout-risk";
+export * from "./profile/user-profile";
+export { burnoutRiskBand } from "./evaluation/burnout-risk";
 
 import { createCustomerSuccessEvaluator } from "./evaluator";
 

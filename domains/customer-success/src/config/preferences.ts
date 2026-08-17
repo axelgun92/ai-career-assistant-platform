@@ -41,6 +41,48 @@ export const customerSegmentPreferenceSchema = z.enum([
   "MIXED",
 ]);
 
+export const customerSuccessFitAreaSchema = z.enum([
+  "ONBOARDING",
+  "EDUCATION",
+  "ENABLEMENT",
+  "RELATIONSHIP_MANAGEMENT",
+  "ENGAGEMENT",
+  "RETENTION",
+  "ADOPTION",
+  "CUSTOMER_INSIGHTS",
+  "CROSS_FUNCTIONAL_COLLABORATION",
+  "DOCUMENTATION",
+  "PROBLEM_SOLVING",
+  "STRATEGY",
+  "MODERATE_SALES",
+  "RENEWALS",
+  "EXPANSION",
+  "METRICS",
+  "ADOPTION_TRACKING",
+  "PRODUCT_FEEDBACK",
+  "ANALYSIS",
+]);
+
+export const customerSuccessWorkStyleSchema = z.enum([
+  "ASYNC_WORK",
+  "DEEP_WORK",
+  "DOCUMENTATION",
+  "PROCESS_IMPROVEMENT",
+  "EDUCATION",
+  "CROSS_FUNCTIONAL_COLLABORATION",
+  "FEEDBACK_LOOPS",
+  "STRATEGIC_OWNERSHIP",
+]);
+
+export const customerSuccessLowerAlignmentPatternSchema = z.enum([
+  "REACTIVE_SUPPORT",
+  "CALL_CENTER_WORK",
+  "CONSTANT_INTERRUPTION",
+  "MEETING_HEAVY_WORK",
+  "CALL_VOLUME_KPIS",
+  "LITTLE_STRATEGIC_RESPONSIBILITY",
+]);
+
 export const customerSuccessPreferencesSchema = z
   .object({
     salary: z
@@ -150,8 +192,93 @@ export const customerSuccessPreferencesSchema = z
       })
       .strict()
       .prefault({}),
-    workStylePreferences: z.record(z.string(), z.json()).default({}),
-    careerStrategy: z.record(z.string(), z.json()).default({}),
+    fitPreferences: z
+      .object({
+        preferredAreas: z.array(customerSuccessFitAreaSchema).default([
+          "ONBOARDING",
+          "EDUCATION",
+          "ENABLEMENT",
+          "RELATIONSHIP_MANAGEMENT",
+          "ENGAGEMENT",
+          "RETENTION",
+          "ADOPTION",
+          "CUSTOMER_INSIGHTS",
+          "CROSS_FUNCTIONAL_COLLABORATION",
+          "DOCUMENTATION",
+          "PROBLEM_SOLVING",
+          "STRATEGY",
+        ]),
+        comfortableAreas: z.array(customerSuccessFitAreaSchema).default([
+          "MODERATE_SALES",
+          "RENEWALS",
+          "EXPANSION",
+          "METRICS",
+          "ADOPTION_TRACKING",
+          "PRODUCT_FEEDBACK",
+          "ANALYSIS",
+        ]),
+        lowerAlignmentPatterns: z
+          .array(customerSuccessLowerAlignmentPatternSchema)
+          .default([
+            "REACTIVE_SUPPORT",
+            "CALL_CENTER_WORK",
+            "CONSTANT_INTERRUPTION",
+            "MEETING_HEAVY_WORK",
+            "CALL_VOLUME_KPIS",
+            "LITTLE_STRATEGIC_RESPONSIBILITY",
+          ]),
+      })
+      .strict()
+      .prefault({}),
+    workStylePreferences: z
+      .object({
+        preferred: z.array(customerSuccessWorkStyleSchema).default([
+          "ASYNC_WORK",
+          "DEEP_WORK",
+          "DOCUMENTATION",
+          "PROCESS_IMPROVEMENT",
+          "EDUCATION",
+          "CROSS_FUNCTIONAL_COLLABORATION",
+          "FEEDBACK_LOOPS",
+          "STRATEGIC_OWNERSHIP",
+        ]),
+      })
+      .strict()
+      .prefault({}),
+    workloadPreferences: z
+      .object({
+        complementaryCustomerSuccessResponsibilities: z
+          .array(requiredText)
+          .default([
+            "onboarding",
+            "adoption",
+            "education",
+            "enablement",
+            "relationship management",
+            "retention",
+          ]),
+        distinctFunctionOwnershipConcerns: z
+          .array(requiredText)
+          .default([
+            "implementation",
+            "project management",
+            "support",
+            "product management",
+            "community management",
+            "revenue ownership",
+            "large-scale documentation production",
+            "recurring travel",
+          ]),
+        genericPhrasesRequireCorroboration: z.boolean().default(true),
+      })
+      .strict()
+      .prefault({}),
+    careerStrategy: z
+      .object({
+        goals: z.array(requiredText).default([]),
+      })
+      .strict()
+      .prefault({}),
   })
   .strict();
 

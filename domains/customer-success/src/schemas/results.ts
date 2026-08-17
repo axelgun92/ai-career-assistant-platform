@@ -6,6 +6,8 @@ import {
 } from "./maps";
 import { companyAlignmentDataSchema } from "./company-alignment";
 import { organizationalMaturityDataSchema } from "./organizational-maturity";
+import { alexFitDataSchema } from "./alex-fit";
+import { burnoutRiskDataSchema } from "./burnout-risk";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
@@ -128,6 +130,14 @@ export const customerSuccessMilestoneFiveResultSchema =
     })
     .strict();
 
+export const customerSuccessMilestoneSixResultSchema =
+  customerSuccessMilestoneFiveResultSchema
+    .extend({
+      alexFit: alexFitDataSchema,
+      burnoutRisk: burnoutRiskDataSchema,
+    })
+    .strict();
+
 export type HardFiltersData = z.infer<typeof hardFiltersDataSchema>;
 export type SemanticJobEvaluation = z.infer<
   typeof semanticJobEvaluationSchema
@@ -138,4 +148,7 @@ export type CustomerSuccessMilestoneFourResult = z.infer<
 >;
 export type CustomerSuccessMilestoneFiveResult = z.infer<
   typeof customerSuccessMilestoneFiveResultSchema
+>;
+export type CustomerSuccessMilestoneSixResult = z.infer<
+  typeof customerSuccessMilestoneSixResultSchema
 >;

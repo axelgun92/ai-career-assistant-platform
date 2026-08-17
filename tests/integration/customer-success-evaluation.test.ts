@@ -18,6 +18,7 @@ import {
 
 const database = getDatabaseClient();
 const opportunityIds: string[] = [];
+const userProfileIds: string[] = [];
 
 afterEach(async () => {
   for (const id of opportunityIds.splice(0)) {
@@ -31,6 +32,9 @@ afterEach(async () => {
       await database.company.deleteMany({ where: { id: opportunity.companyId } });
     }
   }
+  await database.userProfile.deleteMany({
+    where: { id: { in: userProfileIds.splice(0) } },
+  });
 });
 
 afterAll(async () => {
@@ -38,7 +42,7 @@ afterAll(async () => {
 });
 
 describe("Customer Success evaluation PostgreSQL integration", () => {
-  it("runs a normalized manual JD through reconstruction and all four CS stages", async () => {
+  it("runs a normalized manual JD and versioned profile through all six CS stages", async () => {
     const manualService = createManualOpportunityService({
       repository: new PrismaManualOpportunityRepository(),
       normalizer: createManualOpportunityNormalizer(),
@@ -64,6 +68,32 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       ].join("\n"),
     });
     opportunityIds.push(detail.opportunity.id);
+    const userProfile = await database.userProfile.create({
+      data: {
+        label: "Alex Customer Success profile",
+        version: 3,
+        careerGoals: [
+          { id: "career-1", statement: "Build a strategic SaaS career." },
+        ],
+        experience: [
+          {
+            id: "experience-1",
+            statement: "Owned customer onboarding, adoption, and retention.",
+            relationship: "DIRECT",
+          },
+        ],
+        skills: [
+          { id: "skill-1", statement: "Customer education and enablement" },
+        ],
+        transferableSkills: [
+          { id: "transfer-1", statement: "Process documentation" },
+        ],
+        workPreferences: [
+          { id: "work-1", statement: "Prefers strategic, asynchronous work." },
+        ],
+      },
+    });
+    userProfileIds.push(userProfile.id);
 
     const fixture = createCustomerSuccessFixtureOperations({
       scenario: "misleading-title",
@@ -72,12 +102,13 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       new PrismaEvaluationRepository(),
     ).execute({
       opportunityId: detail.opportunity.id,
+      userProfileId: userProfile.id,
       evaluator: createCustomerSuccessEvaluator(),
       domainData: createCustomerSuccessDomainData({
         preferences: customerSuccessTestPreferences,
         semanticOperations: fixture.semanticOperations,
       }),
-      executionMetadata: { trigger: "milestone-five-integration-test" },
+      executionMetadata: { trigger: "milestone-six-integration-test" },
     });
 
     const persisted = await database.evaluation.findUniqueOrThrow({
@@ -94,11 +125,12 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       expect.objectContaining({
         domain: "customer-success",
         status: "COMPLETED",
-        evaluationVersion: "cs-evaluation-v1.1-m5",
+        evaluationVersion: "cs-evaluation-v1.1-m6",
         domainVersion: "customer-success-v1.1",
         ruleVersion: "cs-rules-v1.1",
-        promptVersion: "cs-m5-prompts-v1",
-        executionMetadata: { trigger: "milestone-five-integration-test" },
+        promptVersion: "cs-m6-prompts-v1",
+        userProfileVersion: 3,
+        executionMetadata: { trigger: "milestone-six-integration-test" },
       }),
     );
     expect(persisted.opportunity.status).toBe("NORMALIZED");
@@ -107,6 +139,8 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       "job-evaluation",
       "company-alignment",
       "organizational-maturity",
+      "alex-fit",
+      "burnout-risk",
     ]);
     expect(persisted.stageResults.every((stage) => stage.status === "COMPLETED"))
       .toBe(true);
@@ -157,20 +191,43 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         }),
       }),
     );
+    expect(persisted.stageResults[4]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          fit: expect.objectContaining({ classification: "STRONG" }),
+        }),
+      }),
+    );
+    expect(persisted.stageResults[5]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          classification: "VERY_LOW",
+          risk: expect.objectContaining({ score: 18 }),
+        }),
+      }),
+    );
     expect(persisted.evidenceRecords.length).toBeGreaterThan(0);
     expect(
       persisted.evidenceRecords.every(
         (record) =>
-          record.sourceRecordId === detail.sourceRecords[0]?.id &&
+          (record.sourceRecordId === detail.sourceRecords[0]?.id ||
+            (record.sourceType === "USER_PROFILE" &&
+              record.sourceReference === `user-profile:${userProfile.id}:v3`)) &&
           record.stageId !== null,
       ),
     ).toBe(true);
     expect(result.domainResult?.jobEvaluation.evaluated).toBe(true);
     expect(result.domainResult?.companyAlignment.evaluated).toBe(true);
     expect(result.domainResult?.organizationalMaturity.evaluated).toBe(true);
+    expect(result.domainResult?.alexFit.evaluated).toBe(true);
+    expect(result.domainResult?.burnoutRisk.evaluated).toBe(true);
     expect(fixture.stats.reconstructionCalls).toBe(1);
     expect(fixture.stats.jobEvaluationCalls).toBe(1);
     expect(fixture.stats.companyAlignmentCalls).toBe(1);
     expect(fixture.stats.organizationalMaturityCalls).toBe(1);
+    expect(fixture.stats.alexFitCalls).toBe(1);
+    expect(fixture.stats.burnoutRiskCalls).toBe(1);
   });
 });

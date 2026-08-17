@@ -8,6 +8,9 @@ import type { CustomerSuccessDomainData } from "../evaluator";
 import type { CustomerSuccessPreferences } from "../config/preferences";
 import type { CompanyAlignmentData } from "../schemas/company-alignment";
 import type { JobEvaluationData } from "../schemas/results";
+import type { OrganizationalMaturityData } from "../schemas/organizational-maturity";
+import type { AlexFitData } from "../schemas/alex-fit";
+import type { CustomerSuccessProfileContext } from "../profile/user-profile";
 import { extractExplicitCustomerSuccessFacts } from "./explicit-facts";
 
 export interface CustomerSuccessSemanticOperations {
@@ -56,6 +59,40 @@ export interface CustomerSuccessSemanticOperations {
     ownershipMap: CustomerSuccessJdReconstruction["ownershipMap"];
     jobEvaluation: Extract<JobEvaluationData, { evaluated: true }>;
     companyAlignment: Extract<CompanyAlignmentData, { evaluated: true }>;
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
+  }): Promise<unknown>;
+  evaluateAlexFit(input: {
+    responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];
+    requirementMap: CustomerSuccessJdReconstruction["requirements"];
+    ownershipMap: CustomerSuccessJdReconstruction["ownershipMap"];
+    jobEvaluation: Extract<JobEvaluationData, { evaluated: true }>;
+    companyAlignment: Extract<CompanyAlignmentData, { evaluated: true }>;
+    organizationalMaturity: Extract<
+      OrganizationalMaturityData,
+      { evaluated: true }
+    >;
+    userProfile: CustomerSuccessProfileContext;
+    preferences: Pick<
+      CustomerSuccessPreferences,
+      "fitPreferences" | "workStylePreferences" | "careerStrategy"
+    >;
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
+  }): Promise<unknown>;
+  evaluateBurnoutRisk(input: {
+    responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];
+    ownershipMap: CustomerSuccessJdReconstruction["ownershipMap"];
+    travel: CustomerSuccessJdReconstruction["travel"];
+    jobEvaluation: Extract<JobEvaluationData, { evaluated: true }>;
+    companyAlignment: Extract<CompanyAlignmentData, { evaluated: true }>;
+    organizationalMaturity: Extract<
+      OrganizationalMaturityData,
+      { evaluated: true }
+    >;
+    alexFit: AlexFitData;
+    preferences: Pick<
+      CustomerSuccessPreferences,
+      "workloadPreferences" | "workStylePreferences"
+    >;
     availableEvidence: CustomerSuccessJdReconstruction["evidence"];
   }): Promise<unknown>;
 }

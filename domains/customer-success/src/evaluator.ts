@@ -7,45 +7,51 @@ import { createHardFiltersStage } from "./evaluation/hard-filters";
 import { createJobEvaluationStage } from "./evaluation/job-evaluation";
 import { createCompanyAlignmentStage } from "./evaluation/company-alignment";
 import { createOrganizationalMaturityStage } from "./evaluation/organizational-maturity";
-import type {
-  CustomerSuccessSemanticOperations,
-} from "./extraction/extractor";
+import { createAlexFitStage } from "./evaluation/alex-fit";
+import { createBurnoutRiskStage } from "./evaluation/burnout-risk";
+import type { CustomerSuccessSemanticOperations } from "./extraction/extractor";
 import type { CustomerSuccessJdReconstruction } from "./schemas/maps";
+import type { CustomerSuccessProfileContext } from "./profile/user-profile";
 import {
-  customerSuccessMilestoneFiveResultSchema,
+  customerSuccessMilestoneSixResultSchema,
   hardFiltersDataSchema,
   jobEvaluationDataSchema,
 } from "./schemas/results";
 import { companyAlignmentDataSchema } from "./schemas/company-alignment";
 import { organizationalMaturityDataSchema } from "./schemas/organizational-maturity";
+import { alexFitDataSchema } from "./schemas/alex-fit";
+import { burnoutRiskDataSchema } from "./schemas/burnout-risk";
 
 export interface CustomerSuccessDomainData {
   preferences: CustomerSuccessPreferences;
   semanticOperations: CustomerSuccessSemanticOperations;
   reconstruction: CustomerSuccessJdReconstruction | null;
+  userProfile: CustomerSuccessProfileContext | null;
 }
 
 export function createCustomerSuccessDomainData(input: {
   preferences: CustomerSuccessPreferences;
   semanticOperations: CustomerSuccessSemanticOperations;
 }): CustomerSuccessDomainData {
-  return { ...input, reconstruction: null };
+  return { ...input, reconstruction: null, userProfile: null };
 }
 
 export function createCustomerSuccessEvaluator() {
   return defineDomainEvaluator({
     domain: "customer-success",
-    evaluationVersion: "cs-evaluation-v1.1-m5",
+    evaluationVersion: "cs-evaluation-v1.1-m6",
     domainVersion: "customer-success-v1.1",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-m5-prompts-v1",
+    promptVersion: "cs-m6-prompts-v1",
     stages: [
       createHardFiltersStage(),
       createJobEvaluationStage(),
       createCompanyAlignmentStage(),
       createOrganizationalMaturityStage(),
+      createAlexFitStage(),
+      createBurnoutRiskStage(),
     ],
-    resultSchema: customerSuccessMilestoneFiveResultSchema,
+    resultSchema: customerSuccessMilestoneSixResultSchema,
     async finalize(context: CoreEvaluationContext<CustomerSuccessDomainData>) {
       const hardFilters = context.previousStageResults.find(
         (stage) => stage.stageId === "hard-filters",
@@ -59,6 +65,12 @@ export function createCustomerSuccessEvaluator() {
       const organizationalMaturity = context.previousStageResults.find(
         (stage) => stage.stageId === "organizational-maturity",
       );
+      const alexFit = context.previousStageResults.find(
+        (stage) => stage.stageId === "alex-fit",
+      );
+      const burnoutRisk = context.previousStageResults.find(
+        (stage) => stage.stageId === "burnout-risk",
+      );
       return {
         hardFilters: hardFiltersDataSchema.parse(hardFilters?.result?.data),
         jobEvaluation: jobEvaluationDataSchema.parse(jobEvaluation?.result?.data),
@@ -68,6 +80,8 @@ export function createCustomerSuccessEvaluator() {
         organizationalMaturity: organizationalMaturityDataSchema.parse(
           organizationalMaturity?.result?.data,
         ),
+        alexFit: alexFitDataSchema.parse(alexFit?.result?.data),
+        burnoutRisk: burnoutRiskDataSchema.parse(burnoutRisk?.result?.data),
       };
     },
   });

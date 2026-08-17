@@ -5,6 +5,8 @@ import {
   type CustomerSuccessSemanticOperations,
   type SemanticCompanyAlignment,
   type SemanticOrganizationalMaturity,
+  type SemanticAlexFit,
+  type SemanticBurnoutRisk,
   type SemanticReconstruction,
 } from "@ai-career/customer-success";
 import { StageExecutionError } from "@ai-career/evaluation";
@@ -39,6 +41,24 @@ export interface OrganizationalMaturityFixtureOptions {
   multipleJobsSupported?: boolean;
   unrealisticOwnershipSupported?: boolean;
   contradictoryOrganizationEvidence?: boolean;
+}
+
+export interface AlexFitFixtureOptions {
+  classification?: SemanticAlexFit["classification"];
+  experienceRelationship?: SemanticAlexFit["experienceAlignment"]["relationship"];
+  workingStyleConcern?: boolean;
+  missingWorkingStyleInformation?: boolean;
+  contradictoryFitEvidence?: boolean;
+  preferredKeywordOnly?: boolean;
+  customerCallsOnly?: boolean;
+}
+
+export interface BurnoutRiskFixtureOptions {
+  score?: number;
+  substantialDistinctFunctionOwnership?: boolean;
+  complementaryCustomerSuccessScope?: boolean;
+  genericPhrasesOnly?: boolean;
+  contradictoryWorkloadEvidence?: boolean;
 }
 
 export const customerSuccessTestPreferences = defineCustomerSuccessPreferences({
@@ -120,17 +140,25 @@ export function createCustomerSuccessFixtureOperations(input: {
   failReconstructionOnce?: boolean;
   failCompanyAlignmentOnce?: boolean;
   failOrganizationalMaturityOnce?: boolean;
+  failAlexFitOnce?: boolean;
+  failBurnoutRiskOnce?: boolean;
   companyAlignment?: CompanyAlignmentFixtureOptions;
   organizationalMaturity?: OrganizationalMaturityFixtureOptions;
+  alexFit?: AlexFitFixtureOptions;
+  burnoutRisk?: BurnoutRiskFixtureOptions;
 }) {
   const stats = {
     reconstructionCalls: 0,
     jobEvaluationCalls: 0,
     companyAlignmentCalls: 0,
     organizationalMaturityCalls: 0,
+    alexFitCalls: 0,
+    burnoutRiskCalls: 0,
     companyAlignmentReceivedMaps: false,
     companyAlignmentReceivedPreferences: false,
     organizationalMaturityReceivedPriorResults: false,
+    alexFitReceivedProfileAndPriorResults: false,
+    burnoutRiskReceivedMapsAndPriorResults: false,
   };
   const semanticOperations: CustomerSuccessSemanticOperations = {
     async reconstructJobDescription(source) {
@@ -250,7 +278,56 @@ export function createCustomerSuccessFixtureOperations(input: {
           sourceRecordId: source.sourceRecordId,
           provenanceId: source.provenanceId,
         }),
+        evidence({
+          referenceId: "healthy-cs-scope",
+          claim: "The role combines complementary Customer Success work.",
+          sourceText:
+            "Own onboarding, adoption, education, enablement, engagement, retention, customer insights, light renewals, and light expansion opportunities.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
       ];
+      if (
+        input.burnoutRisk?.substantialDistinctFunctionOwnership ||
+        input.burnoutRisk?.contradictoryWorkloadEvidence ||
+        input.alexFit?.workingStyleConcern ||
+        input.alexFit?.contradictoryFitEvidence
+      ) {
+        baseEvidence.push(
+          evidence({
+            referenceId: "workload-risk",
+            claim:
+              "The role owns distinct functions and a high reactive workload.",
+            sourceText:
+              "Own implementation, Support escalations, Product Management, 100 accounts, and daily customer calls.",
+            sourceRecordId: source.sourceRecordId,
+            provenanceId: source.provenanceId,
+          }),
+        );
+      }
+      if (input.burnoutRisk?.genericPhrasesOnly) {
+        baseEvidence.push(
+          evidence({
+            referenceId: "generic-pace",
+            claim:
+              "The posting uses a generic pace phrase without workload detail.",
+            sourceText: "Thrive in a fast-paced environment and wear many hats.",
+            sourceRecordId: source.sourceRecordId,
+            provenanceId: source.provenanceId,
+          }),
+        );
+      }
+      if (input.alexFit?.customerCallsOnly) {
+        baseEvidence.push(
+          evidence({
+            referenceId: "ordinary-customer-calls",
+            claim: "The role includes ordinary scheduled customer calls.",
+            sourceText: "Hold scheduled customer check-ins and business reviews.",
+            sourceRecordId: source.sourceRecordId,
+            provenanceId: source.provenanceId,
+          }),
+        );
+      }
       if (input.scenario === "contradictory") {
         baseEvidence.push(
           evidence({
@@ -274,7 +351,9 @@ export function createCustomerSuccessFixtureOperations(input: {
           area,
           area === primaryArea
             ? {
-                prominence: "PRIMARY",
+                prominence: input.alexFit?.preferredKeywordOnly
+                  ? "OCCASIONAL"
+                  : "PRIMARY",
                 ownership: "OWNS",
                 evidenceReferences: ["actual-work"],
               }
@@ -758,6 +837,218 @@ export function createCustomerSuccessFixtureOperations(input: {
             ]
           : [],
       };
+    },
+    async evaluateAlexFit(fitInput) {
+      stats.alexFitCalls += 1;
+      if (input.failAlexFitOnce && stats.alexFitCalls === 1) {
+        throw new StageExecutionError({
+          code: "CS_ALEX_FIT_TEMPORARY_FAILURE",
+          message: "Fixture Alex Fit failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.alexFitReceivedProfileAndPriorResults =
+        fitInput.userProfile.version > 0 &&
+        fitInput.jobEvaluation.evaluated &&
+        fitInput.companyAlignment.evaluated &&
+        fitInput.organizationalMaturity.evaluated &&
+        fitInput.responsibilityMap.areas.adoption !== undefined;
+      const options = input.alexFit ?? {};
+      const profileReference = fitInput.availableEvidence.find(
+        (item) => item.sourceType === "USER_PROFILE",
+      )?.referenceId;
+      if (!profileReference) {
+        throw new Error("The Alex Fit fixture requires profile evidence");
+      }
+      const classification =
+        options.classification ??
+        (options.preferredKeywordOnly ? "MIXED" : "STRONG");
+      const relationship = options.experienceRelationship ?? "DIRECT";
+      const roleReference = "actual-work";
+      const combinedReferences = [profileReference, roleReference];
+      const workingStyleAlignment = options.missingWorkingStyleInformation
+        ? [
+            {
+              area: "Meeting cadence",
+              alignment: "UNKNOWN" as const,
+              explanation:
+                "The available evidence does not establish meeting cadence.",
+              evidenceReferences: [],
+            },
+          ]
+        : [
+            {
+              area: "Strategic ownership",
+              alignment: options.workingStyleConcern
+                ? ("CONCERN" as const)
+                : ("SUPPORTED" as const),
+              explanation: options.workingStyleConcern
+                ? "The role evidence establishes a reactive work pattern."
+                : "The role and profile evidence support strategic ownership.",
+              evidenceReferences: options.workingStyleConcern
+                ? ["workload-risk", profileReference]
+                : combinedReferences,
+            },
+          ];
+      return {
+        classification,
+        summary:
+          "The categorical fit assessment compares evidenced role content with the versioned profile and configured preferences.",
+        experienceAlignment: {
+          relationship,
+          explanation: `The profile-to-role experience relationship is ${relationship}.`,
+          evidenceReferences: [profileReference, roleReference],
+        },
+        workingStyleAlignment,
+        careerStrategyAlignment: {
+          conclusion:
+            "The role provides evidenced Customer Success work relevant to the configured career direction.",
+          evidenceReferences: combinedReferences,
+        },
+        strongestMatches: [
+          {
+            finding:
+              "The role's evidenced customer-outcome work matches a demonstrated profile strength.",
+            evidenceReferences: combinedReferences,
+          },
+        ],
+        partialMatches:
+          relationship === "RELATED" || relationship === "TRANSFERABLE"
+            ? [
+                {
+                  finding:
+                    "The profile evidence is relevant but not identical to the role requirement.",
+                  evidenceReferences: combinedReferences,
+                },
+              ]
+            : [],
+        concerns: options.workingStyleConcern
+          ? [
+              {
+                finding:
+                  "The evidenced reactive workload conflicts with a configured work preference.",
+                evidenceReferences: ["workload-risk", profileReference],
+              },
+            ]
+          : [],
+        strategicValue: [
+          {
+            finding:
+              "The role supplies strategically relevant Customer Success experience.",
+            evidenceReferences: combinedReferences,
+          },
+        ],
+        unknowns: options.missingWorkingStyleInformation
+          ? [
+              {
+                code: "meeting-cadence-unknown",
+                description: "Meeting cadence is not stated.",
+                materiality: "Working-style alignment is incomplete.",
+                evidenceReferences: [],
+              },
+            ]
+          : [],
+        evidenceReferences: [
+          ...new Set([
+            ...combinedReferences,
+            ...(options.workingStyleConcern ? ["workload-risk"] : []),
+          ]),
+        ],
+        contradictions: options.contradictoryFitEvidence
+          ? [
+              {
+                claimA: "The role supports strategic deep work.",
+                claimB: "The role requires constant reactive interruptions.",
+                interpretation:
+                  "The stated working-style conditions conflict.",
+                relevantField: "workingStyle",
+                significance: "MATERIAL",
+                evidenceReferencesA: ["healthy-cs-scope"],
+                evidenceReferencesB: ["workload-risk"],
+              },
+            ]
+          : [],
+      } satisfies SemanticAlexFit;
+    },
+    async evaluateBurnoutRisk(riskInput) {
+      stats.burnoutRiskCalls += 1;
+      if (input.failBurnoutRiskOnce && stats.burnoutRiskCalls === 1) {
+        throw new StageExecutionError({
+          code: "CS_BURNOUT_RISK_TEMPORARY_FAILURE",
+          message: "Fixture Burnout Risk failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.burnoutRiskReceivedMapsAndPriorResults =
+        riskInput.jobEvaluation.evaluated &&
+        riskInput.organizationalMaturity.evaluated &&
+        riskInput.responsibilityMap.areas.adoption !== undefined &&
+        riskInput.ownershipMap.functions.customerSuccess !== undefined;
+      const options = input.burnoutRisk ?? {};
+      const genericOnly = options.genericPhrasesOnly === true;
+      const distinctOwnership =
+        options.substantialDistinctFunctionOwnership === true;
+      const score = options.score ?? (distinctOwnership ? 82 : 18);
+      const primaryReference = genericOnly
+        ? "generic-pace"
+        : distinctOwnership
+          ? "workload-risk"
+          : "healthy-cs-scope";
+      return {
+        score,
+        scoreExplanation:
+          "The score is a holistic semantic assessment of supported workload evidence, not an additive or weighted formula.",
+        scoreEvidenceReferences: [primaryReference],
+        summary: genericOnly
+          ? "Generic pace language alone does not establish elevated burnout risk."
+          : distinctOwnership
+            ? "Substantial ownership across separate functions and reactive load creates high burnout risk."
+            : "The role describes a coherent set of complementary Customer Success responsibilities.",
+        majorContributors: distinctOwnership
+          ? [
+              {
+                finding:
+                  "The role substantially owns multiple distinct functions and a high reactive workload.",
+                evidenceReferences: ["workload-risk"],
+              },
+            ]
+          : [],
+        positiveIndicators:
+          !distinctOwnership && !genericOnly
+            ? [
+                {
+                  finding:
+                    "The responsibilities form a coherent Customer Success workload.",
+                  evidenceReferences: ["healthy-cs-scope"],
+                },
+              ]
+            : [],
+        unknowns: genericOnly
+          ? [
+              {
+                code: "workload-details-unknown",
+                description:
+                  "The generic phrase does not establish account load, customer complexity, meeting burden, escalation volume, reactive workload, or travel.",
+                materiality: "Burnout assessment confidence is limited.",
+                evidenceReferences: ["generic-pace"],
+              },
+            ]
+          : [],
+        evidenceReferences: [primaryReference],
+        contradictions: options.contradictoryWorkloadEvidence
+          ? [
+              {
+                claimA: "The role has bounded complementary CS scope.",
+                claimB: "The role owns several distinct functions.",
+                interpretation: "The workload descriptions conflict.",
+                relevantField: "workloadScope",
+                significance: "MATERIAL",
+                evidenceReferencesA: ["healthy-cs-scope"],
+                evidenceReferencesB: ["workload-risk"],
+              },
+            ]
+          : [],
+      } satisfies SemanticBurnoutRisk;
     },
   };
   return { semanticOperations, stats };
