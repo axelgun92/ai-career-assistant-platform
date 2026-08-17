@@ -1,0 +1,215 @@
+import {
+  evaluationTaskSchema,
+  semanticOperationAttemptRecordSchema,
+  type DomainEvaluatorDefinition,
+  type EvaluationTaskRepository,
+  type JsonValue,
+  type SemanticOperationAttempt,
+} from "@ai-career/evaluation";
+import { Prisma } from "../generated/prisma/client";
+import { getDatabaseClient } from "./client";
+
+function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
+}
+
+export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository {
+  private readonly database = getDatabaseClient();
+
+  async enqueue(input: {
+    opportunityId: string;
+    userProfileId: string;
+    userProfileVersion: number;
+    evaluator: DomainEvaluatorDefinition<unknown, unknown>;
+    executionMetadata: Record<string, JsonValue>;
+    maxAttempts: number;
+  }) {
+    const task = await this.database.$transaction(async (transaction) => {
+      const evaluation = await transaction.evaluation.create({
+        data: {
+          opportunityId: input.opportunityId,
+          userProfileId: input.userProfileId,
+          domain: input.evaluator.domain,
+          evaluationVersion: input.evaluator.evaluationVersion,
+          domainVersion: input.evaluator.domainVersion,
+          ruleVersion: input.evaluator.ruleVersion,
+          promptVersion: input.evaluator.promptVersion,
+          userProfileVersion: input.userProfileVersion,
+          executionMetadata: asInputJson(input.executionMetadata),
+          stageResults: {
+            create: input.evaluator.stages.map((stage, position) => ({
+              stageId: stage.id,
+              position,
+              stageVersion: stage.version,
+              ruleVersion: stage.ruleVersion,
+              promptVersion: stage.promptVersion,
+            })),
+          },
+        },
+        select: { id: true },
+      });
+      return transaction.evaluationTask.create({
+        data: {
+          evaluationId: evaluation.id,
+          maxAttempts: input.maxAttempts,
+          availableAt: new Date(),
+        },
+      });
+    });
+    return evaluationTaskSchema.parse(task);
+  }
+
+  async claimNext(input: { leaseSeconds: number }) {
+    const claimTime = new Date();
+    return this.database.$transaction(async (transaction) => {
+      const candidates = await transaction.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          SELECT "id"
+          FROM "EvaluationTask"
+          WHERE "attempt" < "maxAttempts"
+            AND (
+              ("status" = 'PENDING' AND "availableAt" <= ${claimTime})
+              OR ("status" = 'RUNNING' AND "leaseExpiresAt" < ${claimTime})
+            )
+          ORDER BY "createdAt" ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        `,
+      );
+      const candidate = candidates[0];
+      if (!candidate) return null;
+      const existing = await transaction.evaluationTask.findUniqueOrThrow({
+        where: { id: candidate.id },
+      });
+
+      const interruptedStages = await transaction.stageResult.updateMany({
+        where: { evaluationId: existing.evaluationId, status: "RUNNING" },
+        data: {
+          status: "FAILED",
+          retryable: true,
+          failureCode: "WORKER_INTERRUPTED",
+          errorMessage: "Worker execution ended before the stage completed",
+          completedAt: claimTime,
+        },
+      });
+      if (interruptedStages.count > 0) {
+        await transaction.evaluation.update({
+          where: { id: existing.evaluationId },
+          data: {
+            status: "PENDING",
+            errorMessage: "Worker execution was interrupted and reclaimed",
+            completedAt: null,
+          },
+        });
+      }
+
+      const now = claimTime;
+      const leaseExpiresAt = new Date(now.getTime() + input.leaseSeconds * 1_000);
+      const claimed = await transaction.evaluationTask.update({
+        where: { id: existing.id },
+        data: {
+          status: "RUNNING",
+          attempt: { increment: 1 },
+          claimedAt: now,
+          leaseExpiresAt,
+          startedAt: existing.startedAt ?? now,
+          completedAt: null,
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+      return evaluationTaskSchema.parse(claimed);
+    });
+  }
+
+  async complete(taskId: string) {
+    const task = await this.database.evaluationTask.update({
+      where: { id: taskId },
+      data: {
+        status: "COMPLETED",
+        completedAt: new Date(),
+        leaseExpiresAt: null,
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
+    return evaluationTaskSchema.parse(task);
+  }
+
+  async fail(input: {
+    taskId: string;
+    code: string;
+    message: string;
+    retryable: boolean;
+  }) {
+    const current = await this.database.evaluationTask.findUniqueOrThrow({
+      where: { id: input.taskId },
+    });
+    const retry = input.retryable && current.attempt < current.maxAttempts;
+    const task = await this.database.evaluationTask.update({
+      where: { id: input.taskId },
+      data: retry
+        ? {
+            status: "PENDING",
+            availableAt: new Date(),
+            claimedAt: null,
+            leaseExpiresAt: null,
+            errorCode: input.code,
+            errorMessage: input.message,
+          }
+        : {
+            status: "FAILED",
+            completedAt: new Date(),
+            leaseExpiresAt: null,
+            errorCode: input.code,
+            errorMessage: input.message,
+          },
+    });
+    return evaluationTaskSchema.parse(task);
+  }
+
+  async getByEvaluationId(evaluationId: string) {
+    const task = await this.database.evaluationTask.findUnique({
+      where: { evaluationId },
+    });
+    return task ? evaluationTaskSchema.parse(task) : null;
+  }
+
+  async recordSemanticOperation(
+    evaluationId: string,
+    attempt: SemanticOperationAttempt,
+  ) {
+    await this.database.$transaction(async (transaction) => {
+      const latest = await transaction.semanticOperationAttempt.aggregate({
+        where: { evaluationId, operationId: attempt.operationId },
+        _max: { attempt: true },
+      });
+      await transaction.semanticOperationAttempt.create({
+        data: {
+          evaluationId,
+          operationId: attempt.operationId,
+          promptVersion: attempt.promptVersion,
+          attempt: (latest._max.attempt ?? 0) + 1,
+          provider: attempt.provider,
+          model: attempt.model,
+          status: attempt.status,
+          inputTokens: attempt.usage.inputTokens,
+          outputTokens: attempt.usage.outputTokens,
+          totalTokens: attempt.usage.totalTokens,
+          durationMs: attempt.durationMs,
+          providerRequestId: attempt.providerRequestId,
+          errorCode: attempt.errorCode,
+          errorMessage: attempt.errorMessage,
+        },
+      });
+    });
+  }
+
+  async listSemanticOperations(evaluationId: string) {
+    const records = await this.database.semanticOperationAttempt.findMany({
+      where: { evaluationId },
+      orderBy: [{ createdAt: "asc" }, { attempt: "asc" }],
+    });
+    return records.map((record) => semanticOperationAttemptRecordSchema.parse(record));
+  }
+}

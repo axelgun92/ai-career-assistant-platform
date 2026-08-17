@@ -9,7 +9,7 @@ import {
   type JsonValue,
   type PersistedStageResult,
 } from "@ai-career/evaluation";
-import type { Prisma } from "../generated/prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
 
 function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
@@ -70,6 +70,7 @@ type EvaluationRecord = Prisma.EvaluationGetPayload<{
     stageResults: true;
     evidenceRecords: true;
     contradictions: true;
+    recommendation: true;
   };
 }>;
 
@@ -95,6 +96,25 @@ function mapEvaluation(record: EvaluationRecord): EvaluationSnapshot {
     promptVersion: record.promptVersion,
     userProfileVersion: record.userProfileVersion,
     executionMetadata: record.executionMetadata,
+    domainResult: record.domainResult,
+    recommendation: record.recommendation
+      ? {
+          id: record.recommendation.id,
+          opportunityId: record.recommendation.opportunityId,
+          evaluationId: record.recommendation.evaluationId,
+          decision: record.recommendation.decision,
+          explanation: record.recommendation.explanation,
+          strongestPositives: record.recommendation.strongestPositives,
+          strongestConcerns: record.recommendation.strongestConcerns,
+          reviewConditions: record.recommendation.reviewConditions,
+          unknowns: record.recommendation.unknowns,
+          contradictions: record.recommendation.contradictions,
+          evidenceReferences: record.recommendation.evidenceReferences,
+          evaluationVersion: record.recommendation.evaluationVersion,
+          createdAt: record.recommendation.createdAt,
+          updatedAt: record.recommendation.updatedAt,
+        }
+      : null,
     errorMessage: record.errorMessage,
     startedAt: record.startedAt,
     completedAt: record.completedAt,
@@ -103,6 +123,7 @@ function mapEvaluation(record: EvaluationRecord): EvaluationSnapshot {
     stageResults: record.stageResults.map(mapStageResult),
     evidenceRecords: record.evidenceRecords.map((evidence) => ({
       id: evidence.id,
+      referenceId: evidence.referenceId,
       evaluationId: evidence.evaluationId,
       stageResultId: evidence.stageResultId,
       stageId: evidence.stageId,
@@ -246,6 +267,7 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
         stageResults: { orderBy: { position: "asc" } },
         evidenceRecords: { orderBy: { createdAt: "asc" } },
         contradictions: { orderBy: { createdAt: "asc" } },
+        recommendation: true,
       },
     });
     return evaluation ? mapEvaluation(evaluation) : null;
@@ -352,6 +374,7 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
             evaluationId: input.evaluationId,
             stageResultId: input.stageResultId,
             stageId: input.stageId,
+            referenceId: evidence.referenceId,
             criterionId: evidence.criterionId,
             claim: evidence.claim,
             sourceType: evidence.sourceType,
@@ -441,13 +464,74 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
   async finishEvaluation(
     input: Parameters<EvaluationRepository["finishEvaluation"]>[0],
   ) {
-    await this.database.evaluation.update({
-      where: { id: input.evaluationId },
-      data: {
-        status: input.status,
-        errorMessage: input.errorMessage,
-        completedAt: new Date(),
-      },
+    await this.database.$transaction(async (transaction) => {
+      const evaluation = await transaction.evaluation.update({
+        where: { id: input.evaluationId },
+        data: {
+          status: input.status,
+          errorMessage: input.errorMessage,
+          domainResult:
+            input.domainResult === undefined
+              ? undefined
+              : input.domainResult === null
+                ? Prisma.JsonNull
+                : asInputJson(input.domainResult),
+          completedAt: new Date(),
+        },
+        select: {
+          opportunityId: true,
+          evaluationVersion: true,
+        },
+      });
+
+      if (input.status === "COMPLETED" && input.recommendation) {
+        await transaction.recommendation.upsert({
+          where: { evaluationId: input.evaluationId },
+          create: {
+            opportunityId: evaluation.opportunityId,
+            evaluationId: input.evaluationId,
+            decision: input.recommendation.decision,
+            strongestPositives: input.recommendation.strongestPositives === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.strongestPositives),
+            strongestConcerns: input.recommendation.strongestConcerns === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.strongestConcerns),
+            reviewConditions: input.recommendation.reviewConditions === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.reviewConditions),
+            unknowns: input.recommendation.unknowns === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.unknowns),
+            contradictions: input.recommendation.contradictions === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.contradictions),
+            evidenceReferences: input.recommendation.evidenceReferences,
+            explanation: input.recommendation.explanation,
+            evaluationVersion: evaluation.evaluationVersion,
+          },
+          update: {
+            decision: input.recommendation.decision,
+            strongestPositives: input.recommendation.strongestPositives === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.strongestPositives),
+            strongestConcerns: input.recommendation.strongestConcerns === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.strongestConcerns),
+            reviewConditions: input.recommendation.reviewConditions === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.reviewConditions),
+            unknowns: input.recommendation.unknowns === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.unknowns),
+            contradictions: input.recommendation.contradictions === null
+              ? Prisma.JsonNull
+              : asInputJson(input.recommendation.contradictions),
+            evidenceReferences: input.recommendation.evidenceReferences,
+            explanation: input.recommendation.explanation,
+          },
+        });
+      }
     });
   }
 }

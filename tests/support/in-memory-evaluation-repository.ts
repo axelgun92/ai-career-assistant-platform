@@ -115,6 +115,8 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       promptVersion: input.evaluator.promptVersion,
       userProfileVersion: input.userProfileVersion,
       executionMetadata: input.executionMetadata,
+      domainResult: null,
+      recommendation: null,
       errorMessage: null,
       startedAt: null,
       completedAt: null,
@@ -194,6 +196,7 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       evidenceIds.set(evidence.referenceId, id);
       snapshot.evidenceRecords.push({
         id,
+        referenceId: evidence.referenceId,
         evaluationId: input.evaluationId,
         stageResultId: stage.id,
         stageId: stage.stageId,
@@ -281,6 +284,18 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
     const snapshot = this.requireSnapshot(input.evaluationId);
     snapshot.status = input.status;
     snapshot.errorMessage = input.errorMessage;
+    snapshot.domainResult = input.domainResult ?? null;
+    snapshot.recommendation = input.recommendation
+      ? {
+          id: randomUUID(),
+          opportunityId: snapshot.opportunityId,
+          evaluationId: snapshot.id,
+          evaluationVersion: snapshot.evaluationVersion,
+          ...input.recommendation,
+          createdAt: now(),
+          updatedAt: now(),
+        }
+      : null;
     snapshot.completedAt = now();
     snapshot.updatedAt = now();
   }

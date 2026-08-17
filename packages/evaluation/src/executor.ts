@@ -18,6 +18,10 @@ import {
   StructuredOutputValidationError,
 } from "./errors";
 
+function toJsonValue(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
 const executionInputSchema = z
   .object({
     opportunityId: z.uuid(),
@@ -206,6 +210,8 @@ async function finalize<TResult, TDomainData>(input: {
       evaluationId: snapshot.id,
       status: "FAILED",
       errorMessage: reason,
+      domainResult: null,
+      recommendation: null,
     });
     snapshot = evaluationSnapshotSchema.parse(
       await input.repository.getEvaluationSnapshot(snapshot.id),
@@ -231,6 +237,8 @@ async function finalize<TResult, TDomainData>(input: {
       errorMessage: `Final domain result validation failed: ${
         error instanceof Error ? error.message : "Unknown finalization failure"
       }`,
+      domainResult: null,
+      recommendation: null,
     });
     snapshot = evaluationSnapshotSchema.parse(
       await input.repository.getEvaluationSnapshot(snapshot.id),
@@ -241,6 +249,8 @@ async function finalize<TResult, TDomainData>(input: {
     evaluationId: snapshot.id,
     status: "COMPLETED",
     errorMessage: null,
+    domainResult: toJsonValue(domainResult),
+    recommendation: input.evaluator.toRecommendation?.(domainResult) ?? null,
   });
   snapshot = evaluationSnapshotSchema.parse(
     await input.repository.getEvaluationSnapshot(snapshot.id),
@@ -249,6 +259,48 @@ async function finalize<TResult, TDomainData>(input: {
 }
 
 export function createEvaluationExecutor(repository: EvaluationRepository) {
+  async function executeExisting<TDomainData, TResult>(input: {
+    evaluationId: string;
+    evaluator: DomainEvaluatorDefinition<TDomainData, TResult>;
+    domainData: TDomainData;
+  }): Promise<CoreEvaluationResult<TResult>> {
+    const evaluationId = z.uuid().parse(input.evaluationId);
+    const snapshot = await repository.getEvaluationSnapshot(evaluationId);
+    if (!snapshot) throw new Error("Evaluation does not exist");
+    if (
+      snapshot.domain !== input.evaluator.domain ||
+      snapshot.evaluationVersion !== input.evaluator.evaluationVersion ||
+      snapshot.domainVersion !== input.evaluator.domainVersion ||
+      snapshot.ruleVersion !== input.evaluator.ruleVersion
+    ) {
+      throw new Error("Evaluator versions do not match the evaluation");
+    }
+    const subject = await repository.loadSubject({
+      opportunityId: snapshot.opportunityId,
+      userProfileId: snapshot.userProfileId,
+    });
+    if (!subject) throw new Error("Evaluation subject no longer exists");
+    if (subject.opportunity.status !== "NORMALIZED") {
+      throw new Error("Only a NORMALIZED Opportunity can be evaluated");
+    }
+
+    await repository.markEvaluationRunning(evaluationId);
+    await executePendingStages({
+      repository,
+      evaluator: input.evaluator,
+      evaluationId,
+      subject,
+      domainData: input.domainData,
+    });
+    return finalize({
+      repository,
+      evaluator: input.evaluator,
+      subject,
+      domainData: input.domainData,
+      evaluationId,
+    });
+  }
+
   return {
     async execute<TDomainData, TResult>(input: {
       opportunityId: string;
@@ -275,22 +327,14 @@ export function createEvaluationExecutor(repository: EvaluationRepository) {
         evaluator: input.evaluator as DomainEvaluatorDefinition<unknown, unknown>,
         executionMetadata: request.executionMetadata,
       });
-      await repository.markEvaluationRunning(evaluationId);
-      await executePendingStages({
-        repository,
-        evaluator: input.evaluator,
+      return executeExisting({
         evaluationId,
-        subject,
-        domainData: input.domainData,
-      });
-      return finalize({
-        repository,
         evaluator: input.evaluator,
-        subject,
         domainData: input.domainData,
-        evaluationId,
       });
     },
+
+    executeExisting,
 
     async retryStage<TDomainData, TResult>(input: {
       evaluationId: string;

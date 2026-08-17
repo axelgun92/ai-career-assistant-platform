@@ -57,10 +57,10 @@ export function createCustomerSuccessDomainData(input: {
 export function createCustomerSuccessEvaluator() {
   return defineDomainEvaluator({
     domain: "customer-success",
-    evaluationVersion: "cs-evaluation-v1.1-m8",
+    evaluationVersion: "cs-evaluation-v1.1-m9",
     domainVersion: "customer-success-v1.1",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-m8-prompts-v1",
+    promptVersion: "cs-m9-prompts-v1",
     stages: [
       createHardFiltersStage(),
       createJobEvaluationStage(),
@@ -128,6 +128,21 @@ export function createCustomerSuccessEvaluator() {
         availableEvidence,
       });
       return { ...parsed, ...synthesis };
+    },
+    toRecommendation(result) {
+      return {
+        decision: result.recommendation.recommendation,
+        explanation: [
+          result.recommendation.summary,
+          ...result.recommendation.precedenceReasons,
+        ].join(" "),
+        strongestPositives: result.strengths,
+        strongestConcerns: result.concerns,
+        reviewConditions: result.recommendation.decisionRelevantUnknowns,
+        unknowns: result.unknowns,
+        contradictions: result.contradictions,
+        evidenceReferences: result.recommendation.evidenceReferences,
+      };
     },
   });
 }

@@ -125,10 +125,10 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       expect.objectContaining({
         domain: "customer-success",
         status: "COMPLETED",
-        evaluationVersion: "cs-evaluation-v1.1-m8",
+        evaluationVersion: "cs-evaluation-v1.1-m9",
         domainVersion: "customer-success-v1.1",
         ruleVersion: "cs-rules-v1.1",
-        promptVersion: "cs-m8-prompts-v1",
+        promptVersion: "cs-m9-prompts-v1",
         userProfileVersion: 3,
         executionMetadata: { trigger: "milestone-eight-integration-test" },
       }),

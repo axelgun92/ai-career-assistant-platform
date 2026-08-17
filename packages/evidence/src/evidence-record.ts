@@ -52,7 +52,6 @@ export const evidenceRecordDraftSchema = evidenceRecordBaseSchema.superRefine(
 );
 
 export const persistedEvidenceRecordSchema = evidenceRecordBaseSchema
-  .omit({ referenceId: true })
   .extend({
     id: z.uuid(),
     evaluationId: z.uuid(),

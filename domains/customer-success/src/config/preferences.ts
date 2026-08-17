@@ -286,8 +286,21 @@ export type CustomerSuccessPreferences = z.infer<
   typeof customerSuccessPreferencesSchema
 >;
 
+export const customerSuccessDomainPreferencesSchema = z
+  .object({
+    customerSuccess: customerSuccessPreferencesSchema,
+  })
+  .strict();
+
 export function defineCustomerSuccessPreferences(
   input: z.input<typeof customerSuccessPreferencesSchema>,
 ): CustomerSuccessPreferences {
   return customerSuccessPreferencesSchema.parse(input);
+}
+
+export function loadCustomerSuccessPreferencesFromProfile(
+  domainPreferences: unknown,
+): CustomerSuccessPreferences {
+  return customerSuccessDomainPreferencesSchema.parse(domainPreferences)
+    .customerSuccess;
 }

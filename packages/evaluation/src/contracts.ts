@@ -112,6 +112,30 @@ export const persistedStageResultSchema = z
   })
   .strict();
 
+export const recommendationPersistenceSchema = z
+  .object({
+    decision: requiredText,
+    explanation: requiredText,
+    strongestPositives: z.json().nullable(),
+    strongestConcerns: z.json().nullable(),
+    reviewConditions: z.json().nullable(),
+    unknowns: z.json().nullable(),
+    contradictions: z.json().nullable(),
+    evidenceReferences: z.array(requiredText),
+  })
+  .strict();
+
+export const persistedRecommendationSchema = recommendationPersistenceSchema
+  .extend({
+    id: z.uuid(),
+    opportunityId: z.uuid(),
+    evaluationId: z.uuid(),
+    evaluationVersion: requiredText,
+    createdAt: z.coerce.date(),
+    updatedAt: z.coerce.date(),
+  })
+  .strict();
+
 export const evaluationSnapshotSchema = z
   .object({
     id: z.uuid(),
@@ -125,6 +149,8 @@ export const evaluationSnapshotSchema = z
     promptVersion: optionalText,
     userProfileVersion: z.number().int().positive().nullable(),
     executionMetadata: z.record(z.string(), z.json()).nullable(),
+    domainResult: z.json().nullable(),
+    recommendation: persistedRecommendationSchema.nullable(),
     errorMessage: optionalText,
     startedAt: z.coerce.date().nullable(),
     completedAt: z.coerce.date().nullable(),
@@ -207,6 +233,7 @@ export interface DomainEvaluatorDefinition<TDomainData, TResult> {
   stages: CoreEvaluationStage<TDomainData>[];
   resultSchema: z.ZodType<TResult>;
   finalize(context: CoreEvaluationContext<TDomainData>): Promise<unknown>;
+  toRecommendation?(result: TResult): RecommendationPersistence;
 }
 
 export interface CoreEvaluationResult<TResult> {
@@ -248,6 +275,8 @@ export interface EvaluationRepository {
     evaluationId: string;
     status: "COMPLETED" | "FAILED";
     errorMessage: string | null;
+    domainResult?: JsonValue | null;
+    recommendation?: RecommendationPersistence | null;
   }): Promise<void>;
 }
 
@@ -269,3 +298,9 @@ export type PersistedStageResult = z.infer<
   typeof persistedStageResultSchema
 >;
 export type EvaluationSnapshot = z.infer<typeof evaluationSnapshotSchema>;
+export type RecommendationPersistence = z.infer<
+  typeof recommendationPersistenceSchema
+>;
+export type PersistedRecommendation = z.infer<
+  typeof persistedRecommendationSchema
+>;

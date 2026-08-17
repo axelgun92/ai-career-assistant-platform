@@ -12,6 +12,7 @@ export * from "./schemas/opportunity-priority";
 export * from "./schemas/ghost-job-risk";
 export * from "./schemas/recommendation";
 export * from "./profile/user-profile";
+export * from "./production/semantic-operations";
 export { burnoutRiskBand } from "./evaluation/burnout-risk";
 export { resumeMatchBand } from "./evaluation/resume-match";
 export {

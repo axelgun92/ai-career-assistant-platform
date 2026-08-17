@@ -11,8 +11,13 @@
   },
   "dependencies": {
     "@ai-career/core": "workspace:*",
+    "@ai-career/customer-success": "workspace:*",
     "@ai-career/database": "workspace:*",
+    "@ai-career/evaluation": "workspace:*",
+    "@ai-career/evidence": "workspace:*",
     "@ai-career/normalization": "workspace:*",
+    "@ai-career/shared": "workspace:*",
+    "dotenv": "17.4.2",
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",

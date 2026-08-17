@@ -42,6 +42,13 @@ enum EvaluationStatus {
   FAILED
 }
 
+enum SemanticOperationStatus {
+  SUCCESS
+  VALIDATION_FAILURE
+  PROVIDER_FAILURE
+  TIMEOUT
+}
+
 enum EvidenceLevel {
   CONFIRMED
   STRONG_EVIDENCE
@@ -234,28 +241,31 @@ model UserProfile {
 }
 
 model Evaluation {
-  id                 String           @id @default(uuid()) @db.Uuid
-  opportunityId      String           @db.Uuid
-  opportunity        Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  userProfileId      String?          @db.Uuid
-  userProfile        UserProfile?     @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  id                 String                     @id @default(uuid()) @db.Uuid
+  opportunityId      String                     @db.Uuid
+  opportunity        Opportunity                @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  userProfileId      String?                    @db.Uuid
+  userProfile        UserProfile?               @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
   domain             String
-  status             EvaluationStatus @default(PENDING)
+  status             EvaluationStatus           @default(PENDING)
   evaluationVersion  String
   domainVersion      String
   ruleVersion        String
   promptVersion      String?
   userProfileVersion Int?
   executionMetadata  Json?
+  domainResult       Json?
   stageResults       StageResult[]
   evidenceRecords    EvidenceRecord[]
   contradictions     Contradiction[]
   recommendation     Recommendation?
-  errorMessage       String?          @db.Text
-  startedAt          DateTime?        @db.Timestamptz(3)
-  completedAt        DateTime?        @db.Timestamptz(3)
-  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+  task               EvaluationTask?
+  semanticOperations SemanticOperationAttempt[]
+  errorMessage       String?                    @db.Text
+  startedAt          DateTime?                  @db.Timestamptz(3)
+  completedAt        DateTime?                  @db.Timestamptz(3)
+  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
 
   @@index([opportunityId, createdAt])
   @@index([userProfileId])
@@ -297,6 +307,7 @@ model EvidenceRecord {
   stageResultId   String?          @db.Uuid
   stageResult     StageResult?     @relation(fields: [stageResultId], references: [id], onDelete: Cascade)
   stageId         String?
+  referenceId     String
   criterionId     String?
   claim           String           @db.Text
   sourceType      String
@@ -316,6 +327,7 @@ model EvidenceRecord {
   @@index([opportunityId])
   @@index([evaluationId, stageId])
   @@index([stageResultId])
+  @@index([evaluationId, referenceId])
   @@index([sourceRecordId])
   @@index([provenanceId])
   @@index([evidenceLevel])
@@ -354,8 +366,10 @@ model Recommendation {
   scoreSummary       Json?
   strongestPositives Json?
   strongestConcerns  Json?
+  reviewConditions   Json?
   unknowns           Json?
   contradictions     Json?
+  evidenceReferences String[]
   explanation        String      @db.Text
   evaluationVersion  String
   createdAt          DateTime    @default(now()) @db.Timestamptz(3)
@@ -363,4 +377,48 @@ model Recommendation {
 
   @@index([opportunityId, createdAt])
   @@index([decision])
+}
+
+model EvaluationTask {
+  id             String           @id @default(uuid()) @db.Uuid
+  evaluationId   String           @unique @db.Uuid
+  evaluation     Evaluation       @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  status         EvaluationStatus @default(PENDING)
+  attempt        Int              @default(0)
+  maxAttempts    Int
+  availableAt    DateTime         @default(now()) @db.Timestamptz(3)
+  claimedAt      DateTime?        @db.Timestamptz(3)
+  leaseExpiresAt DateTime?        @db.Timestamptz(3)
+  startedAt      DateTime?        @db.Timestamptz(3)
+  completedAt    DateTime?        @db.Timestamptz(3)
+  errorCode      String?
+  errorMessage   String?          @db.Text
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@index([status, availableAt])
+  @@index([leaseExpiresAt])
+}
+
+model SemanticOperationAttempt {
+  id                String                  @id @default(uuid()) @db.Uuid
+  evaluationId      String                  @db.Uuid
+  evaluation        Evaluation              @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  operationId       String
+  promptVersion     String
+  attempt           Int
+  provider          String
+  model             String
+  status            SemanticOperationStatus
+  inputTokens       Int?
+  outputTokens      Int?
+  totalTokens       Int?
+  durationMs        Int
+  providerRequestId String?
+  errorCode         String?
+  errorMessage      String?                 @db.Text
+  createdAt         DateTime                @default(now()) @db.Timestamptz(3)
+
+  @@unique([evaluationId, operationId, attempt])
+  @@index([evaluationId, createdAt])
 }
