@@ -7,8 +7,10 @@ export * from "./schemas/company-alignment";
 export * from "./schemas/organizational-maturity";
 export * from "./schemas/alex-fit";
 export * from "./schemas/burnout-risk";
+export * from "./schemas/resume-match";
 export * from "./profile/user-profile";
 export { burnoutRiskBand } from "./evaluation/burnout-risk";
+export { resumeMatchBand } from "./evaluation/resume-match";
 
 import { createCustomerSuccessEvaluator } from "./evaluator";
 

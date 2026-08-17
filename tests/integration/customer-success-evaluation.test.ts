@@ -42,7 +42,7 @@ afterAll(async () => {
 });
 
 describe("Customer Success evaluation PostgreSQL integration", () => {
-  it("runs a normalized manual JD and versioned profile through all six CS stages", async () => {
+  it("runs a normalized manual JD and versioned profile through all seven CS stages", async () => {
     const manualService = createManualOpportunityService({
       repository: new PrismaManualOpportunityRepository(),
       normalizer: createManualOpportunityNormalizer(),
@@ -108,7 +108,7 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         preferences: customerSuccessTestPreferences,
         semanticOperations: fixture.semanticOperations,
       }),
-      executionMetadata: { trigger: "milestone-six-integration-test" },
+      executionMetadata: { trigger: "milestone-seven-integration-test" },
     });
 
     const persisted = await database.evaluation.findUniqueOrThrow({
@@ -125,12 +125,12 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       expect.objectContaining({
         domain: "customer-success",
         status: "COMPLETED",
-        evaluationVersion: "cs-evaluation-v1.1-m6",
+        evaluationVersion: "cs-evaluation-v1.1-m7",
         domainVersion: "customer-success-v1.1",
         ruleVersion: "cs-rules-v1.1",
-        promptVersion: "cs-m6-prompts-v1",
+        promptVersion: "cs-m7-prompts-v1",
         userProfileVersion: 3,
-        executionMetadata: { trigger: "milestone-six-integration-test" },
+        executionMetadata: { trigger: "milestone-seven-integration-test" },
       }),
     );
     expect(persisted.opportunity.status).toBe("NORMALIZED");
@@ -141,6 +141,7 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       "organizational-maturity",
       "alex-fit",
       "burnout-risk",
+      "resume-match",
     ]);
     expect(persisted.stageResults.every((stage) => stage.status === "COMPLETED"))
       .toBe(true);
@@ -208,6 +209,20 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         }),
       }),
     );
+    expect(persisted.stageResults[6]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          band: "VERY_STRONG_VERY_HIGH",
+          match: expect.objectContaining({
+            score: 82,
+            effectiveSeniority: expect.objectContaining({
+              effectiveLevelFit: "TARGET_LEVEL",
+            }),
+          }),
+        }),
+      }),
+    );
     expect(persisted.evidenceRecords.length).toBeGreaterThan(0);
     expect(
       persisted.evidenceRecords.every(
@@ -223,11 +238,13 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
     expect(result.domainResult?.organizationalMaturity.evaluated).toBe(true);
     expect(result.domainResult?.alexFit.evaluated).toBe(true);
     expect(result.domainResult?.burnoutRisk.evaluated).toBe(true);
+    expect(result.domainResult?.resumeMatch.evaluated).toBe(true);
     expect(fixture.stats.reconstructionCalls).toBe(1);
     expect(fixture.stats.jobEvaluationCalls).toBe(1);
     expect(fixture.stats.companyAlignmentCalls).toBe(1);
     expect(fixture.stats.organizationalMaturityCalls).toBe(1);
     expect(fixture.stats.alexFitCalls).toBe(1);
     expect(fixture.stats.burnoutRiskCalls).toBe(1);
+    expect(fixture.stats.resumeMatchCalls).toBe(1);
   });
 });

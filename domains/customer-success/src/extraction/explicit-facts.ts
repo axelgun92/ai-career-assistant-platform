@@ -301,7 +301,7 @@ function parseRequirements(
     .filter(
       (value) =>
         value.length >= 8 &&
-        /\brequired\b|\bmust have\b|\bpreferred\b|\bideal(?:ly)?\b|nice to have|\d+\+?\s+years? of experience/i.test(
+        /\brequired\b|\bmust have\b|\bpreferred\b|\bideal(?:ly)?\b|nice to have|\d+(?:\s*(?:-|–|—|to)\s*\d+)?\+?\s+years? of experience/i.test(
           value,
         ),
     );
@@ -327,12 +327,20 @@ function parseRequirements(
       sourceText: candidate,
     });
     evidenceItems.push(item);
-    const years = candidate.match(/(\d+)\+?\s+years?/i)?.[1];
+    const yearsRange = candidate.match(
+      /(\d+)\s*(?:-|–|—|to)\s*(\d+)(\+)?\s+years?/i,
+    );
+    const singleYears = candidate.match(/(\d+)(\+)?\s+years?/i);
+    const minimumYears = yearsRange?.[1] ?? singleYears?.[1];
+    const maximumYears = yearsRange?.[2] ?? null;
+    const openEnded = Boolean(yearsRange?.[3] ?? singleYears?.[2]);
     requirements.push({
       requirement: candidate,
       category: requirementCategory(candidate),
       strength,
-      statedYears: years ? Number(years) : null,
+      statedYears: minimumYears ? Number(minimumYears) : null,
+      statedYearsMaximum: maximumYears ? Number(maximumYears) : null,
+      statedYearsOpenEnded: openEnded,
       experienceSpecificity: /customer success/i.test(candidate)
         ? "Customer Success"
         : /experience/i.test(candidate)

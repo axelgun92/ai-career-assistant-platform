@@ -328,6 +328,7 @@ describe("Customer Success Alex Fit", () => {
       "COMPLETED",
       "FAILED",
       "PENDING",
+      "PENDING",
     ]);
   });
 
@@ -340,6 +341,7 @@ describe("Customer Success Alex Fit", () => {
         "COMPLETED",
         "COMPLETED",
         "FAILED",
+        "PENDING",
         "PENDING",
       ]);
     const recovered = await initial.executor.retryStage({
@@ -501,6 +503,7 @@ describe("Customer Success Burnout Risk", () => {
       "COMPLETED",
       "COMPLETED",
       "FAILED",
+      "PENDING",
     ]);
   });
 
@@ -523,6 +526,7 @@ describe("Customer Success Burnout Risk", () => {
       "COMPLETED",
       "COMPLETED",
       "FAILED",
+      "PENDING",
     ]);
   });
 

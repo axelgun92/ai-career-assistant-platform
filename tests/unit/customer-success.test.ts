@@ -71,7 +71,7 @@ async function run(input: {
 }
 
 describe("Customer Success domain foundation", () => {
-  it("registers the domain and executes all six stages in order", async () => {
+  it("registers the domain and executes all seven stages in order", async () => {
     const { result, fixture } = await run({ scenario: "strong" });
 
     expect(customerSuccessDomain.id).toBe("customer-success");
@@ -83,6 +83,7 @@ describe("Customer Success domain foundation", () => {
         "organizational-maturity",
         "alex-fit",
         "burnout-risk",
+        "resume-match",
       ]);
     expect(result.evaluation.stageResults.map((stage) => stage.stageId)).toEqual([
       "hard-filters",
@@ -91,6 +92,7 @@ describe("Customer Success domain foundation", () => {
       "organizational-maturity",
       "alex-fit",
       "burnout-risk",
+      "resume-match",
     ]);
     expect(result.evaluation.status).toBe("COMPLETED");
     expect(fixture.stats.reconstructionCalls).toBe(1);
@@ -99,6 +101,7 @@ describe("Customer Success domain foundation", () => {
     expect(fixture.stats.organizationalMaturityCalls).toBe(1);
     expect(fixture.stats.alexFitCalls).toBe(0);
     expect(fixture.stats.burnoutRiskCalls).toBe(1);
+    expect(fixture.stats.resumeMatchCalls).toBe(0);
   });
 
   it("preserves the three maps, requirement strength, collaboration, and evidence origin", async () => {
@@ -214,10 +217,12 @@ describe("Customer Success domain foundation", () => {
     expect(fixture.stats.organizationalMaturityCalls).toBe(0);
     expect(fixture.stats.alexFitCalls).toBe(0);
     expect(fixture.stats.burnoutRiskCalls).toBe(0);
+    expect(fixture.stats.resumeMatchCalls).toBe(0);
     expect(result.domainResult!.companyAlignment.evaluated).toBe(false);
     expect(result.domainResult!.organizationalMaturity.evaluated).toBe(false);
     expect(result.domainResult!.alexFit.evaluated).toBe(false);
     expect(result.domainResult!.burnoutRisk.evaluated).toBe(false);
+    expect(result.domainResult!.resumeMatch.evaluated).toBe(false);
   });
 
   it("uses reconstructed work instead of a misleading title", async () => {
@@ -311,6 +316,7 @@ describe("Customer Success domain foundation", () => {
     });
     expect(recovered.evaluation.status).toBe("COMPLETED");
     expect(recovered.evaluation.stageResults.map((stage) => stage.status)).toEqual([
+      "COMPLETED",
       "COMPLETED",
       "COMPLETED",
       "COMPLETED",

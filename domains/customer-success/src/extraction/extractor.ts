@@ -10,6 +10,8 @@ import type { CompanyAlignmentData } from "../schemas/company-alignment";
 import type { JobEvaluationData } from "../schemas/results";
 import type { OrganizationalMaturityData } from "../schemas/organizational-maturity";
 import type { AlexFitData } from "../schemas/alex-fit";
+import type { BurnoutRiskData } from "../schemas/burnout-risk";
+import type { ResumeMatchData } from "../schemas/resume-match";
 import type { CustomerSuccessProfileContext } from "../profile/user-profile";
 import { extractExplicitCustomerSuccessFacts } from "./explicit-facts";
 
@@ -92,6 +94,26 @@ export interface CustomerSuccessSemanticOperations {
     preferences: Pick<
       CustomerSuccessPreferences,
       "workloadPreferences" | "workStylePreferences"
+    >;
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
+  }): Promise<unknown>;
+  evaluateResumeMatch(input: {
+    responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];
+    requirementMap: CustomerSuccessJdReconstruction["requirements"];
+    ownershipMap: CustomerSuccessJdReconstruction["ownershipMap"];
+    roleMetadata: CustomerSuccessJdReconstruction["roleMetadata"];
+    jobEvaluation: Extract<JobEvaluationData, { evaluated: true }>;
+    companyAlignment: Extract<CompanyAlignmentData, { evaluated: true }>;
+    organizationalMaturity: Extract<
+      OrganizationalMaturityData,
+      { evaluated: true }
+    >;
+    alexFit: Extract<AlexFitData, { evaluated: true }>;
+    burnoutRisk: Extract<BurnoutRiskData, { evaluated: true }>;
+    userProfile: CustomerSuccessProfileContext;
+    preferences: Pick<
+      CustomerSuccessPreferences,
+      "fitPreferences" | "careerStrategy"
     >;
     availableEvidence: CustomerSuccessJdReconstruction["evidence"];
   }): Promise<unknown>;

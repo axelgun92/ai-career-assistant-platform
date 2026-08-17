@@ -61,7 +61,7 @@ function statementEvidence(
 ): EvidenceRecordDraft {
   return evidenceRecordDraftSchema.parse({
     referenceId: `cs-profile-${category}-${index}`,
-    criterionId: "alex-fit",
+    criterionId: "customer-success-profile",
     claim: statement,
     sourceType: "USER_PROFILE",
     sourceRecordId: null,

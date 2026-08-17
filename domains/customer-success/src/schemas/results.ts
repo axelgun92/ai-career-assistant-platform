@@ -8,6 +8,7 @@ import { companyAlignmentDataSchema } from "./company-alignment";
 import { organizationalMaturityDataSchema } from "./organizational-maturity";
 import { alexFitDataSchema } from "./alex-fit";
 import { burnoutRiskDataSchema } from "./burnout-risk";
+import { resumeMatchDataSchema } from "./resume-match";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
@@ -138,6 +139,13 @@ export const customerSuccessMilestoneSixResultSchema =
     })
     .strict();
 
+export const customerSuccessMilestoneSevenResultSchema =
+  customerSuccessMilestoneSixResultSchema
+    .extend({
+      resumeMatch: resumeMatchDataSchema,
+    })
+    .strict();
+
 export type HardFiltersData = z.infer<typeof hardFiltersDataSchema>;
 export type SemanticJobEvaluation = z.infer<
   typeof semanticJobEvaluationSchema
@@ -151,4 +159,7 @@ export type CustomerSuccessMilestoneFiveResult = z.infer<
 >;
 export type CustomerSuccessMilestoneSixResult = z.infer<
   typeof customerSuccessMilestoneSixResultSchema
+>;
+export type CustomerSuccessMilestoneSevenResult = z.infer<
+  typeof customerSuccessMilestoneSevenResultSchema
 >;

@@ -113,6 +113,8 @@ export const requirementSchema = z
     category: requirementCategorySchema,
     strength: requirementStrengthSchema,
     statedYears: z.number().nonnegative().nullable(),
+    statedYearsMaximum: z.number().nonnegative().nullable(),
+    statedYearsOpenEnded: z.boolean(),
     experienceSpecificity: optionalText,
     evidenceReferences: evidenceReferences.min(1),
     ambiguity: z
@@ -122,7 +124,20 @@ export const requirementSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.statedYears !== null &&
+      value.statedYearsMaximum !== null &&
+      value.statedYearsMaximum < value.statedYears
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["statedYearsMaximum"],
+        message: "The maximum stated years cannot be below the minimum",
+      });
+    }
+  });
 
 export const requirementMapSchema = z.array(requirementSchema);
 

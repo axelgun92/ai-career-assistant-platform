@@ -7,6 +7,7 @@ import {
   type SemanticOrganizationalMaturity,
   type SemanticAlexFit,
   type SemanticBurnoutRisk,
+  type SemanticResumeMatch,
   type SemanticReconstruction,
 } from "@ai-career/customer-success";
 import { StageExecutionError } from "@ai-career/evaluation";
@@ -59,6 +60,19 @@ export interface BurnoutRiskFixtureOptions {
   complementaryCustomerSuccessScope?: boolean;
   genericPhrasesOnly?: boolean;
   contradictoryWorkloadEvidence?: boolean;
+}
+
+export interface ResumeMatchFixtureOptions {
+  score?: number;
+  effectiveLevelFit?: SemanticResumeMatch["effectiveSeniority"]["effectiveLevelFit"];
+  actualResponsibilitySeniority?: SemanticResumeMatch["effectiveSeniority"]["actualResponsibilitySeniority"]["classification"];
+  requirementClassifications?: SemanticResumeMatch["requirementAssessments"][number]["classification"][];
+  matchedExperienceSpecificities?: SemanticResumeMatch["requirementAssessments"][number]["matchedExperienceSpecificity"][];
+  contradiction?:
+    | "INFLATED_YEARS"
+    | "LOW_YEARS_SENIOR_SCOPE"
+    | "SENIOR_TITLE_ROUTINE_SCOPE"
+    | "JUNIOR_TITLE_SENIOR_SCOPE";
 }
 
 export const customerSuccessTestPreferences = defineCustomerSuccessPreferences({
@@ -142,10 +156,12 @@ export function createCustomerSuccessFixtureOperations(input: {
   failOrganizationalMaturityOnce?: boolean;
   failAlexFitOnce?: boolean;
   failBurnoutRiskOnce?: boolean;
+  failResumeMatchOnce?: boolean;
   companyAlignment?: CompanyAlignmentFixtureOptions;
   organizationalMaturity?: OrganizationalMaturityFixtureOptions;
   alexFit?: AlexFitFixtureOptions;
   burnoutRisk?: BurnoutRiskFixtureOptions;
+  resumeMatch?: ResumeMatchFixtureOptions;
 }) {
   const stats = {
     reconstructionCalls: 0,
@@ -154,11 +170,13 @@ export function createCustomerSuccessFixtureOperations(input: {
     organizationalMaturityCalls: 0,
     alexFitCalls: 0,
     burnoutRiskCalls: 0,
+    resumeMatchCalls: 0,
     companyAlignmentReceivedMaps: false,
     companyAlignmentReceivedPreferences: false,
     organizationalMaturityReceivedPriorResults: false,
     alexFitReceivedProfileAndPriorResults: false,
     burnoutRiskReceivedMapsAndPriorResults: false,
+    resumeMatchReceivedMapsProfileAndPriorResults: false,
   };
   const semanticOperations: CustomerSuccessSemanticOperations = {
     async reconstructJobDescription(source) {
@@ -1049,6 +1067,246 @@ export function createCustomerSuccessFixtureOperations(input: {
             ]
           : [],
       } satisfies SemanticBurnoutRisk;
+    },
+    async evaluateResumeMatch(resumeInput) {
+      stats.resumeMatchCalls += 1;
+      if (input.failResumeMatchOnce && stats.resumeMatchCalls === 1) {
+        throw new StageExecutionError({
+          code: "CS_RESUME_MATCH_TEMPORARY_FAILURE",
+          message: "Fixture Resume Match failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.resumeMatchReceivedMapsProfileAndPriorResults =
+        resumeInput.userProfile.version > 0 &&
+        resumeInput.jobEvaluation.evaluated &&
+        resumeInput.companyAlignment.evaluated &&
+        resumeInput.organizationalMaturity.evaluated &&
+        resumeInput.alexFit.evaluated &&
+        resumeInput.burnoutRisk.evaluated &&
+        resumeInput.responsibilityMap.areas.adoption !== undefined &&
+        resumeInput.ownershipMap.functions.customerSuccess !== undefined;
+      const options = input.resumeMatch ?? {};
+      const profileEvidence = resumeInput.availableEvidence.filter(
+        (item) => item.sourceType === "USER_PROFILE",
+      );
+      const directProfileReference =
+        profileEvidence.find((item) =>
+          item.evidenceType.includes("DIRECT_EXPERIENCE"),
+        )?.referenceId ?? profileEvidence[0]?.referenceId;
+      const transferableProfileReference =
+        profileEvidence.find(
+          (item) => item.evidenceType === "TRANSFERABLE_SKILL",
+        )?.referenceId ?? directProfileReference;
+      const gapProfileReference =
+        profileEvidence.find((item) =>
+          /\b(?:no|lack|without|not have|have not)\b/i.test(item.claim),
+        )?.referenceId ?? directProfileReference;
+      if (!directProfileReference || !transferableProfileReference) {
+        throw new Error("The Resume Match fixture requires profile evidence");
+      }
+      const requirementEvidence = resumeInput.requirementMap.flatMap(
+        (requirement) => requirement.evidenceReferences,
+      );
+      const requirementIndexes = resumeInput.requirementMap.map((_, index) => index);
+      const classifications = options.requirementClassifications ?? [];
+      const specificities = options.matchedExperienceSpecificities ?? [];
+      const requirementAssessments = resumeInput.requirementMap.map(
+        (requirement, index) => {
+          const classification =
+            classifications[index] ?? (index === 0 ? "STRONG_MATCH" : "UNKNOWN");
+          const matchedExperienceSpecificity =
+            specificities[index] ??
+            (classification === "STRONG_MATCH"
+              ? "DIRECT_CUSTOMER_SUCCESS"
+              : classification === "TRANSFERABLE_MATCH"
+                ? "TRANSFERABLE"
+                : classification === "PARTIAL_MATCH"
+                  ? "RELATED_CUSTOMER_RELATIONSHIP"
+                  : classification === "GENUINE_GAP"
+                    ? "UNSUPPORTED"
+                    : "UNKNOWN");
+          const profileReference =
+            classification === "TRANSFERABLE_MATCH"
+              ? transferableProfileReference
+              : classification === "GENUINE_GAP"
+                ? gapProfileReference
+              : directProfileReference;
+          return {
+            requirementIndex: index,
+            requirementText: requirement.requirement,
+            category: requirement.category,
+            strength: requirement.strength,
+            statedYears: requirement.statedYears,
+            statedYearsMaximum: requirement.statedYearsMaximum,
+            statedYearsOpenEnded: requirement.statedYearsOpenEnded,
+            requestedExperienceSpecificity: requirement.experienceSpecificity,
+            isAmbiguous: requirement.ambiguity.isAmbiguous,
+            ambiguityExplanation: requirement.ambiguity.explanation,
+            classification,
+            matchedExperienceSpecificity,
+            importanceExplanation: `${requirement.strength} requirements retain their documented strength.`,
+            explanation:
+              classification === "UNKNOWN"
+                ? "The profile does not provide enough evidence to assess this requirement."
+                : `The controlled fixture supports ${classification} without changing the JD requirement.`,
+            supportedPortion:
+              classification === "PARTIAL_MATCH"
+                ? "Related customer-relationship work is supported."
+                : null,
+            unsupportedPortion:
+              classification === "PARTIAL_MATCH"
+                ? "The specific SaaS context remains unsupported."
+                : null,
+            jdEvidenceReferences: requirement.evidenceReferences,
+            profileEvidenceReferences:
+              classification === "UNKNOWN" ? [] : [profileReference],
+          };
+        },
+      );
+      const score = options.score ?? 82;
+      const levelFit = options.effectiveLevelFit ?? "TARGET_LEVEL";
+      const responsibilitySeniority =
+        options.actualResponsibilitySeniority ?? "MID_LEVEL";
+      const jdSeniorityReferences = [
+        "actual-work",
+        ...(requirementEvidence.length > 0 ? requirementEvidence : []),
+      ];
+      const combinedEvidence = [
+        ...new Set([...jdSeniorityReferences, directProfileReference]),
+      ];
+      const contradictionReference = requirementEvidence[0] ?? "role-inference";
+      const contradictions = options.contradiction
+        ? [
+            {
+              claimA:
+                options.contradiction === "LOW_YEARS_SENIOR_SCOPE"
+                  ? "The posting requests only two to three years of experience."
+                  : options.contradiction === "SENIOR_TITLE_ROUTINE_SCOPE"
+                    ? "The title describes the role as senior."
+                    : options.contradiction === "JUNIOR_TITLE_SENIOR_SCOPE"
+                      ? "The title describes the role as junior or associate."
+                      : "The posting requests five or more years of experience.",
+              claimB:
+                options.contradiction === "INFLATED_YEARS" ||
+                options.contradiction === "SENIOR_TITLE_ROUTINE_SCOPE"
+                  ? "The actual responsibilities reflect routine early-to-mid-level scope."
+                  : "The actual responsibilities require substantial autonomy, authority, and strategic ownership.",
+              interpretation:
+                "The stated level signal conflicts with the reconstructed responsibility seniority.",
+              relevantField: "effectiveSeniority",
+              significance: "MATERIAL" as const,
+              evidenceReferencesA: [contradictionReference],
+              evidenceReferencesB: ["actual-work"],
+            },
+          ]
+        : [];
+      const findingFor = (
+        assessment: (typeof requirementAssessments)[number],
+      ) => ({
+        finding: assessment.explanation,
+        evidenceReferences: [
+          ...assessment.jdEvidenceReferences,
+          ...assessment.profileEvidenceReferences,
+        ],
+      });
+      return {
+        score,
+        scoreExplanation:
+          "The score holistically interprets requirement strength, experience specificity, responsibility alignment, gaps, and Unknowns without keyword counts or fixed weights.",
+        scoreEvidenceReferences: combinedEvidence,
+        summary:
+          "The resume assessment compares structured requirements and responsibilities with versioned profile evidence.",
+        requirementAssessments,
+        effectiveSeniority: {
+          statedYears: {
+            summary:
+              "Stated years are interpreted with their requirement strength rather than used alone.",
+            requirementIndexes: requirementIndexes.filter(
+              (index) => resumeInput.requirementMap[index]?.statedYears !== null,
+            ),
+            evidenceReferences: requirementEvidence,
+          },
+          requirementStrength: {
+            summary:
+              "Required, preferred, ideal, and nice-to-have expectations remain distinct.",
+            requirementIndexes,
+            evidenceReferences: requirementEvidence,
+          },
+          experienceSpecificity: {
+            summary:
+              "Direct, related, broader customer-facing, transferable, and Unknown experience remain distinct.",
+            requirementIndexes,
+            evidenceReferences: requirementEvidence,
+          },
+          actualResponsibilitySeniority: {
+            classification: responsibilitySeniority,
+            summary:
+              "Responsibility seniority is reconstructed from autonomy, authority, complexity, and ownership across the role.",
+            signals: [
+              {
+                signal: "STRATEGIC_OWNERSHIP",
+                assessment:
+                  responsibilitySeniority === "SENIOR" ||
+                  responsibilitySeniority === "HIGHLY_SENIOR"
+                    ? "ADVANCED"
+                    : "MODERATE",
+                explanation:
+                  "The actual-work evidence establishes the controlled responsibility level.",
+                evidenceReferences: ["actual-work"],
+              },
+            ],
+            evidenceReferences: ["actual-work"],
+          },
+          effectiveLevelFit: levelFit,
+          explanation:
+            "Effective Level Fit combines years, requirement strength, specificity, profile evidence, and actual responsibility seniority.",
+          evidenceReferences: combinedEvidence,
+        },
+        strongStrengths: requirementAssessments
+          .filter((item) =>
+            ["STRONG_MATCH", "TRANSFERABLE_MATCH"].includes(
+              item.classification,
+            ),
+          )
+          .map(findingFor),
+        partialMatches: requirementAssessments
+          .filter((item) => item.classification === "PARTIAL_MATCH")
+          .map(findingFor),
+        genuineGaps: requirementAssessments
+          .filter((item) => item.classification === "GENUINE_GAP")
+          .map(findingFor),
+        unknowns: [
+          ...requirementAssessments
+            .filter((item) => item.classification === "UNKNOWN")
+            .map((item) => ({
+              code: `requirement-${item.requirementIndex}-unknown`,
+              description: item.explanation,
+              materiality: `${item.strength} requirement remains unassessed.`,
+              evidenceReferences: item.jdEvidenceReferences,
+            })),
+          ...(resumeInput.requirementMap.length === 0
+            ? [
+                {
+                  code: "requirements-not-stated",
+                  description:
+                    "The available JD evidence contains no explicit candidate requirements.",
+                  materiality: "Requirement-level match completeness is limited.",
+                  evidenceReferences: [] as string[],
+                },
+              ]
+            : []),
+        ],
+        positioningRecommendations: [
+          {
+            recommendation:
+              "Emphasize the evidenced customer-outcome work using truthful profile language; do not claim unsupported direct experience or metrics.",
+            evidenceReferences: ["actual-work", directProfileReference],
+          },
+        ],
+        evidenceReferences: combinedEvidence,
+        contradictions,
+      } satisfies SemanticResumeMatch;
     },
   };
   return { semanticOperations, stats };
