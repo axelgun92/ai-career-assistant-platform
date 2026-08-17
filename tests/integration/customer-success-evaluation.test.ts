@@ -38,7 +38,7 @@ afterAll(async () => {
 });
 
 describe("Customer Success evaluation PostgreSQL integration", () => {
-  it("runs a normalized manual JD through reconstruction and both CS stages", async () => {
+  it("runs a normalized manual JD through reconstruction and all four CS stages", async () => {
     const manualService = createManualOpportunityService({
       repository: new PrismaManualOpportunityRepository(),
       normalizer: createManualOpportunityNormalizer(),
@@ -56,6 +56,9 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         "Own customer adoption, success plans, retention, and business reviews.",
         "Collaborate with Product to share customer feedback.",
         "Use product analytics and collaborate with engineering on API integrations.",
+        "We provide a subscription workflow platform to mid-market business customers.",
+        "Join a team of six CSMs reporting to the VP of Customer Success.",
+        "Coordinate escalations with Support, which owns technical resolution.",
         "3+ years of Customer Success experience required.",
         "Salesforce experience preferred.",
       ].join("\n"),
@@ -74,7 +77,7 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         preferences: customerSuccessTestPreferences,
         semanticOperations: fixture.semanticOperations,
       }),
-      executionMetadata: { trigger: "milestone-four-integration-test" },
+      executionMetadata: { trigger: "milestone-five-integration-test" },
     });
 
     const persisted = await database.evaluation.findUniqueOrThrow({
@@ -91,17 +94,19 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       expect.objectContaining({
         domain: "customer-success",
         status: "COMPLETED",
-        evaluationVersion: "cs-evaluation-v1.1-m4",
+        evaluationVersion: "cs-evaluation-v1.1-m5",
         domainVersion: "customer-success-v1.1",
         ruleVersion: "cs-rules-v1.1",
-        promptVersion: "cs-m4-prompts-v1",
-        executionMetadata: { trigger: "milestone-four-integration-test" },
+        promptVersion: "cs-m5-prompts-v1",
+        executionMetadata: { trigger: "milestone-five-integration-test" },
       }),
     );
     expect(persisted.opportunity.status).toBe("NORMALIZED");
     expect(persisted.stageResults.map((stage) => stage.stageId)).toEqual([
       "hard-filters",
       "job-evaluation",
+      "company-alignment",
+      "organizational-maturity",
     ]);
     expect(persisted.stageResults.every((stage) => stage.status === "COMPLETED"))
       .toBe(true);
@@ -128,6 +133,30 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         }),
       }),
     );
+    expect(persisted.stageResults[2]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          alignment: expect.objectContaining({
+            businessModel: expect.objectContaining({ classification: "SAAS" }),
+            productType: expect.objectContaining({ classification: "WORKFLOW" }),
+          }),
+        }),
+      }),
+    );
+    expect(persisted.stageResults[3]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          maturity: expect.objectContaining({
+            score: 84,
+            existingCustomerSuccessFunction: expect.objectContaining({
+              classification: "ESTABLISHED",
+            }),
+          }),
+        }),
+      }),
+    );
     expect(persisted.evidenceRecords.length).toBeGreaterThan(0);
     expect(
       persisted.evidenceRecords.every(
@@ -137,7 +166,11 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       ),
     ).toBe(true);
     expect(result.domainResult?.jobEvaluation.evaluated).toBe(true);
+    expect(result.domainResult?.companyAlignment.evaluated).toBe(true);
+    expect(result.domainResult?.organizationalMaturity.evaluated).toBe(true);
     expect(fixture.stats.reconstructionCalls).toBe(1);
     expect(fixture.stats.jobEvaluationCalls).toBe(1);
+    expect(fixture.stats.companyAlignmentCalls).toBe(1);
+    expect(fixture.stats.organizationalMaturityCalls).toBe(1);
   });
 });

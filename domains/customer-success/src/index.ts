@@ -3,6 +3,8 @@ export * from "./evaluator";
 export * from "./extraction/extractor";
 export * from "./schemas/maps";
 export * from "./schemas/results";
+export * from "./schemas/company-alignment";
+export * from "./schemas/organizational-maturity";
 
 import { createCustomerSuccessEvaluator } from "./evaluator";
 

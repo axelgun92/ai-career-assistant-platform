@@ -4,6 +4,8 @@ import {
   customerSuccessJdReconstructionSchema,
   roleClassificationSchema,
 } from "./maps";
+import { companyAlignmentDataSchema } from "./company-alignment";
+import { organizationalMaturityDataSchema } from "./organizational-maturity";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
@@ -118,6 +120,14 @@ export const customerSuccessMilestoneFourResultSchema = z
   })
   .strict();
 
+export const customerSuccessMilestoneFiveResultSchema =
+  customerSuccessMilestoneFourResultSchema
+    .extend({
+      companyAlignment: companyAlignmentDataSchema,
+      organizationalMaturity: organizationalMaturityDataSchema,
+    })
+    .strict();
+
 export type HardFiltersData = z.infer<typeof hardFiltersDataSchema>;
 export type SemanticJobEvaluation = z.infer<
   typeof semanticJobEvaluationSchema
@@ -125,4 +135,7 @@ export type SemanticJobEvaluation = z.infer<
 export type JobEvaluationData = z.infer<typeof jobEvaluationDataSchema>;
 export type CustomerSuccessMilestoneFourResult = z.infer<
   typeof customerSuccessMilestoneFourResultSchema
+>;
+export type CustomerSuccessMilestoneFiveResult = z.infer<
+  typeof customerSuccessMilestoneFiveResultSchema
 >;

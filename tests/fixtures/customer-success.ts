@@ -3,6 +3,8 @@ import {
   ownershipFunctions,
   responsibilityAreas,
   type CustomerSuccessSemanticOperations,
+  type SemanticCompanyAlignment,
+  type SemanticOrganizationalMaturity,
   type SemanticReconstruction,
 } from "@ai-career/customer-success";
 import { StageExecutionError } from "@ai-career/evaluation";
@@ -18,6 +20,26 @@ export type CustomerSuccessScenario =
   | "unrelated"
   | "software-only"
   | "contradictory";
+
+export interface CompanyAlignmentFixtureOptions {
+  businessModel?: SemanticCompanyAlignment["businessModel"]["classification"];
+  customerType?: SemanticCompanyAlignment["customerType"]["classification"];
+  productType?: SemanticCompanyAlignment["productType"]["classification"];
+  customerSegment?: SemanticCompanyAlignment["customerSegment"]["classification"];
+  enterpriseConcernSupported?: boolean;
+  developerConcernSupported?: boolean;
+  contradictoryCompanyEvidence?: boolean;
+}
+
+export interface OrganizationalMaturityFixtureOptions {
+  existingFunction?: SemanticOrganizationalMaturity["existingCustomerSuccessFunction"]["classification"];
+  operatingModel?: SemanticOrganizationalMaturity["customerOperatingModel"]["classification"];
+  score?: number;
+  scopeCreepSupported?: boolean;
+  multipleJobsSupported?: boolean;
+  unrealisticOwnershipSupported?: boolean;
+  contradictoryOrganizationEvidence?: boolean;
+}
 
 export const customerSuccessTestPreferences = defineCustomerSuccessPreferences({
   salary: {
@@ -96,8 +118,20 @@ function responsibilityFor(scenario: CustomerSuccessScenario) {
 export function createCustomerSuccessFixtureOperations(input: {
   scenario: CustomerSuccessScenario;
   failReconstructionOnce?: boolean;
+  failCompanyAlignmentOnce?: boolean;
+  failOrganizationalMaturityOnce?: boolean;
+  companyAlignment?: CompanyAlignmentFixtureOptions;
+  organizationalMaturity?: OrganizationalMaturityFixtureOptions;
 }) {
-  const stats = { reconstructionCalls: 0, jobEvaluationCalls: 0 };
+  const stats = {
+    reconstructionCalls: 0,
+    jobEvaluationCalls: 0,
+    companyAlignmentCalls: 0,
+    organizationalMaturityCalls: 0,
+    companyAlignmentReceivedMaps: false,
+    companyAlignmentReceivedPreferences: false,
+    organizationalMaturityReceivedPriorResults: false,
+  };
   const semanticOperations: CustomerSuccessSemanticOperations = {
     async reconstructJobDescription(source) {
       stats.reconstructionCalls += 1;
@@ -153,6 +187,66 @@ export function createCustomerSuccessFixtureOperations(input: {
             input.scenario === "software-only"
               ? "Use Microsoft Office and Slack."
               : "Use product analytics and collaborate with engineering on API integrations.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "company-model",
+          claim:
+            input.scenario === "software-only"
+              ? "The posting establishes only that the company uses office software."
+              : "The company sells a subscription workflow software platform.",
+          sourceText:
+            input.scenario === "software-only"
+              ? "Our team uses Microsoft Office and Slack."
+              : "We provide a subscription workflow platform to customer teams.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "customer-context",
+          claim: "The role serves a stated customer segment and customer type.",
+          sourceText:
+            "Guide mid-market business customers through adoption and outcomes.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "cs-function",
+          claim: "The role joins an existing Customer Success function.",
+          sourceText:
+            "Join a team of six CSMs reporting to the VP of Customer Success.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "handoff-design",
+          claim: "The posting describes a bounded Support handoff.",
+          sourceText:
+            "Coordinate escalations with Support, which owns technical resolution.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "founding-function",
+          claim: "The posting describes the first Customer Success hire.",
+          sourceText:
+            "You will be our first Customer Success hire and build the function.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "scope-creep",
+          claim: "The role combines several separately owned functions.",
+          sourceText:
+            "Own Customer Success, implementation, support, renewals, and Product Management.",
+          sourceRecordId: source.sourceRecordId,
+          provenanceId: source.provenanceId,
+        }),
+        evidence({
+          referenceId: "company-model-conflict",
+          claim: "The posting also describes a services-only business.",
+          sourceText: "We are a professional services consultancy with no software product.",
           sourceRecordId: source.sourceRecordId,
           provenanceId: source.provenanceId,
         }),
@@ -280,6 +374,389 @@ export function createCustomerSuccessFixtureOperations(input: {
         concerns: softwareOnly ? ["No meaningful technical bridge evidence."] : [],
         unknowns: [],
         contradictions: [],
+      };
+    },
+    async evaluateCompanyAlignment(company) {
+      stats.companyAlignmentCalls += 1;
+      if (
+        input.failCompanyAlignmentOnce &&
+        stats.companyAlignmentCalls === 1
+      ) {
+        throw new StageExecutionError({
+          code: "CS_COMPANY_ALIGNMENT_TEMPORARY_FAILURE",
+          message: "Fixture Company Alignment failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.companyAlignmentReceivedMaps =
+        company.responsibilityMap.areas.adoption !== undefined &&
+        company.ownershipMap.functions.product !== undefined &&
+        company.jobEvaluation.evaluated;
+      stats.companyAlignmentReceivedPreferences =
+        company.preferences.companyPreferences.preferredBusinessModels.includes(
+          "SAAS",
+        ) &&
+        company.preferences.productPreferences.moderatelyTechnicalAlignedWork.includes(
+          "ONBOARDING",
+        ) &&
+        company.preferences.customerPreferences
+          .enterpriseRequiresContextualEvidenceForConcern;
+      const options = input.companyAlignment ?? {};
+      const businessModel =
+        options.businessModel ??
+        (input.scenario === "software-only" ? "UNKNOWN" : "SAAS");
+      const customerType = options.customerType ?? "LIGHT_B2B";
+      const productType =
+        options.productType ??
+        (input.scenario === "software-only" ? "UNKNOWN" : "WORKFLOW");
+      const customerSegment = options.customerSegment ?? "MID_MARKET";
+      const assessment = <T extends string>(
+        classification: T,
+        explanation: string,
+        references: string[],
+      ) => ({
+        classification,
+        explanation,
+        evidenceReferences: classification === "UNKNOWN" ? [] : references,
+      });
+      const unknowns = [
+        businessModel === "UNKNOWN"
+          ? {
+              code: "business-model-unknown",
+              description:
+                "The available evidence does not establish the company's business model.",
+              materiality: "Company alignment is incomplete.",
+              evidenceReferences: [],
+            }
+          : null,
+        productType === "UNKNOWN"
+          ? {
+              code: "product-type-unknown",
+              description:
+                "The available evidence does not establish the product type.",
+              materiality: "Product alignment is incomplete.",
+              evidenceReferences: [],
+            }
+          : null,
+        customerType === "UNKNOWN"
+          ? {
+              code: "customer-type-unknown",
+              description: "Customer type is not established.",
+              materiality: null,
+              evidenceReferences: [],
+            }
+          : null,
+        customerSegment === "UNKNOWN"
+          ? {
+              code: "customer-segment-unknown",
+              description: "Customer segment is not established.",
+              materiality: null,
+              evidenceReferences: [],
+            }
+          : null,
+      ].filter((item) => item !== null);
+      const enterpriseConcern =
+        options.enterpriseConcernSupported === true &&
+        (customerType === "ENTERPRISE_HEAVY_B2B" ||
+          customerSegment === "ENTERPRISE");
+      const developerConcern =
+        options.developerConcernSupported === true &&
+        productType === "DEVELOPER_FOCUSED";
+      const evidenceReferences = [
+        ...(businessModel === "UNKNOWN" ? [] : ["company-model"]),
+        ...(productType === "UNKNOWN" ? [] : ["company-model"]),
+        ...(customerType === "UNKNOWN" ? [] : ["customer-context"]),
+        ...(customerSegment === "UNKNOWN" ? [] : ["customer-context"]),
+        ...(enterpriseConcern || developerConcern ? ["actual-work"] : []),
+      ];
+      return {
+        businessModel: assessment(
+          businessModel,
+          businessModel === "UNKNOWN"
+            ? "Using software does not establish a software business model."
+            : `The evidence supports the ${businessModel} business model classification.`,
+          ["company-model"],
+        ),
+        customerType: assessment(
+          customerType,
+          customerType === "UNKNOWN"
+            ? "Customer type remains Unknown."
+            : `The evidence supports the ${customerType} customer type.`,
+          ["customer-context"],
+        ),
+        productType: assessment(
+          productType,
+          productType === "UNKNOWN"
+            ? "Technical terminology or software use alone does not establish a product type."
+            : `The evidence supports the ${productType} product type.`,
+          ["company-model", "technology-work"],
+        ),
+        customerSegment: assessment(
+          customerSegment,
+          customerSegment === "UNKNOWN"
+            ? "Customer segment remains Unknown."
+            : `The evidence supports the ${customerSegment} customer segment.`,
+          ["customer-context"],
+        ),
+        alignmentSummary:
+          unknowns.length > 0
+            ? "Company alignment is only partially assessable from the available evidence."
+            : "The company context is assessed against the configured Customer Success preferences without numerical ranking.",
+        strategicAdvantages:
+          businessModel !== "UNKNOWN" && productType !== "UNKNOWN"
+            ? [
+                {
+                  finding:
+                    "The evidenced business and product context supports the configured career direction.",
+                  evidenceReferences: ["company-model"],
+                },
+              ]
+            : [],
+        potentialConcerns: [
+          ...(enterpriseConcern
+            ? [
+                {
+                  finding:
+                    "The enterprise environment is concerning because the role evidence also establishes incompatible scope or expectations.",
+                  evidenceReferences: ["customer-context", "actual-work"],
+                },
+              ]
+            : []),
+          ...(developerConcern
+            ? [
+                {
+                  finding:
+                    "The developer-focused product is concerning because the actual role requires deep engineering work.",
+                  evidenceReferences: ["company-model", "actual-work"],
+                },
+              ]
+            : []),
+        ],
+        unknowns,
+        evidenceReferences: [...new Set(evidenceReferences)],
+        contradictions: options.contradictoryCompanyEvidence
+          ? [
+              {
+                claimA: "The company sells a subscription software platform.",
+                claimB: "The company is a services-only consultancy.",
+                interpretation:
+                  "The available business-model descriptions conflict.",
+                relevantField: "businessModel",
+                significance: "MATERIAL",
+                evidenceReferencesA: ["company-model"],
+                evidenceReferencesB: ["company-model-conflict"],
+              },
+            ]
+          : [],
+      };
+    },
+    async evaluateOrganizationalMaturity(organization) {
+      stats.organizationalMaturityCalls += 1;
+      if (
+        input.failOrganizationalMaturityOnce &&
+        stats.organizationalMaturityCalls === 1
+      ) {
+        throw new StageExecutionError({
+          code: "CS_ORGANIZATIONAL_MATURITY_TEMPORARY_FAILURE",
+          message: "Fixture Organizational Maturity failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.organizationalMaturityReceivedPriorResults =
+        organization.jobEvaluation.evaluated &&
+        organization.companyAlignment.evaluated &&
+        organization.responsibilityMap.areas.adoption !== undefined;
+      const options = input.organizationalMaturity ?? {};
+      const existingFunction = options.existingFunction ?? "ESTABLISHED";
+      const operatingModel =
+        options.operatingModel ??
+        (input.scenario === "support-heavy"
+          ? "SUPPORT_HEAVY"
+          : input.scenario === "implementation-heavy"
+            ? "IMPLEMENTATION_HEAVY"
+            : input.scenario === "technical-cs"
+              ? "TECHNICAL_CS"
+              : input.scenario === "sales-heavy"
+                ? "EXPANSION_FOCUSED"
+                : "ADOPTION_FOCUSED");
+      const functionReference =
+        existingFunction === "BUILDING_FROM_SCRATCH"
+          ? "founding-function"
+          : "cs-function";
+      const score =
+        options.score ??
+        (existingFunction === "ESTABLISHED"
+          ? 84
+          : existingFunction === "PARTIALLY_ESTABLISHED"
+            ? 68
+            : existingFunction === "EMERGING"
+              ? 52
+              : existingFunction === "BUILDING_FROM_SCRATCH"
+                ? 34
+                : 55);
+      const knownDimension = (conclusion: string, reference: string) => ({
+        conclusion,
+        unknown: false,
+        evidenceReferences: [reference],
+      });
+      const scopeCreep = options.scopeCreepSupported === true;
+      const multipleJobs = options.multipleJobsSupported === true;
+      const unrealisticOwnership = options.unrealisticOwnershipSupported === true;
+      const functionReferences =
+        existingFunction === "UNKNOWN" ? [] : [functionReference];
+      const operatingReferences =
+        operatingModel === "UNKNOWN" ? [] : ["actual-work"];
+      const scoreEvidenceReferences = [
+        "actual-work",
+        "product-collaboration",
+        "handoff-design",
+        ...functionReferences,
+        ...(scopeCreep || multipleJobs || unrealisticOwnership
+          ? ["scope-creep"]
+          : []),
+      ];
+      return {
+        score,
+        scoreExplanation:
+          "The bounded score holistically interprets the three criteria; it is not a weighted calculation.",
+        scoreEvidenceReferences: [...new Set(scoreEvidenceReferences)],
+        existingCustomerSuccessFunction: {
+          classification: existingFunction,
+          explanation:
+            existingFunction === "UNKNOWN"
+              ? "The available evidence does not establish whether a CS function exists."
+              : `The evidence supports ${existingFunction} CS-function maturity.`,
+          evidenceReferences: functionReferences,
+        },
+        customerOperatingModel: {
+          classification: operatingModel,
+          explanation:
+            operatingModel === "UNKNOWN"
+              ? "Responsibility patterns are insufficient to establish an operating model."
+              : `The responsibility and ownership patterns support ${operatingModel}.`,
+          evidenceReferences: operatingReferences,
+          substantialPatterns:
+            operatingModel === "UNKNOWN"
+              ? []
+              : operatingModel === "HYBRID"
+                ? ["ADOPTION_FOCUSED", "EDUCATION_FOCUSED"]
+                : [operatingModel],
+        },
+        ownershipAndCrossFunctionalDesign: {
+          summary:
+            scopeCreep || multipleJobs || unrealisticOwnership
+              ? "The evidence establishes material ownership-design concerns."
+              : "Collaboration and handoffs are bounded; broad collaboration alone is not treated as poor maturity.",
+          roleBoundaries: knownDimension(
+            "Customer Success owns customer outcomes while Product retains Product ownership.",
+            "product-collaboration",
+          ),
+          teamBoundaries: knownDimension(
+            "Support retains technical-resolution ownership.",
+            "handoff-design",
+          ),
+          handoffs: knownDimension(
+            "The posting describes an explicit Support handoff.",
+            "handoff-design",
+          ),
+          sharedOwnership: knownDimension(
+            "Product collaboration does not transfer Product ownership.",
+            "product-collaboration",
+          ),
+          crossFunctionalRelationships: knownDimension(
+            "The role collaborates with Product through a bounded relationship.",
+            "product-collaboration",
+          ),
+          unrelatedResponsibilities:
+            scopeCreep || multipleJobs
+              ? knownDimension(
+                  "The role includes unrelated functional ownership.",
+                  "scope-creep",
+                )
+              : knownDimension(
+                  "The evidenced cross-functional work remains collaborative.",
+                  "product-collaboration",
+                ),
+          scopeCreep: scopeCreep
+            ? knownDimension(
+                "The evidence establishes scope creep across distinct functions.",
+                "scope-creep",
+              )
+            : knownDimension(
+                "Collaboration evidence alone does not establish scope creep.",
+                "product-collaboration",
+              ),
+          multipleJobsCombined: multipleJobs
+            ? knownDimension(
+                "The posting combines multiple separately owned jobs.",
+                "scope-creep",
+              )
+            : knownDimension(
+                "The available ownership evidence describes one bounded CS role.",
+                "handoff-design",
+              ),
+          unrealisticOwnership: unrealisticOwnership
+            ? knownDimension(
+                "The role is solely accountable for several separate functions.",
+                "scope-creep",
+              )
+            : knownDimension(
+                "The described collaboration does not establish unrealistic ownership.",
+                "product-collaboration",
+              ),
+          evidenceReferences: [
+            "product-collaboration",
+            "handoff-design",
+            ...(scopeCreep || multipleJobs || unrealisticOwnership
+              ? ["scope-creep"]
+              : []),
+          ],
+        },
+        summary:
+          "Organizational maturity is assessed from the existing CS function, operating model, and ownership design only.",
+        positiveSignals: [
+          {
+            finding: "The posting describes bounded cross-functional handoffs.",
+            evidenceReferences: ["handoff-design"],
+          },
+        ],
+        weakSignals:
+          scopeCreep || multipleJobs || unrealisticOwnership
+            ? [
+                {
+                  finding:
+                    "The role combines ownership across distinct organizational functions.",
+                  evidenceReferences: ["scope-creep"],
+                },
+              ]
+            : [],
+        unknowns:
+          existingFunction === "UNKNOWN"
+            ? [
+                {
+                  code: "cs-function-unknown",
+                  description:
+                    "The posting does not establish whether an existing CS function exists.",
+                  materiality: "The maturity assessment is less complete.",
+                  evidenceReferences: [],
+                },
+              ]
+            : [],
+        evidenceReferences: [...new Set(scoreEvidenceReferences)],
+        contradictions: options.contradictoryOrganizationEvidence
+          ? [
+              {
+                claimA: "The role joins an established CS team.",
+                claimB: "The role is the first CS hire.",
+                interpretation:
+                  "The organizational-function descriptions conflict.",
+                relevantField: "existingCustomerSuccessFunction",
+                significance: "MATERIAL",
+                evidenceReferencesA: ["cs-function"],
+                evidenceReferencesB: ["founding-function"],
+              },
+            ]
+          : [],
       };
     },
   };

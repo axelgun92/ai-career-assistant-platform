@@ -47,7 +47,13 @@ async function run(input: {
   const subject = createSubject({
     rawText:
       input.rawText ??
-      "Remote - United States only. $70,000-$90,000. 3+ years of Customer Success experience required. Salesforce preferred.",
+      [
+        "Remote - United States only. $70,000-$90,000.",
+        "We provide a subscription workflow platform to mid-market business customers.",
+        "Join a team of six CSMs reporting to the VP of Customer Success.",
+        "Own adoption and coordinate escalations with Support, which owns technical resolution.",
+        "3+ years of Customer Success experience required. Salesforce preferred.",
+      ].join(" "),
     title: input.title,
     salaryText: input.salaryText,
   });
@@ -65,19 +71,28 @@ async function run(input: {
 }
 
 describe("Customer Success domain foundation", () => {
-  it("registers the domain and executes Hard Filters before Job Evaluation", async () => {
+  it("registers the domain and executes all four stages in order", async () => {
     const { result, fixture } = await run({ scenario: "strong" });
 
     expect(customerSuccessDomain.id).toBe("customer-success");
     expect(customerSuccessDomain.createEvaluator().stages.map((stage) => stage.id))
-      .toEqual(["hard-filters", "job-evaluation"]);
+      .toEqual([
+        "hard-filters",
+        "job-evaluation",
+        "company-alignment",
+        "organizational-maturity",
+      ]);
     expect(result.evaluation.stageResults.map((stage) => stage.stageId)).toEqual([
       "hard-filters",
       "job-evaluation",
+      "company-alignment",
+      "organizational-maturity",
     ]);
     expect(result.evaluation.status).toBe("COMPLETED");
     expect(fixture.stats.reconstructionCalls).toBe(1);
     expect(fixture.stats.jobEvaluationCalls).toBe(1);
+    expect(fixture.stats.companyAlignmentCalls).toBe(1);
+    expect(fixture.stats.organizationalMaturityCalls).toBe(1);
   });
 
   it("preserves the three maps, requirement strength, collaboration, and evidence origin", async () => {
@@ -189,6 +204,10 @@ describe("Customer Success domain foundation", () => {
       reason: "Job Evaluation was not performed because a hard filter failed.",
     });
     expect(fixture.stats.jobEvaluationCalls).toBe(0);
+    expect(fixture.stats.companyAlignmentCalls).toBe(0);
+    expect(fixture.stats.organizationalMaturityCalls).toBe(0);
+    expect(result.domainResult!.companyAlignment.evaluated).toBe(false);
+    expect(result.domainResult!.organizationalMaturity.evaluated).toBe(false);
   });
 
   it("uses reconstructed work instead of a misleading title", async () => {
@@ -282,6 +301,8 @@ describe("Customer Success domain foundation", () => {
     });
     expect(recovered.evaluation.status).toBe("COMPLETED");
     expect(recovered.evaluation.stageResults.map((stage) => stage.status)).toEqual([
+      "COMPLETED",
+      "COMPLETED",
       "COMPLETED",
       "COMPLETED",
     ]);

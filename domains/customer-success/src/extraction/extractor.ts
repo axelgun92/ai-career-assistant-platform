@@ -5,6 +5,9 @@ import {
   type CustomerSuccessJdReconstruction,
 } from "../schemas/maps";
 import type { CustomerSuccessDomainData } from "../evaluator";
+import type { CustomerSuccessPreferences } from "../config/preferences";
+import type { CompanyAlignmentData } from "../schemas/company-alignment";
+import type { JobEvaluationData } from "../schemas/results";
 import { extractExplicitCustomerSuccessFacts } from "./explicit-facts";
 
 export interface CustomerSuccessSemanticOperations {
@@ -24,6 +27,36 @@ export interface CustomerSuccessSemanticOperations {
       industry: string | null;
       size: string | null;
     };
+  }): Promise<unknown>;
+  evaluateCompanyAlignment(input: {
+    responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];
+    requirementMap: CustomerSuccessJdReconstruction["requirements"];
+    ownershipMap: CustomerSuccessJdReconstruction["ownershipMap"];
+    jobEvaluation: Extract<JobEvaluationData, { evaluated: true }>;
+    companyData: {
+      name: string | null;
+      brand: string | null;
+      parentCompany: string | null;
+      industry: string | null;
+      headquarters: string | null;
+      size: string | null;
+    };
+    preferences: Pick<
+      CustomerSuccessPreferences,
+      | "companyPreferences"
+      | "productPreferences"
+      | "customerPreferences"
+      | "careerStrategy"
+    >;
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
+  }): Promise<unknown>;
+  evaluateOrganizationalMaturity(input: {
+    responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];
+    requirementMap: CustomerSuccessJdReconstruction["requirements"];
+    ownershipMap: CustomerSuccessJdReconstruction["ownershipMap"];
+    jobEvaluation: Extract<JobEvaluationData, { evaluated: true }>;
+    companyAlignment: Extract<CompanyAlignmentData, { evaluated: true }>;
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
   }): Promise<unknown>;
 }
 

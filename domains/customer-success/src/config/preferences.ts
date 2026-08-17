@@ -2,6 +2,45 @@ import { z } from "zod";
 
 const requiredText = z.string().trim().min(1);
 
+export const businessModelPreferenceSchema = z.enum([
+  "SAAS",
+  "SOFTWARE",
+  "TECHNOLOGY",
+  "EDTECH",
+  "MARKETPLACE",
+  "SUBSCRIPTION",
+  "OTHER",
+]);
+
+export const customerTypePreferenceSchema = z.enum([
+  "B2C",
+  "B2B2C",
+  "LIGHT_B2B",
+  "ENTERPRISE_HEAVY_B2B",
+  "MIXED",
+]);
+
+export const productTypePreferenceSchema = z.enum([
+  "WORKFLOW",
+  "PRODUCTIVITY",
+  "COLLABORATION",
+  "LEARNING",
+  "AUTOMATION",
+  "NO_CODE",
+  "LOW_CODE",
+  "MODERATELY_TECHNICAL",
+  "DEVELOPER_FOCUSED",
+  "OTHER",
+]);
+
+export const customerSegmentPreferenceSchema = z.enum([
+  "SMB",
+  "MID_MARKET",
+  "COMMERCIAL",
+  "ENTERPRISE",
+  "MIXED",
+]);
+
 export const customerSuccessPreferencesSchema = z
   .object({
     salary: z
@@ -46,9 +85,71 @@ export const customerSuccessPreferencesSchema = z
         )
         .min(1),
     }),
-    companyPreferences: z.record(z.string(), z.json()).default({}),
-    productPreferences: z.record(z.string(), z.json()).default({}),
-    customerPreferences: z.record(z.string(), z.json()).default({}),
+    companyPreferences: z
+      .object({
+        preferredBusinessModels: z
+          .array(businessModelPreferenceSchema)
+          .default(["SAAS", "SOFTWARE", "TECHNOLOGY"]),
+        alsoAlignedBusinessModels: z
+          .array(businessModelPreferenceSchema)
+          .default(["EDTECH", "MARKETPLACE", "SUBSCRIPTION"]),
+      })
+      .strict()
+      .prefault({}),
+    productPreferences: z
+      .object({
+        preferredProductTypes: z
+          .array(productTypePreferenceSchema)
+          .default([
+            "WORKFLOW",
+            "PRODUCTIVITY",
+            "COLLABORATION",
+            "LEARNING",
+            "AUTOMATION",
+            "NO_CODE",
+            "LOW_CODE",
+          ]),
+        moderatelyTechnicalAlignedWork: z
+          .array(
+            z.enum([
+              "ONBOARDING",
+              "EDUCATION",
+              "ENABLEMENT",
+              "ADOPTION",
+              "CUSTOMER_GUIDANCE",
+            ]),
+          )
+          .default([
+            "ONBOARDING",
+            "EDUCATION",
+            "ENABLEMENT",
+            "ADOPTION",
+            "CUSTOMER_GUIDANCE",
+          ]),
+        developerFocusedRequiresDeepEngineeringConcern: z.boolean().default(true),
+      })
+      .strict()
+      .prefault({}),
+    customerPreferences: z
+      .object({
+        customerTypes: z.array(customerTypePreferenceSchema).default([
+          "B2C",
+          "B2B2C",
+          "LIGHT_B2B",
+          "ENTERPRISE_HEAVY_B2B",
+          "MIXED",
+        ]),
+        customerSegments: z.array(customerSegmentPreferenceSchema).default([
+          "SMB",
+          "MID_MARKET",
+          "COMMERCIAL",
+          "ENTERPRISE",
+          "MIXED",
+        ]),
+        enterpriseRequiresContextualEvidenceForConcern: z.boolean().default(true),
+      })
+      .strict()
+      .prefault({}),
     workStylePreferences: z.record(z.string(), z.json()).default({}),
     careerStrategy: z.record(z.string(), z.json()).default({}),
   })
