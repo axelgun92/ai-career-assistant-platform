@@ -46,4 +46,28 @@ export class PrismaEvaluationQueryRepository {
     });
     return evaluation?.id ?? null;
   }
+
+  async listEvaluationHistory(input: {
+    opportunityId: string;
+    domain?: string | null;
+  }) {
+    return this.database.evaluation.findMany({
+      where: {
+        opportunityId: input.opportunityId,
+        ...(input.domain ? { domain: input.domain } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        evaluationVersion: true,
+        promptVersion: true,
+        userProfileVersion: true,
+        createdAt: true,
+        completedAt: true,
+        task: { select: { status: true } },
+        recommendation: { select: { decision: true } },
+      },
+    });
+  }
 }

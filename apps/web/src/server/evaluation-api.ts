@@ -57,9 +57,11 @@ export function createEvaluationApiHandlers(service: EvaluationService) {
         return safeError(error);
       }
     },
-    async get(opportunityId: string) {
+    async get(opportunityId: string, evaluationId?: string | null) {
       try {
-        return Response.json(await service.getLatestEvaluation(opportunityId));
+        return Response.json(
+          await service.getLatestEvaluation(opportunityId, evaluationId),
+        );
       } catch (error) {
         return safeError(error);
       }
@@ -81,10 +83,15 @@ export async function handleProductionEvaluationPost(
   }
 }
 
-export async function handleProductionEvaluationGet(opportunityId: string) {
+export async function handleProductionEvaluationGet(
+  request: Request,
+  opportunityId: string,
+) {
   try {
+    const evaluationId = new URL(request.url).searchParams.get("evaluationId");
     return await createEvaluationApiHandlers(getEvaluationService()).get(
       opportunityId,
+      evaluationId,
     );
   } catch (error) {
     return safeError(error);

@@ -71,6 +71,13 @@ button:disabled {
   opacity: 0.65;
 }
 
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
+
 .error-message {
   color: #b91c1c;
 }
@@ -102,4 +109,352 @@ pre {
 
 .provenance-list li {
   margin-bottom: 0.75rem;
+}
+
+.opportunity-page {
+  max-width: 76rem;
+  padding-top: 2rem;
+}
+
+.evaluation-shell {
+  margin-top: 1.5rem;
+}
+
+.evaluation-controls,
+.opportunity-hero,
+.recommendation-panel,
+.history-panel,
+.source-details,
+.status-note {
+  padding: 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.evaluation-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  background: #f8fafc;
+}
+
+.evaluation-controls h2,
+.opportunity-hero h1,
+.recommendation-panel h2 {
+  margin: 0;
+}
+
+.evaluation-controls [aria-live] {
+  flex-basis: 100%;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.success-message {
+  color: #166534;
+}
+
+.warning-message,
+.unknown-callout {
+  padding: 0.8rem;
+  border-left: 4px solid #a16207;
+  background: #fefce8;
+  color: #713f12;
+}
+
+.opportunity-hero {
+  margin-top: 1.5rem;
+  background: #f8fafc;
+}
+
+.opportunity-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  line-height: 1.05;
+}
+
+.company-name {
+  margin: 0.5rem 0 1.5rem;
+  color: #475569;
+  font-size: 1.25rem;
+}
+
+.opportunity-facts,
+.compact-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.opportunity-facts > div,
+.compact-facts > div {
+  display: block;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background: #ffffff;
+}
+
+.opportunity-facts dt,
+.compact-facts dt {
+  color: #475569;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.opportunity-facts dd,
+.compact-facts dd {
+  margin-top: 0.3rem;
+}
+
+.recommendation-panel {
+  margin-top: 1rem;
+  border-width: 2px;
+  border-color: #334155;
+}
+
+.recommendation-explanation {
+  max-width: 70ch;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.classification {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid #64748b;
+  border-radius: 999px;
+  color: #0f172a;
+  background: #f1f5f9;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.classification-apply,
+.classification-pass,
+.classification-strong,
+.classification-good {
+  border-color: #15803d;
+  color: #14532d;
+  background: #f0fdf4;
+}
+
+.classification-review,
+.classification-unknown,
+.classification-mixed,
+.classification-stretch,
+.classification-material_uncertainty {
+  border-color: #a16207;
+  color: #713f12;
+  background: #fefce8;
+}
+
+.classification-skip,
+.classification-fail,
+.classification-low,
+.classification-decisive_disqualifier,
+.classification-very_high {
+  border-color: #b91c1c;
+  color: #7f1d1d;
+  background: #fef2f2;
+}
+
+.decision-grid,
+.criterion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.finding-group,
+.criterion,
+.effective-level,
+.requirement-card {
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+}
+
+.finding-group h4,
+.criterion h4,
+.requirement-card h5 {
+  margin-top: 0;
+}
+
+.finding-positive {
+  border-left: 4px solid #15803d;
+}
+
+.finding-concern {
+  border-left: 4px solid #b91c1c;
+}
+
+.result-section,
+.history-panel,
+.source-details {
+  margin-top: 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.65rem;
+  background: #ffffff;
+}
+
+.result-section > summary,
+.history-panel > summary,
+.source-details > summary {
+  padding: 1rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.result-section[open] > summary,
+.history-panel[open] > summary,
+.source-details[open] > summary {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-title {
+  display: inline-block;
+  min-width: 13rem;
+}
+
+.section-summary {
+  color: #475569;
+  font-weight: 400;
+}
+
+.section-content {
+  padding: 0 1rem 1rem;
+}
+
+.score-display {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1fr) minmax(15rem, 2fr);
+  gap: 1rem;
+  align-items: center;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.65rem;
+  background: #f8fafc;
+}
+
+.score-value {
+  font-size: 2.25rem;
+}
+
+.score-display p {
+  margin: 0.25rem 0 0;
+}
+
+.evidence-links,
+.evidence-unavailable,
+.evidence-kind,
+.evidence-source {
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.evidence-library,
+.requirement-list,
+.contradiction-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.evidence-card,
+.contradiction-card {
+  padding: 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.job-evidence {
+  border-left: 4px solid #2563eb;
+}
+
+.profile-evidence {
+  border-left: 4px solid #7c3aed;
+}
+
+.contradiction-card {
+  border-left: 4px solid #b91c1c;
+  background: #fff7ed;
+}
+
+blockquote {
+  margin: 0.75rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid #cbd5e1;
+  white-space: pre-wrap;
+}
+
+.history-panel ul {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0 1rem 1rem;
+  list-style: none;
+}
+
+.history-button {
+  width: 100%;
+  color: #0f172a;
+  text-align: left;
+  background: #f1f5f9;
+}
+
+.history-button[aria-current="true"] {
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.evaluation-metadata {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 42rem) {
+  main,
+  .opportunity-page {
+    padding: 1.5rem 1rem;
+  }
+
+  .evaluation-controls,
+  .decision-grid,
+  .criterion-grid,
+  .score-display {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-controls button {
+    width: 100%;
+  }
+
+  .section-title,
+  .section-summary {
+    display: block;
+    min-width: 0;
+  }
+
+  .section-summary {
+    margin-top: 0.3rem;
+  }
+
+  dl > div {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
 }

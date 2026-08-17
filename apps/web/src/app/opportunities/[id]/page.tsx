@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getManualOpportunityService } from "@/server/manual-opportunity-service";
+import { EvaluationExperience } from "@/components/evaluation/evaluation-experience";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -45,10 +46,23 @@ export default async function OpportunityPage({
   ] as const;
 
   return (
-    <main>
+    <main className="opportunity-page">
       <Link href="/">← Enter another opportunity</Link>
-      <h1>{detail.opportunity.title ?? "Untitled opportunity"}</h1>
 
+      <EvaluationExperience
+        opportunity={{
+          id: detail.opportunity.id,
+          title: detail.opportunity.title ?? "Untitled opportunity",
+          company: detail.opportunity.companyName ?? "Unknown company",
+          salary: detail.opportunity.salaryText ?? "Unknown",
+          location: detail.opportunity.location ?? "Unknown",
+          workArrangement: detail.opportunity.remoteStatus ?? "Unknown",
+          timeZoneRequirements: detail.opportunity.timeZoneRequirements ?? "Unknown",
+        }}
+      />
+
+      <details className="source-details">
+        <summary>Normalized opportunity and source details</summary>
       <section>
         <h2>Normalized Opportunity</h2>
         <dl>
@@ -83,6 +97,7 @@ export default async function OpportunityPage({
           ))}
         </ul>
       </section>
+      </details>
     </main>
   );
 }

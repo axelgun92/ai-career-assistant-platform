@@ -420,5 +420,15 @@ describe("production evaluation vertical slice", () => {
     const second = await service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id });
     expect(second.evaluationId).not.toBe(first.evaluationId);
     expect(await database.evaluation.count({ where: { opportunityId: opportunity.opportunity.id } })).toBe(2);
+    const latest = await service.getLatestEvaluation(opportunity.opportunity.id);
+    expect(latest.history).toHaveLength(2);
+    expect(latest.evaluationId).toBe(second.evaluationId);
+    const earlier = await service.getLatestEvaluation(
+      opportunity.opportunity.id,
+      first.evaluationId,
+    );
+    expect(earlier.evaluationId).toBe(first.evaluationId);
+    expect(earlier.isLatest).toBe(false);
+    expect(earlier.history).toHaveLength(2);
   });
 });

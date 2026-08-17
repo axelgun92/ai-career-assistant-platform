@@ -42,6 +42,22 @@ interface EvaluationQueryRepository {
     opportunityId: string;
     domain?: string | null;
   }): Promise<string | null>;
+  listEvaluationHistory(input: {
+    opportunityId: string;
+    domain?: string | null;
+  }): Promise<
+    Array<{
+      id: string;
+      status: string;
+      evaluationVersion: string;
+      promptVersion: string | null;
+      userProfileVersion: number | null;
+      createdAt: Date;
+      completedAt: Date | null;
+      task: { status: string } | null;
+      recommendation: { decision: string } | null;
+    }>
+  >;
 }
 
 export interface EvaluationServiceDependencies {
@@ -165,8 +181,14 @@ export function createEvaluationService(
       };
     },
 
-    async getLatestEvaluation(opportunityIdValue: string) {
+    async getLatestEvaluation(
+      opportunityIdValue: string,
+      requestedEvaluationIdValue?: string | null,
+    ) {
       const opportunityId = z.uuid().parse(opportunityIdValue);
+      const requestedEvaluationId = requestedEvaluationIdValue
+        ? z.uuid().parse(requestedEvaluationIdValue)
+        : null;
       const opportunity =
         await dependencies.queries.findOpportunityForEvaluation(opportunityId);
       if (!opportunity) {
@@ -176,14 +198,22 @@ export function createEvaluationService(
           404,
         );
       }
-      const evaluationId = await dependencies.queries.findLatestEvaluationId({
+      const history = await dependencies.queries.listEvaluationHistory({
         opportunityId,
         domain: opportunity.domain,
       });
+      const evaluationId = requestedEvaluationId ?? history[0]?.id ?? null;
       if (!evaluationId) {
         throw new EvaluationApiError(
           "EVALUATION_NOT_FOUND",
           "No evaluation exists for this opportunity",
+          404,
+        );
+      }
+      if (!history.some((item) => item.id === evaluationId)) {
+        throw new EvaluationApiError(
+          "EVALUATION_NOT_FOUND",
+          "The requested evaluation does not exist for this opportunity",
           404,
         );
       }
@@ -202,6 +232,7 @@ export function createEvaluationService(
       return {
         opportunityId,
         evaluationId,
+        isLatest: history[0]?.id === evaluationId,
         domain: evaluation.domain,
         status: task.status,
         evaluationStatus: evaluation.status,
@@ -229,6 +260,18 @@ export function createEvaluationService(
         recommendation: evaluation.recommendation,
         operations,
         error: evaluation.errorMessage,
+        history: history.map((item, index) => ({
+          evaluationId: item.id,
+          isLatest: index === 0,
+          status: item.task?.status ?? item.status,
+          evaluationStatus: item.status,
+          decision: item.recommendation?.decision ?? null,
+          evaluationVersion: item.evaluationVersion,
+          promptVersion: item.promptVersion,
+          userProfileVersion: item.userProfileVersion,
+          createdAt: item.createdAt,
+          completedAt: item.completedAt,
+        })),
       };
     },
   };

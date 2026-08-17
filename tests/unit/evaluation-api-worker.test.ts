@@ -148,6 +148,7 @@ describe("evaluation API", () => {
           return { id: subject.userProfile!.id, version: 4 };
         },
         async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() { return []; },
       },
       evaluations: {
         async loadSubject() { return subject; },
@@ -201,6 +202,7 @@ describe("evaluation API", () => {
         async findOpportunityForEvaluation() { return null; },
         async resolveUserProfile() { return null; },
         async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() { return []; },
       },
     });
     expect((await createEvaluationApiHandlers(missing).post(request, randomUUID())).status).toBe(404);
@@ -213,6 +215,7 @@ describe("evaluation API", () => {
         },
         async resolveUserProfile() { return { id: subject.userProfile!.id, version: 4 }; },
         async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() { return []; },
       },
     });
     expect((await createEvaluationApiHandlers(unsupported).post(new Request("http://localhost/evaluate", { method: "POST" }), subject.opportunity.id)).status).toBe(422);
@@ -225,6 +228,7 @@ describe("evaluation API", () => {
         },
         async resolveUserProfile() { return null; },
         async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() { return []; },
       },
     });
     expect((await createEvaluationApiHandlers(noProfile).post(new Request("http://localhost/evaluate", { method: "POST" }), subject.opportunity.id)).status).toBe(422);
@@ -242,6 +246,19 @@ describe("evaluation API", () => {
           },
           async resolveUserProfile() { return null; },
           async findLatestEvaluationId() { return evaluation.id; },
+          async listEvaluationHistory() {
+            return [{
+              id: evaluation.id,
+              status,
+              evaluationVersion: evaluation.evaluationVersion,
+              promptVersion: evaluation.promptVersion,
+              userProfileVersion: evaluation.userProfileVersion,
+              createdAt: evaluation.createdAt,
+              completedAt: evaluation.completedAt,
+              task: { status },
+              recommendation: status === "COMPLETED" ? { decision: "APPLY" } : null,
+            }];
+          },
         },
         evaluations: {
           async getEvaluationSnapshot() { return evaluation; },

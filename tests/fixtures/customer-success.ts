@@ -11,9 +11,12 @@ import {
   type SemanticOpportunityPriority,
   type SemanticGhostJobRisk,
   type SemanticReconstruction,
-} from "@ai-career/customer-success";
-import { StageExecutionError } from "@ai-career/evaluation";
-import type { EvidenceRecordDraft } from "@ai-career/evidence";
+} from "../../domains/customer-success/src/index";
+import {
+  StageExecutionError,
+  type SemanticProviderTransport,
+} from "../../packages/evaluation/src/index";
+import type { EvidenceRecordDraft } from "../../packages/evidence/src/index";
 
 export type CustomerSuccessScenario =
   | "strong"
@@ -1511,4 +1514,82 @@ export function createCustomerSuccessFixtureOperations(input: {
     },
   };
   return { semanticOperations, stats };
+}
+
+export function createCustomerSuccessFixtureTransport(input: {
+  scenario?: CustomerSuccessScenario;
+  resumeMatch?: ResumeMatchFixtureOptions;
+} = {}): SemanticProviderTransport {
+  const fixture = createCustomerSuccessFixtureOperations({
+    scenario: input.scenario ?? "strong",
+    resumeMatch: input.resumeMatch,
+  });
+  return {
+    async execute(request) {
+      const payload = JSON.parse(request.input) as {
+        userConfiguration: unknown;
+        trustedStructuredContext: Record<string, unknown>;
+        untrustedSourceContent: string | null;
+      };
+      const trusted = payload.trustedStructuredContext;
+      let output: unknown;
+      switch (request.operationId) {
+        case "customer-success.jd-reconstruction":
+          output = await fixture.semanticOperations.reconstructJobDescription({
+            ...(trusted as never),
+            untrustedJobDescription: payload.untrustedSourceContent!,
+          });
+          break;
+        case "customer-success.job-evaluation":
+          output = await fixture.semanticOperations.evaluateJob(trusted as never);
+          break;
+        case "customer-success.company-alignment":
+          output = await fixture.semanticOperations.evaluateCompanyAlignment({
+            ...trusted,
+            preferences: payload.userConfiguration,
+          } as never);
+          break;
+        case "customer-success.organizational-maturity":
+          output = await fixture.semanticOperations.evaluateOrganizationalMaturity(
+            trusted as never,
+          );
+          break;
+        case "customer-success.alex-fit":
+          output = await fixture.semanticOperations.evaluateAlexFit({
+            ...trusted,
+            preferences: payload.userConfiguration,
+          } as never);
+          break;
+        case "customer-success.burnout-risk":
+          output = await fixture.semanticOperations.evaluateBurnoutRisk({
+            ...trusted,
+            preferences: payload.userConfiguration,
+          } as never);
+          break;
+        case "customer-success.resume-match":
+          output = await fixture.semanticOperations.evaluateResumeMatch({
+            ...trusted,
+            preferences: payload.userConfiguration,
+          } as never);
+          break;
+        case "customer-success.opportunity-priority":
+          output = await fixture.semanticOperations.evaluateOpportunityPriority(
+            trusted as never,
+          );
+          break;
+        case "customer-success.ghost-job-risk":
+          output = await fixture.semanticOperations.evaluateGhostJobRisk(
+            trusted as never,
+          );
+          break;
+        default:
+          throw new Error(`Unexpected semantic operation: ${request.operationId}`);
+      }
+      return {
+        outputText: JSON.stringify(output),
+        providerRequestId: `fixture-${request.operationId}`,
+        usage: { inputTokens: 25, outputTokens: 15, totalTokens: 40 },
+      };
+    },
+  };
 }
