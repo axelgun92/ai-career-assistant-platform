@@ -9,6 +9,13 @@ import { organizationalMaturityDataSchema } from "./organizational-maturity";
 import { alexFitDataSchema } from "./alex-fit";
 import { burnoutRiskDataSchema } from "./burnout-risk";
 import { resumeMatchDataSchema } from "./resume-match";
+import { opportunityPriorityDataSchema } from "./opportunity-priority";
+import { ghostJobRiskDataSchema } from "./ghost-job-risk";
+import { customerSuccessRecommendationSchema } from "./recommendation";
+import {
+  companyAlignmentUnknownSchema,
+  supportedAlignmentFindingSchema,
+} from "./company-alignment";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
@@ -146,6 +153,20 @@ export const customerSuccessMilestoneSevenResultSchema =
     })
     .strict();
 
+export const customerSuccessMilestoneEightResultSchema =
+  customerSuccessMilestoneSevenResultSchema
+    .extend({
+      opportunityPriority: opportunityPriorityDataSchema,
+      ghostJobRisk: ghostJobRiskDataSchema,
+      recommendation: customerSuccessRecommendationSchema,
+      strengths: z.array(supportedAlignmentFindingSchema),
+      concerns: z.array(supportedAlignmentFindingSchema),
+      unknowns: z.array(companyAlignmentUnknownSchema),
+      contradictions: z.array(contradictionDraftSchema),
+      evidenceReferences: z.array(requiredText).min(1),
+    })
+    .strict();
+
 export type HardFiltersData = z.infer<typeof hardFiltersDataSchema>;
 export type SemanticJobEvaluation = z.infer<
   typeof semanticJobEvaluationSchema
@@ -162,4 +183,7 @@ export type CustomerSuccessMilestoneSixResult = z.infer<
 >;
 export type CustomerSuccessMilestoneSevenResult = z.infer<
   typeof customerSuccessMilestoneSevenResultSchema
+>;
+export type CustomerSuccessMilestoneEightResult = z.infer<
+  typeof customerSuccessMilestoneEightResultSchema
 >;

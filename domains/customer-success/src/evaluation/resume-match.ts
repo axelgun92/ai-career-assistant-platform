@@ -197,6 +197,32 @@ export function createResumeMatchStage() {
           expected: "PROFILE",
           label: `Requirement ${assessment.requirementIndex}`,
         });
+        const assessmentReferences = new Set([
+          ...assessment.jdEvidenceReferences,
+          ...assessment.profileEvidenceReferences,
+        ]);
+        const invalidDecisionReferences =
+          assessment.decisionImpactEvidenceReferences.filter(
+            (reference) => !assessmentReferences.has(reference),
+          );
+        if (invalidDecisionReferences.length > 0) {
+          throw new StructuredOutputValidationError(
+            `Requirement ${assessment.requirementIndex} decision impact references evidence outside its assessment: ${invalidDecisionReferences.join(", ")}`,
+          );
+        }
+        if (
+          assessment.decisionImpact === "DECISIVE_DISQUALIFIER" &&
+          (!assessment.decisionImpactEvidenceReferences.some((reference) =>
+            assessment.jdEvidenceReferences.includes(reference),
+          ) ||
+            !assessment.decisionImpactEvidenceReferences.some((reference) =>
+              assessment.profileEvidenceReferences.includes(reference),
+            ))
+        ) {
+          throw new StructuredOutputValidationError(
+            `Requirement ${assessment.requirementIndex} decisive impact requires both JD and profile evidence`,
+          );
+        }
       }
       const omittedRequiredRequirements = reconstruction.requirements
         .map((requirement, index) => ({ requirement, index }))
@@ -233,6 +259,7 @@ export function createResumeMatchStage() {
         ...match.requirementAssessments.flatMap((item) => [
           ...item.jdEvidenceReferences,
           ...item.profileEvidenceReferences,
+          ...item.decisionImpactEvidenceReferences,
         ]),
         ...match.effectiveSeniority.statedYears.evidenceReferences,
         ...match.effectiveSeniority.requirementStrength.evidenceReferences,

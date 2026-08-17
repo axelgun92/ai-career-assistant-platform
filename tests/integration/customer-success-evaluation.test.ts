@@ -108,7 +108,7 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
         preferences: customerSuccessTestPreferences,
         semanticOperations: fixture.semanticOperations,
       }),
-      executionMetadata: { trigger: "milestone-seven-integration-test" },
+      executionMetadata: { trigger: "milestone-eight-integration-test" },
     });
 
     const persisted = await database.evaluation.findUniqueOrThrow({
@@ -125,12 +125,12 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       expect.objectContaining({
         domain: "customer-success",
         status: "COMPLETED",
-        evaluationVersion: "cs-evaluation-v1.1-m7",
+        evaluationVersion: "cs-evaluation-v1.1-m8",
         domainVersion: "customer-success-v1.1",
         ruleVersion: "cs-rules-v1.1",
-        promptVersion: "cs-m7-prompts-v1",
+        promptVersion: "cs-m8-prompts-v1",
         userProfileVersion: 3,
-        executionMetadata: { trigger: "milestone-seven-integration-test" },
+        executionMetadata: { trigger: "milestone-eight-integration-test" },
       }),
     );
     expect(persisted.opportunity.status).toBe("NORMALIZED");
@@ -142,6 +142,8 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
       "alex-fit",
       "burnout-risk",
       "resume-match",
+      "opportunity-priority",
+      "ghost-job-risk",
     ]);
     expect(persisted.stageResults.every((stage) => stage.status === "COMPLETED"))
       .toBe(true);
@@ -220,6 +222,22 @@ describe("Customer Success evaluation PostgreSQL integration", () => {
               effectiveLevelFit: "TARGET_LEVEL",
             }),
           }),
+        }),
+      }),
+    );
+    expect(persisted.stageResults[7]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          band: "VERY_HIGH",
+        }),
+      }),
+    );
+    expect(persisted.stageResults[8]?.result).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluated: true,
+          risk: expect.objectContaining({ classification: "UNKNOWN" }),
         }),
       }),
     );

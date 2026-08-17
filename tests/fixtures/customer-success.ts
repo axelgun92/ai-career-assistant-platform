@@ -8,6 +8,8 @@ import {
   type SemanticAlexFit,
   type SemanticBurnoutRisk,
   type SemanticResumeMatch,
+  type SemanticOpportunityPriority,
+  type SemanticGhostJobRisk,
   type SemanticReconstruction,
 } from "@ai-career/customer-success";
 import { StageExecutionError } from "@ai-career/evaluation";
@@ -68,11 +70,22 @@ export interface ResumeMatchFixtureOptions {
   actualResponsibilitySeniority?: SemanticResumeMatch["effectiveSeniority"]["actualResponsibilitySeniority"]["classification"];
   requirementClassifications?: SemanticResumeMatch["requirementAssessments"][number]["classification"][];
   matchedExperienceSpecificities?: SemanticResumeMatch["requirementAssessments"][number]["matchedExperienceSpecificity"][];
+  decisionImpacts?: SemanticResumeMatch["requirementAssessments"][number]["decisionImpact"][];
   contradiction?:
     | "INFLATED_YEARS"
     | "LOW_YEARS_SENIOR_SCOPE"
     | "SENIOR_TITLE_ROUTINE_SCOPE"
     | "JUNIOR_TITLE_SENIOR_SCOPE";
+}
+
+export interface OpportunityPriorityFixtureOptions {
+  score?: number;
+  applicationEffort?: SemanticOpportunityPriority["applicationEffort"]["classification"];
+}
+
+export interface GhostJobRiskFixtureOptions {
+  classification?: SemanticGhostJobRisk["classification"];
+  contradictoryHistory?: boolean;
 }
 
 export const customerSuccessTestPreferences = defineCustomerSuccessPreferences({
@@ -157,11 +170,15 @@ export function createCustomerSuccessFixtureOperations(input: {
   failAlexFitOnce?: boolean;
   failBurnoutRiskOnce?: boolean;
   failResumeMatchOnce?: boolean;
+  failOpportunityPriorityOnce?: boolean;
+  failGhostJobRiskOnce?: boolean;
   companyAlignment?: CompanyAlignmentFixtureOptions;
   organizationalMaturity?: OrganizationalMaturityFixtureOptions;
   alexFit?: AlexFitFixtureOptions;
   burnoutRisk?: BurnoutRiskFixtureOptions;
   resumeMatch?: ResumeMatchFixtureOptions;
+  opportunityPriority?: OpportunityPriorityFixtureOptions;
+  ghostJobRisk?: GhostJobRiskFixtureOptions;
 }) {
   const stats = {
     reconstructionCalls: 0,
@@ -171,12 +188,16 @@ export function createCustomerSuccessFixtureOperations(input: {
     alexFitCalls: 0,
     burnoutRiskCalls: 0,
     resumeMatchCalls: 0,
+    opportunityPriorityCalls: 0,
+    ghostJobRiskCalls: 0,
     companyAlignmentReceivedMaps: false,
     companyAlignmentReceivedPreferences: false,
     organizationalMaturityReceivedPriorResults: false,
     alexFitReceivedProfileAndPriorResults: false,
     burnoutRiskReceivedMapsAndPriorResults: false,
     resumeMatchReceivedMapsProfileAndPriorResults: false,
+    opportunityPriorityReceivedValidatedInputs: false,
+    ghostJobRiskReceivedObjectiveFacts: false,
   };
   const semanticOperations: CustomerSuccessSemanticOperations = {
     async reconstructJobDescription(source) {
@@ -1111,6 +1132,7 @@ export function createCustomerSuccessFixtureOperations(input: {
       const requirementIndexes = resumeInput.requirementMap.map((_, index) => index);
       const classifications = options.requirementClassifications ?? [];
       const specificities = options.matchedExperienceSpecificities ?? [];
+      const decisionImpacts = options.decisionImpacts ?? [];
       const requirementAssessments = resumeInput.requirementMap.map(
         (requirement, index) => {
           const classification =
@@ -1132,6 +1154,8 @@ export function createCustomerSuccessFixtureOperations(input: {
               : classification === "GENUINE_GAP"
                 ? gapProfileReference
               : directProfileReference;
+          const decisionImpact =
+            decisionImpacts[index] ?? "NON_DECISIVE";
           return {
             requirementIndex: index,
             requirementText: requirement.requirement,
@@ -1146,6 +1170,17 @@ export function createCustomerSuccessFixtureOperations(input: {
             classification,
             matchedExperienceSpecificity,
             importanceExplanation: `${requirement.strength} requirements retain their documented strength.`,
+            decisionImpact,
+            decisionImpactExplanation:
+              decisionImpact === "DECISIVE_DISQUALIFIER"
+                ? "The controlled fixture establishes that this required, genuinely unsupported requirement is decisive for eligibility."
+                : decisionImpact === "MATERIAL_UNCERTAINTY"
+                  ? "The controlled fixture leaves the requirement's applicability or decision importance materially unresolved."
+                  : "The available evidence does not establish this requirement as a decisive disqualifier.",
+            decisionImpactEvidenceReferences:
+              decisionImpact === "NON_DECISIVE"
+                ? []
+                : [...requirement.evidenceReferences, profileReference],
             explanation:
               classification === "UNKNOWN"
                 ? "The profile does not provide enough evidence to assess this requirement."
@@ -1307,6 +1342,172 @@ export function createCustomerSuccessFixtureOperations(input: {
         evidenceReferences: combinedEvidence,
         contradictions,
       } satisfies SemanticResumeMatch;
+    },
+    async evaluateOpportunityPriority(priorityInput) {
+      stats.opportunityPriorityCalls += 1;
+      if (
+        input.failOpportunityPriorityOnce &&
+        stats.opportunityPriorityCalls === 1
+      ) {
+        throw new StageExecutionError({
+          code: "CS_OPPORTUNITY_PRIORITY_TEMPORARY_FAILURE",
+          message: "Fixture Opportunity Priority failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.opportunityPriorityReceivedValidatedInputs =
+        priorityInput.companyAlignment.evaluated &&
+        priorityInput.alexFit.evaluated &&
+        priorityInput.burnoutRisk.evaluated &&
+        priorityInput.resumeMatch.evaluated &&
+        priorityInput.effectiveLevelFit ===
+          priorityInput.resumeMatch.match.effectiveSeniority.effectiveLevelFit;
+      const options = input.opportunityPriority ?? {};
+      const profileReference = priorityInput.availableEvidence.find(
+        (item) => item.sourceType === "USER_PROFILE",
+      )?.referenceId;
+      if (!profileReference) {
+        throw new Error("The Opportunity Priority fixture requires profile evidence");
+      }
+      const timingReferences = priorityInput.postingTiming.evidenceReferences;
+      const oldPosting = ["REVIEW", "CAUTION"].includes(
+        priorityInput.postingTiming.classification,
+      );
+      return {
+        score: options.score ?? 84,
+        scoreExplanation:
+          "Priority is a holistic bounded assessment of timing, strategic value, fit, level, salary, effort, and risk without fixed weights or an age-only formula.",
+        scoreEvidenceReferences: ["actual-work", profileReference],
+        strategicValueSummary:
+          "The role offers evidenced Customer Success and technology-bridge value aligned with the profile's career direction.",
+        strategicValueEvidenceReferences: ["actual-work", profileReference],
+        applicationEffort: {
+          classification: options.applicationEffort ?? "UNKNOWN",
+          explanation:
+            options.applicationEffort && options.applicationEffort !== "UNKNOWN"
+              ? "The controlled fixture provides an explicit application-effort assessment."
+              : "Application effort is not established by available source evidence and remains Unknown.",
+          evidenceReferences:
+            options.applicationEffort && options.applicationEffort !== "UNKNOWN"
+              ? ["actual-work"]
+              : [],
+        },
+        reasonsForPrioritization: [
+          {
+            finding:
+              "The role combines substantive Customer Success work with strategic technology exposure.",
+            evidenceReferences: ["actual-work", profileReference],
+          },
+        ],
+        reasonsForReducedPriority:
+          oldPosting && timingReferences.length > 0
+            ? [
+                {
+                  finding:
+                    "The deterministic posting-age band reduces urgency without rejecting the opportunity.",
+                  evidenceReferences: timingReferences,
+                },
+              ]
+            : [],
+        unknowns:
+          options.applicationEffort && options.applicationEffort !== "UNKNOWN"
+            ? []
+            : [
+                {
+                  code: "application-effort-unknown",
+                  description:
+                    "The available evidence does not establish the effort needed to apply.",
+                  materiality:
+                    "Priority completeness is limited, but suitability is unaffected.",
+                  evidenceReferences: [],
+                },
+              ],
+        evidenceReferences: ["actual-work", profileReference],
+        contradictions: [],
+      } satisfies SemanticOpportunityPriority;
+    },
+    async evaluateGhostJobRisk(ghostInput) {
+      stats.ghostJobRiskCalls += 1;
+      if (input.failGhostJobRiskOnce && stats.ghostJobRiskCalls === 1) {
+        throw new StageExecutionError({
+          code: "CS_GHOST_JOB_RISK_TEMPORARY_FAILURE",
+          message: "Fixture Ghost Job Risk failed temporarily",
+          retryable: true,
+        });
+      }
+      stats.ghostJobRiskReceivedObjectiveFacts =
+        ghostInput.objectiveFacts.length > 0;
+      const options = input.ghostJobRisk ?? {};
+      const riskFacts = ghostInput.objectiveFacts.filter((fact) =>
+        [
+          "REPOSTED",
+          "UNCHANGED_OVER_TIME",
+          "EVERGREEN_LANGUAGE",
+          "FARMING_INDICATOR",
+          "CLOSED_ATS_VISIBLE_ELSEWHERE",
+          "RECURRING_IDENTICAL_REQUISITION",
+        ].includes(fact.type),
+      );
+      const positiveFacts = ghostInput.objectiveFacts.filter((fact) =>
+        ["ACTIVE_ATS", "CURRENT_POSTING"].includes(fact.type),
+      );
+      const classification =
+        options.classification ??
+        (riskFacts.length >= 2
+          ? "ELEVATED"
+          : riskFacts.length === 1
+            ? "POSSIBLE"
+            : positiveFacts.length > 0
+              ? "LOW"
+              : "UNKNOWN");
+      const evidenceReferences = ghostInput.objectiveFacts.flatMap(
+        (fact) => fact.evidenceReferences,
+      );
+      const firstRisk = riskFacts[0]?.evidenceReferences[0];
+      const firstPositive = positiveFacts[0]?.evidenceReferences[0];
+      return {
+        classification,
+        assessment:
+          classification === "UNKNOWN"
+            ? "The available history facts are insufficient for a categorical risk conclusion."
+            : `The controlled posting-history evidence supports ${classification} Ghost Job Risk.`,
+        interpretation:
+          classification === "LOW"
+            ? "Current source-status evidence supports an active opportunity."
+            : classification === "UNKNOWN"
+              ? "No supported risk interpretation is asserted."
+              : "Repeated or conflicting posting-history signals warrant caution without labeling the job as fake.",
+        evidenceReferences:
+          classification === "UNKNOWN" ? [] : evidenceReferences,
+        unknowns:
+          classification === "UNKNOWN"
+            ? [
+                {
+                  code: "posting-history-insufficient",
+                  description:
+                    "The objective history does not establish an active or suspicious pattern.",
+                  materiality:
+                    "Ghost Job Risk remains Unknown rather than guessed.",
+                  evidenceReferences,
+                },
+              ]
+            : [],
+        contradictions:
+          options.contradictoryHistory && firstRisk && firstPositive
+            ? [
+                {
+                  claimA: "The preserved history contains a risk signal.",
+                  claimB: "The preserved history also reports an active current status.",
+                  interpretation:
+                    "Posting-history evidence conflicts and remains visible for review.",
+                  relevantField: "ghostJobRisk",
+                  significance: "MATERIAL",
+                  evidenceReferencesA: [firstRisk],
+                  evidenceReferencesB: [firstPositive],
+                },
+              ]
+            : [],
+      } satisfies SemanticGhostJobRisk;
     },
   };
   return { semanticOperations, stats };

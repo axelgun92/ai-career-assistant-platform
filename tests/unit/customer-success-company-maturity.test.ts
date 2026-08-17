@@ -325,6 +325,8 @@ describe("Customer Success Company Alignment", () => {
       "PENDING",
       "PENDING",
       "PENDING",
+      "PENDING",
+      "PENDING",
     ]);
     expect(result.evaluation.stageResults[2]).toEqual(
       expect.objectContaining({
@@ -371,6 +373,8 @@ describe("Customer Success Company Alignment", () => {
         "PENDING",
         "PENDING",
         "PENDING",
+        "PENDING",
+        "PENDING",
       ]);
     const recovered = await initial.executor.retryStage({
       evaluationId: initial.result.evaluation.id,
@@ -380,6 +384,8 @@ describe("Customer Success Company Alignment", () => {
     });
     expect(recovered.evaluation.status).toBe("COMPLETED");
     expect(recovered.evaluation.stageResults.map((stage) => stage.status)).toEqual([
+      "COMPLETED",
+      "COMPLETED",
       "COMPLETED",
       "COMPLETED",
       "COMPLETED",
@@ -519,6 +525,8 @@ describe("Customer Success Organizational Maturity", () => {
       "PENDING",
       "PENDING",
       "PENDING",
+      "PENDING",
+      "PENDING",
     ]);
     expect(result.evaluation.stageResults[3]).toEqual(
       expect.objectContaining({
@@ -638,6 +646,8 @@ describe("Customer Success Organizational Maturity", () => {
       "PENDING",
       "PENDING",
       "PENDING",
+      "PENDING",
+      "PENDING",
     ]);
   });
 
@@ -678,6 +688,8 @@ describe("Customer Success Organizational Maturity", () => {
         "PENDING",
         "PENDING",
         "PENDING",
+        "PENDING",
+        "PENDING",
       ]);
     const recovered = await initial.executor.retryStage({
       evaluationId: initial.result.evaluation.id,
@@ -687,6 +699,8 @@ describe("Customer Success Organizational Maturity", () => {
     });
     expect(recovered.evaluation.status).toBe("COMPLETED");
     expect(recovered.evaluation.stageResults.map((stage) => stage.status)).toEqual([
+      "COMPLETED",
+      "COMPLETED",
       "COMPLETED",
       "COMPLETED",
       "COMPLETED",

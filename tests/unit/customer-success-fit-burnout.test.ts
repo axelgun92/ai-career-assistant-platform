@@ -329,6 +329,8 @@ describe("Customer Success Alex Fit", () => {
       "FAILED",
       "PENDING",
       "PENDING",
+      "PENDING",
+      "PENDING",
     ]);
   });
 
@@ -341,6 +343,8 @@ describe("Customer Success Alex Fit", () => {
         "COMPLETED",
         "COMPLETED",
         "FAILED",
+        "PENDING",
+        "PENDING",
         "PENDING",
         "PENDING",
       ]);
@@ -504,6 +508,8 @@ describe("Customer Success Burnout Risk", () => {
       "COMPLETED",
       "FAILED",
       "PENDING",
+      "PENDING",
+      "PENDING",
     ]);
   });
 
@@ -526,6 +532,8 @@ describe("Customer Success Burnout Risk", () => {
       "COMPLETED",
       "COMPLETED",
       "FAILED",
+      "PENDING",
+      "PENDING",
       "PENDING",
     ]);
   });

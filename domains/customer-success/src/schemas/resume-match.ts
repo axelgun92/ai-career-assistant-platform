@@ -31,6 +31,12 @@ export const matchedExperienceSpecificitySchema = z.enum([
   "UNKNOWN",
 ]);
 
+export const requirementDecisionImpactSchema = z.enum([
+  "DECISIVE_DISQUALIFIER",
+  "MATERIAL_UNCERTAINTY",
+  "NON_DECISIVE",
+]);
+
 export const effectiveLevelFitSchema = z.enum([
   "TARGET_LEVEL",
   "STRETCH",
@@ -93,6 +99,9 @@ export const requirementMatchAssessmentSchema = z
     classification: requirementMatchClassificationSchema,
     matchedExperienceSpecificity: matchedExperienceSpecificitySchema,
     importanceExplanation: requiredText,
+    decisionImpact: requirementDecisionImpactSchema,
+    decisionImpactExplanation: requiredText,
+    decisionImpactEvidenceReferences: evidenceReferences,
     explanation: requiredText,
     supportedPortion: optionalText,
     unsupportedPortion: optionalText,
@@ -159,6 +168,38 @@ export const requirementMatchAssessmentSchema = z
         code: "custom",
         path: ["classification"],
         message: "Ambiguous requirements must remain Unknown rather than gaps",
+      });
+    }
+    if (
+      value.classification !== "GENUINE_GAP" &&
+      value.decisionImpact !== "NON_DECISIVE"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["decisionImpact"],
+        message:
+          "Only a Genuine Gap may have disqualifying or materially uncertain decision impact",
+      });
+    }
+    if (
+      value.decisionImpact === "DECISIVE_DISQUALIFIER" &&
+      value.strength !== "REQUIRED"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["decisionImpact"],
+        message:
+          "Only an evidenced required Genuine Gap may be a decisive disqualifier",
+      });
+    }
+    if (
+      value.decisionImpact === "DECISIVE_DISQUALIFIER" &&
+      value.decisionImpactEvidenceReferences.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["decisionImpactEvidenceReferences"],
+        message: "A decisive disqualifier requires explicit supporting evidence",
       });
     }
     if (

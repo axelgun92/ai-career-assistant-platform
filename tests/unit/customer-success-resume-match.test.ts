@@ -132,8 +132,10 @@ describe("Customer Success Resume Match pipeline", () => {
       "alex-fit",
       "burnout-risk",
       "resume-match",
+      "opportunity-priority",
+      "ghost-job-risk",
     ]);
-    expect(result.evaluation.stageResults).toHaveLength(7);
+    expect(result.evaluation.stageResults).toHaveLength(9);
     expect(
       result.evaluation.stageResults.some(
         (stage) => stage.stageId === "effective-seniority",

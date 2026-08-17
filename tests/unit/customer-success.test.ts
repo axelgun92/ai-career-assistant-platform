@@ -71,7 +71,7 @@ async function run(input: {
 }
 
 describe("Customer Success domain foundation", () => {
-  it("registers the domain and executes all seven stages in order", async () => {
+  it("registers the domain and executes all nine stages in order", async () => {
     const { result, fixture } = await run({ scenario: "strong" });
 
     expect(customerSuccessDomain.id).toBe("customer-success");
@@ -84,6 +84,8 @@ describe("Customer Success domain foundation", () => {
         "alex-fit",
         "burnout-risk",
         "resume-match",
+        "opportunity-priority",
+        "ghost-job-risk",
       ]);
     expect(result.evaluation.stageResults.map((stage) => stage.stageId)).toEqual([
       "hard-filters",
@@ -93,6 +95,8 @@ describe("Customer Success domain foundation", () => {
       "alex-fit",
       "burnout-risk",
       "resume-match",
+      "opportunity-priority",
+      "ghost-job-risk",
     ]);
     expect(result.evaluation.status).toBe("COMPLETED");
     expect(fixture.stats.reconstructionCalls).toBe(1);
@@ -316,6 +320,8 @@ describe("Customer Success domain foundation", () => {
     });
     expect(recovered.evaluation.status).toBe("COMPLETED");
     expect(recovered.evaluation.stageResults.map((stage) => stage.status)).toEqual([
+      "COMPLETED",
+      "COMPLETED",
       "COMPLETED",
       "COMPLETED",
       "COMPLETED",

@@ -12,6 +12,11 @@ import type { OrganizationalMaturityData } from "../schemas/organizational-matur
 import type { AlexFitData } from "../schemas/alex-fit";
 import type { BurnoutRiskData } from "../schemas/burnout-risk";
 import type { ResumeMatchData } from "../schemas/resume-match";
+import type {
+  ApplicationEffortAssessment,
+  PostingTiming,
+} from "../schemas/opportunity-priority";
+import type { PostingHistoryFact } from "../schemas/ghost-job-risk";
 import type { CustomerSuccessProfileContext } from "../profile/user-profile";
 import { extractExplicitCustomerSuccessFacts } from "./explicit-facts";
 
@@ -115,6 +120,28 @@ export interface CustomerSuccessSemanticOperations {
       CustomerSuccessPreferences,
       "fitPreferences" | "careerStrategy"
     >;
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
+  }): Promise<unknown>;
+  evaluateOpportunityPriority(input: {
+    postingTiming: PostingTiming;
+    salary: import("../schemas/results").HardFiltersData["salary"];
+    strategicBridgeValue: Extract<
+      JobEvaluationData,
+      { evaluated: true }
+    >["evaluation"]["strategicBridgeValue"];
+    applicationEffort: ApplicationEffortAssessment;
+    companyAlignment: Extract<CompanyAlignmentData, { evaluated: true }>;
+    alexFit: Extract<AlexFitData, { evaluated: true }>;
+    burnoutRisk: Extract<BurnoutRiskData, { evaluated: true }>;
+    resumeMatch: Extract<ResumeMatchData, { evaluated: true }>;
+    effectiveLevelFit: Extract<
+      ResumeMatchData,
+      { evaluated: true }
+    >["match"]["effectiveSeniority"]["effectiveLevelFit"];
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
+  }): Promise<unknown>;
+  evaluateGhostJobRisk(input: {
+    objectiveFacts: PostingHistoryFact[];
     availableEvidence: CustomerSuccessJdReconstruction["evidence"];
   }): Promise<unknown>;
 }

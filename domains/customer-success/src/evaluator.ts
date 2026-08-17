@@ -10,11 +10,14 @@ import { createOrganizationalMaturityStage } from "./evaluation/organizational-m
 import { createAlexFitStage } from "./evaluation/alex-fit";
 import { createBurnoutRiskStage } from "./evaluation/burnout-risk";
 import { createResumeMatchStage } from "./evaluation/resume-match";
+import { createOpportunityPriorityStage } from "./evaluation/opportunity-priority";
+import { createGhostJobRiskStage } from "./evaluation/ghost-job-risk";
 import type { CustomerSuccessSemanticOperations } from "./extraction/extractor";
 import type { CustomerSuccessJdReconstruction } from "./schemas/maps";
+import type { EvidenceRecordDraft } from "@ai-career/evidence";
 import type { CustomerSuccessProfileContext } from "./profile/user-profile";
 import {
-  customerSuccessMilestoneSevenResultSchema,
+  customerSuccessMilestoneEightResultSchema,
   hardFiltersDataSchema,
   jobEvaluationDataSchema,
 } from "./schemas/results";
@@ -23,28 +26,41 @@ import { organizationalMaturityDataSchema } from "./schemas/organizational-matur
 import { alexFitDataSchema } from "./schemas/alex-fit";
 import { burnoutRiskDataSchema } from "./schemas/burnout-risk";
 import { resumeMatchDataSchema } from "./schemas/resume-match";
+import { opportunityPriorityDataSchema } from "./schemas/opportunity-priority";
+import { ghostJobRiskDataSchema } from "./schemas/ghost-job-risk";
+import { createCustomerSuccessRecommendation } from "./recommendation/recommendation";
 
 export interface CustomerSuccessDomainData {
   preferences: CustomerSuccessPreferences;
   semanticOperations: CustomerSuccessSemanticOperations;
   reconstruction: CustomerSuccessJdReconstruction | null;
   userProfile: CustomerSuccessProfileContext | null;
+  evaluationDate: Date;
+  derivedEvidence: EvidenceRecordDraft[];
 }
 
 export function createCustomerSuccessDomainData(input: {
   preferences: CustomerSuccessPreferences;
   semanticOperations: CustomerSuccessSemanticOperations;
+  evaluationDate?: Date;
 }): CustomerSuccessDomainData {
-  return { ...input, reconstruction: null, userProfile: null };
+  return {
+    preferences: input.preferences,
+    semanticOperations: input.semanticOperations,
+    reconstruction: null,
+    userProfile: null,
+    evaluationDate: new Date(input.evaluationDate ?? new Date()),
+    derivedEvidence: [],
+  };
 }
 
 export function createCustomerSuccessEvaluator() {
   return defineDomainEvaluator({
     domain: "customer-success",
-    evaluationVersion: "cs-evaluation-v1.1-m7",
+    evaluationVersion: "cs-evaluation-v1.1-m8",
     domainVersion: "customer-success-v1.1",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-m7-prompts-v1",
+    promptVersion: "cs-m8-prompts-v1",
     stages: [
       createHardFiltersStage(),
       createJobEvaluationStage(),
@@ -53,8 +69,10 @@ export function createCustomerSuccessEvaluator() {
       createAlexFitStage(),
       createBurnoutRiskStage(),
       createResumeMatchStage(),
+      createOpportunityPriorityStage(),
+      createGhostJobRiskStage(),
     ],
-    resultSchema: customerSuccessMilestoneSevenResultSchema,
+    resultSchema: customerSuccessMilestoneEightResultSchema,
     async finalize(context: CoreEvaluationContext<CustomerSuccessDomainData>) {
       const hardFilters = context.previousStageResults.find(
         (stage) => stage.stageId === "hard-filters",
@@ -77,7 +95,13 @@ export function createCustomerSuccessEvaluator() {
       const resumeMatch = context.previousStageResults.find(
         (stage) => stage.stageId === "resume-match",
       );
-      return {
+      const opportunityPriority = context.previousStageResults.find(
+        (stage) => stage.stageId === "opportunity-priority",
+      );
+      const ghostJobRisk = context.previousStageResults.find(
+        (stage) => stage.stageId === "ghost-job-risk",
+      );
+      const parsed = {
         hardFilters: hardFiltersDataSchema.parse(hardFilters?.result?.data),
         jobEvaluation: jobEvaluationDataSchema.parse(jobEvaluation?.result?.data),
         companyAlignment: companyAlignmentDataSchema.parse(
@@ -89,7 +113,21 @@ export function createCustomerSuccessEvaluator() {
         alexFit: alexFitDataSchema.parse(alexFit?.result?.data),
         burnoutRisk: burnoutRiskDataSchema.parse(burnoutRisk?.result?.data),
         resumeMatch: resumeMatchDataSchema.parse(resumeMatch?.result?.data),
+        opportunityPriority: opportunityPriorityDataSchema.parse(
+          opportunityPriority?.result?.data,
+        ),
+        ghostJobRisk: ghostJobRiskDataSchema.parse(ghostJobRisk?.result?.data),
       };
+      const availableEvidence = [
+        ...(context.domainData.reconstruction?.evidence ?? []),
+        ...(context.domainData.userProfile?.evidence ?? []),
+        ...context.domainData.derivedEvidence,
+      ];
+      const synthesis = createCustomerSuccessRecommendation({
+        ...parsed,
+        availableEvidence,
+      });
+      return { ...parsed, ...synthesis };
     },
   });
 }
