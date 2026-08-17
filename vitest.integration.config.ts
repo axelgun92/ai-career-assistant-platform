@@ -8,6 +8,9 @@ export default defineConfig({
       "@ai-career/core": fileURLToPath(
         new URL("./packages/core/src/index.ts", import.meta.url),
       ),
+      "@ai-career/customer-success": fileURLToPath(
+        new URL("./domains/customer-success/src/index.ts", import.meta.url),
+      ),
       "@ai-career/database": fileURLToPath(
         new URL("./database/src/index.ts", import.meta.url),
       ),

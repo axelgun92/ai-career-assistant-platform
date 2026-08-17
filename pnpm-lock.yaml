@@ -98,7 +98,20 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
-  domains/customer-success: {}
+  domains/customer-success:
+    dependencies:
+      '@ai-career/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ai-career/evaluation':
+        specifier: workspace:*
+        version: link:../../packages/evaluation
+      '@ai-career/evidence':
+        specifier: workspace:*
+        version: link:../../packages/evidence
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/core:
     dependencies:
