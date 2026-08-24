@@ -13,9 +13,11 @@ import type {
   EvaluationTaskRepository,
   SemanticExecutorConfig,
 } from "@ai-career/evaluation";
+import { summarizeSemanticUsage } from "@ai-career/evaluation";
 import {
   readEvaluationWorkerEnvironment,
   readSemanticEnvironment,
+  semanticPricingFromEnvironment,
 } from "@ai-career/shared";
 import { z } from "zod";
 import { EvaluationApiError } from "./evaluation-errors";
@@ -169,6 +171,8 @@ export function createEvaluationService(
           model: dependencies.semanticConfig.model,
           maxOutputTokens: dependencies.semanticConfig.maxOutputTokens,
           semanticCallBudget: dependencies.semanticConfig.callBudget,
+          pricingConfigurationVersion:
+            dependencies.semanticConfig.pricing.version,
         },
         maxAttempts: dependencies.jobMaxAttempts,
       });
@@ -259,6 +263,7 @@ export function createEvaluationService(
         result: evaluation.domainResult,
         recommendation: evaluation.recommendation,
         operations,
+        usage: summarizeSemanticUsage(operations),
         error: evaluation.errorMessage,
         history: history.map((item, index) => ({
           evaluationId: item.id,
@@ -306,6 +311,7 @@ export function getEvaluationService(): EvaluationService {
         retryLimit: semantic.AI_RETRY_LIMIT,
         callBudget: semantic.AI_CALL_BUDGET,
         timeoutMs: semantic.AI_REQUEST_TIMEOUT_MS,
+        pricing: semanticPricingFromEnvironment(semantic),
       },
       jobMaxAttempts: worker.EVALUATION_JOB_MAX_ATTEMPTS,
     });

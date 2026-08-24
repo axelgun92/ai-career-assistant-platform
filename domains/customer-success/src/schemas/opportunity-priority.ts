@@ -4,6 +4,12 @@ import {
   companyAlignmentUnknownSchema,
   supportedAlignmentFindingSchema,
 } from "./company-alignment";
+import type { AvailableSemanticEvidence } from "./semantic-contract";
+import {
+  assertSemanticEvidenceReferences,
+  parseSemanticDomainResult,
+  semanticContractViolation,
+} from "./semantic-contract";
 
 const requiredText = z.string().trim().min(1);
 const evidenceReferences = z.array(requiredText);
@@ -97,6 +103,77 @@ export const semanticOpportunityPrioritySchema = z
     contradictions: z.array(contradictionDraftSchema),
   })
   .strict();
+
+const transportApplicationEffortSchema = z.union([
+  z
+    .object({
+      classification: z.enum(["LOW", "MODERATE", "HIGH"]),
+      explanation: requiredText,
+      evidenceReferences: evidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      classification: z.literal("UNKNOWN"),
+      explanation: requiredText,
+      evidenceReferences,
+    })
+    .strict(),
+]);
+
+export const semanticOpportunityPriorityTransportSchema =
+  semanticOpportunityPrioritySchema
+    .extend({ applicationEffort: transportApplicationEffortSchema })
+    .strict();
+
+export function semanticOpportunityPriorityFromTransport(
+  value: z.input<typeof semanticOpportunityPriorityTransportSchema>,
+  input: {
+    availableEvidence: AvailableSemanticEvidence[];
+    postingTimingEvidenceReferences: string[];
+  },
+) {
+  const transport = semanticOpportunityPriorityTransportSchema.parse(value);
+  const result = parseSemanticDomainResult({
+    schema: semanticOpportunityPrioritySchema,
+    value: transport,
+    code: "OPPORTUNITY_PRIORITY_DOMAIN_INVALID",
+    message: "Opportunity Priority violated the domain contract",
+  });
+  assertSemanticEvidenceReferences({
+    references: [
+      ...result.scoreEvidenceReferences,
+      ...result.strategicValueEvidenceReferences,
+      ...result.applicationEffort.evidenceReferences,
+      ...result.reasonsForPrioritization.flatMap(
+        (finding) => finding.evidenceReferences,
+      ),
+      ...result.reasonsForReducedPriority.flatMap(
+        (finding) => finding.evidenceReferences,
+      ),
+      ...result.unknowns.flatMap((unknown) => unknown.evidenceReferences),
+      ...result.evidenceReferences,
+      ...result.contradictions.flatMap((contradiction) => [
+        ...contradiction.evidenceReferencesA,
+        ...contradiction.evidenceReferencesB,
+      ]),
+    ],
+    availableEvidence: input.availableEvidence,
+    code: "OPPORTUNITY_PRIORITY_EVIDENCE_INVALID",
+    message: "Opportunity Priority references unavailable evidence",
+  });
+  if (
+    result.scoreEvidenceReferences.every((reference) =>
+      input.postingTimingEvidenceReferences.includes(reference),
+    )
+  ) {
+    semanticContractViolation(
+      "OPPORTUNITY_PRIORITY_EVIDENCE_INVALID",
+      "Opportunity Priority cannot be supported by posting age alone",
+    );
+  }
+  return result;
+}
 
 export const opportunityPriorityDataSchema = z.discriminatedUnion("evaluated", [
   z.object({ evaluated: z.literal(false), reason: requiredText }).strict(),

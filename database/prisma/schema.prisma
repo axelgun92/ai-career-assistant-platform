@@ -137,16 +137,17 @@ model Opportunity {
   benefits         String? @db.Text
   additionalNotes  String? @db.Text
 
-  status                OpportunityStatus    @default(DISCOVERED)
+  status                OpportunityStatus          @default(DISCOVERED)
   sourceRecords         SourceRecord[]
   fieldProvenance       FieldProvenance[]
   evaluations           Evaluation[]
   evidenceRecords       EvidenceRecord[]
   recommendations       Recommendation[]
-  duplicateReferences   DuplicateReference[] @relation("DuplicateReferenceSource")
-  referencedAsDuplicate DuplicateReference[] @relation("DuplicateReferenceTarget")
-  createdAt             DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime             @updatedAt @db.Timestamptz(3)
+  semanticOperations    SemanticOperationAttempt[]
+  duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
+  referencedAsDuplicate DuplicateReference[]       @relation("DuplicateReferenceTarget")
+  createdAt             DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                   @updatedAt @db.Timestamptz(3)
 
   @@index([domain, status])
   @@index([companyId])
@@ -156,30 +157,31 @@ model Opportunity {
 }
 
 model SourceRecord {
-  id                String            @id @default(uuid()) @db.Uuid
-  opportunityId     String?           @db.Uuid
-  opportunity       Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  source            String
-  sourceType        SourceType
-  sourceUrl         String?           @db.Text
-  externalId        String?
-  requisitionId     String?
-  rawTitle          String?
-  rawCompany        String?
-  rawLocation       String?
-  rawDescription    String?           @db.Text
-  rawSalaryText     String?
-  rawEmploymentType String?
-  rawPostingDate    String?
-  sourceMetadata    Json?
-  rawPayload        Json?
-  discoveredAt      DateTime          @default(now()) @db.Timestamptz(3)
-  lastObservedAt    DateTime          @default(now()) @db.Timestamptz(3)
-  normalizedAt      DateTime?         @db.Timestamptz(3)
-  fieldProvenance   FieldProvenance[]
-  evidenceRecords   EvidenceRecord[]
-  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
+  id                 String                     @id @default(uuid()) @db.Uuid
+  opportunityId      String?                    @db.Uuid
+  opportunity        Opportunity?               @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  source             String
+  sourceType         SourceType
+  sourceUrl          String?                    @db.Text
+  externalId         String?
+  requisitionId      String?
+  rawTitle           String?
+  rawCompany         String?
+  rawLocation        String?
+  rawDescription     String?                    @db.Text
+  rawSalaryText      String?
+  rawEmploymentType  String?
+  rawPostingDate     String?
+  sourceMetadata     Json?
+  rawPayload         Json?
+  discoveredAt       DateTime                   @default(now()) @db.Timestamptz(3)
+  lastObservedAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  normalizedAt       DateTime?                  @db.Timestamptz(3)
+  fieldProvenance    FieldProvenance[]
+  evidenceRecords    EvidenceRecord[]
+  semanticOperations SemanticOperationAttempt[]
+  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
 
   @@index([opportunityId])
   @@index([source, externalId])
@@ -226,6 +228,7 @@ model UserProfile {
   id                      String       @id @default(uuid()) @db.Uuid
   label                   String
   version                 Int          @default(1)
+  contentHash             String?
   careerGoals             Json?
   experience              Json?
   skills                  Json?
@@ -238,6 +241,9 @@ model UserProfile {
   evaluations             Evaluation[]
   createdAt               DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime     @updatedAt @db.Timestamptz(3)
+
+  @@unique([label, version])
+  @@unique([label, contentHash])
 }
 
 model Evaluation {
@@ -270,6 +276,27 @@ model Evaluation {
   @@index([opportunityId, createdAt])
   @@index([userProfileId])
   @@index([domain, status])
+}
+
+model AiModelPricingConfiguration {
+  id                              String                     @id @default(uuid()) @db.Uuid
+  provider                        String
+  model                           String
+  version                         String
+  currency                        String
+  inputCostPerMillionTokens       Decimal                    @db.Decimal(18, 6)
+  cachedInputCostPerMillionTokens Decimal                    @db.Decimal(18, 6)
+  outputCostPerMillionTokens      Decimal                    @db.Decimal(18, 6)
+  longContextThresholdTokens      Int?
+  longContextInputMultiplier      Decimal                    @db.Decimal(8, 4)
+  longContextOutputMultiplier     Decimal                    @db.Decimal(8, 4)
+  effectiveFrom                   DateTime                   @db.Timestamptz(3)
+  effectiveTo                     DateTime?                  @db.Timestamptz(3)
+  semanticOperations              SemanticOperationAttempt[]
+  createdAt                       DateTime                   @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, model, version])
+  @@index([provider, model, effectiveFrom])
 }
 
 model StageResult {
@@ -401,24 +428,39 @@ model EvaluationTask {
 }
 
 model SemanticOperationAttempt {
-  id                String                  @id @default(uuid()) @db.Uuid
-  evaluationId      String                  @db.Uuid
-  evaluation        Evaluation              @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-  operationId       String
-  promptVersion     String
-  attempt           Int
-  provider          String
-  model             String
-  status            SemanticOperationStatus
-  inputTokens       Int?
-  outputTokens      Int?
-  totalTokens       Int?
-  durationMs        Int
-  providerRequestId String?
-  errorCode         String?
-  errorMessage      String?                 @db.Text
-  createdAt         DateTime                @default(now()) @db.Timestamptz(3)
+  id                     String                       @id @default(uuid()) @db.Uuid
+  evaluationId           String                       @db.Uuid
+  evaluation             Evaluation                   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  opportunityId          String                       @db.Uuid
+  opportunity            Opportunity                  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  domain                 String
+  sourceRecordId         String?                      @db.Uuid
+  sourceRecord           SourceRecord?                @relation(fields: [sourceRecordId], references: [id], onDelete: SetNull)
+  jobSource              String?
+  operationId            String
+  promptVersion          String
+  attempt                Int
+  provider               String
+  model                  String
+  status                 SemanticOperationStatus
+  inputTokens            Int?
+  outputTokens           Int?
+  cachedInputTokens      Int?
+  reasoningTokens        Int?
+  totalTokens            Int?
+  estimatedCost          Decimal?                     @db.Decimal(18, 12)
+  pricingConfigurationId String?                      @db.Uuid
+  pricingConfiguration   AiModelPricingConfiguration? @relation(fields: [pricingConfigurationId], references: [id], onDelete: Restrict)
+  durationMs             Int
+  providerRequestId      String?
+  errorCode              String?
+  errorMessage           String?                      @db.Text
+  createdAt              DateTime                     @default(now()) @db.Timestamptz(3)
 
   @@unique([evaluationId, operationId, attempt])
   @@index([evaluationId, createdAt])
+  @@index([opportunityId, createdAt])
+  @@index([domain, createdAt])
+  @@index([sourceRecordId])
+  @@index([pricingConfigurationId])
 }

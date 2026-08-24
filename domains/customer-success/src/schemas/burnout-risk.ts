@@ -4,6 +4,11 @@ import {
   companyAlignmentUnknownSchema,
   supportedAlignmentFindingSchema,
 } from "./company-alignment";
+import type { AvailableSemanticEvidence } from "./semantic-contract";
+import {
+  assertSemanticEvidenceReferences,
+  parseSemanticDomainResult,
+} from "./semantic-contract";
 
 const requiredText = z.string().trim().min(1);
 const evidenceReferences = z.array(requiredText);
@@ -29,6 +34,42 @@ export const semanticBurnoutRiskSchema = z
     contradictions: z.array(contradictionDraftSchema),
   })
   .strict();
+
+export const semanticBurnoutRiskTransportSchema = semanticBurnoutRiskSchema;
+
+export function semanticBurnoutRiskFromTransport(
+  value: z.input<typeof semanticBurnoutRiskTransportSchema>,
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const transport = semanticBurnoutRiskTransportSchema.parse(value);
+  const result = parseSemanticDomainResult({
+    schema: semanticBurnoutRiskSchema,
+    value: transport,
+    code: "BURNOUT_RISK_DOMAIN_INVALID",
+    message: "Burnout Risk violated the domain contract",
+  });
+  assertSemanticEvidenceReferences({
+    references: [
+      ...result.scoreEvidenceReferences,
+      ...result.evidenceReferences,
+      ...result.majorContributors.flatMap(
+        (finding) => finding.evidenceReferences,
+      ),
+      ...result.positiveIndicators.flatMap(
+        (finding) => finding.evidenceReferences,
+      ),
+      ...result.unknowns.flatMap((unknown) => unknown.evidenceReferences),
+      ...result.contradictions.flatMap((contradiction) => [
+        ...contradiction.evidenceReferencesA,
+        ...contradiction.evidenceReferencesB,
+      ]),
+    ],
+    availableEvidence,
+    code: "BURNOUT_RISK_EVIDENCE_INVALID",
+    message: "Burnout Risk references unavailable evidence",
+  });
+  return result;
+}
 
 export const burnoutRiskDataSchema = z.discriminatedUnion("evaluated", [
   z.object({ evaluated: z.literal(false), reason: requiredText }).strict(),

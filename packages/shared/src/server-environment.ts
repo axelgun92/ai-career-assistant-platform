@@ -35,6 +35,59 @@ export const semanticEnvironmentSchema = z.object({
     .int()
     .min(1_000)
     .max(600_000),
+  AI_PRICING_PROVIDER: z.string().trim().min(1).default("openai"),
+  AI_PRICING_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),
+  AI_PRICING_VERSION: z
+    .string()
+    .trim()
+    .min(1)
+    .default("openai-gpt-5.6-terra-standard-2026-07-30"),
+  AI_PRICING_CURRENCY: z
+    .string()
+    .trim()
+    .regex(/^[A-Z]{3}$/)
+    .default("USD"),
+  AI_INPUT_COST_PER_MILLION_TOKENS: z.coerce.number().nonnegative().default(2),
+  AI_CACHED_INPUT_COST_PER_MILLION_TOKENS: z.coerce
+    .number()
+    .nonnegative()
+    .default(0.2),
+  AI_OUTPUT_COST_PER_MILLION_TOKENS: z.coerce
+    .number()
+    .nonnegative()
+    .default(12),
+  AI_LONG_CONTEXT_THRESHOLD_TOKENS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(272_000),
+  AI_LONG_CONTEXT_INPUT_MULTIPLIER: z.coerce
+    .number()
+    .positive()
+    .default(2),
+  AI_LONG_CONTEXT_OUTPUT_MULTIPLIER: z.coerce
+    .number()
+    .positive()
+    .default(1.5),
+  AI_PRICING_EFFECTIVE_FROM: z
+    .string()
+    .datetime({ offset: true })
+    .default("2026-07-30T00:00:00.000Z"),
+}).superRefine((value, context) => {
+  if (value.AI_PRICING_PROVIDER !== "openai") {
+    context.addIssue({
+      code: "custom",
+      path: ["AI_PRICING_PROVIDER"],
+      message: "The configured semantic provider is openai",
+    });
+  }
+  if (value.AI_PRICING_MODEL !== value.AI_MODEL) {
+    context.addIssue({
+      code: "custom",
+      path: ["AI_PRICING_MODEL"],
+      message: "AI_PRICING_MODEL must match AI_MODEL",
+    });
+  }
 });
 
 export const evaluationWorkerEnvironmentSchema = z.object({
@@ -52,6 +105,31 @@ export function readSemanticEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): SemanticEnvironment {
   return semanticEnvironmentSchema.parse(environment);
+}
+
+export function semanticPricingFromEnvironment(
+  environment: SemanticEnvironment,
+) {
+  return {
+    provider: environment.AI_PRICING_PROVIDER,
+    model: environment.AI_PRICING_MODEL,
+    version: environment.AI_PRICING_VERSION,
+    currency: environment.AI_PRICING_CURRENCY,
+    inputCostPerMillionTokens:
+      environment.AI_INPUT_COST_PER_MILLION_TOKENS,
+    cachedInputCostPerMillionTokens:
+      environment.AI_CACHED_INPUT_COST_PER_MILLION_TOKENS,
+    outputCostPerMillionTokens:
+      environment.AI_OUTPUT_COST_PER_MILLION_TOKENS,
+    longContextThresholdTokens:
+      environment.AI_LONG_CONTEXT_THRESHOLD_TOKENS,
+    longContextInputMultiplier:
+      environment.AI_LONG_CONTEXT_INPUT_MULTIPLIER,
+    longContextOutputMultiplier:
+      environment.AI_LONG_CONTEXT_OUTPUT_MULTIPLIER,
+    effectiveFrom: new Date(environment.AI_PRICING_EFFECTIVE_FROM),
+    effectiveTo: null,
+  };
 }
 
 export function readEvaluationWorkerEnvironment(

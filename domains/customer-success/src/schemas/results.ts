@@ -16,6 +16,11 @@ import {
   companyAlignmentUnknownSchema,
   supportedAlignmentFindingSchema,
 } from "./company-alignment";
+import type { AvailableSemanticEvidence } from "./semantic-contract";
+import {
+  assertSemanticEvidenceReferences,
+  parseSemanticDomainResult,
+} from "./semantic-contract";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
@@ -106,6 +111,74 @@ export const semanticJobEvaluationSchema = z
     contradictions: z.array(contradictionDraftSchema),
   })
   .strict();
+
+const knownJobDimensionSchema = z
+  .object({
+    conclusion: optionalText,
+    evidenceReferences: z.array(requiredText).min(1),
+    unknown: z.literal(false),
+  })
+  .strict();
+
+const unknownJobDimensionSchema = z
+  .object({
+    conclusion: optionalText,
+    evidenceReferences: z.array(requiredText),
+    unknown: z.literal(true),
+  })
+  .strict();
+
+const transportJobDimensionSchema = z.union([
+  knownJobDimensionSchema,
+  unknownJobDimensionSchema,
+]);
+
+export const semanticJobEvaluationTransportSchema =
+  semanticJobEvaluationSchema
+    .extend({
+      customerLifecycleInvolvement: transportJobDimensionSchema,
+      customerOwnership: transportJobDimensionSchema,
+      strategicResponsibility: transportJobDimensionSchema,
+      technicalExposure: transportJobDimensionSchema,
+      commercialResponsibility: transportJobDimensionSchema,
+      crossFunctionalInvolvement: transportJobDimensionSchema,
+      businessImpact: transportJobDimensionSchema,
+    })
+    .strict();
+
+export function semanticJobEvaluationFromTransport(
+  value: z.input<typeof semanticJobEvaluationTransportSchema>,
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const transport = semanticJobEvaluationTransportSchema.parse(value);
+  const result = parseSemanticDomainResult({
+    schema: semanticJobEvaluationSchema,
+    value: transport,
+    code: "JOB_EVALUATION_DOMAIN_INVALID",
+    message: "Job Evaluation violated the domain contract",
+  });
+  assertSemanticEvidenceReferences({
+    references: [
+      ...result.evidenceReferences,
+      ...result.customerLifecycleInvolvement.evidenceReferences,
+      ...result.customerOwnership.evidenceReferences,
+      ...result.strategicResponsibility.evidenceReferences,
+      ...result.technicalExposure.evidenceReferences,
+      ...result.commercialResponsibility.evidenceReferences,
+      ...result.crossFunctionalInvolvement.evidenceReferences,
+      ...result.businessImpact.evidenceReferences,
+      ...result.strategicBridgeValue.evidenceReferences,
+      ...result.contradictions.flatMap((contradiction) => [
+        ...contradiction.evidenceReferencesA,
+        ...contradiction.evidenceReferencesB,
+      ]),
+    ],
+    availableEvidence,
+    code: "JOB_EVALUATION_EVIDENCE_INVALID",
+    message: "Job Evaluation references unavailable evidence",
+  });
+  return result;
+}
 
 export const jobEvaluationDataSchema = z.discriminatedUnion("evaluated", [
   z

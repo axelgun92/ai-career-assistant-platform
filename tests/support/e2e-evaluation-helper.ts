@@ -10,6 +10,7 @@ import {
   createCustomerSuccessFixtureTransport,
   customerSuccessTestPreferences,
 } from "../fixtures/customer-success";
+import { testSemanticPricing } from "../fixtures/semantic-pricing";
 
 const database = getDatabaseClient();
 const command = process.argv[2];
@@ -45,6 +46,7 @@ try {
           retryLimit: 1,
           callBudget: 16,
           timeoutMs: 30_000,
+          pricing: testSemanticPricing,
         },
         transport: createCustomerSuccessFixtureTransport({
           resumeMatch: review ? {

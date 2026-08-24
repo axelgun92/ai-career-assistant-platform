@@ -3,8 +3,13 @@ import {
   evidenceRecordDraftSchema,
 } from "@ai-career/evidence";
 import { z } from "zod";
+import {
+  assertSemanticEvidenceReferences,
+  parseSemanticDomainResult,
+  semanticContractViolation,
+} from "./semantic-contract";
 
-const requiredText = z.string().trim().min(1);
+const requiredText = z.string().trim().min(1).regex(/\S/);
 const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
@@ -164,16 +169,18 @@ export const crossFunctionalOwnershipSchema = z.enum([
   "UNCLEAR_BOUNDARIES",
 ]);
 
+const ownershipFunctionAssessmentSchema = z
+  .object({
+    relationship: crossFunctionalOwnershipSchema,
+    evidenceReferences: evidenceReferences.min(1),
+  })
+  .strict();
+
 export const ownershipMapSchema = z
   .object({
     functions: z.partialRecord(
       ownershipFunctionSchema,
-      z
-        .object({
-          relationship: crossFunctionalOwnershipSchema,
-          evidenceReferences: evidenceReferences.min(1),
-        })
-        .strict(),
+      ownershipFunctionAssessmentSchema,
     ),
   })
   .strict();
@@ -250,6 +257,201 @@ export const semanticReconstructionSchema = z
   })
   .strict();
 
+const knownResponsibilityProminences = [
+  "PRIMARY",
+  "SUBSTANTIAL",
+  "SECONDARY",
+  "OCCASIONAL",
+  "ABSENT",
+] as const;
+
+const transportResponsibilityAreaEntrySchema = z.union([
+  z
+    .object({
+      area: responsibilityAreaSchema,
+      prominence: z.enum(knownResponsibilityProminences),
+      ownership: responsibilityOwnershipSchema,
+      evidenceReferences: evidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      area: responsibilityAreaSchema,
+      prominence: z.literal("UNKNOWN"),
+      ownership: responsibilityOwnershipSchema,
+      evidenceReferences,
+    })
+    .strict(),
+]);
+
+const transportResponsibilityAreasSchema = z
+  .array(transportResponsibilityAreaEntrySchema)
+  .length(responsibilityAreas.length);
+
+const transportOwnershipFunctionsSchema = z
+  .array(
+    z
+      .object({
+        function: ownershipFunctionSchema,
+        relationship: crossFunctionalOwnershipSchema,
+        evidenceReferences: evidenceReferences.min(1),
+      })
+      .strict(),
+  )
+  .max(ownershipFunctions.length);
+
+const transportRequirementSchema = z
+  .object({ ...requirementSchema.shape })
+  .strict();
+
+const transportEvidenceRecordBaseShape = {
+  ...evidenceRecordDraftSchema.shape,
+  referenceId: requiredText,
+  criterionId: optionalText,
+  claim: requiredText,
+  sourceType: requiredText,
+  sourceField: optionalText,
+  sourceReference: optionalText,
+  sourceText: optionalText,
+  evidenceType: requiredText,
+  collectedAt: z.iso.datetime({ offset: true }).nullable(),
+};
+
+const transportEvidenceRecordDraftSchema = z.union([
+  z
+    .object({
+      ...transportEvidenceRecordBaseShape,
+      sourceRecordId: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      ...transportEvidenceRecordBaseShape,
+      provenanceId: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      ...transportEvidenceRecordBaseShape,
+      sourceReference: requiredText,
+    })
+    .strict(),
+]);
+
+const transportContradictionDraftSchema = z
+  .object({
+    ...contradictionDraftSchema.shape,
+    claimA: requiredText,
+    claimB: requiredText,
+    interpretation: requiredText,
+    relevantField: optionalText,
+    significance: optionalText,
+    evidenceReferencesA: evidenceReferences.min(1),
+    evidenceReferencesB: evidenceReferences.min(1),
+  })
+  .strict();
+
+export const semanticReconstructionTransportSchema = z
+  .object({
+    responsibilityMap: z
+      .object({
+        areas: transportResponsibilityAreasSchema,
+        other: responsibilityMapSchema.shape.other,
+      })
+      .strict(),
+    requirements: z.array(transportRequirementSchema),
+    ownershipMap: z
+      .object({
+        functions: transportOwnershipFunctionsSchema,
+      })
+      .strict(),
+    roleMetadata: semanticReconstructionSchema.shape.roleMetadata,
+    evidence: z.array(transportEvidenceRecordDraftSchema),
+    contradictions: z.array(transportContradictionDraftSchema),
+  })
+  .strict();
+
+export type SemanticReconstructionTransport = z.infer<
+  typeof semanticReconstructionTransportSchema
+>;
+export type SemanticReconstruction = z.infer<
+  typeof semanticReconstructionSchema
+>;
+
+export function semanticReconstructionFromTransport(
+  input: unknown,
+): SemanticReconstruction {
+  const transport = semanticReconstructionTransportSchema.parse(input);
+  const uniqueAreas = new Set(
+    transport.responsibilityMap.areas.map((entry) => entry.area),
+  );
+  if (uniqueAreas.size !== responsibilityAreas.length) {
+    semanticContractViolation(
+      "JD_RECONSTRUCTION_IDENTITY_INVALID",
+      "JD Reconstruction must contain every responsibility area exactly once",
+    );
+  }
+  const uniqueFunctions = new Set(
+    transport.ownershipMap.functions.map((entry) => entry.function),
+  );
+  if (uniqueFunctions.size !== transport.ownershipMap.functions.length) {
+    semanticContractViolation(
+      "JD_RECONSTRUCTION_IDENTITY_INVALID",
+      "JD Reconstruction contains a repeated ownership function",
+    );
+  }
+  const areas = Object.fromEntries(
+    transport.responsibilityMap.areas.map(({ area, ...assessment }) => [
+      area,
+      assessment,
+    ]),
+  );
+  const functions = Object.fromEntries(
+    transport.ownershipMap.functions.map(
+      ({ function: functionName, ...assessment }) => [functionName, assessment],
+    ),
+  );
+
+  const result = parseSemanticDomainResult({
+    schema: semanticReconstructionSchema,
+    value: {
+    ...transport,
+    responsibilityMap: {
+      areas,
+      other: transport.responsibilityMap.other,
+    },
+    ownershipMap: { functions },
+    },
+    code: "JD_RECONSTRUCTION_DOMAIN_INVALID",
+    message: "JD Reconstruction violated the domain contract",
+  });
+  assertSemanticEvidenceReferences({
+    references: [
+      ...result.roleMetadata.evidenceReferences,
+      ...Object.values(result.responsibilityMap.areas).flatMap(
+        (assessment) => assessment.evidenceReferences,
+      ),
+      ...result.responsibilityMap.other.flatMap(
+        (assessment) => assessment.evidenceReferences,
+      ),
+      ...result.requirements.flatMap(
+        (requirement) => requirement.evidenceReferences,
+      ),
+      ...Object.values(result.ownershipMap.functions).flatMap(
+        (assessment) => assessment.evidenceReferences,
+      ),
+      ...result.contradictions.flatMap((contradiction) => [
+        ...contradiction.evidenceReferencesA,
+        ...contradiction.evidenceReferencesB,
+      ]),
+    ],
+    availableEvidence: result.evidence,
+    code: "JD_RECONSTRUCTION_EVIDENCE_INVALID",
+    message: "JD Reconstruction references unavailable evidence",
+  });
+  return result;
+}
+
 export const customerSuccessJdReconstructionSchema = semanticReconstructionSchema
   .extend({
     location: locationFactsSchema,
@@ -292,7 +494,4 @@ export const customerSuccessJdReconstructionSchema = semanticReconstructionSchem
 
 export type CustomerSuccessJdReconstruction = z.infer<
   typeof customerSuccessJdReconstructionSchema
->;
-export type SemanticReconstruction = z.infer<
-  typeof semanticReconstructionSchema
 >;

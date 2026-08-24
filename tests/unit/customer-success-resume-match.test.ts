@@ -4,8 +4,11 @@ import {
   effectiveLevelFitSchema,
   requirementMatchClassificationSchema,
   resumeMatchBand,
+  semanticResumeMatchFromTransport,
+  semanticResumeMatchRequirementsForProvider,
   semanticResumeMatchSchema,
   type CustomerSuccessSemanticOperations,
+  type SemanticResumeMatch,
 } from "@ai-career/customer-success";
 import { createEvaluationExecutor } from "@ai-career/evaluation";
 import { randomUUID } from "node:crypto";
@@ -13,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCustomerSuccessFixtureOperations,
   customerSuccessTestPreferences,
+  toResumeMatchProviderTransport,
   type CustomerSuccessScenario,
   type ResumeMatchFixtureOptions,
 } from "../fixtures/customer-success";
@@ -119,6 +123,24 @@ async function run(input?: {
   return { result, fixture, executor, evaluator, domainData };
 }
 
+async function runWithResumeMatchMutation(input: {
+  mutate(value: SemanticResumeMatch): SemanticResumeMatch;
+  rawText?: string;
+}) {
+  const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+  const operations: CustomerSuccessSemanticOperations = {
+    ...fixture.semanticOperations,
+    async evaluateResumeMatch(context) {
+      const valid = semanticResumeMatchSchema.parse(
+        await fixture.semanticOperations.evaluateResumeMatch(context),
+      );
+      return input.mutate(structuredClone(valid));
+    },
+  };
+  const execution = await run({ operations, rawText: input.rawText });
+  return { ...execution, semanticFixture: fixture };
+}
+
 describe("Customer Success Resume Match pipeline", () => {
   it("registers Resume Match as Stage 7 with Effective Seniority inside it", async () => {
     const { result } = await run();
@@ -153,6 +175,78 @@ describe("Customer Success Resume Match pipeline", () => {
     expect(fixture.stats.resumeMatchReceivedMapsProfileAndPriorResults).toBe(
       true,
     );
+  });
+
+  it("executes provider transport conversion through the complete stage and unchanged downstream contracts", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    let authoritativeRequirements: Array<{
+      requirement: string;
+      category: string;
+      strength: string;
+    }> = [];
+    const operations: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async evaluateResumeMatch(input) {
+        authoritativeRequirements = input.requirementMap;
+        const providerRequirements =
+          semanticResumeMatchRequirementsForProvider(input.requirementMap);
+        const domain = await fixture.semanticOperations.evaluateResumeMatch({
+          ...input,
+          requirementMap: providerRequirements.map(
+            ({ requirementIndex: _requirementIndex, ...requirement }) =>
+              requirement,
+          ),
+        });
+        const transport = toResumeMatchProviderTransport(
+          domain,
+          providerRequirements,
+          input.availableEvidence,
+        );
+        return semanticResumeMatchFromTransport(
+          transport,
+          input.requirementMap,
+          input.availableEvidence,
+        );
+      },
+    };
+
+    const { result } = await run({
+      operations,
+      rawText: `3 years of experience. ${defaultJobDescription}`,
+    });
+    const resumeMatch = result.domainResult!.resumeMatch;
+
+    expect(result.evaluation.stageResults[6]?.status).toBe("COMPLETED");
+    expect(resumeMatch.evaluated).toBe(true);
+    if (!resumeMatch.evaluated) throw new Error("Resume Match was not evaluated");
+    expect(
+      resumeMatch.match.requirementAssessments.map((assessment) => ({
+        requirement: assessment.requirementText,
+        category: assessment.category,
+        strength: assessment.strength,
+      })),
+    ).toEqual(
+      authoritativeRequirements.map((requirement) => ({
+        requirement: requirement.requirement,
+        category: requirement.category,
+        strength: requirement.strength,
+      })),
+    );
+    expect(resumeMatch.match.requirementAssessments[0]).toMatchObject({
+      classification: "UNKNOWN",
+      matchedExperienceSpecificity: "UNKNOWN",
+      isAmbiguous: true,
+      profileEvidenceReferences: [],
+    });
+    expect(
+      resumeMatch.match.requirementAssessments.some(
+        (assessment) =>
+          !assessment.isAmbiguous && assessment.classification !== "UNKNOWN",
+      ),
+    ).toBe(true);
+    expect(result.evaluation.stageResults[7]?.status).toBe("COMPLETED");
+    expect(result.domainResult!.opportunityPriority.evaluated).toBe(true);
+    expect(result.recommendation).not.toBeNull();
   });
 
   it("returns valid NOT_EVALUATED after a hard-filter failure", async () => {
@@ -595,6 +689,126 @@ describe("Customer Success seniority contradictions and failure isolation", () =
       .toThrow();
   });
 
+  it.each([
+    {
+      name: "nonexistent requirement identity",
+      expected: "references nonexistent requirement index 999",
+      code: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.requirementAssessments[0]!.requirementIndex = 999;
+      },
+    },
+    {
+      name: "duplicate requirement identity",
+      expected: "repeats requirement index 0",
+      code: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.requirementAssessments[1]!.requirementIndex = 0;
+      },
+    },
+    {
+      name: "decision evidence outside its assessment",
+      expected: "decision impact references evidence outside its assessment",
+      code: "STRUCTURED_OUTPUT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.requirementAssessments[0]!.decisionImpactEvidenceReferences = [
+          "actual-work",
+        ];
+      },
+    },
+    {
+      name: "decisive impact without both evidence sources",
+      expected: "decisive impact requires both JD and profile evidence",
+      code: "STRUCTURED_OUTPUT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        const assessment = value.requirementAssessments[0]!;
+        Object.assign(assessment, {
+          classification: "GENUINE_GAP",
+          matchedExperienceSpecificity: "UNSUPPORTED",
+          decisionImpact: "DECISIVE_DISQUALIFIER",
+          decisionImpactEvidenceReferences: [assessment.jdEvidenceReferences[0]!],
+        });
+      },
+    },
+    {
+      name: "nonexistent Effective Seniority requirement identity",
+      expected: "Effective Seniority references a nonexistent requirement",
+      code: "STRUCTURED_OUTPUT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.effectiveSeniority.requirementStrength.requirementIndexes = [999];
+      },
+    },
+    {
+      name: "unresolved aggregate evidence reference",
+      expected: "Resume Match references unknown evidence: not-real",
+      code: "STRUCTURED_OUTPUT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.evidenceReferences.push("not-real");
+      },
+    },
+    {
+      name: "Effective Seniority without both evidence sources",
+      expected: "Effective Seniority requires both JD and user-profile evidence",
+      code: "STRUCTURED_OUTPUT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.effectiveSeniority.evidenceReferences = ["actual-work"];
+      },
+    },
+    {
+      name: "positioning recommendation without both evidence sources",
+      expected:
+        "Resume-positioning recommendations require both JD and user-profile evidence",
+      code: "STRUCTURED_OUTPUT_INVALID",
+      mutate(value: SemanticResumeMatch) {
+        value.positioningRecommendations[0]!.evidenceReferences = ["actual-work"];
+      },
+    },
+  ])("reaches the $name safeguard", async ({ mutate, expected, code }) => {
+    const { result } = await runWithResumeMatchMutation({
+      mutate(value) {
+        mutate(value);
+        return value;
+      },
+    });
+    expect(result.evaluation.stageResults[6]).toMatchObject({
+      status: "FAILED",
+      failureCode: code,
+    });
+    expect(result.evaluation.stageResults[6]?.errorMessage).toContain(expected);
+  });
+
+  it("treats an attempted ambiguous-requirement judgment as non-retryable", async () => {
+    const execution = await runWithResumeMatchMutation({
+      rawText: `3 years of experience. ${defaultJobDescription}`,
+      mutate(value) {
+        Object.assign(value.requirementAssessments[0]!, {
+          classification: "STRONG_MATCH",
+          matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+          profileEvidenceReferences: ["cs-profile-experience-0"],
+        });
+        return value;
+      },
+    });
+    expect(execution.result.evaluation.stageResults[6]).toMatchObject({
+      status: "FAILED",
+      failureCode: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
+      retryable: false,
+    });
+    expect(execution.result.evaluation.stageResults[6]?.errorMessage).toContain(
+      "Ambiguous requirement 0 must remain Unknown",
+    );
+    expect(execution.semanticFixture.stats.resumeMatchCalls).toBe(1);
+    await expect(
+      execution.executor.retryStage({
+        evaluationId: execution.result.evaluation.id,
+        stageId: "resume-match",
+        evaluator: execution.evaluator,
+        domainData: execution.domainData,
+      }),
+    ).rejects.toThrow("Evaluation stage is not eligible for retry");
+    expect(execution.semanticFixture.stats.resumeMatchCalls).toBe(1);
+  });
+
   it("rejects invalid JD evidence references", async () => {
     const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
     const invalid: CustomerSuccessSemanticOperations = {
@@ -665,8 +879,24 @@ describe("Customer Success seniority contradictions and failure isolation", () =
         };
       },
     };
-    const { result } = await run({ operations: invalid });
-    expect(result.evaluation.stageResults[6]?.status).toBe("FAILED");
+    const { result, executor, evaluator, domainData } = await run({
+      operations: invalid,
+    });
+    expect(result.evaluation.stageResults[6]).toMatchObject({
+      status: "FAILED",
+      failureCode: "RESUME_MATCH_REQUIREMENT_FIDELITY_INVALID",
+      retryable: false,
+    });
+    expect(fixture.stats.resumeMatchCalls).toBe(1);
+    await expect(
+      executor.retryStage({
+        evaluationId: result.evaluation.id,
+        stageId: "resume-match",
+        evaluator,
+        domainData,
+      }),
+    ).rejects.toThrow("Evaluation stage is not eligible for retry");
+    expect(fixture.stats.resumeMatchCalls).toBe(1);
   });
 
   it("rejects profile evidence mislabeled as JD evidence", async () => {

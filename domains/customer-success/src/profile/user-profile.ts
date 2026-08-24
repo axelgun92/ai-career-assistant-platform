@@ -3,6 +3,10 @@ import {
   type EvidenceRecordDraft,
 } from "@ai-career/evidence";
 import { z } from "zod";
+import {
+  customerSuccessDomainPreferencesSchema,
+  loadCustomerSuccessPreferencesFromProfile,
+} from "../config/preferences";
 
 const requiredText = z.string().trim().min(1);
 
@@ -50,6 +54,13 @@ export const customerSuccessProfileContextSchema = z
 export type CustomerSuccessProfileContext = z.infer<
   typeof customerSuccessProfileContextSchema
 >;
+
+export function validateCustomerSuccessUserProfileData(input: unknown) {
+  const data = customerSuccessUserProfileDataSchema.parse(input);
+  customerSuccessDomainPreferencesSchema.parse(data.domainPreferences);
+  loadCustomerSuccessPreferencesFromProfile(data.domainPreferences);
+  return data;
+}
 
 function statementEvidence(
   profileId: string,

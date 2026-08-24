@@ -1,5 +1,10 @@
 import { contradictionDraftSchema } from "@ai-career/evidence";
 import { z } from "zod";
+import type { AvailableSemanticEvidence } from "./semantic-contract";
+import {
+  assertSemanticEvidenceReferences,
+  parseSemanticDomainResult,
+} from "./semantic-contract";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
@@ -106,6 +111,82 @@ export const semanticCompanyAlignmentSchema = z
     contradictions: z.array(contradictionDraftSchema),
   })
   .strict();
+
+function transportClassificationAssessment<T extends z.ZodEnum>(
+  classification: T,
+) {
+  return z.union([
+    z
+      .object({
+        classification: classification.exclude(["UNKNOWN"]),
+        explanation: requiredText,
+        evidenceReferences: evidenceReferences.min(1),
+      })
+      .strict(),
+    z
+      .object({
+        classification: z.literal("UNKNOWN"),
+        explanation: requiredText,
+        evidenceReferences,
+      })
+      .strict(),
+  ]);
+}
+
+export const semanticCompanyAlignmentTransportSchema =
+  semanticCompanyAlignmentSchema
+    .extend({
+      businessModel: transportClassificationAssessment(
+        businessModelClassificationSchema,
+      ),
+      customerType: transportClassificationAssessment(
+        customerTypeClassificationSchema,
+      ),
+      productType: transportClassificationAssessment(
+        productTypeClassificationSchema,
+      ),
+      customerSegment: transportClassificationAssessment(
+        customerSegmentClassificationSchema,
+      ),
+    })
+    .strict();
+
+export function semanticCompanyAlignmentFromTransport(
+  value: z.input<typeof semanticCompanyAlignmentTransportSchema>,
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const transport = semanticCompanyAlignmentTransportSchema.parse(value);
+  const result = parseSemanticDomainResult({
+    schema: semanticCompanyAlignmentSchema,
+    value: transport,
+    code: "COMPANY_ALIGNMENT_DOMAIN_INVALID",
+    message: "Company Alignment violated the domain contract",
+  });
+  assertSemanticEvidenceReferences({
+    references: [
+      ...result.businessModel.evidenceReferences,
+      ...result.customerType.evidenceReferences,
+      ...result.productType.evidenceReferences,
+      ...result.customerSegment.evidenceReferences,
+      ...result.evidenceReferences,
+      ...result.strategicAdvantages.flatMap(
+        (finding) => finding.evidenceReferences,
+      ),
+      ...result.potentialConcerns.flatMap(
+        (finding) => finding.evidenceReferences,
+      ),
+      ...result.unknowns.flatMap((unknown) => unknown.evidenceReferences),
+      ...result.contradictions.flatMap((contradiction) => [
+        ...contradiction.evidenceReferencesA,
+        ...contradiction.evidenceReferencesB,
+      ]),
+    ],
+    availableEvidence,
+    code: "COMPANY_ALIGNMENT_EVIDENCE_INVALID",
+    message: "Company Alignment references unavailable evidence",
+  });
+  return result;
+}
 
 export const companyAlignmentDataSchema = z.discriminatedUnion("evaluated", [
   z

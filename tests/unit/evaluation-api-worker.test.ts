@@ -17,6 +17,7 @@ import { createEvaluationService } from "../../apps/web/src/server/evaluation-se
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { testSemanticPricing } from "../fixtures/semantic-pricing";
 
 const timestamp = new Date("2026-08-17T12:00:00.000Z");
 
@@ -110,6 +111,10 @@ function fakeTaskRepository(initial = taskRecord()): EvaluationTaskRepository & 
       return operations.map((operation) => ({
         id: randomUUID(),
         evaluationId: task.evaluationId,
+        opportunityId: randomUUID(),
+        domain: "customer-success",
+        sourceRecordId: null,
+        jobSource: null,
         operationId: operation.operationId,
         promptVersion: operation.promptVersion,
         attempt: operation.attempt,
@@ -118,7 +123,12 @@ function fakeTaskRepository(initial = taskRecord()): EvaluationTaskRepository & 
         status: operation.status,
         inputTokens: operation.usage.inputTokens,
         outputTokens: operation.usage.outputTokens,
+        cachedInputTokens: operation.usage.cachedInputTokens,
+        reasoningTokens: operation.usage.reasoningTokens,
         totalTokens: operation.usage.totalTokens,
+        estimatedCost: operation.estimatedCost,
+        pricingConfigurationVersion: operation.pricingConfiguration.version,
+        pricingCurrency: operation.pricingConfiguration.currency,
         durationMs: operation.durationMs,
         providerRequestId: operation.providerRequestId,
         errorCode: operation.errorCode,
@@ -161,6 +171,7 @@ describe("evaluation API", () => {
         retryLimit: 1,
         callBudget: 16,
         timeoutMs: 120_000,
+        pricing: testSemanticPricing,
       },
       jobMaxAttempts: 3,
     });
@@ -192,6 +203,7 @@ describe("evaluation API", () => {
         retryLimit: 0,
         callBudget: 10,
         timeoutMs: 5_000,
+        pricing: testSemanticPricing,
       },
       jobMaxAttempts: 2,
     };
@@ -267,7 +279,7 @@ describe("evaluation API", () => {
           ...fakeTaskRepository(task),
           async getByEvaluationId() { return { ...task, evaluationId: evaluation.id }; },
         },
-        semanticConfig: { apiKey: "secret", model: "gpt-5.6-terra", maxOutputTokens: 100, retryLimit: 0, callBudget: 10, timeoutMs: 5_000 },
+        semanticConfig: { apiKey: "secret", model: "gpt-5.6-terra", maxOutputTokens: 100, retryLimit: 0, callBudget: 10, timeoutMs: 5_000, pricing: testSemanticPricing },
         jobMaxAttempts: 2,
       });
       const response = await createEvaluationApiHandlers(service).get(
@@ -276,6 +288,17 @@ describe("evaluation API", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body.status).toBe(status);
+      expect(body.usage).toEqual({
+        attemptCount: 0,
+        inputTokens: null,
+        outputTokens: null,
+        cachedInputTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        estimatedCost: null,
+        currency: null,
+        pricingConfigurationVersions: [],
+      });
       expect(JSON.stringify(body)).not.toContain("secret");
       if (status === "COMPLETED") {
         expect(body.result).toEqual({ recommendation: "APPLY" });
@@ -285,6 +308,36 @@ describe("evaluation API", () => {
 
   it("requires explicit server-side semantic configuration", () => {
     expect(() => readSemanticEnvironment({})).toThrow();
+  });
+
+  it("loads the versioned Terra pricing configuration centrally", () => {
+    const semantic = readSemanticEnvironment({
+      OPENAI_API_KEY: "test-key",
+      AI_MODEL: "gpt-5.6-terra",
+      AI_MAX_OUTPUT_TOKENS: "12000",
+      AI_RETRY_LIMIT: "1",
+      AI_CALL_BUDGET: "16",
+      AI_REQUEST_TIMEOUT_MS: "120000",
+    });
+
+    expect(semantic).toMatchObject({
+      AI_PRICING_MODEL: "gpt-5.6-terra",
+      AI_PRICING_VERSION: "openai-gpt-5.6-terra-standard-2026-07-30",
+      AI_PRICING_CURRENCY: "USD",
+      AI_INPUT_COST_PER_MILLION_TOKENS: 2,
+      AI_CACHED_INPUT_COST_PER_MILLION_TOKENS: 0.2,
+      AI_OUTPUT_COST_PER_MILLION_TOKENS: 12,
+    });
+    expect(() =>
+      readSemanticEnvironment({
+        OPENAI_API_KEY: "test-key",
+        AI_MODEL: "different-model",
+        AI_MAX_OUTPUT_TOKENS: "12000",
+        AI_RETRY_LIMIT: "1",
+        AI_CALL_BUDGET: "16",
+        AI_REQUEST_TIMEOUT_MS: "120000",
+      }),
+    ).toThrow();
   });
 
   it("does not expose unexpected internal errors or sensitive values", async () => {
@@ -389,6 +442,7 @@ describe("database-backed worker contract", () => {
               retryLimit: 0,
               callBudget: 1,
               timeoutMs: 5_000,
+              pricing: testSemanticPricing,
             },
             transport: {
               async execute() {
@@ -399,6 +453,8 @@ describe("database-backed worker contract", () => {
                   usage: {
                     inputTokens: null,
                     outputTokens: null,
+                    cachedInputTokens: null,
+                    reasoningTokens: null,
                     totalTokens: null,
                   },
                 };

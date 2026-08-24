@@ -20,6 +20,7 @@
     "test:e2e:list": "playwright test --list",
     "worker:evaluations": "tsx apps/web/src/server/evaluation-worker-cli.ts",
     "worker:evaluations:once": "tsx apps/web/src/server/evaluation-worker-cli.ts --once",
+    "profile:import:customer-success": "tsx apps/web/src/server/profile-import/import-customer-success-profile-cli.ts",
     "prisma:format": "prisma format --config database/prisma.config.ts",
     "prisma:validate": "prisma validate --config database/prisma.config.ts",
     "prisma:generate": "prisma generate --config database/prisma.config.ts"

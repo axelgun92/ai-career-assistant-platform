@@ -1,14 +1,43 @@
 import type { SemanticExecutor } from "@ai-career/evaluation";
+import type { ZodType } from "zod";
 import type { CustomerSuccessSemanticOperations } from "../extraction/extractor";
-import { semanticAlexFitSchema } from "../schemas/alex-fit";
-import { semanticBurnoutRiskSchema } from "../schemas/burnout-risk";
-import { semanticCompanyAlignmentSchema } from "../schemas/company-alignment";
-import { semanticGhostJobRiskSchema } from "../schemas/ghost-job-risk";
-import { semanticReconstructionSchema } from "../schemas/maps";
-import { semanticOpportunityPrioritySchema } from "../schemas/opportunity-priority";
-import { semanticOrganizationalMaturitySchema } from "../schemas/organizational-maturity";
-import { semanticResumeMatchSchema } from "../schemas/resume-match";
-import { semanticJobEvaluationSchema } from "../schemas/results";
+import {
+  semanticAlexFitFromTransport,
+  semanticAlexFitTransportSchema,
+} from "../schemas/alex-fit";
+import {
+  semanticBurnoutRiskFromTransport,
+  semanticBurnoutRiskTransportSchema,
+} from "../schemas/burnout-risk";
+import {
+  semanticCompanyAlignmentFromTransport,
+  semanticCompanyAlignmentTransportSchema,
+} from "../schemas/company-alignment";
+import {
+  semanticGhostJobRiskFromTransport,
+  semanticGhostJobRiskTransportSchema,
+} from "../schemas/ghost-job-risk";
+import {
+  semanticReconstructionFromTransport,
+  semanticReconstructionTransportSchema,
+} from "../schemas/maps";
+import {
+  semanticOpportunityPriorityFromTransport,
+  semanticOpportunityPriorityTransportSchema,
+} from "../schemas/opportunity-priority";
+import {
+  semanticOrganizationalMaturityFromTransport,
+  semanticOrganizationalMaturityTransportSchema,
+} from "../schemas/organizational-maturity";
+import {
+  semanticResumeMatchFromTransport,
+  semanticResumeMatchRequirementsForProvider,
+  semanticResumeMatchTransportSchema,
+} from "../schemas/resume-match";
+import {
+  semanticJobEvaluationFromTransport,
+  semanticJobEvaluationTransportSchema,
+} from "../schemas/results";
 
 export const customerSuccessProductionPromptVersion = "cs-m9-prompts-v1";
 
@@ -20,14 +49,14 @@ const systemRules = [
   "Do not calculate or choose the final Apply, Review, or Skip recommendation.",
 ].join(" ");
 
-function operation<T>(
+function operation<TContext, TOutput>(
   executor: SemanticExecutor,
   input: {
     operationId: string;
-    schema: Parameters<SemanticExecutor["execute"]>[0]["schema"];
+    schema: ZodType<TOutput>;
     instructions: string;
     userConfiguration?: unknown;
-    trustedContext: T;
+    trustedContext: TContext;
     untrustedSourceContent?: string | null;
   },
 ) {
@@ -47,96 +76,132 @@ export function createProductionCustomerSuccessSemanticOperations(
   executor: SemanticExecutor,
 ): CustomerSuccessSemanticOperations {
   return {
-    reconstructJobDescription(input) {
+    async reconstructJobDescription(input) {
       const { untrustedJobDescription, ...trustedContext } = input;
-      return operation(executor, {
-        operationId: "customer-success.jd-reconstruction",
-        schema: semanticReconstructionSchema,
-        instructions:
-          "Reconstruct actual Customer Success work into the Responsibility, Requirement, Ownership, and role-metadata maps. Do not treat isolated titles or buzzwords as proof. Create evidence records only from the supplied job description and retain source/provenance identifiers.",
-        trustedContext,
-        untrustedSourceContent: untrustedJobDescription,
-      });
+      return semanticReconstructionFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.jd-reconstruction",
+          schema: semanticReconstructionTransportSchema,
+          instructions:
+            "Reconstruct actual Customer Success work into the Responsibility, Requirement, Ownership, and role-metadata maps. Do not treat isolated titles or buzzwords as proof. Create evidence records only from the supplied job description and retain source/provenance identifiers.",
+          trustedContext,
+          untrustedSourceContent: untrustedJobDescription,
+        }),
+      );
     },
-    evaluateJob(input) {
-      return operation(executor, {
-        operationId: "customer-success.job-evaluation",
-        schema: semanticJobEvaluationSchema,
-        instructions:
-          "Explain the practical work using the validated Responsibility and Ownership maps. Assess lifecycle, ownership, strategy, technical and commercial exposure, cross-functional work, business impact, and Strategic Bridge Value without rereading the raw JD.",
-        trustedContext: input,
-      });
+    async evaluateJob(input) {
+      const { availableEvidence, ...trustedContext } = input;
+      return semanticJobEvaluationFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.job-evaluation",
+          schema: semanticJobEvaluationTransportSchema,
+          instructions:
+            "Explain the practical work using the validated Responsibility and Ownership maps. Assess lifecycle, ownership, strategy, technical and commercial exposure, cross-functional work, business impact, and Strategic Bridge Value without rereading the raw JD.",
+          trustedContext,
+        }),
+        availableEvidence,
+      );
     },
-    evaluateCompanyAlignment(input) {
+    async evaluateCompanyAlignment(input) {
       const { preferences, ...trustedContext } = input;
-      return operation(executor, {
-        operationId: "customer-success.company-alignment",
-        schema: semanticCompanyAlignmentSchema,
-        instructions:
-          "Classify business model, customer type, product type, and customer segment from evidence. Evaluate contextual alignment with the supplied preferences without numerical scoring or unsupported company assumptions.",
-        userConfiguration: preferences,
-        trustedContext,
-      });
+      return semanticCompanyAlignmentFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.company-alignment",
+          schema: semanticCompanyAlignmentTransportSchema,
+          instructions:
+            "Classify business model, customer type, product type, and customer segment from evidence. Evaluate contextual alignment with the supplied preferences without numerical scoring or unsupported company assumptions.",
+          userConfiguration: preferences,
+          trustedContext,
+        }),
+        input.availableEvidence,
+      );
     },
-    evaluateOrganizationalMaturity(input) {
-      return operation(executor, {
-        operationId: "customer-success.organizational-maturity",
-        schema: semanticOrganizationalMaturitySchema,
-        instructions:
-          "Assess the existing CS function, customer operating model, and ownership design from the validated maps and earlier results. Produce the bounded holistic maturity assessment without weights, keyword points, prestige, culture, or management assumptions.",
-        trustedContext: input,
-      });
+    async evaluateOrganizationalMaturity(input) {
+      return semanticOrganizationalMaturityFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.organizational-maturity",
+          schema: semanticOrganizationalMaturityTransportSchema,
+          instructions:
+            "Assess the existing CS function, customer operating model, and ownership design from the validated maps and earlier results. Produce the bounded holistic maturity assessment without weights, keyword points, prestige, culture, or management assumptions.",
+          trustedContext: input,
+        }),
+        input.availableEvidence,
+      );
     },
-    evaluateAlexFit(input) {
+    async evaluateAlexFit(input) {
       const { preferences, ...trustedContext } = input;
-      return operation(executor, {
-        operationId: "customer-success.alex-fit",
-        schema: semanticAlexFitSchema,
-        instructions:
-          "Assess categorical fit against the supplied versioned candidate profile and preferences. Distinguish direct, related, and transferable experience and do not invent candidate facts.",
-        userConfiguration: preferences,
-        trustedContext,
-      });
+      return semanticAlexFitFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.alex-fit",
+          schema: semanticAlexFitTransportSchema,
+          instructions:
+            "Assess categorical fit against the supplied versioned candidate profile and preferences. Distinguish direct, related, and transferable experience and do not invent candidate facts.",
+          userConfiguration: preferences,
+          trustedContext,
+        }),
+        input.availableEvidence,
+      );
     },
-    evaluateBurnoutRisk(input) {
+    async evaluateBurnoutRisk(input) {
       const { preferences, ...trustedContext } = input;
-      return operation(executor, {
-        operationId: "customer-success.burnout-risk",
-        schema: semanticBurnoutRiskSchema,
-        instructions:
-          "Assess workload and burnout risk from evidenced role design, ownership, travel, and prior validated results. Broad collaboration alone is not scope creep, and missing information is not negative evidence.",
-        userConfiguration: preferences,
-        trustedContext,
-      });
+      return semanticBurnoutRiskFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.burnout-risk",
+          schema: semanticBurnoutRiskTransportSchema,
+          instructions:
+            "Assess workload and burnout risk from evidenced role design, ownership, travel, and prior validated results. Broad collaboration alone is not scope creep, and missing information is not negative evidence.",
+          userConfiguration: preferences,
+          trustedContext,
+        }),
+        input.availableEvidence,
+      );
     },
-    evaluateResumeMatch(input) {
-      const { preferences, ...trustedContext } = input;
-      return operation(executor, {
-        operationId: "customer-success.resume-match",
-        schema: semanticResumeMatchSchema,
-        instructions:
-          "Compare every supplied Requirement Map entry to separately identified JD and candidate-profile evidence. Preserve requirement metadata and order. Distinguish direct, partial, transferable, and genuine gaps. A required gap is decisive only with JD and profile evidence proving it is a true must-have disqualifier; ambiguity must remain material uncertainty.",
-        userConfiguration: preferences,
-        trustedContext,
-      });
+    async evaluateResumeMatch(input) {
+      const { preferences, requirementMap, ...trustedContext } = input;
+      return semanticResumeMatchFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.resume-match",
+          schema: semanticResumeMatchTransportSchema,
+          instructions:
+            "Compare every supplied Requirement Map entry to separately identified JD and candidate-profile evidence. Preserve requirement metadata and order. Distinguish direct, partial, transferable, and genuine gaps. A required gap is decisive only with JD and profile evidence proving it is a true must-have disqualifier; ambiguity must remain material uncertainty.",
+          userConfiguration: preferences,
+          trustedContext: {
+            ...trustedContext,
+            requirementMap:
+              semanticResumeMatchRequirementsForProvider(requirementMap),
+          },
+        }),
+        requirementMap,
+        input.availableEvidence,
+      );
     },
-    evaluateOpportunityPriority(input) {
-      return operation(executor, {
-        operationId: "customer-success.opportunity-priority",
-        schema: semanticOpportunityPrioritySchema,
-        instructions:
-          "Assess application timing and strategic attention from the supplied validated factors. Do not consume or predict the final recommendation, and do not use a weighted formula.",
-        trustedContext: input,
-      });
+    async evaluateOpportunityPriority(input) {
+      return semanticOpportunityPriorityFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.opportunity-priority",
+          schema: semanticOpportunityPriorityTransportSchema,
+          instructions:
+            "Assess application timing and strategic attention from the supplied validated factors. Do not consume or predict the final recommendation, and do not use a weighted formula.",
+          trustedContext: input,
+        }),
+        {
+          availableEvidence: input.availableEvidence,
+          postingTimingEvidenceReferences:
+            input.postingTiming.evidenceReferences,
+        },
+      );
     },
-    evaluateGhostJobRisk(input) {
-      return operation(executor, {
-        operationId: "customer-success.ghost-job-risk",
-        schema: semanticGhostJobRiskSchema,
-        instructions:
-          "Assess categorical Ghost Job Risk only from supplied objective posting-history facts. Do not invent history; insufficient evidence must remain UNKNOWN.",
-        trustedContext: input,
-      });
+    async evaluateGhostJobRisk(input) {
+      return semanticGhostJobRiskFromTransport(
+        await operation(executor, {
+          operationId: "customer-success.ghost-job-risk",
+          schema: semanticGhostJobRiskTransportSchema,
+          instructions:
+            "Assess categorical Ghost Job Risk only from supplied objective posting-history facts. Do not invent history; insufficient evidence must remain UNKNOWN.",
+          trustedContext: input,
+        }),
+        input,
+      );
     },
   };
 }

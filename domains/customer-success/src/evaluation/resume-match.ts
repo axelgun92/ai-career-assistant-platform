@@ -1,4 +1,5 @@
 import {
+  StageExecutionError,
   StructuredOutputValidationError,
   defineEvaluationStage,
 } from "@ai-career/evaluation";
@@ -60,6 +61,17 @@ function assertReferenceSources(input: {
       `${input.label} contains invalid ${input.expected.toLowerCase()} evidence: ${invalid.join(", ")}`,
     );
   }
+}
+
+function authoritativeResultViolation(
+  message: string,
+  code = "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
+): never {
+  throw new StageExecutionError({
+    code,
+    message,
+    retryable: false,
+  });
 }
 
 export function createResumeMatchStage() {
@@ -142,12 +154,12 @@ export function createResumeMatchStage() {
       for (const assessment of match.requirementAssessments) {
         const requirement = reconstruction.requirements[assessment.requirementIndex];
         if (!requirement) {
-          throw new StructuredOutputValidationError(
+          authoritativeResultViolation(
             `Resume Match references nonexistent requirement index ${assessment.requirementIndex}`,
           );
         }
         if (seenRequirementIndexes.has(assessment.requirementIndex)) {
-          throw new StructuredOutputValidationError(
+          authoritativeResultViolation(
             `Resume Match repeats requirement index ${assessment.requirementIndex}`,
           );
         }
@@ -164,8 +176,9 @@ export function createResumeMatchStage() {
           assessment.isAmbiguous !== requirement.ambiguity.isAmbiguous ||
           assessment.ambiguityExplanation !== requirement.ambiguity.explanation
         ) {
-          throw new StructuredOutputValidationError(
+          authoritativeResultViolation(
             `Resume Match altered structured requirement ${assessment.requirementIndex}`,
+            "RESUME_MATCH_REQUIREMENT_FIDELITY_INVALID",
           );
         }
         if (
@@ -181,7 +194,7 @@ export function createResumeMatchStage() {
           requirement.ambiguity.isAmbiguous &&
           assessment.classification !== "UNKNOWN"
         ) {
-          throw new StructuredOutputValidationError(
+          authoritativeResultViolation(
             `Ambiguous requirement ${assessment.requirementIndex} must remain Unknown`,
           );
         }
@@ -233,7 +246,7 @@ export function createResumeMatchStage() {
         )
         .map(({ index }) => index);
       if (omittedRequiredRequirements.length > 0) {
-        throw new StructuredOutputValidationError(
+        authoritativeResultViolation(
           `Resume Match omitted required requirement indexes: ${omittedRequiredRequirements.join(", ")}`,
         );
       }

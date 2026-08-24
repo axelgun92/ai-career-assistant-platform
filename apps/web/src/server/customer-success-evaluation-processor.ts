@@ -78,6 +78,18 @@ export function createCustomerSuccessEvaluationProcessor(input: {
           false,
         );
       }
+      const queuedPricingVersion =
+        snapshot.executionMetadata?.pricingConfigurationVersion;
+      if (
+        typeof queuedPricingVersion === "string" &&
+        queuedPricingVersion !== input.semanticConfig.pricing.version
+      ) {
+        throw new EvaluationWorkerError(
+          "SEMANTIC_PRICING_CONFIGURATION_MISMATCH",
+          "The queued evaluation pricing version does not match the worker configuration",
+          false,
+        );
+      }
       const subject = await input.evaluations.loadSubject({
         opportunityId: snapshot.opportunityId,
         userProfileId: snapshot.userProfileId,

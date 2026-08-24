@@ -1,7 +1,12 @@
-import { contradictionDraftSchema } from "@ai-career/evidence";
+import {
+  contradictionDraftSchema,
+  type EvidenceRecordDraft,
+} from "@ai-career/evidence";
+import { StageExecutionError } from "@ai-career/evaluation";
 import { z } from "zod";
 import {
   requirementCategorySchema,
+  requirementMapSchema,
   requirementStrengthSchema,
 } from "./maps";
 import {
@@ -301,6 +306,659 @@ export const semanticResumeMatchSchema = z
     contradictions: z.array(contradictionDraftSchema),
   })
   .strict();
+
+// OpenAI Structured Outputs validates JSON Schema, which cannot represent the
+// domain schema's superRefine rules. Keep a provider-facing transport schema
+// whose unions make those relationships structural, then convert to the
+// unchanged domain contract below.
+const transportRequiredText = z.string().min(1).regex(/\S/);
+const transportOptionalText = transportRequiredText.nullable();
+const transportEvidenceReferences = z.array(transportRequiredText);
+const transportBothSourceEvidenceSchema = z
+  .object({
+    jdEvidenceReferences: transportEvidenceReferences.min(1),
+    profileEvidenceReferences: transportEvidenceReferences.min(1),
+  })
+  .strict();
+const transportUnknownCode = z
+  .string()
+  .min(1)
+  .regex(/^[a-z][a-z0-9-]*$/);
+
+const transportRequirementFields = {
+  requirementIndex: z.number().int().nonnegative(),
+  importanceExplanation: transportRequiredText,
+  decisionImpactExplanation: transportRequiredText,
+  explanation: transportRequiredText,
+  jdEvidenceReferences: transportEvidenceReferences.min(1),
+};
+
+const transportNonGapFields = {
+  ...transportRequirementFields,
+  decisionImpact: z.literal("NON_DECISIVE"),
+  decisionImpactEvidenceReferences: transportEvidenceReferences,
+};
+
+const transportStrongRequirementSchema = z
+  .object({
+    ...transportNonGapFields,
+    classification: z.literal("STRONG_MATCH"),
+    matchedExperienceSpecificity: z.enum([
+      "DIRECT_SAAS_CUSTOMER_SUCCESS",
+      "DIRECT_CUSTOMER_SUCCESS",
+      "RELATED_CUSTOMER_RELATIONSHIP",
+      "BROADER_CUSTOMER_FACING",
+    ]),
+    supportedPortion: transportOptionalText,
+    unsupportedPortion: transportOptionalText,
+    profileEvidenceReferences: transportEvidenceReferences.min(1),
+  })
+  .strict();
+
+const transportTransferableRequirementSchema = z
+  .object({
+    ...transportNonGapFields,
+    classification: z.literal("TRANSFERABLE_MATCH"),
+    matchedExperienceSpecificity: z.literal("TRANSFERABLE"),
+    supportedPortion: transportOptionalText,
+    unsupportedPortion: transportOptionalText,
+    profileEvidenceReferences: transportEvidenceReferences.min(1),
+  })
+  .strict();
+
+const transportPartialRequirementSchema = z
+  .object({
+    ...transportNonGapFields,
+    classification: z.literal("PARTIAL_MATCH"),
+    matchedExperienceSpecificity: matchedExperienceSpecificitySchema,
+    supportedPortion: transportRequiredText,
+    unsupportedPortion: transportRequiredText,
+    profileEvidenceReferences: transportEvidenceReferences.min(1),
+  })
+  .strict();
+
+const transportGapFields = {
+  ...transportRequirementFields,
+  classification: z.literal("GENUINE_GAP"),
+  matchedExperienceSpecificity: z.literal("UNSUPPORTED"),
+  supportedPortion: transportOptionalText,
+  unsupportedPortion: transportOptionalText,
+  profileEvidenceReferences: transportEvidenceReferences.min(1),
+};
+
+const transportGapRequirementSchema = z.union([
+  z
+    .object({
+      ...transportGapFields,
+      decisionImpact: z.literal("DECISIVE_DISQUALIFIER"),
+      decisionImpactExplanation: transportRequiredText,
+      decisionImpactEvidence: transportBothSourceEvidenceSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...transportGapFields,
+      decisionImpact: z.literal("MATERIAL_UNCERTAINTY"),
+      decisionImpactExplanation: transportRequiredText,
+      decisionImpactEvidenceReferences: transportEvidenceReferences,
+    })
+    .strict(),
+  z
+    .object({
+      ...transportGapFields,
+      decisionImpact: z.literal("NON_DECISIVE"),
+      decisionImpactExplanation: transportRequiredText,
+      decisionImpactEvidenceReferences: transportEvidenceReferences,
+    })
+    .strict(),
+]);
+
+const transportUnknownRequirementSchema = z
+  .object({
+    ...transportRequirementFields,
+    classification: z.literal("UNKNOWN"),
+    matchedExperienceSpecificity: z.literal("UNKNOWN"),
+    decisionImpact: z.literal("NON_DECISIVE"),
+    decisionImpactEvidenceReferences: transportEvidenceReferences,
+    supportedPortion: transportOptionalText,
+    unsupportedPortion: transportOptionalText,
+    profileEvidenceReferences: transportEvidenceReferences,
+  })
+  .strict();
+
+const transportRequirementAssessmentSchema = z.union([
+  transportStrongRequirementSchema,
+  transportTransferableRequirementSchema,
+  transportPartialRequirementSchema,
+  transportGapRequirementSchema,
+  transportUnknownRequirementSchema,
+]);
+
+const transportSeniorityDimensionSchema = z
+  .object({
+    summary: transportRequiredText,
+    requirementIndexes: z.array(z.number().int().nonnegative()),
+    evidenceReferences: transportEvidenceReferences,
+  })
+  .strict();
+
+const transportSenioritySignalSchema = z.union([
+  z
+    .object({
+      signal: senioritySignalTypeSchema,
+      assessment: z.enum(["ROUTINE", "MODERATE", "ADVANCED"]),
+      explanation: transportRequiredText,
+      evidenceReferences: transportEvidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      signal: senioritySignalTypeSchema,
+      assessment: z.literal("UNKNOWN"),
+      explanation: transportRequiredText,
+      evidenceReferences: transportEvidenceReferences,
+    })
+    .strict(),
+]);
+
+const transportActualResponsibilitySenioritySchema = z.union([
+  z
+    .object({
+      classification: z.enum([
+        "EARLY_MID_LEVEL",
+        "MID_LEVEL",
+        "SENIOR",
+        "HIGHLY_SENIOR",
+      ]),
+      summary: transportRequiredText,
+      signals: z.array(transportSenioritySignalSchema),
+      evidenceReferences: transportEvidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      classification: z.literal("UNKNOWN"),
+      summary: transportRequiredText,
+      signals: z.array(transportSenioritySignalSchema),
+      evidenceReferences: transportEvidenceReferences,
+    })
+    .strict(),
+]);
+
+const transportSupportedFindingSchema = z
+  .object({
+    finding: transportRequiredText,
+    evidenceReferences: transportEvidenceReferences.min(1),
+  })
+  .strict();
+
+const transportUnknownSchema = z
+  .object({
+    code: transportUnknownCode,
+    description: transportRequiredText,
+    materiality: transportOptionalText,
+    evidenceReferences: transportEvidenceReferences,
+  })
+  .strict();
+
+const transportContradictionSchema = z
+  .object({
+    claimA: transportRequiredText,
+    claimB: transportRequiredText,
+    interpretation: transportRequiredText,
+    relevantField: transportOptionalText,
+    significance: transportOptionalText,
+    evidenceReferencesA: transportEvidenceReferences.min(1),
+    evidenceReferencesB: transportEvidenceReferences.min(1),
+  })
+  .strict();
+
+export const semanticResumeMatchTransportSchema = z
+  .object({
+    score: z.number().int().min(0).max(100),
+    scoreExplanation: transportRequiredText,
+    scoreEvidence: transportBothSourceEvidenceSchema,
+    summary: transportRequiredText,
+    requirementAssessments: z.array(transportRequirementAssessmentSchema),
+    effectiveSeniority: z
+      .object({
+        statedYears: transportSeniorityDimensionSchema,
+        requirementStrength: transportSeniorityDimensionSchema,
+        experienceSpecificity: transportSeniorityDimensionSchema,
+        actualResponsibilitySeniority:
+          transportActualResponsibilitySenioritySchema,
+        effectiveLevelFit: effectiveLevelFitSchema,
+        explanation: transportRequiredText,
+        evidence: transportBothSourceEvidenceSchema,
+      })
+      .strict(),
+    strongStrengths: z.array(transportSupportedFindingSchema),
+    partialMatches: z.array(transportSupportedFindingSchema),
+    genuineGaps: z.array(transportSupportedFindingSchema),
+    unknowns: z.array(transportUnknownSchema),
+    positioningRecommendations: z.array(
+      z
+        .object({
+          recommendation: transportRequiredText,
+          evidence: transportBothSourceEvidenceSchema,
+        })
+        .strict(),
+    ),
+    evidenceReferences: transportEvidenceReferences.min(1),
+    contradictions: z.array(transportContradictionSchema),
+  })
+  .strict();
+
+export function semanticResumeMatchRequirementsForProvider(
+  authoritativeRequirementMap: z.input<typeof requirementMapSchema>,
+) {
+  return requirementMapSchema
+    .parse(authoritativeRequirementMap)
+    .map((requirement, requirementIndex) => ({
+      requirementIndex,
+      ...requirement,
+    }))
+    .filter((requirement) => !requirement.ambiguity.isAmbiguous);
+}
+
+function authoritativeResultViolation(message: string): never {
+  throw new StageExecutionError({
+    code: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
+    message,
+    retryable: false,
+  });
+}
+
+function evidenceResultViolation(message: string): never {
+  throw new StageExecutionError({
+    code: "RESUME_MATCH_EVIDENCE_INVALID",
+    message,
+    retryable: false,
+  });
+}
+
+type AvailableResumeMatchEvidence = Pick<
+  EvidenceRecordDraft,
+  "referenceId" | "sourceType"
+>;
+
+function mergeBothSourceEvidence(input: {
+  jdEvidenceReferences: string[];
+  profileEvidenceReferences: string[];
+}) {
+  return [...input.jdEvidenceReferences, ...input.profileEvidenceReferences];
+}
+
+function assertEvidenceReferences(input: {
+  references: string[];
+  knownEvidence: Map<string, AvailableResumeMatchEvidence>;
+  label: string;
+  expectedSource?: "JD" | "PROFILE";
+}) {
+  if (new Set(input.references).size !== input.references.length) {
+    evidenceResultViolation(
+      `${input.label} contains duplicate evidence references`,
+    );
+  }
+  for (const reference of input.references) {
+    const evidence = input.knownEvidence.get(reference);
+    if (!evidence) {
+      evidenceResultViolation(`${input.label} references unknown evidence`);
+    }
+    const isProfile = evidence.sourceType === "USER_PROFILE";
+    if (
+      (input.expectedSource === "PROFILE" && !isProfile) ||
+      (input.expectedSource === "JD" && isProfile)
+    ) {
+      evidenceResultViolation(
+        `${input.label} contains evidence from the wrong source`,
+      );
+    }
+  }
+}
+
+function validateResumeMatchEvidence(
+  match: SemanticResumeMatch,
+  requirements: z.infer<typeof requirementMapSchema>,
+  availableEvidence: AvailableResumeMatchEvidence[],
+  transport: z.infer<typeof semanticResumeMatchTransportSchema>,
+) {
+  const knownEvidence = new Map<string, AvailableResumeMatchEvidence>();
+  for (const evidence of availableEvidence) {
+    if (knownEvidence.has(evidence.referenceId)) {
+      evidenceResultViolation(
+        "Available Resume Match evidence contains duplicate reference identifiers",
+      );
+    }
+    knownEvidence.set(evidence.referenceId, evidence);
+  }
+  const any = (references: string[], label: string) =>
+    assertEvidenceReferences({ references, knownEvidence, label });
+  const jd = (references: string[], label: string) =>
+    assertEvidenceReferences({
+      references,
+      knownEvidence,
+      label,
+      expectedSource: "JD",
+    });
+  const profile = (references: string[], label: string) =>
+    assertEvidenceReferences({
+      references,
+      knownEvidence,
+      label,
+      expectedSource: "PROFILE",
+    });
+
+  jd(
+    transport.scoreEvidence.jdEvidenceReferences,
+    "Resume Match score JD evidence",
+  );
+  profile(
+    transport.scoreEvidence.profileEvidenceReferences,
+    "Resume Match score profile evidence",
+  );
+  any(match.scoreEvidenceReferences, "Resume Match score evidence");
+  any(match.evidenceReferences, "Resume Match aggregate evidence");
+
+  for (const assessment of match.requirementAssessments) {
+    const label = `Requirement ${assessment.requirementIndex}`;
+    jd(assessment.jdEvidenceReferences, `${label} JD evidence`);
+    profile(assessment.profileEvidenceReferences, `${label} profile evidence`);
+    const requirement = requirements[assessment.requirementIndex];
+    if (
+      requirement &&
+      !assessment.jdEvidenceReferences.some((reference) =>
+        requirement.evidenceReferences.includes(reference),
+      )
+    ) {
+      evidenceResultViolation(
+        `${label} is not connected to authoritative JD evidence`,
+      );
+    }
+    any(
+      assessment.decisionImpactEvidenceReferences,
+      `${label} decision-impact evidence`,
+    );
+    const assessmentReferences = new Set([
+      ...assessment.jdEvidenceReferences,
+      ...assessment.profileEvidenceReferences,
+    ]);
+    if (
+      assessment.decisionImpactEvidenceReferences.some(
+        (reference) => !assessmentReferences.has(reference),
+      )
+    ) {
+      evidenceResultViolation(
+        `${label} decision-impact evidence is outside its assessment evidence`,
+      );
+    }
+    if (assessment.decisionImpact === "DECISIVE_DISQUALIFIER") {
+      const transportAssessment = transport.requirementAssessments.find(
+        (candidate) =>
+          candidate.requirementIndex === assessment.requirementIndex,
+      );
+      if (
+        !transportAssessment ||
+        !("decisionImpactEvidence" in transportAssessment)
+      ) {
+        evidenceResultViolation(
+          `${label} decisive impact is missing source-separated evidence`,
+        );
+      }
+      jd(
+        transportAssessment.decisionImpactEvidence.jdEvidenceReferences,
+        `${label} decisive-impact JD evidence`,
+      );
+      profile(
+        transportAssessment.decisionImpactEvidence.profileEvidenceReferences,
+        `${label} decisive-impact profile evidence`,
+      );
+      const decisionJd = assessment.decisionImpactEvidenceReferences.filter(
+        (reference) => knownEvidence.get(reference)?.sourceType !== "USER_PROFILE",
+      );
+      const decisionProfile =
+        assessment.decisionImpactEvidenceReferences.filter(
+          (reference) =>
+            knownEvidence.get(reference)?.sourceType === "USER_PROFILE",
+        );
+      if (decisionJd.length === 0 || decisionProfile.length === 0) {
+        evidenceResultViolation(
+          `${label} decisive impact requires both evidence sources`,
+        );
+      }
+      jd(decisionJd, `${label} decisive-impact JD evidence`);
+      profile(decisionProfile, `${label} decisive-impact profile evidence`);
+    }
+  }
+
+  for (const [name, dimension] of Object.entries({
+    statedYears: match.effectiveSeniority.statedYears,
+    requirementStrength: match.effectiveSeniority.requirementStrength,
+    experienceSpecificity: match.effectiveSeniority.experienceSpecificity,
+  })) {
+    any(dimension.evidenceReferences, `Effective Seniority ${name} evidence`);
+  }
+  any(
+    match.effectiveSeniority.actualResponsibilitySeniority.evidenceReferences,
+    "Actual-responsibility seniority evidence",
+  );
+  for (const signal of match.effectiveSeniority.actualResponsibilitySeniority
+    .signals) {
+    any(signal.evidenceReferences, `Seniority signal ${signal.signal} evidence`);
+  }
+  const effectiveEvidence = match.effectiveSeniority.evidenceReferences;
+  jd(
+    transport.effectiveSeniority.evidence.jdEvidenceReferences,
+    "Effective Seniority JD evidence",
+  );
+  profile(
+    transport.effectiveSeniority.evidence.profileEvidenceReferences,
+    "Effective Seniority profile evidence",
+  );
+  any(effectiveEvidence, "Effective Seniority evidence");
+
+  for (const [name, findings] of Object.entries({
+    strongStrengths: match.strongStrengths,
+    partialMatches: match.partialMatches,
+    genuineGaps: match.genuineGaps,
+  })) {
+    for (const finding of findings) {
+      any(finding.evidenceReferences, `${name} finding evidence`);
+    }
+  }
+  for (const unknown of match.unknowns) {
+    any(unknown.evidenceReferences, `Unknown ${unknown.code} evidence`);
+  }
+  for (const [
+    index,
+    recommendation,
+  ] of match.positioningRecommendations.entries()) {
+    const transportRecommendation =
+      transport.positioningRecommendations[index]!;
+    jd(
+      transportRecommendation.evidence.jdEvidenceReferences,
+      `Positioning recommendation ${index} JD evidence`,
+    );
+    profile(
+      transportRecommendation.evidence.profileEvidenceReferences,
+      `Positioning recommendation ${index} profile evidence`,
+    );
+    any(
+      recommendation.evidenceReferences,
+      "Positioning-recommendation evidence",
+    );
+  }
+  for (const contradiction of match.contradictions) {
+    any(contradiction.evidenceReferencesA, "Contradiction claim A evidence");
+    any(contradiction.evidenceReferencesB, "Contradiction claim B evidence");
+  }
+}
+
+function deterministicAmbiguousAssessment(
+  requirement: z.infer<typeof requirementMapSchema>[number],
+  requirementIndex: number,
+) {
+  return {
+    requirementIndex,
+    requirementText: requirement.requirement,
+    category: requirement.category,
+    strength: requirement.strength,
+    statedYears: requirement.statedYears,
+    statedYearsMaximum: requirement.statedYearsMaximum,
+    statedYearsOpenEnded: requirement.statedYearsOpenEnded,
+    requestedExperienceSpecificity: requirement.experienceSpecificity,
+    isAmbiguous: requirement.ambiguity.isAmbiguous,
+    ambiguityExplanation: requirement.ambiguity.explanation,
+    classification: "UNKNOWN" as const,
+    matchedExperienceSpecificity: "UNKNOWN" as const,
+    importanceExplanation:
+      "Requirement importance remains Unknown because the source requirement is ambiguous.",
+    decisionImpact: "NON_DECISIVE" as const,
+    decisionImpactExplanation:
+      "Decision impact remains non-decisive because the source requirement is ambiguous.",
+    decisionImpactEvidenceReferences: [],
+    explanation:
+      requirement.ambiguity.explanation ??
+      "The source wording is ambiguous, so no candidate match judgment is made.",
+    supportedPortion: null,
+    unsupportedPortion: null,
+    jdEvidenceReferences: requirement.evidenceReferences,
+    profileEvidenceReferences: [],
+  };
+}
+
+export function semanticResumeMatchFromTransport(
+  value: z.input<typeof semanticResumeMatchTransportSchema>,
+  authoritativeRequirementMap: z.input<typeof requirementMapSchema>,
+  availableEvidence: AvailableResumeMatchEvidence[],
+): SemanticResumeMatch {
+  const transport = semanticResumeMatchTransportSchema.parse(value);
+  const requirements = requirementMapSchema.parse(authoritativeRequirementMap);
+  const assessmentsByIndex = new Map<
+    number,
+    (typeof transport.requirementAssessments)[number]
+  >();
+
+  for (const assessment of transport.requirementAssessments) {
+    if (assessment.requirementIndex >= requirements.length) {
+      authoritativeResultViolation(
+        `Resume Match references unknown requirement index ${assessment.requirementIndex}`,
+      );
+    }
+    if (requirements[assessment.requirementIndex]!.ambiguity.isAmbiguous) {
+      authoritativeResultViolation(
+        `Resume Match attempted to classify predetermined ambiguous requirement ${assessment.requirementIndex}`,
+      );
+    }
+    if (assessmentsByIndex.has(assessment.requirementIndex)) {
+      authoritativeResultViolation(
+        `Resume Match repeats requirement index ${assessment.requirementIndex}`,
+      );
+    }
+    const authoritative = requirements[assessment.requirementIndex]!;
+    if (
+      assessment.decisionImpact === "DECISIVE_DISQUALIFIER" &&
+      authoritative.strength !== "REQUIRED"
+    ) {
+      authoritativeResultViolation(
+        `Resume Match assigned decisive impact to ineligible requirement ${assessment.requirementIndex}`,
+      );
+    }
+    assessmentsByIndex.set(assessment.requirementIndex, assessment);
+  }
+
+  const missingIndexes = requirements
+    .map((requirement, index) => ({ requirement, index }))
+    .filter(({ requirement }) => !requirement.ambiguity.isAmbiguous)
+    .map(({ index }) => index)
+    .filter((index) => !assessmentsByIndex.has(index));
+  if (missingIndexes.length > 0) {
+    authoritativeResultViolation(
+      `Resume Match omitted requirement indexes: ${missingIndexes.join(", ")}`,
+    );
+  }
+
+  const {
+    scoreEvidence,
+    effectiveSeniority: transportEffectiveSeniority,
+    positioningRecommendations: transportPositioningRecommendations,
+    ...transportResult
+  } = transport;
+  const domainCandidate = {
+    ...transportResult,
+    scoreEvidenceReferences: mergeBothSourceEvidence(scoreEvidence),
+    requirementAssessments: requirements.map((requirement, index) =>
+      requirement.ambiguity.isAmbiguous
+        ? deterministicAmbiguousAssessment(requirement, index)
+        : (() => {
+            const assessment = assessmentsByIndex.get(index)!;
+            const semanticAssessment =
+              "decisionImpactEvidence" in assessment
+                ? (({ decisionImpactEvidence, ...semanticFields }) => ({
+                    ...semanticFields,
+                    decisionImpactEvidenceReferences:
+                      mergeBothSourceEvidence(decisionImpactEvidence),
+                  }))(assessment)
+                : assessment;
+            return {
+              ...semanticAssessment,
+              requirementIndex: index,
+              requirementText: requirement.requirement,
+              category: requirement.category,
+              strength: requirement.strength,
+              statedYears: requirement.statedYears,
+              statedYearsMaximum: requirement.statedYearsMaximum,
+              statedYearsOpenEnded: requirement.statedYearsOpenEnded,
+              requestedExperienceSpecificity: requirement.experienceSpecificity,
+              isAmbiguous: requirement.ambiguity.isAmbiguous,
+              ambiguityExplanation: requirement.ambiguity.explanation,
+            };
+          })(),
+    ),
+    effectiveSeniority: {
+      ...((({ evidence: _evidence, ...semanticFields }) => semanticFields)(
+        transportEffectiveSeniority,
+      )),
+      evidenceReferences: mergeBothSourceEvidence(
+        transportEffectiveSeniority.evidence,
+      ),
+    },
+    positioningRecommendations: transportPositioningRecommendations.map(
+      ({ evidence, ...recommendation }) => ({
+        ...recommendation,
+        evidenceReferences: mergeBothSourceEvidence(evidence),
+      }),
+    ),
+  };
+  const parsedMatch = semanticResumeMatchSchema.safeParse(domainCandidate);
+  if (!parsedMatch.success) {
+    authoritativeResultViolation(
+      "Resume Match violated the authoritative domain contract",
+    );
+  }
+  const match = parsedMatch.data;
+  const seniorityRequirementIndexes = [
+    ...match.effectiveSeniority.statedYears.requirementIndexes,
+    ...match.effectiveSeniority.requirementStrength.requirementIndexes,
+    ...match.effectiveSeniority.experienceSpecificity.requirementIndexes,
+  ];
+  if (
+    seniorityRequirementIndexes.some(
+      (requirementIndex) => requirementIndex >= requirements.length,
+    )
+  ) {
+    authoritativeResultViolation(
+      "Resume Match Effective Seniority references an unknown requirement",
+    );
+  }
+  validateResumeMatchEvidence(
+    match,
+    requirements,
+    availableEvidence,
+    transport,
+  );
+  return match;
+}
 
 export const resumeMatchDataSchema = z.discriminatedUnion("evaluated", [
   z.object({ evaluated: z.literal(false), reason: requiredText }).strict(),

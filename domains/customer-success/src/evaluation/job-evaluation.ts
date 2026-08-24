@@ -57,6 +57,7 @@ export function createJobEvaluationStage() {
             industry: context.opportunity.industry,
             size: context.opportunity.companySize,
           },
+          availableEvidence: reconstruction.evidence,
         }),
       );
       const knownEvidence = new Map(

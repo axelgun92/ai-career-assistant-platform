@@ -5,12 +5,28 @@ import {
   type EvaluationTaskRepository,
   type JsonValue,
   type SemanticOperationAttempt,
+  SemanticOperationPersistenceError,
 } from "@ai-career/evaluation";
 import { Prisma } from "../generated/prisma/client";
+import { randomUUID } from "node:crypto";
 import { getDatabaseClient } from "./client";
 
 function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
+}
+
+function persistenceCategory(error: unknown) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : null;
+  if (code === "P2002") return "UNIQUE_CONSTRAINT" as const;
+  if (code === "P2003") return "FOREIGN_KEY_CONSTRAINT" as const;
+  if (code === "P2011") return "NULL_CONSTRAINT" as const;
+  if (code === "P2000") return "VALUE_CONSTRAINT" as const;
+  if (code === "P2028") return "TRANSACTION_FAILURE" as const;
+  if (code?.startsWith("P1")) return "DATABASE_UNAVAILABLE" as const;
+  return "UNKNOWN_DATABASE_ERROR" as const;
 }
 
 export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository {
@@ -179,37 +195,165 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
     evaluationId: string,
     attempt: SemanticOperationAttempt,
   ) {
-    await this.database.$transaction(async (transaction) => {
-      const latest = await transaction.semanticOperationAttempt.aggregate({
-        where: { evaluationId, operationId: attempt.operationId },
-        _max: { attempt: true },
+    try {
+      await this.database.$transaction(async (transaction) => {
+        const evaluation = await transaction.evaluation.findUniqueOrThrow({
+          where: { id: evaluationId },
+          select: {
+            opportunityId: true,
+            domain: true,
+            opportunity: {
+              select: {
+                source: true,
+                sourceRecords: {
+                  orderBy: { createdAt: "asc" },
+                  select: { id: true, source: true },
+                  take: 1,
+                },
+              },
+            },
+          },
+        });
+        const pricing = attempt.pricingConfiguration;
+        await transaction.$executeRaw(Prisma.sql`
+          INSERT INTO "AiModelPricingConfiguration" (
+            "id",
+            "provider",
+            "model",
+            "version",
+            "currency",
+            "inputCostPerMillionTokens",
+            "cachedInputCostPerMillionTokens",
+            "outputCostPerMillionTokens",
+            "longContextThresholdTokens",
+            "longContextInputMultiplier",
+            "longContextOutputMultiplier",
+            "effectiveFrom",
+            "effectiveTo"
+          ) VALUES (
+            ${randomUUID()}::uuid,
+            ${pricing.provider},
+            ${pricing.model},
+            ${pricing.version},
+            ${pricing.currency},
+            ${pricing.inputCostPerMillionTokens}::numeric,
+            ${pricing.cachedInputCostPerMillionTokens}::numeric,
+            ${pricing.outputCostPerMillionTokens}::numeric,
+            ${pricing.longContextThresholdTokens}::integer,
+            ${pricing.longContextInputMultiplier}::numeric,
+            ${pricing.longContextOutputMultiplier}::numeric,
+            ${pricing.effectiveFrom.toISOString()}::timestamptz,
+            ${pricing.effectiveTo?.toISOString() ?? null}::timestamptz
+          )
+          ON CONFLICT ("provider", "model", "version") DO NOTHING
+        `);
+        const pricingRecords = await transaction.$queryRaw<
+          Array<{ id: string; matches: boolean }>
+        >(Prisma.sql`
+          SELECT (
+            "currency" = ${pricing.currency}
+            AND "inputCostPerMillionTokens" =
+              ${pricing.inputCostPerMillionTokens}::numeric
+            AND "cachedInputCostPerMillionTokens" =
+              ${pricing.cachedInputCostPerMillionTokens}::numeric
+            AND "outputCostPerMillionTokens" =
+              ${pricing.outputCostPerMillionTokens}::numeric
+            AND "longContextThresholdTokens" IS NOT DISTINCT FROM
+              ${pricing.longContextThresholdTokens}::integer
+            AND "longContextInputMultiplier" =
+              ${pricing.longContextInputMultiplier}::numeric
+            AND "longContextOutputMultiplier" =
+              ${pricing.longContextOutputMultiplier}::numeric
+            AND "effectiveFrom" =
+              ${pricing.effectiveFrom.toISOString()}::timestamptz
+            AND "effectiveTo" IS NOT DISTINCT FROM
+              ${pricing.effectiveTo?.toISOString() ?? null}::timestamptz
+          ) AS "matches", "id"::text
+          FROM "AiModelPricingConfiguration"
+          WHERE "provider" = ${pricing.provider}
+            AND "model" = ${pricing.model}
+            AND "version" = ${pricing.version}
+        `);
+        const pricingRecord = pricingRecords[0];
+        if (!pricingRecord || pricingRecord.matches !== true) {
+          throw new SemanticOperationPersistenceError(
+            "PRICING_CONFIGURATION_MISMATCH",
+          );
+        }
+        const latest = await transaction.semanticOperationAttempt.aggregate({
+          where: { evaluationId, operationId: attempt.operationId },
+          _max: { attempt: true },
+        });
+        await transaction.semanticOperationAttempt.create({
+          data: {
+            evaluationId,
+            opportunityId: evaluation.opportunityId,
+            domain: evaluation.domain,
+            sourceRecordId: evaluation.opportunity.sourceRecords[0]?.id ?? null,
+            jobSource:
+              evaluation.opportunity.sourceRecords[0]?.source ??
+              evaluation.opportunity.source,
+            operationId: attempt.operationId,
+            promptVersion: attempt.promptVersion,
+            attempt: (latest._max.attempt ?? 0) + 1,
+            provider: attempt.provider,
+            model: attempt.model,
+            status: attempt.status,
+            inputTokens: attempt.usage.inputTokens,
+            outputTokens: attempt.usage.outputTokens,
+            cachedInputTokens: attempt.usage.cachedInputTokens,
+            reasoningTokens: attempt.usage.reasoningTokens,
+            totalTokens: attempt.usage.totalTokens,
+            estimatedCost: attempt.estimatedCost,
+            pricingConfigurationId: pricingRecord.id,
+            durationMs: attempt.durationMs,
+            providerRequestId: attempt.providerRequestId,
+            errorCode: attempt.errorCode,
+            errorMessage: attempt.errorMessage,
+          },
+        });
       });
-      await transaction.semanticOperationAttempt.create({
-        data: {
-          evaluationId,
-          operationId: attempt.operationId,
-          promptVersion: attempt.promptVersion,
-          attempt: (latest._max.attempt ?? 0) + 1,
-          provider: attempt.provider,
-          model: attempt.model,
-          status: attempt.status,
-          inputTokens: attempt.usage.inputTokens,
-          outputTokens: attempt.usage.outputTokens,
-          totalTokens: attempt.usage.totalTokens,
-          durationMs: attempt.durationMs,
-          providerRequestId: attempt.providerRequestId,
-          errorCode: attempt.errorCode,
-          errorMessage: attempt.errorMessage,
-        },
-      });
-    });
+    } catch (error) {
+      if (error instanceof SemanticOperationPersistenceError) throw error;
+      throw new SemanticOperationPersistenceError(persistenceCategory(error));
+    }
   }
 
   async listSemanticOperations(evaluationId: string) {
     const records = await this.database.semanticOperationAttempt.findMany({
       where: { evaluationId },
       orderBy: [{ createdAt: "asc" }, { attempt: "asc" }],
+      include: { pricingConfiguration: true },
     });
-    return records.map((record) => semanticOperationAttemptRecordSchema.parse(record));
+    return records.map((record) =>
+      semanticOperationAttemptRecordSchema.parse({
+        id: record.id,
+        evaluationId: record.evaluationId,
+        opportunityId: record.opportunityId,
+        domain: record.domain,
+        sourceRecordId: record.sourceRecordId,
+        jobSource: record.jobSource,
+        operationId: record.operationId,
+        promptVersion: record.promptVersion,
+        attempt: record.attempt,
+        provider: record.provider,
+        model: record.model,
+        status: record.status,
+        inputTokens: record.inputTokens,
+        outputTokens: record.outputTokens,
+        cachedInputTokens: record.cachedInputTokens,
+        reasoningTokens: record.reasoningTokens,
+        totalTokens: record.totalTokens,
+        estimatedCost: record.estimatedCost?.toNumber() ?? null,
+        pricingConfigurationVersion:
+          record.pricingConfiguration?.version ?? null,
+        pricingCurrency: record.pricingConfiguration?.currency ?? null,
+        durationMs: record.durationMs,
+        providerRequestId: record.providerRequestId,
+        errorCode: record.errorCode,
+        errorMessage: record.errorMessage,
+        createdAt: record.createdAt,
+      }),
+    );
   }
 }

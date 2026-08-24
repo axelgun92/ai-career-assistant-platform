@@ -37,6 +37,7 @@ export interface CustomerSuccessSemanticOperations {
       industry: string | null;
       size: string | null;
     };
+    availableEvidence: CustomerSuccessJdReconstruction["evidence"];
   }): Promise<unknown>;
   evaluateCompanyAlignment(input: {
     responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];

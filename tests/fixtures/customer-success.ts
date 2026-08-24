@@ -81,6 +81,112 @@ export interface ResumeMatchFixtureOptions {
     | "JUNIOR_TITLE_SENIOR_SCOPE";
 }
 
+type ProviderRequirement = SemanticReconstruction["requirements"][number] & {
+  requirementIndex: number;
+};
+
+export function toResumeMatchProviderTransport(
+  output: SemanticResumeMatch,
+  providerRequirements: ProviderRequirement[],
+  availableEvidence: Pick<EvidenceRecordDraft, "referenceId" | "sourceType">[],
+) {
+  const profileReferences = new Set(
+    availableEvidence
+      .filter((evidence) => evidence.sourceType === "USER_PROFILE")
+      .map((evidence) => evidence.referenceId),
+  );
+  const splitEvidence = (references: string[]) => ({
+    jdEvidenceReferences: references.filter(
+      (reference) => !profileReferences.has(reference),
+    ),
+    profileEvidenceReferences: references.filter((reference) =>
+      profileReferences.has(reference),
+    ),
+  });
+  const {
+    scoreEvidenceReferences,
+    effectiveSeniority,
+    positioningRecommendations,
+    ...result
+  } = output;
+  const {
+    evidenceReferences: effectiveSeniorityEvidenceReferences,
+    ...effectiveSeniorityFields
+  } = effectiveSeniority;
+  return {
+    ...result,
+    scoreEvidence: splitEvidence(scoreEvidenceReferences),
+    requirementAssessments: output.requirementAssessments.map(
+      ({
+        requirementText: _requirementText,
+        category: _category,
+        strength: _strength,
+        statedYears: _statedYears,
+        statedYearsMaximum: _statedYearsMaximum,
+        statedYearsOpenEnded: _statedYearsOpenEnded,
+        requestedExperienceSpecificity: _requestedExperienceSpecificity,
+        isAmbiguous: _isAmbiguous,
+        ambiguityExplanation: _ambiguityExplanation,
+        decisionImpactEvidenceReferences,
+        ...assessment
+      }) => {
+        const semanticAssessment =
+          assessment.decisionImpact === "DECISIVE_DISQUALIFIER"
+            ? {
+                ...assessment,
+                decisionImpactEvidence: splitEvidence(
+                  decisionImpactEvidenceReferences,
+                ),
+              }
+            : { ...assessment, decisionImpactEvidenceReferences };
+        return {
+          ...semanticAssessment,
+          requirementIndex:
+            providerRequirements[assessment.requirementIndex]!.requirementIndex,
+        };
+      },
+    ),
+    effectiveSeniority: {
+      ...effectiveSeniorityFields,
+      evidence: splitEvidence(effectiveSeniorityEvidenceReferences),
+    },
+    positioningRecommendations: positioningRecommendations.map(
+      ({ evidenceReferences, ...recommendation }) => ({
+        ...recommendation,
+        evidence: splitEvidence(evidenceReferences),
+      }),
+    ),
+  };
+}
+
+function toJdReconstructionProviderTransport(
+  reconstruction: SemanticReconstruction,
+) {
+  return {
+    ...reconstruction,
+    responsibilityMap: {
+      areas: responsibilityAreas.map((area) => ({
+        area,
+        ...reconstruction.responsibilityMap.areas[area],
+      })),
+      other: reconstruction.responsibilityMap.other,
+    },
+    ownershipMap: {
+      functions: ownershipFunctions.flatMap((functionName) => {
+        const assessment =
+          reconstruction.ownershipMap.functions[functionName];
+        return assessment
+          ? [{ function: functionName, ...assessment }]
+          : [];
+      }),
+    },
+    evidence: reconstruction.evidence.map((item) => ({
+      ...item,
+      collectedAt: item.collectedAt?.toISOString() ?? null,
+    })),
+  };
+}
+
 export interface OpportunityPriorityFixtureOptions {
   score?: number;
   applicationEffort?: SemanticOpportunityPriority["applicationEffort"]["classification"];
@@ -1535,10 +1641,12 @@ export function createCustomerSuccessFixtureTransport(input: {
       let output: unknown;
       switch (request.operationId) {
         case "customer-success.jd-reconstruction":
-          output = await fixture.semanticOperations.reconstructJobDescription({
-            ...(trusted as never),
-            untrustedJobDescription: payload.untrustedSourceContent!,
-          });
+          output = toJdReconstructionProviderTransport(
+            (await fixture.semanticOperations.reconstructJobDescription({
+              ...(trusted as never),
+              untrustedJobDescription: payload.untrustedSourceContent!,
+            })) as SemanticReconstruction,
+          );
           break;
         case "customer-success.job-evaluation":
           output = await fixture.semanticOperations.evaluateJob(trusted as never);
@@ -1567,10 +1675,27 @@ export function createCustomerSuccessFixtureTransport(input: {
           } as never);
           break;
         case "customer-success.resume-match":
-          output = await fixture.semanticOperations.evaluateResumeMatch({
-            ...trusted,
-            preferences: payload.userConfiguration,
-          } as never);
+          {
+            const providerRequirements = trusted.requirementMap as
+              | ProviderRequirement[]
+              | undefined;
+            if (!providerRequirements) {
+              throw new Error("Resume Match provider requirements are missing");
+            }
+            const domain = await fixture.semanticOperations.evaluateResumeMatch({
+              ...trusted,
+              requirementMap: providerRequirements.map(
+                ({ requirementIndex: _requirementIndex, ...requirement }) =>
+                  requirement,
+              ),
+              preferences: payload.userConfiguration,
+            } as never);
+            output = toResumeMatchProviderTransport(
+              domain as SemanticResumeMatch,
+              providerRequirements,
+              trusted.availableEvidence as EvidenceRecordDraft[],
+            );
+          }
           break;
         case "customer-success.opportunity-priority":
           output = await fixture.semanticOperations.evaluateOpportunityPriority(
@@ -1578,9 +1703,21 @@ export function createCustomerSuccessFixtureTransport(input: {
           );
           break;
         case "customer-success.ghost-job-risk":
-          output = await fixture.semanticOperations.evaluateGhostJobRisk(
+          {
+            const risk = (await fixture.semanticOperations.evaluateGhostJobRisk(
             trusted as never,
-          );
+            )) as SemanticGhostJobRisk;
+            output = {
+              risk: {
+                classification: risk.classification,
+                assessment: risk.assessment,
+                interpretation: risk.interpretation,
+                evidenceReferences: risk.evidenceReferences,
+              },
+              unknowns: risk.unknowns,
+              contradictions: risk.contradictions,
+            };
+          }
           break;
         default:
           throw new Error(`Unexpected semantic operation: ${request.operationId}`);
@@ -1588,7 +1725,13 @@ export function createCustomerSuccessFixtureTransport(input: {
       return {
         outputText: JSON.stringify(output),
         providerRequestId: `fixture-${request.operationId}`,
-        usage: { inputTokens: 25, outputTokens: 15, totalTokens: 40 },
+        usage: {
+          inputTokens: 25,
+          outputTokens: 15,
+          cachedInputTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 40,
+        },
       };
     },
   };

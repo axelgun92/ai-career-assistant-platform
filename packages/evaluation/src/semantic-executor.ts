@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { StageExecutionError } from "./errors";
+import {
+  estimateSemanticOperationCost,
+  semanticPricingConfigurationSchema,
+  type SemanticPricingConfiguration,
+  type SemanticTokenUsage,
+} from "./semantic-pricing";
 
 export const semanticOperationOutcomeSchema = z.enum([
   "SUCCESS",
@@ -8,11 +14,7 @@ export const semanticOperationOutcomeSchema = z.enum([
   "TIMEOUT",
 ]);
 
-export interface SemanticUsage {
-  inputTokens: number | null;
-  outputTokens: number | null;
-  totalTokens: number | null;
-}
+export interface SemanticUsage extends SemanticTokenUsage {}
 
 export interface SemanticOperationAttempt {
   operationId: string;
@@ -22,10 +24,33 @@ export interface SemanticOperationAttempt {
   model: string;
   status: z.infer<typeof semanticOperationOutcomeSchema>;
   usage: SemanticUsage;
+  estimatedCost: number | null;
+  pricingConfiguration: SemanticPricingConfiguration;
   durationMs: number;
   providerRequestId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
+}
+
+export const semanticOperationPersistenceCategories = [
+  "PRICING_CONFIGURATION_MISMATCH",
+  "UNIQUE_CONSTRAINT",
+  "FOREIGN_KEY_CONSTRAINT",
+  "NULL_CONSTRAINT",
+  "VALUE_CONSTRAINT",
+  "TRANSACTION_FAILURE",
+  "DATABASE_UNAVAILABLE",
+  "UNKNOWN_DATABASE_ERROR",
+] as const;
+
+export type SemanticOperationPersistenceCategory =
+  (typeof semanticOperationPersistenceCategories)[number];
+
+export class SemanticOperationPersistenceError extends Error {
+  constructor(readonly category: SemanticOperationPersistenceCategory) {
+    super("Semantic operation metadata could not be persisted");
+    this.name = "SemanticOperationPersistenceError";
+  }
 }
 
 export interface SemanticOperationRecorder {
@@ -61,6 +86,7 @@ export interface SemanticExecutorConfig {
   retryLimit: number;
   callBudget: number;
   timeoutMs: number;
+  pricing: SemanticPricingConfiguration;
 }
 
 export interface StructuredSemanticOperation<T> {
@@ -79,6 +105,9 @@ class ProviderResponseError extends Error {
     readonly code: string,
     message: string,
     readonly retryable: boolean,
+    readonly usage: SemanticUsage,
+    readonly providerRequestId: string | null,
+    readonly diagnosticMessage: string = message,
   ) {
     super(message);
     this.name = "ProviderResponseError";
@@ -86,13 +115,84 @@ class ProviderResponseError extends Error {
 }
 
 function emptyUsage(): SemanticUsage {
-  return { inputTokens: null, outputTokens: null, totalTokens: null };
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    cachedInputTokens: null,
+    reasoningTokens: null,
+    totalTokens: null,
+  };
+}
+
+function reportedToken(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function responseUsage(body: unknown): SemanticUsage {
+  if (body === null || typeof body !== "object") return emptyUsage();
+  const usage = (body as { usage?: unknown }).usage;
+  if (usage === null || typeof usage !== "object") return emptyUsage();
+  const record = usage as {
+    input_tokens?: unknown;
+    output_tokens?: unknown;
+    total_tokens?: unknown;
+    input_tokens_details?: { cached_tokens?: unknown } | null;
+    output_tokens_details?: { reasoning_tokens?: unknown } | null;
+  };
+  return {
+    inputTokens: reportedToken(record.input_tokens),
+    outputTokens: reportedToken(record.output_tokens),
+    cachedInputTokens: reportedToken(
+      record.input_tokens_details?.cached_tokens,
+    ),
+    reasoningTokens: reportedToken(
+      record.output_tokens_details?.reasoning_tokens,
+    ),
+    totalTokens: reportedToken(record.total_tokens),
+  };
 }
 
 function safeProviderMessage(status: number): string {
   if (status === 429) return "The semantic provider rate limit was reached";
   if (status >= 500) return "The semantic provider is temporarily unavailable";
   return "The semantic provider rejected the request";
+}
+
+function safeProviderErrorDiagnostic(status: number, body: unknown): string {
+  const message = safeProviderMessage(status);
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return message;
+  }
+  const error = (body as { error?: unknown }).error;
+  if (error === null || typeof error !== "object" || Array.isArray(error)) {
+    return message;
+  }
+  const record = error as Record<string, unknown>;
+  const safeCodeOrType = (value: unknown) =>
+    typeof value === "string" &&
+    value.length <= 64 &&
+    /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value)
+      ? value
+      : null;
+  const safeParameter = (value: unknown) =>
+    typeof value === "string" &&
+    value.length <= 128 &&
+    /^[a-zA-Z0-9][a-zA-Z0-9_.\[\]-]*$/.test(value)
+      ? value
+      : null;
+  const fields = [
+    ["code", safeCodeOrType(record.code)],
+    ["param", safeParameter(record.param)],
+    ["type", safeCodeOrType(record.type)],
+  ].filter((field): field is [string, string] => field[1] !== null);
+
+  return fields.length === 0
+    ? message
+    : `${message} (provider ${fields
+        .map(([name, value]) => `${name}=${value}`)
+        .join(", ")})`;
 }
 
 export function createOpenAiResponsesTransport(
@@ -128,35 +228,43 @@ export function createOpenAiResponsesTransport(
         },
       );
       const providerRequestId = response.headers.get("x-request-id");
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+      const usage = responseUsage(body);
       if (!response.ok) {
+        const message = safeProviderMessage(response.status);
         throw new ProviderResponseError(
           `PROVIDER_HTTP_${response.status}`,
-          safeProviderMessage(response.status),
+          message,
           response.status === 408 || response.status === 429 || response.status >= 500,
+          usage,
+          providerRequestId,
+          safeProviderErrorDiagnostic(response.status, body),
         );
       }
 
-      const body = (await response.json()) as {
+      const parsedBody = (body ?? {}) as {
         status?: string;
         error?: { code?: string } | null;
         output?: Array<{
           type?: string;
           content?: Array<{ type?: string; text?: string }>;
         }>;
-        usage?: {
-          input_tokens?: number;
-          output_tokens?: number;
-          total_tokens?: number;
-        } | null;
       };
-      if (body.status !== "completed") {
+      if (parsedBody.status !== "completed") {
         throw new ProviderResponseError(
-          body.error?.code ?? "PROVIDER_RESPONSE_INCOMPLETE",
+          parsedBody.error?.code ?? "PROVIDER_RESPONSE_INCOMPLETE",
           "The semantic provider did not complete the response",
           true,
+          usage,
+          providerRequestId,
         );
       }
-      const outputText = body.output
+      const outputText = parsedBody.output
         ?.flatMap((item) => item.content ?? [])
         .find((content) => content.type === "output_text")?.text;
       if (!outputText) {
@@ -164,16 +272,14 @@ export function createOpenAiResponsesTransport(
           "PROVIDER_OUTPUT_MISSING",
           "The semantic provider returned no structured output",
           true,
+          usage,
+          providerRequestId,
         );
       }
       return {
         outputText,
         providerRequestId,
-        usage: {
-          inputTokens: body.usage?.input_tokens ?? null,
-          outputTokens: body.usage?.output_tokens ?? null,
-          totalTokens: body.usage?.total_tokens ?? null,
-        },
+        usage,
       };
     },
   };
@@ -191,6 +297,29 @@ function schemaName(operationId: string): string {
   return operationId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
+function safeIssuePath(path: PropertyKey[]): string {
+  return path.reduce<string>((result, segment) => {
+    if (typeof segment === "number") return `${result}[${segment}]`;
+    const safeSegment = String(segment)
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .slice(0, 64);
+    return `${result}.${safeSegment || "field"}`;
+  }, "$");
+}
+
+function safeValidationMessage(error: unknown): string {
+  if (!(error instanceof z.ZodError)) {
+    return "Structured output validation failed (issues: $:invalid_json)";
+  }
+  const issues = error.issues
+    .slice(0, 8)
+    .map((issue) => `${safeIssuePath(issue.path)}:${issue.code}`);
+  const omitted = Math.max(0, error.issues.length - issues.length);
+  return `Structured output validation failed (issues: ${issues.join(", ")}${
+    omitted > 0 ? `, +${omitted} more` : ""
+  })`;
+}
+
 export function createSemanticExecutor(input: {
   config: SemanticExecutorConfig;
   recorder: SemanticOperationRecorder;
@@ -200,16 +329,24 @@ export function createSemanticExecutor(input: {
 }) {
   const transport = input.transport ?? createOpenAiResponsesTransport();
   const now = input.now ?? Date.now;
+  const pricing = semanticPricingConfigurationSchema.parse(input.config.pricing);
+  if (pricing.provider !== "openai" || pricing.model !== input.config.model) {
+    throw new Error("Semantic pricing must match the configured provider and model");
+  }
   const attemptsByOperation = new Map<string, number>();
   let callsUsed = Math.max(0, Math.floor(input.initialCallsUsed ?? 0));
 
   async function record(attempt: SemanticOperationAttempt) {
     try {
       await input.recorder.record(attempt);
-    } catch {
+    } catch (error) {
+      const category =
+        error instanceof SemanticOperationPersistenceError
+          ? error.category
+          : "UNKNOWN_DATABASE_ERROR";
       throw new StageExecutionError({
-        code: "OPERATION_METADATA_PERSISTENCE_FAILED",
-        message: "Semantic operation metadata could not be persisted",
+        code: `OPERATION_METADATA_PERSISTENCE_${category}`,
+        message: `Semantic operation metadata could not be persisted (${category})`,
         retryable: false,
       });
     }
@@ -260,8 +397,9 @@ export function createSemanticExecutor(input: {
           let parsed: T;
           try {
             parsed = operation.schema.parse(JSON.parse(response.outputText));
-          } catch {
+          } catch (error) {
             const durationMs = Math.max(0, now() - startedAt);
+            const errorMessage = safeValidationMessage(error);
             await record({
               operationId: operation.operationId,
               promptVersion: operation.promptVersion,
@@ -270,14 +408,19 @@ export function createSemanticExecutor(input: {
               model: input.config.model,
               status: "VALIDATION_FAILURE",
               usage: response.usage,
+              estimatedCost: estimateSemanticOperationCost({
+                usage: response.usage,
+                pricing,
+              }),
+              pricingConfiguration: pricing,
               durationMs,
               providerRequestId: response.providerRequestId,
               errorCode: "STRUCTURED_OUTPUT_INVALID",
-              errorMessage: "The provider response failed structured-output validation",
+              errorMessage,
             });
             lastFailure = new StageExecutionError({
               code: "STRUCTURED_OUTPUT_INVALID",
-              message: "The provider response failed structured-output validation",
+              message: errorMessage,
               retryable: true,
             });
             continue;
@@ -290,6 +433,11 @@ export function createSemanticExecutor(input: {
             model: input.config.model,
             status: "SUCCESS",
             usage: response.usage,
+            estimatedCost: estimateSemanticOperationCost({
+              usage: response.usage,
+              pricing,
+            }),
+            pricingConfiguration: pricing,
             durationMs: Math.max(0, now() - startedAt),
             providerRequestId: response.providerRequestId,
             errorCode: null,
@@ -318,11 +466,16 @@ export function createSemanticExecutor(input: {
             provider: "openai",
             model: input.config.model,
             status: timedOut ? "TIMEOUT" : "PROVIDER_FAILURE",
-            usage: emptyUsage(),
+            usage: providerError?.usage ?? emptyUsage(),
+            estimatedCost: estimateSemanticOperationCost({
+              usage: providerError?.usage ?? emptyUsage(),
+              pricing,
+            }),
+            pricingConfiguration: pricing,
             durationMs: Math.max(0, now() - startedAt),
-            providerRequestId: null,
+            providerRequestId: providerError?.providerRequestId ?? null,
             errorCode: code,
-            errorMessage: message,
+            errorMessage: providerError?.diagnosticMessage ?? message,
           });
           lastFailure = new StageExecutionError({ code, message, retryable });
           if (!retryable) throw lastFailure;
@@ -331,14 +484,23 @@ export function createSemanticExecutor(input: {
         }
       }
 
-      throw (
-        lastFailure ??
-        new StageExecutionError({
-          code: "SEMANTIC_EXECUTION_FAILED",
-          message: "Semantic execution failed",
-          retryable: false,
-        })
-      );
+      if (lastFailure) {
+        throw new StageExecutionError({
+          code: lastFailure.code,
+          message: lastFailure.message,
+          // Structured-output validation already spent its configured retry
+          // allowance. Do not multiply those paid calls through stage retries.
+          retryable:
+            lastFailure.code === "STRUCTURED_OUTPUT_INVALID"
+              ? false
+              : lastFailure.retryable,
+        });
+      }
+      throw new StageExecutionError({
+        code: "SEMANTIC_EXECUTION_FAILED",
+        message: "Semantic execution failed",
+        retryable: false,
+      });
     },
     usage() {
       return { callsUsed, callBudget: input.config.callBudget };

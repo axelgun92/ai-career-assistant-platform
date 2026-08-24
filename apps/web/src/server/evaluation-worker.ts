@@ -6,6 +6,7 @@ import { createEvaluationWorker } from "@ai-career/evaluation";
 import {
   readEvaluationWorkerEnvironment,
   readSemanticEnvironment,
+  semanticPricingFromEnvironment,
 } from "@ai-career/shared";
 import { createCustomerSuccessEvaluationProcessor } from "./customer-success-evaluation-processor";
 
@@ -26,6 +27,7 @@ export function createProductionEvaluationWorker() {
         retryLimit: semantic.AI_RETRY_LIMIT,
         callBudget: semantic.AI_CALL_BUDGET,
         timeoutMs: semantic.AI_REQUEST_TIMEOUT_MS,
+        pricing: semanticPricingFromEnvironment(semantic),
       },
     }),
   });
