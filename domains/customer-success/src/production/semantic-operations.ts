@@ -41,6 +41,21 @@ import {
 
 export const customerSuccessProductionPromptVersion = "cs-m9-prompts-v1";
 
+export const customerSuccessSemanticOperationIds = [
+  "customer-success.jd-reconstruction",
+  "customer-success.job-evaluation",
+  "customer-success.company-alignment",
+  "customer-success.organizational-maturity",
+  "customer-success.alex-fit",
+  "customer-success.burnout-risk",
+  "customer-success.resume-match",
+  "customer-success.opportunity-priority",
+  "customer-success.ghost-job-risk",
+] as const;
+
+export type CustomerSuccessSemanticOperationId =
+  (typeof customerSuccessSemanticOperationIds)[number];
+
 const systemRules = [
   "You are a bounded semantic-analysis component in the AI Career Platform.",
   "Use only supplied evidence. Preserve Unknown when evidence is insufficient.",

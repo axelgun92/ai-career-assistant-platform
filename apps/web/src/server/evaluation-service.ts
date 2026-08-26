@@ -16,11 +16,10 @@ import type {
 import { summarizeSemanticUsage } from "@ai-career/evaluation";
 import {
   readEvaluationWorkerEnvironment,
-  readSemanticEnvironment,
-  semanticPricingFromEnvironment,
 } from "@ai-career/shared";
 import { z } from "zod";
 import { EvaluationApiError } from "./evaluation-errors";
+import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-config";
 
 const evaluationRequestSchema = z
   .object({
@@ -173,6 +172,10 @@ export function createEvaluationService(
           semanticCallBudget: dependencies.semanticConfig.callBudget,
           pricingConfigurationVersion:
             dependencies.semanticConfig.pricing.version,
+          semanticExecutionPolicyVersion:
+            dependencies.semanticConfig.executionPolicy?.version ?? null,
+          semanticOperationExecutionPolicy:
+            dependencies.semanticConfig.executionPolicy?.operations ?? null,
         },
         maxAttempts: dependencies.jobMaxAttempts,
       });
@@ -288,10 +291,10 @@ let evaluationService: EvaluationService | undefined;
 
 export function getEvaluationService(): EvaluationService {
   if (!evaluationService) {
-    let semantic;
+    let semanticConfig;
     let worker;
     try {
-      semantic = readSemanticEnvironment();
+      semanticConfig = semanticExecutorConfigFromEnvironment();
       worker = readEvaluationWorkerEnvironment();
     } catch {
       throw new EvaluationApiError(
@@ -304,15 +307,7 @@ export function getEvaluationService(): EvaluationService {
       queries: new PrismaEvaluationQueryRepository(),
       evaluations: new PrismaEvaluationRepository(),
       tasks: new PrismaEvaluationTaskRepository(),
-      semanticConfig: {
-        apiKey: semantic.OPENAI_API_KEY,
-        model: semantic.AI_MODEL,
-        maxOutputTokens: semantic.AI_MAX_OUTPUT_TOKENS,
-        retryLimit: semantic.AI_RETRY_LIMIT,
-        callBudget: semantic.AI_CALL_BUDGET,
-        timeoutMs: semantic.AI_REQUEST_TIMEOUT_MS,
-        pricing: semanticPricingFromEnvironment(semantic),
-      },
+      semanticConfig,
       jobMaxAttempts: worker.EVALUATION_JOB_MAX_ATTEMPTS,
     });
   }

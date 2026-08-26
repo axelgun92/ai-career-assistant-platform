@@ -14,3 +14,18 @@ export const testSemanticPricing = {
   effectiveFrom: new Date("2026-07-30T00:00:00.000Z"),
   effectiveTo: null,
 } satisfies SemanticPricingConfiguration;
+
+export const testLunaSemanticPricing = {
+  provider: "openai",
+  model: "gpt-5.6-luna",
+  version: "test-openai-gpt-5.6-luna-utc-v1",
+  currency: "USD",
+  inputCostPerMillionTokens: 0.2,
+  cachedInputCostPerMillionTokens: 0.02,
+  outputCostPerMillionTokens: 1.2,
+  longContextThresholdTokens: 272_000,
+  longContextInputMultiplier: 2,
+  longContextOutputMultiplier: 1.5,
+  effectiveFrom: new Date("2026-08-26T00:00:00.000Z"),
+  effectiveTo: null,
+} satisfies SemanticPricingConfiguration;

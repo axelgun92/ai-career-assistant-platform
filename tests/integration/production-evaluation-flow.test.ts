@@ -8,6 +8,7 @@ import type {
   SemanticReconstruction,
   SemanticResumeMatch,
 } from "@ai-career/customer-success";
+import { customerSuccessSemanticOperationIds } from "@ai-career/customer-success";
 import { createManualOpportunityService } from "@ai-career/core";
 import {
   PrismaEvaluationQueryRepository,
@@ -18,6 +19,8 @@ import {
 } from "@ai-career/database";
 import {
   createEvaluationWorker,
+  defineSemanticExecutionPolicy,
+  type SemanticExecutionPolicy,
   type SemanticPricingConfiguration,
   type SemanticProviderTransport,
 } from "@ai-career/evaluation";
@@ -25,7 +28,10 @@ import { createManualOpportunityNormalizer } from "@ai-career/normalization";
 import { createEvaluationService } from "../../apps/web/src/server/evaluation-service";
 import { createCustomerSuccessEvaluationProcessor } from "../../apps/web/src/server/customer-success-evaluation-processor";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { testSemanticPricing } from "../fixtures/semantic-pricing";
+import {
+  testLunaSemanticPricing,
+  testSemanticPricing,
+} from "../fixtures/semantic-pricing";
 
 const database = getDatabaseClient();
 const opportunityIds: string[] = [];
@@ -43,7 +49,9 @@ afterEach(async () => {
 afterAll(async () => {
   await database.aiModelPricingConfiguration.deleteMany({
     where: {
-      version: testSemanticPricing.version,
+      version: {
+        in: [testSemanticPricing.version, testLunaSemanticPricing.version],
+      },
       semanticOperations: { none: {} },
     },
   });
@@ -71,6 +79,7 @@ function deterministicTransport(input: {
   alwaysInvalidAt?: string;
   onCall?: () => void;
   onOperationCall?: (operationId: string) => void;
+  onRequest?: (operationId: string, model: string) => void;
   transformOutput?: (operationId: string, output: unknown) => unknown;
 } = {}): SemanticProviderTransport {
   const fixture = createCustomerSuccessFixtureOperations({
@@ -82,6 +91,7 @@ function deterministicTransport(input: {
     async execute(request) {
       input.onCall?.();
       input.onOperationCall?.(request.operationId);
+      input.onRequest?.(request.operationId, request.model);
       const call = (calls.get(request.operationId) ?? 0) + 1;
       calls.set(request.operationId, call);
       if (
@@ -330,8 +340,11 @@ async function runFlow(input: {
   sparseNormalizedFields?: boolean;
   resolveLatestProfile?: boolean;
   pricing?: SemanticPricingConfiguration;
+  executionPolicy?: SemanticExecutionPolicy;
+  pricingConfigurations?: readonly SemanticPricingConfiguration[];
   onCall?: () => void;
   onOperationCall?: (operationId: string) => void;
+  onRequest?: (operationId: string, model: string) => void;
   transformOutput?: (operationId: string, output: unknown) => unknown;
   rawText?: string;
   postingHistory?: Array<{
@@ -357,6 +370,8 @@ async function runFlow(input: {
       retryLimit: input.retryLimit ?? 1,
       callBudget: input.requestCallBudget ?? semanticConfig.callBudget,
       pricing: input.pricing ?? semanticConfig.pricing,
+      executionPolicy: input.executionPolicy,
+      pricingConfigurations: input.pricingConfigurations,
     },
     jobMaxAttempts: 2,
   });
@@ -392,6 +407,8 @@ async function runFlow(input: {
         retryLimit: input.retryLimit ?? 1,
         callBudget: input.workerCallBudget ?? semanticConfig.callBudget,
         pricing: input.pricing ?? semanticConfig.pricing,
+        executionPolicy: input.executionPolicy,
+        pricingConfigurations: input.pricingConfigurations,
       },
       transport: deterministicTransport(input),
     }),
@@ -428,6 +445,70 @@ describe("production evaluation vertical slice", () => {
       "customer-success.opportunity-priority",
       "customer-success.ghost-job-risk",
     ]);
+  });
+
+  it("runs a mixed-model fake-provider evaluation without changing result contracts", async () => {
+    const selectedModels = new Map<string, string>();
+    const executionPolicy = defineSemanticExecutionPolicy({
+      version: "test-customer-success-mixed-model-policy-v1",
+      operations: Object.fromEntries(
+        customerSuccessSemanticOperationIds.map((operationId) => {
+          const luna = operationId === "customer-success.resume-match";
+          return [
+            operationId,
+            {
+              provider: "openai",
+              model: luna ? testLunaSemanticPricing.model : testSemanticPricing.model,
+              pricingVersion: luna
+                ? testLunaSemanticPricing.version
+                : testSemanticPricing.version,
+              reasoningEffort: "medium",
+              maximumOutputTokens: 12_000,
+              timeoutMs: 30_000,
+              semanticRetryLimit: 1,
+            },
+          ];
+        }),
+      ),
+    });
+    const { task, response } = await runFlow({
+      executionPolicy,
+      pricingConfigurations: [testSemanticPricing, testLunaSemanticPricing],
+      postingHistory: [
+        {
+          type: "ACTIVE_ATS",
+          description: "The authoritative source reports an active posting.",
+          occurredAt: "2026-08-24T12:00:00.000Z",
+        },
+      ],
+      onRequest(operationId, model) {
+        selectedModels.set(operationId, model);
+      },
+    });
+
+    expect(task?.status).toBe("COMPLETED");
+    expect(response.stages).toHaveLength(9);
+    expect(response.stages.every((stage) => stage.status === "COMPLETED")).toBe(
+      true,
+    );
+    expect(selectedModels.get("customer-success.resume-match")).toBe(
+      "gpt-5.6-luna",
+    );
+    expect(
+      [...selectedModels.entries()]
+        .filter(([operationId]) => operationId !== "customer-success.resume-match")
+        .every(([, model]) => model === "gpt-5.6-terra"),
+    ).toBe(true);
+    expect(
+      response.operations.find(
+        (attempt) => attempt.operationId === "customer-success.resume-match",
+      ),
+    ).toMatchObject({
+      model: "gpt-5.6-luna",
+      pricingConfigurationVersion: testLunaSemanticPricing.version,
+    });
+    expect(response.result).not.toBeNull();
+    expect(response.recommendation?.decision).toBe("APPLY");
   });
 
   it("does not repeat a paid stage call for an input-dependent contract mismatch", async () => {

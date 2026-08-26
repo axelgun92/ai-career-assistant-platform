@@ -80,7 +80,20 @@ export function createCustomerSuccessEvaluationProcessor(input: {
       }
       const queuedPricingVersion =
         snapshot.executionMetadata?.pricingConfigurationVersion;
+      const queuedPolicyVersion =
+        snapshot.executionMetadata?.semanticExecutionPolicyVersion;
       if (
+        typeof queuedPolicyVersion === "string" &&
+        queuedPolicyVersion !== input.semanticConfig.executionPolicy?.version
+      ) {
+        throw new EvaluationWorkerError(
+          "SEMANTIC_EXECUTION_POLICY_MISMATCH",
+          "The queued evaluation execution policy does not match the worker configuration",
+          false,
+        );
+      }
+      if (
+        typeof queuedPolicyVersion !== "string" &&
         typeof queuedPricingVersion === "string" &&
         queuedPricingVersion !== input.semanticConfig.pricing.version
       ) {

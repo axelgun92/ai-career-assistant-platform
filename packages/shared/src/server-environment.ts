@@ -35,6 +35,15 @@ export const semanticEnvironmentSchema = z.object({
     .int()
     .min(1_000)
     .max(600_000),
+  AI_DEFAULT_REASONING_EFFORT: z
+    .enum(["none", "low", "medium", "high", "xhigh", "max"])
+    .default("medium"),
+  AI_EXECUTION_POLICY_VERSION: z
+    .string()
+    .trim()
+    .min(1)
+    .default("customer-success-semantic-policy-v1-all-terra"),
+  AI_OPERATION_EXECUTION_OVERRIDES_JSON: z.string().default("{}"),
   AI_PRICING_PROVIDER: z.string().trim().min(1).default("openai"),
   AI_PRICING_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),
   AI_PRICING_VERSION: z
@@ -130,6 +139,30 @@ export function semanticPricingFromEnvironment(
     effectiveFrom: new Date(environment.AI_PRICING_EFFECTIVE_FROM),
     effectiveTo: null,
   };
+}
+
+export const gpt56LunaPricingConfiguration = {
+  provider: "openai",
+  model: "gpt-5.6-luna",
+  version: "openai-gpt-5.6-luna-standard-2026-08-26",
+  currency: "USD",
+  inputCostPerMillionTokens: 0.2,
+  cachedInputCostPerMillionTokens: 0.02,
+  outputCostPerMillionTokens: 1.2,
+  longContextThresholdTokens: 272_000,
+  longContextInputMultiplier: 2,
+  longContextOutputMultiplier: 1.5,
+  effectiveFrom: new Date("2026-08-26T00:00:00.000Z"),
+  effectiveTo: null,
+} as const;
+
+export function semanticPricingConfigurationsFromEnvironment(
+  environment: SemanticEnvironment,
+) {
+  return [
+    semanticPricingFromEnvironment(environment),
+    gpt56LunaPricingConfiguration,
+  ];
 }
 
 export function readEvaluationWorkerEnvironment(
