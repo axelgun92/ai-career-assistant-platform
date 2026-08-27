@@ -8,11 +8,123 @@ import type { AvailableSemanticEvidence } from "./semantic-contract";
 import {
   assertSemanticEvidenceReferences,
   parseSemanticDomainResult,
+  semanticContractViolation,
 } from "./semantic-contract";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
+
+export const customerSuccessOrganizationalMaturityPromptVersion =
+  "cs-organizational-maturity-v2";
+
+export const organizationalMaturityCalibration = {
+  measure:
+    "Organizational Maturity measures how established and well-structured the Customer Success operating environment appears across the existing CS function, customer operating model, and ownership and cross-functional design.",
+  scoreDirection: "Higher scores mean greater organizational maturity.",
+  excludedMeasures: [
+    "company prestige",
+    "culture",
+    "management quality",
+    "job fit",
+    "organizational risk",
+  ],
+  bands: [
+    {
+      minimum: 0,
+      maximum: 19,
+      classification: "VERY_LOW",
+      meaning:
+        "Affirmative evidence of a substantially undeveloped function, operating model, and ownership design. Unknowns alone cannot justify this band.",
+    },
+    {
+      minimum: 20,
+      maximum: 39,
+      classification: "LOW",
+      meaning:
+        "Emerging or weak operating design with supported structural weaknesses, despite limited positive signals.",
+    },
+    {
+      minimum: 40,
+      maximum: 59,
+      classification: "MIXED_MODERATE",
+      meaning:
+        "Material strengths and weaknesses coexist, or important organizational-design information remains unresolved.",
+    },
+    {
+      minimum: 60,
+      maximum: 79,
+      classification: "GOOD_HIGH",
+      meaning:
+        "A meaningfully developed and repeatable CS environment with substantially understandable ownership; weaknesses are bounded.",
+    },
+    {
+      minimum: 80,
+      maximum: 100,
+      classification: "VERY_STRONG_VERY_HIGH",
+      meaning:
+        "Strong evidence across all three criteria: established function, repeatable operating model, and clear, realistic ownership and handoffs.",
+    },
+  ],
+  unknownRules: [
+    "Unknowns must not automatically lower the score.",
+    "Unknowns must not automatically raise the score.",
+    "Unknowns must not become zero, positive evidence, or negative evidence.",
+    "Unknowns reduce completeness and may reduce confidence when material.",
+  ],
+  broadResponsibilityRules: [
+    "Repeatable programs support the existence of an operating model.",
+    "Breadth alone does not prove healthy maturity.",
+    "Missing staffing, metrics, handoffs, capacity, or role and team boundaries remain Unknown.",
+    "Breadth becomes negative only when evidence affirmatively establishes scope creep, combined jobs, or unrealistic ownership.",
+  ],
+  collaborationOwnershipRule:
+    "Cross-functional collaboration must remain distinct from ownership of another function's work.",
+  evidenceStates: {
+    SUPPORTED_PRESENT:
+      "Available evidence affirmatively supports that the assessed condition is present.",
+    SUPPORTED_ABSENT:
+      "Available evidence affirmatively supports that the assessed condition is absent; silence or missing information is not sufficient.",
+    NOT_ESTABLISHED:
+      "Available evidence does not establish whether the assessed condition is present or absent.",
+  },
+} as const;
+
+const maturityBandDescriptions = organizationalMaturityCalibration.bands
+  .map(
+    (band) =>
+      `${band.minimum}-${band.maximum} ${band.classification}: ${band.meaning}`,
+  )
+  .join(" ");
+
+const organizationalMaturityScoreDescription = [
+  organizationalMaturityCalibration.measure,
+  organizationalMaturityCalibration.scoreDirection,
+  maturityBandDescriptions,
+  "These are semantic anchors, not weights or a mathematical formula.",
+].join(" ");
+
+export const organizationalMaturitySemanticInstructions = [
+  "Assess the existing CS function, customer operating model, and ownership and cross-functional design from the validated maps and earlier results.",
+  organizationalMaturityCalibration.measure,
+  organizationalMaturityCalibration.scoreDirection,
+  `Semantic score anchors: ${maturityBandDescriptions}`,
+  `Unknown handling: ${organizationalMaturityCalibration.unknownRules.join(" ")}`,
+  `Broad-responsibility interpretation: ${organizationalMaturityCalibration.broadResponsibilityRules.join(" ")}`,
+  organizationalMaturityCalibration.collaborationOwnershipRule,
+  `Evidence-state meanings: SUPPORTED_PRESENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_PRESENT} SUPPORTED_ABSENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_ABSENT} NOT_ESTABLISHED means ${organizationalMaturityCalibration.evidenceStates.NOT_ESTABLISHED}`,
+  `Do not assess ${organizationalMaturityCalibration.excludedMeasures.join(", ")}. Do not use weights, keyword points, prestige, culture, management assumptions, or a mathematical scoring formula.`,
+].join(" ");
+
+export function organizationalMaturityBand(score: number) {
+  const band = organizationalMaturityCalibration.bands.find(
+    (candidate) => score >= candidate.minimum && score <= candidate.maximum,
+  );
+  if (!band) {
+    throw new RangeError("Organizational Maturity score must be between 0 and 100");
+  }
+  return band.classification;
+}
 
 export const existingCustomerSuccessFunctionSchema = z.enum([
   "ESTABLISHED",
@@ -116,7 +228,12 @@ export const ownershipAndCrossFunctionalDesignSchema = z
 
 export const semanticOrganizationalMaturitySchema = z
   .object({
-    score: z.number().int().min(0).max(100),
+    score: z
+      .number()
+      .int()
+      .min(0)
+      .max(100)
+      .describe(organizationalMaturityScoreDescription),
     scoreExplanation: requiredText,
     scoreEvidenceReferences: evidenceReferences.min(1),
     existingCustomerSuccessFunction: maturityCriterionSchema(
@@ -217,19 +334,56 @@ const transportCustomerOperatingModelSchema = z.union([
     .strict(),
 ]);
 
+export const organizationalMaturityEvidenceStateSchema = z.enum([
+  "SUPPORTED_PRESENT",
+  "SUPPORTED_ABSENT",
+  "NOT_ESTABLISHED",
+]);
+
 const transportOwnershipDesignDimensionSchema = z.union([
   z
     .object({
-      conclusion: requiredText,
-      unknown: z.literal(false),
-      evidenceReferences: evidenceReferences.min(1),
+      evidenceState: z
+        .literal("SUPPORTED_PRESENT")
+        .describe(
+          organizationalMaturityCalibration.evidenceStates.SUPPORTED_PRESENT,
+        ),
+      conclusion: requiredText.describe(
+        "A conclusion affirmatively supported by the cited evidence; it must not describe missing, unclear, or unavailable information.",
+      ),
+      evidenceReferences: evidenceReferences.min(1).describe(
+        "At least one resolvable evidence reference affirmatively supporting presence.",
+      ),
     })
     .strict(),
   z
     .object({
-      conclusion: z.null(),
-      unknown: z.literal(true),
-      evidenceReferences,
+      evidenceState: z
+        .literal("SUPPORTED_ABSENT")
+        .describe(
+          organizationalMaturityCalibration.evidenceStates.SUPPORTED_ABSENT,
+        ),
+      conclusion: requiredText.describe(
+        "A negative conclusion affirmatively supported by cited evidence; source silence or a statement that information is not described is not affirmative absence evidence.",
+      ),
+      evidenceReferences: evidenceReferences.min(1).describe(
+        "At least one resolvable evidence reference affirmatively supporting absence.",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      evidenceState: z
+        .literal("NOT_ESTABLISHED")
+        .describe(
+          organizationalMaturityCalibration.evidenceStates.NOT_ESTABLISHED,
+        ),
+      conclusion: z.null().describe(
+        "Must remain null because the available evidence establishes neither presence nor absence.",
+      ),
+      evidenceReferences: evidenceReferences.describe(
+        "Optional references explaining why the dimension remains unresolved; they must not be treated as positive or negative evidence.",
+      ),
     })
     .strict(),
 ]);
@@ -265,9 +419,100 @@ export function semanticOrganizationalMaturityFromTransport(
   availableEvidence: AvailableSemanticEvidence[],
 ) {
   const transport = semanticOrganizationalMaturityTransportSchema.parse(value);
+  const transportDesign = transport.ownershipAndCrossFunctionalDesign;
+  const missingInformationConclusion =
+    /\b(?:not (?:described|stated|specified|provided|available|established)|no (?:evidence|information)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;
+  const toDomainDimension = (
+    dimension: z.infer<typeof transportOwnershipDesignDimensionSchema>,
+  ) => {
+    if (dimension.evidenceState === "NOT_ESTABLISHED") {
+      return {
+        conclusion: null,
+        unknown: true as const,
+        evidenceReferences: dimension.evidenceReferences,
+      };
+    }
+    if (missingInformationConclusion.test(dimension.conclusion)) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+        "Supported Organizational Maturity conclusions cannot be based on missing information",
+      );
+    }
+    return {
+      conclusion: dimension.conclusion,
+      unknown: false as const,
+      evidenceReferences: dimension.evidenceReferences,
+    };
+  };
+  const convertedDimensions = {
+    roleBoundaries: toDomainDimension(transportDesign.roleBoundaries),
+    teamBoundaries: toDomainDimension(transportDesign.teamBoundaries),
+    handoffs: toDomainDimension(transportDesign.handoffs),
+    sharedOwnership: toDomainDimension(transportDesign.sharedOwnership),
+    crossFunctionalRelationships: toDomainDimension(
+      transportDesign.crossFunctionalRelationships,
+    ),
+    unrelatedResponsibilities: toDomainDimension(
+      transportDesign.unrelatedResponsibilities,
+    ),
+    scopeCreep: toDomainDimension(transportDesign.scopeCreep),
+    multipleJobsCombined: toDomainDimension(
+      transportDesign.multipleJobsCombined,
+    ),
+    unrealisticOwnership: toDomainDimension(
+      transportDesign.unrealisticOwnership,
+    ),
+  };
+  const dimensionLabels: Record<keyof typeof convertedDimensions, string> = {
+    roleBoundaries: "Role boundaries",
+    teamBoundaries: "Team boundaries",
+    handoffs: "Formal handoff design",
+    sharedOwnership: "Shared ownership design",
+    crossFunctionalRelationships: "Cross-functional relationship design",
+    unrelatedResponsibilities: "Unrelated-responsibility ownership",
+    scopeCreep: "Scope-creep presence or absence",
+    multipleJobsCombined: "Multiple-jobs-combined presence or absence",
+    unrealisticOwnership: "Unrealistic-ownership presence or absence",
+  };
+  const dimensionCodes: Record<keyof typeof convertedDimensions, string> = {
+    roleBoundaries: "role-boundaries",
+    teamBoundaries: "team-boundaries",
+    handoffs: "handoffs",
+    sharedOwnership: "shared-ownership",
+    crossFunctionalRelationships: "cross-functional-relationships",
+    unrelatedResponsibilities: "unrelated-responsibilities",
+    scopeCreep: "scope-creep",
+    multipleJobsCombined: "multiple-jobs-combined",
+    unrealisticOwnership: "unrealistic-ownership",
+  };
+  const existingUnknownCodes = new Set(
+    transport.unknowns.map((unknown) => unknown.code),
+  );
+  const dimensionUnknowns = (
+    Object.entries(convertedDimensions) as Array<
+      [keyof typeof convertedDimensions, (typeof convertedDimensions)[keyof typeof convertedDimensions]]
+    >
+  )
+    .filter(([, dimension]) => dimension.unknown)
+    .map(([key, dimension]) => ({
+      code: `organizational-maturity-${dimensionCodes[key]}-not-established`,
+      description: `${dimensionLabels[key]} is not established by the available evidence.`,
+      materiality:
+        "This limits completeness of the ownership and cross-functional design assessment.",
+      evidenceReferences: dimension.evidenceReferences,
+    }))
+    .filter((unknown) => !existingUnknownCodes.has(unknown.code));
   const result = parseSemanticDomainResult({
     schema: semanticOrganizationalMaturitySchema,
-    value: transport,
+    value: {
+      ...transport,
+      ownershipAndCrossFunctionalDesign: {
+        summary: transportDesign.summary,
+        ...convertedDimensions,
+        evidenceReferences: transportDesign.evidenceReferences,
+      },
+      unknowns: [...transport.unknowns, ...dimensionUnknowns],
+    },
     code: "ORGANIZATIONAL_MATURITY_DOMAIN_INVALID",
     message: "Organizational Maturity violated the domain contract",
   });

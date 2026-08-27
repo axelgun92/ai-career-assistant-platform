@@ -11,6 +11,7 @@ import {
   semanticOpportunityPriorityFromTransport,
   semanticOpportunityPriorityTransportSchema,
   semanticOrganizationalMaturityFromTransport,
+  organizationalMaturityDataSchema,
   semanticOrganizationalMaturitySchema,
   semanticOrganizationalMaturityTransportSchema,
 } from "@ai-career/customer-success";
@@ -87,11 +88,22 @@ const ownershipDimensions = [
   "unrealisticOwnership",
 ] as const;
 
-function knownOwnershipDimension() {
+function supportedOwnershipDimension(
+  evidenceState: "SUPPORTED_PRESENT" | "SUPPORTED_ABSENT" =
+    "SUPPORTED_PRESENT",
+) {
   return {
+    evidenceState,
     conclusion: "The boundary is supported.",
-    unknown: false as const,
     evidenceReferences,
+  };
+}
+
+function unknownOwnershipDimension() {
+  return {
+    evidenceState: "NOT_ESTABLISHED" as const,
+    conclusion: null,
+    evidenceReferences: [] as string[],
   };
 }
 
@@ -113,15 +125,15 @@ function validOrganizationalMaturity() {
     },
     ownershipAndCrossFunctionalDesign: {
       summary: "The ownership design is bounded.",
-      roleBoundaries: knownOwnershipDimension(),
-      teamBoundaries: knownOwnershipDimension(),
-      handoffs: knownOwnershipDimension(),
-      sharedOwnership: knownOwnershipDimension(),
-      crossFunctionalRelationships: knownOwnershipDimension(),
-      unrelatedResponsibilities: knownOwnershipDimension(),
-      scopeCreep: knownOwnershipDimension(),
-      multipleJobsCombined: knownOwnershipDimension(),
-      unrealisticOwnership: knownOwnershipDimension(),
+      roleBoundaries: supportedOwnershipDimension(),
+      teamBoundaries: supportedOwnershipDimension(),
+      handoffs: supportedOwnershipDimension(),
+      sharedOwnership: supportedOwnershipDimension(),
+      crossFunctionalRelationships: supportedOwnershipDimension(),
+      unrelatedResponsibilities: supportedOwnershipDimension(),
+      scopeCreep: supportedOwnershipDimension(),
+      multipleJobsCombined: supportedOwnershipDimension(),
+      unrealisticOwnership: supportedOwnershipDimension(),
       evidenceReferences,
     },
     summary: "The organization has a supported operating structure.",
@@ -275,12 +287,12 @@ describe("Customer Success provider/application contracts", () => {
   });
 
   it.each(ownershipDimensions)(
-    "makes every Organizational Maturity %s null/Unknown combination structural",
+    "makes every Organizational Maturity %s evidence-state combination structural",
     (key) => {
       const knownWithoutConclusion = validOrganizationalMaturity();
       knownWithoutConclusion.ownershipAndCrossFunctionalDesign[key] = {
         conclusion: null as never,
-        unknown: false,
+        evidenceState: "SUPPORTED_PRESENT",
         evidenceReferences,
       };
       expect(
@@ -292,7 +304,7 @@ describe("Customer Success provider/application contracts", () => {
       const unknownWithConclusion = validOrganizationalMaturity();
       unknownWithConclusion.ownershipAndCrossFunctionalDesign[key] = {
         conclusion: "An unknown must not assert this.",
-        unknown: true as never,
+        evidenceState: "NOT_ESTABLISHED" as never,
         evidenceReferences: [],
       };
       expect(
@@ -304,7 +316,7 @@ describe("Customer Success provider/application contracts", () => {
       const knownWithoutEvidence = validOrganizationalMaturity();
       knownWithoutEvidence.ownershipAndCrossFunctionalDesign[key] = {
         conclusion: "Known conclusion.",
-        unknown: false,
+        evidenceState: "SUPPORTED_PRESENT",
         evidenceReferences: [],
       };
       expect(
@@ -313,12 +325,21 @@ describe("Customer Success provider/application contracts", () => {
         ).success,
       ).toBe(false);
 
-      const validUnknown = validOrganizationalMaturity();
-      validUnknown.ownershipAndCrossFunctionalDesign[key] = {
-        conclusion: null as never,
-        unknown: true as never,
+      const absentWithoutEvidence = validOrganizationalMaturity();
+      absentWithoutEvidence.ownershipAndCrossFunctionalDesign[key] = {
+        conclusion: "The evidence affirmatively supports absence.",
+        evidenceState: "SUPPORTED_ABSENT",
         evidenceReferences: [],
       };
+      expect(
+        semanticOrganizationalMaturityTransportSchema.safeParse(
+          absentWithoutEvidence,
+        ).success,
+      ).toBe(false);
+
+      const validUnknown = validOrganizationalMaturity();
+      validUnknown.ownershipAndCrossFunctionalDesign[key] =
+        unknownOwnershipDimension();
       expect(
         semanticOrganizationalMaturityTransportSchema.safeParse(validUnknown)
           .success,
@@ -373,7 +394,10 @@ describe("Customer Success provider/application contracts", () => {
   });
 
   it("retains Organizational Maturity runtime validation as defense in depth", () => {
-    const invalid = validOrganizationalMaturity();
+    const invalid = semanticOrganizationalMaturityFromTransport(
+      validOrganizationalMaturity(),
+      availableEvidence,
+    );
     invalid.ownershipAndCrossFunctionalDesign.scopeCreep = {
       conclusion: null as never,
       unknown: false,
@@ -382,6 +406,112 @@ describe("Customer Success provider/application contracts", () => {
     expect(semanticOrganizationalMaturitySchema.safeParse(invalid).success).toBe(
       false,
     );
+  });
+
+  it("converts transport evidence states into the unchanged domain representation", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.handoffs =
+      unknownOwnershipDimension();
+    transport.ownershipAndCrossFunctionalDesign.scopeCreep =
+      supportedOwnershipDimension("SUPPORTED_ABSENT");
+
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+
+    expect(domain.ownershipAndCrossFunctionalDesign.handoffs).toEqual({
+      conclusion: null,
+      unknown: true,
+      evidenceReferences: [],
+    });
+    expect(domain.ownershipAndCrossFunctionalDesign.roleBoundaries).toEqual({
+      conclusion: "The boundary is supported.",
+      unknown: false,
+      evidenceReferences,
+    });
+    expect(domain.ownershipAndCrossFunctionalDesign.scopeCreep).toEqual({
+      conclusion: "The boundary is supported.",
+      unknown: false,
+      evidenceReferences,
+    });
+  });
+
+  it("keeps historical domain and persisted-result shapes readable without transport fields", () => {
+    const domain = semanticOrganizationalMaturityFromTransport(
+      validOrganizationalMaturity(),
+      availableEvidence,
+    );
+    const historical = {
+      evaluated: true as const,
+      maturity: domain,
+    };
+
+    expect(organizationalMaturityDataSchema.parse(historical)).toEqual(
+      historical,
+    );
+    expect(JSON.stringify(historical)).not.toContain("evidenceState");
+    expect(
+      historical.maturity.ownershipAndCrossFunctionalDesign.roleBoundaries,
+    ).toHaveProperty("unknown", false);
+  });
+
+  it("rejects missing information represented as supported absence", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.handoffs = {
+      evidenceState: "SUPPORTED_ABSENT",
+      conclusion: "Formal handoffs are not described.",
+      evidenceReferences,
+    };
+    expect(
+      semanticOrganizationalMaturityTransportSchema.safeParse(transport).success,
+    ).toBe(true);
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+        ),
+      "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+    );
+  });
+
+  it("preserves affirmative evidence of absence as a Known conclusion", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.unrealisticOwnership = {
+      evidenceState: "SUPPORTED_ABSENT",
+      conclusion:
+        "The posting explicitly assigns technical escalation ownership to Support, so the CS role does not own that function.",
+      evidenceReferences,
+    };
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+    expect(
+      domain.ownershipAndCrossFunctionalDesign.unrealisticOwnership,
+    ).toEqual({
+      conclusion:
+        "The posting explicitly assigns technical escalation ownership to Support, so the CS role does not own that function.",
+      unknown: false,
+      evidenceReferences,
+    });
+  });
+
+  it("keeps missing handoff and unrealistic-ownership information Unknown", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.handoffs =
+      unknownOwnershipDimension();
+    transport.ownershipAndCrossFunctionalDesign.unrealisticOwnership =
+      unknownOwnershipDimension();
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+    expect(domain.ownershipAndCrossFunctionalDesign.handoffs.unknown).toBe(true);
+    expect(
+      domain.ownershipAndCrossFunctionalDesign.unrealisticOwnership.unknown,
+    ).toBe(true);
   });
 
   it("structurally enforces Alex Fit experience and work-style evidence branches", () => {
@@ -467,12 +597,20 @@ describe("Customer Success provider/application contracts", () => {
         availableEvidence,
       ),
     ).toEqual(validCompanyAlignment());
+    const convertedMaturity = semanticOrganizationalMaturityFromTransport(
+      validOrganizationalMaturity(),
+      availableEvidence,
+    );
+    expect(semanticOrganizationalMaturitySchema.parse(convertedMaturity)).toEqual(
+      convertedMaturity,
+    );
     expect(
-      semanticOrganizationalMaturityFromTransport(
-        validOrganizationalMaturity(),
-        availableEvidence,
-      ),
-    ).toEqual(validOrganizationalMaturity());
+      convertedMaturity.ownershipAndCrossFunctionalDesign.roleBoundaries,
+    ).toEqual({
+      conclusion: "The boundary is supported.",
+      unknown: false,
+      evidenceReferences,
+    });
     expect(
       semanticAlexFitFromTransport(validAlexFit(), availableEvidence),
     ).toEqual(validAlexFit());

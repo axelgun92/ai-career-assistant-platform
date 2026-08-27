@@ -1,6 +1,8 @@
 import {
+  customerSuccessOrganizationalMaturityPromptVersion,
   customerSuccessJdReconstructionSchema,
   createProductionCustomerSuccessSemanticOperations,
+  organizationalMaturityCalibration,
   semanticAlexFitSchema,
   semanticAlexFitTransportSchema,
   semanticBurnoutRiskSchema,
@@ -503,6 +505,29 @@ describe("production semantic execution", () => {
       expect(audit.violations).toEqual([]);
     },
   );
+
+  it("exposes Organizational Maturity calibration in the strict provider schema", () => {
+    const { jsonSchema, violations } = auditOpenAiProviderSchema(
+      semanticOrganizationalMaturityTransportSchema,
+    );
+    const serialized = JSON.stringify(jsonSchema);
+
+    expect(violations).toEqual([]);
+    expect(serialized).toContain(
+      organizationalMaturityCalibration.scoreDirection,
+    );
+    for (const band of organizationalMaturityCalibration.bands) {
+      expect(serialized).toContain(`${band.minimum}-${band.maximum}`);
+      expect(serialized).toContain(band.meaning);
+    }
+    for (const meaning of Object.values(
+      organizationalMaturityCalibration.evidenceStates,
+    )) {
+      expect(serialized).toContain(meaning);
+    }
+    expect(serialized).toContain("missing, unclear, or unavailable information");
+    expect(serialized).toContain("source silence");
+  });
 
   it("generates an OpenAI-compatible strict JD reconstruction schema", () => {
     const { jsonSchema, violations } = auditOpenAiProviderSchema(
@@ -2387,6 +2412,31 @@ describe("production semantic execution", () => {
     );
     expect(captured.slice(1).every((item) => !item.untrustedSourceContent)).toBe(
       true,
+    );
+    const maturityOperation = captured.find(
+      (item) =>
+        item.operationId === "customer-success.organizational-maturity",
+    )!;
+    expect(maturityOperation.promptVersion).toBe(
+      customerSuccessOrganizationalMaturityPromptVersion,
+    );
+    expect(maturityOperation.domainInstructions).toContain(
+      organizationalMaturityCalibration.scoreDirection,
+    );
+    for (const band of organizationalMaturityCalibration.bands) {
+      expect(maturityOperation.domainInstructions).toContain(
+        `${band.minimum}-${band.maximum}`,
+      );
+      expect(maturityOperation.domainInstructions).toContain(band.meaning);
+    }
+    for (const rule of organizationalMaturityCalibration.unknownRules) {
+      expect(maturityOperation.domainInstructions).toContain(rule);
+    }
+    for (const rule of organizationalMaturityCalibration.broadResponsibilityRules) {
+      expect(maturityOperation.domainInstructions).toContain(rule);
+    }
+    expect(maturityOperation.domainInstructions).toContain(
+      organizationalMaturityCalibration.collaborationOwnershipRule,
     );
   });
 });

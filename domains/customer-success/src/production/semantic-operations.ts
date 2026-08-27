@@ -26,6 +26,8 @@ import {
   semanticOpportunityPriorityTransportSchema,
 } from "../schemas/opportunity-priority";
 import {
+  customerSuccessOrganizationalMaturityPromptVersion,
+  organizationalMaturitySemanticInstructions,
   semanticOrganizationalMaturityFromTransport,
   semanticOrganizationalMaturityTransportSchema,
 } from "../schemas/organizational-maturity";
@@ -68,6 +70,7 @@ function operation<TContext, TOutput>(
   executor: SemanticExecutor,
   input: {
     operationId: string;
+    promptVersion?: string;
     schema: ZodType<TOutput>;
     instructions: string;
     userConfiguration?: unknown;
@@ -77,7 +80,7 @@ function operation<TContext, TOutput>(
 ) {
   return executor.execute({
     operationId: input.operationId,
-    promptVersion: customerSuccessProductionPromptVersion,
+    promptVersion: input.promptVersion ?? customerSuccessProductionPromptVersion,
     schema: input.schema,
     systemRules,
     domainInstructions: input.instructions,
@@ -135,9 +138,9 @@ export function createProductionCustomerSuccessSemanticOperations(
       return semanticOrganizationalMaturityFromTransport(
         await operation(executor, {
           operationId: "customer-success.organizational-maturity",
+          promptVersion: customerSuccessOrganizationalMaturityPromptVersion,
           schema: semanticOrganizationalMaturityTransportSchema,
-          instructions:
-            "Assess the existing CS function, customer operating model, and ownership design from the validated maps and earlier results. Produce the bounded holistic maturity assessment without weights, keyword points, prestige, culture, or management assumptions.",
+          instructions: organizationalMaturitySemanticInstructions,
           trustedContext: input,
         }),
         input.availableEvidence,

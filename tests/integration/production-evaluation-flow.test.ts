@@ -1,11 +1,13 @@
 import {
   createCustomerSuccessFixtureOperations,
   customerSuccessTestPreferences,
+  toOrganizationalMaturityProviderTransport,
   toResumeMatchProviderTransport,
   type ResumeMatchFixtureOptions,
 } from "../fixtures/customer-success";
 import type {
   SemanticReconstruction,
+  SemanticOrganizationalMaturity,
   SemanticResumeMatch,
 } from "@ai-career/customer-success";
 import { customerSuccessSemanticOperationIds } from "@ai-career/customer-success";
@@ -157,8 +159,10 @@ function deterministicTransport(input: {
           } as never);
           break;
         case "customer-success.organizational-maturity":
-          output = await fixture.semanticOperations.evaluateOrganizationalMaturity(
-            trusted as never,
+          output = toOrganizationalMaturityProviderTransport(
+            (await fixture.semanticOperations.evaluateOrganizationalMaturity(
+              trusted as never,
+            )) as SemanticOrganizationalMaturity,
           );
           break;
         case "customer-success.alex-fit":

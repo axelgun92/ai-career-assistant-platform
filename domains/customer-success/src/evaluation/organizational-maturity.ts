@@ -5,6 +5,8 @@ import {
 import type { CustomerSuccessDomainData } from "../evaluator";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
 import {
+  customerSuccessOrganizationalMaturityPromptVersion,
+  organizationalMaturityBand,
   organizationalMaturityDataSchema,
   semanticOrganizationalMaturitySchema,
   type OrganizationalMaturityData,
@@ -14,14 +16,6 @@ import {
   jobEvaluationDataSchema,
 } from "../schemas/results";
 
-function maturityBand(score: number): string {
-  if (score <= 19) return "VERY_LOW";
-  if (score <= 39) return "LOW";
-  if (score <= 59) return "MIXED_MODERATE";
-  if (score <= 79) return "GOOD_HIGH";
-  return "VERY_STRONG_VERY_HIGH";
-}
-
 export function createOrganizationalMaturityStage() {
   return defineEvaluationStage<
     CustomerSuccessDomainData,
@@ -30,7 +24,7 @@ export function createOrganizationalMaturityStage() {
     id: "organizational-maturity",
     version: "cs-organizational-maturity-v1",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-organizational-maturity-v1",
+    promptVersion: customerSuccessOrganizationalMaturityPromptVersion,
     onFailure: "STOP",
     maxAttempts: 2,
     invalidOutputRetryable: true,
@@ -144,7 +138,7 @@ export function createOrganizationalMaturityStage() {
               ? "POSSIBLE"
               : "UNKNOWN";
       return {
-        classification: maturityBand(maturity.score),
+        classification: organizationalMaturityBand(maturity.score),
         data,
         evidence: selectedEvidence,
         findings: [

@@ -159,6 +159,61 @@ export function toResumeMatchProviderTransport(
   };
 }
 
+const organizationalMaturityOwnershipDimensions = [
+  "roleBoundaries",
+  "teamBoundaries",
+  "handoffs",
+  "sharedOwnership",
+  "crossFunctionalRelationships",
+  "unrelatedResponsibilities",
+  "scopeCreep",
+  "multipleJobsCombined",
+  "unrealisticOwnership",
+] as const;
+
+export function toOrganizationalMaturityProviderTransport(
+  maturity: SemanticOrganizationalMaturity,
+) {
+  const design = maturity.ownershipAndCrossFunctionalDesign;
+  const dimensions = Object.fromEntries(
+    organizationalMaturityOwnershipDimensions.map((key) => {
+      const dimension = design[key];
+      if (dimension.unknown) {
+        return [
+          key,
+          {
+            evidenceState: "NOT_ESTABLISHED" as const,
+            conclusion: null,
+            evidenceReferences: dimension.evidenceReferences,
+          },
+        ];
+      }
+      const supportedAbsent =
+        /\b(?:does not|do not|no unrelated|one bounded|retains ownership|remains with)\b/i.test(
+          dimension.conclusion ?? "",
+        );
+      return [
+        key,
+        {
+          evidenceState: supportedAbsent
+            ? ("SUPPORTED_ABSENT" as const)
+            : ("SUPPORTED_PRESENT" as const),
+          conclusion: dimension.conclusion,
+          evidenceReferences: dimension.evidenceReferences,
+        },
+      ];
+    }),
+  );
+  return {
+    ...maturity,
+    ownershipAndCrossFunctionalDesign: {
+      summary: design.summary,
+      ...dimensions,
+      evidenceReferences: design.evidenceReferences,
+    },
+  };
+}
+
 function toJdReconstructionProviderTransport(
   reconstruction: SemanticReconstruction,
 ) {
@@ -909,10 +964,11 @@ export function createCustomerSuccessFixtureOperations(input: {
                 "The evidence establishes scope creep across distinct functions.",
                 "scope-creep",
               )
-            : knownDimension(
-                "Collaboration evidence alone does not establish scope creep.",
-                "product-collaboration",
-              ),
+            : {
+                conclusion: null,
+                unknown: true,
+                evidenceReferences: [],
+              },
           multipleJobsCombined: multipleJobs
             ? knownDimension(
                 "The posting combines multiple separately owned jobs.",
@@ -927,10 +983,11 @@ export function createCustomerSuccessFixtureOperations(input: {
                 "The role is solely accountable for several separate functions.",
                 "scope-creep",
               )
-            : knownDimension(
-                "The described collaboration does not establish unrealistic ownership.",
-                "product-collaboration",
-              ),
+            : {
+                conclusion: null,
+                unknown: true,
+                evidenceReferences: [],
+              },
           evidenceReferences: [
             "product-collaboration",
             "handoff-design",
@@ -957,8 +1014,8 @@ export function createCustomerSuccessFixtureOperations(input: {
                 },
               ]
             : [],
-        unknowns:
-          existingFunction === "UNKNOWN"
+        unknowns: [
+          ...(existingFunction === "UNKNOWN"
             ? [
                 {
                   code: "cs-function-unknown",
@@ -968,7 +1025,32 @@ export function createCustomerSuccessFixtureOperations(input: {
                   evidenceReferences: [],
                 },
               ]
-            : [],
+            : []),
+          ...(!scopeCreep
+            ? [
+                {
+                  code: "organizational-maturity-scope-creep-not-established",
+                  description:
+                    "Scope-creep presence or absence is not established by the available evidence.",
+                  materiality:
+                    "This limits completeness of the ownership and cross-functional design assessment.",
+                  evidenceReferences: [],
+                },
+              ]
+            : []),
+          ...(!unrealisticOwnership
+            ? [
+                {
+                  code: "organizational-maturity-unrealistic-ownership-not-established",
+                  description:
+                    "Unrealistic-ownership presence or absence is not established by the available evidence.",
+                  materiality:
+                    "This limits completeness of the ownership and cross-functional design assessment.",
+                  evidenceReferences: [],
+                },
+              ]
+            : []),
+        ],
         evidenceReferences: [...new Set(scoreEvidenceReferences)],
         contradictions: options.contradictoryOrganizationEvidence
           ? [
@@ -1658,8 +1740,10 @@ export function createCustomerSuccessFixtureTransport(input: {
           } as never);
           break;
         case "customer-success.organizational-maturity":
-          output = await fixture.semanticOperations.evaluateOrganizationalMaturity(
-            trusted as never,
+          output = toOrganizationalMaturityProviderTransport(
+            (await fixture.semanticOperations.evaluateOrganizationalMaturity(
+              trusted as never,
+            )) as SemanticOrganizationalMaturity,
           );
           break;
         case "customer-success.alex-fit":

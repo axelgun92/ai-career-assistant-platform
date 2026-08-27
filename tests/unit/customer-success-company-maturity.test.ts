@@ -8,6 +8,7 @@ import {
   customerTypeClassificationSchema,
   defineCustomerSuccessPreferences,
   existingCustomerSuccessFunctionSchema,
+  organizationalMaturityBand,
   organizationalMaturityDataSchema,
   productTypeClassificationSchema,
   semanticCompanyAlignmentSchema,
@@ -482,10 +483,32 @@ describe("Customer Success Organizational Maturity", () => {
       "does not transfer Product ownership",
     );
     expect(design.handoffs.conclusion).toContain("Support handoff");
-    expect(design.scopeCreep.conclusion).toContain(
-      "does not establish scope creep",
-    );
+    expect(design.scopeCreep).toEqual({
+      conclusion: null,
+      unknown: true,
+      evidenceReferences: [],
+    });
+    expect(design.unrealisticOwnership).toEqual({
+      conclusion: null,
+      unknown: true,
+      evidenceReferences: [],
+    });
     expect(maturity.maturity.weakSignals).toEqual([]);
+  });
+
+  it.each([
+    [0, "VERY_LOW"],
+    [19, "VERY_LOW"],
+    [20, "LOW"],
+    [39, "LOW"],
+    [40, "MIXED_MODERATE"],
+    [59, "MIXED_MODERATE"],
+    [60, "GOOD_HIGH"],
+    [79, "GOOD_HIGH"],
+    [80, "VERY_STRONG_VERY_HIGH"],
+    [100, "VERY_STRONG_VERY_HIGH"],
+  ] as const)("maps maturity score %i to %s", (score, expected) => {
+    expect(organizationalMaturityBand(score)).toBe(expected);
   });
 
   it("requires evidence before reporting scope creep or multiple jobs", async () => {
@@ -512,6 +535,32 @@ describe("Customer Success Organizational Maturity", () => {
     const { result } = await run({ organizationalMaturity: { score } });
     const maturity = result.domainResult!.organizationalMaturity;
     expect(maturity.evaluated && maturity.maturity.score).toBe(score);
+  });
+
+  it("keeps repeatable programs with unresolved design in the mixed band without an automatic Unknown penalty", async () => {
+    const { result } = await run({
+      organizationalMaturity: {
+        existingFunction: "PARTIALLY_ESTABLISHED",
+        score: 55,
+      },
+    });
+    const maturity = result.domainResult!.organizationalMaturity;
+    expect(maturity.evaluated).toBe(true);
+    if (!maturity.evaluated) return;
+    expect(maturity.maturity.score).toBe(55);
+    expect(result.evaluation.stageResults[3]?.result).toEqual(
+      expect.objectContaining({
+        classification: "MIXED_MODERATE",
+        completeness: "PARTIAL",
+      }),
+    );
+    expect(
+      maturity.maturity.ownershipAndCrossFunctionalDesign.scopeCreep.unknown,
+    ).toBe(true);
+    expect(
+      maturity.maturity.ownershipAndCrossFunctionalDesign.unrealisticOwnership
+        .unknown,
+    ).toBe(true);
   });
 
   it.each([-1, 101])("rejects the out-of-range maturity score %s", async (score) => {
@@ -563,7 +612,14 @@ describe("Customer Success Organizational Maturity", () => {
         evidenceReferences: [],
       }),
     );
-    expect(maturity.maturity.unknowns).toHaveLength(1);
+    expect(
+      maturity.maturity.unknowns.some(
+        (unknown) => unknown.code === "cs-function-unknown",
+      ),
+    ).toBe(true);
+    expect(result.evaluation.stageResults[3]?.result).toEqual(
+      expect.objectContaining({ completeness: "PARTIAL" }),
+    );
   });
 
   it("keeps the score and explanation tied to valid source evidence", async () => {
