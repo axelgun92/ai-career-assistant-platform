@@ -175,6 +175,12 @@ export function toOrganizationalMaturityProviderTransport(
   maturity: SemanticOrganizationalMaturity,
 ) {
   const design = maturity.ownershipAndCrossFunctionalDesign;
+  const weakSignalAssessmentArea =
+    design.scopeCreep.conclusion?.includes("scope creep")
+      ? ("SCOPE_CREEP" as const)
+      : design.multipleJobsCombined.conclusion?.includes("combines multiple")
+        ? ("MULTIPLE_JOBS_COMBINED" as const)
+        : ("UNREALISTIC_OWNERSHIP" as const);
   const dimensions = Object.fromEntries(
     organizationalMaturityOwnershipDimensions.map((key) => {
       const dimension = design[key];
@@ -211,6 +217,22 @@ export function toOrganizationalMaturityProviderTransport(
       ...dimensions,
       evidenceReferences: design.evidenceReferences,
     },
+    weakSignals: maturity.weakSignals.map((signal) => ({
+      assessmentArea: weakSignalAssessmentArea,
+      evidenceState: "SUPPORTED_WEAKNESS" as const,
+      finding: signal.finding,
+      affirmativeEvidenceReferences: signal.evidenceReferences,
+    })),
+    unknowns: maturity.unknowns.map((unknown) => ({
+      ...unknown,
+      assessmentArea: unknown.code.includes("unrealistic-ownership")
+        ? ("UNREALISTIC_OWNERSHIP" as const)
+        : unknown.code.includes("scope-creep")
+          ? ("SCOPE_CREEP" as const)
+          : unknown.code.includes("cs-function")
+            ? ("EXISTING_CS_FUNCTION" as const)
+            : ("CUSTOMER_OPERATING_MODEL" as const),
+    })),
   };
 }
 

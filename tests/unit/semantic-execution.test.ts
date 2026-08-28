@@ -527,6 +527,14 @@ describe("production semantic execution", () => {
     }
     expect(serialized).toContain("missing, unclear, or unavailable information");
     expect(serialized).toContain("source silence");
+    expect(serialized).toContain("SUPPORTED_WEAKNESS");
+    expect(serialized).toContain("affirmativeEvidenceReferences");
+    expect(serialized).toContain(
+      organizationalMaturityCalibration.teamBoundariesRule,
+    );
+    for (const rule of organizationalMaturityCalibration.weakSignalRules) {
+      expect(serialized).toContain(rule.split(";")[0]);
+    }
   });
 
   it("generates an OpenAI-compatible strict JD reconstruction schema", () => {
@@ -2438,5 +2446,11 @@ describe("production semantic execution", () => {
     expect(maturityOperation.domainInstructions).toContain(
       organizationalMaturityCalibration.collaborationOwnershipRule,
     );
+    expect(maturityOperation.domainInstructions).toContain(
+      organizationalMaturityCalibration.teamBoundariesRule,
+    );
+    for (const rule of organizationalMaturityCalibration.weakSignalRules) {
+      expect(maturityOperation.domainInstructions).toContain(rule);
+    }
   });
 });

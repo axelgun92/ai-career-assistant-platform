@@ -16,7 +16,7 @@ const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
 export const customerSuccessOrganizationalMaturityPromptVersion =
-  "cs-organizational-maturity-v2";
+  "cs-organizational-maturity-v3";
 
 export const organizationalMaturityCalibration = {
   measure:
@@ -80,6 +80,13 @@ export const organizationalMaturityCalibration = {
   ],
   collaborationOwnershipRule:
     "Cross-functional collaboration must remain distinct from ownership of another function's work.",
+  teamBoundariesRule:
+    "Team boundaries require affirmative evidence of how responsibilities are divided between organizational teams or functions. A reporting line or collaboration with named functions alone does not establish team boundaries; explicit retained ownership, handoffs, or organizational separation may establish them.",
+  weakSignalRules: [
+    "Weak signals are affirmative evidence of an actual structural weakness, not missing or unresolved information.",
+    "A weak signal must identify its assessment area and cite evidence that affirmatively supports the weakness.",
+    "A fact classified as Unknown or NOT_ESTABLISHED must not also be a weak signal; missing information belongs only in Unknowns, while a distinct actual weakness requires separate affirmative evidence.",
+  ],
   evidenceStates: {
     SUPPORTED_PRESENT:
       "Available evidence affirmatively supports that the assessed condition is present.",
@@ -112,6 +119,8 @@ export const organizationalMaturitySemanticInstructions = [
   `Unknown handling: ${organizationalMaturityCalibration.unknownRules.join(" ")}`,
   `Broad-responsibility interpretation: ${organizationalMaturityCalibration.broadResponsibilityRules.join(" ")}`,
   organizationalMaturityCalibration.collaborationOwnershipRule,
+  organizationalMaturityCalibration.teamBoundariesRule,
+  `Weak-signal handling: ${organizationalMaturityCalibration.weakSignalRules.join(" ")}`,
   `Evidence-state meanings: SUPPORTED_PRESENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_PRESENT} SUPPORTED_ABSENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_ABSENT} NOT_ESTABLISHED means ${organizationalMaturityCalibration.evidenceStates.NOT_ESTABLISHED}`,
   `Do not assess ${organizationalMaturityCalibration.excludedMeasures.join(", ")}. Do not use weights, keyword points, prestige, culture, management assumptions, or a mathematical scoring formula.`,
 ].join(" ");
@@ -340,6 +349,20 @@ export const organizationalMaturityEvidenceStateSchema = z.enum([
   "NOT_ESTABLISHED",
 ]);
 
+export const organizationalMaturityAssessmentAreaSchema = z.enum([
+  "EXISTING_CS_FUNCTION",
+  "CUSTOMER_OPERATING_MODEL",
+  "ROLE_BOUNDARIES",
+  "TEAM_BOUNDARIES",
+  "HANDOFFS",
+  "SHARED_OWNERSHIP",
+  "CROSS_FUNCTIONAL_RELATIONSHIPS",
+  "UNRELATED_RESPONSIBILITIES",
+  "SCOPE_CREEP",
+  "MULTIPLE_JOBS_COMBINED",
+  "UNREALISTIC_OWNERSHIP",
+]);
+
 const transportOwnershipDesignDimensionSchema = z.union([
   z
     .object({
@@ -388,6 +411,32 @@ const transportOwnershipDesignDimensionSchema = z.union([
     .strict(),
 ]);
 
+const transportWeakMaturitySignalSchema = z
+  .object({
+    assessmentArea: organizationalMaturityAssessmentAreaSchema.describe(
+      "The Organizational Maturity criterion or ownership-design dimension that this affirmative weakness assesses.",
+    ),
+    evidenceState: z.literal("SUPPORTED_WEAKNESS").describe(
+      "The cited evidence affirmatively supports an actual structural weakness; missing, unclear, or unreported information is not a supported weakness.",
+    ),
+    finding: requiredText.describe(
+      "An affirmatively evidenced structural weakness. Do not describe information as missing, not described, not established, unclear, or Unknown.",
+    ),
+    affirmativeEvidenceReferences: evidenceReferences.min(1).describe(
+      "At least one resolvable evidence reference that affirmatively supports the weakness, not merely the absence of information.",
+    ),
+  })
+  .strict();
+
+const transportMaturityUnknownSchema = z
+  .object({
+    ...companyAlignmentUnknownSchema.shape,
+    assessmentArea: organizationalMaturityAssessmentAreaSchema.describe(
+      "The Organizational Maturity criterion or ownership-design dimension whose evidence remains insufficient.",
+    ),
+  })
+  .strict();
+
 const semanticOrganizationalMaturityTransportShape = {
   ...semanticOrganizationalMaturitySchema.shape,
   existingCustomerSuccessFunction:
@@ -397,7 +446,9 @@ const semanticOrganizationalMaturityTransportShape = {
     .object({
       summary: requiredText,
       roleBoundaries: transportOwnershipDesignDimensionSchema,
-      teamBoundaries: transportOwnershipDesignDimensionSchema,
+      teamBoundaries: transportOwnershipDesignDimensionSchema.describe(
+        organizationalMaturityCalibration.teamBoundariesRule,
+      ),
       handoffs: transportOwnershipDesignDimensionSchema,
       sharedOwnership: transportOwnershipDesignDimensionSchema,
       crossFunctionalRelationships: transportOwnershipDesignDimensionSchema,
@@ -408,6 +459,10 @@ const semanticOrganizationalMaturityTransportShape = {
       evidenceReferences,
     })
     .strict(),
+  weakSignals: z
+    .array(transportWeakMaturitySignalSchema)
+    .describe(organizationalMaturityCalibration.weakSignalRules.join(" ")),
+  unknowns: z.array(transportMaturityUnknownSchema),
 };
 
 export const semanticOrganizationalMaturityTransportSchema = z
@@ -421,7 +476,7 @@ export function semanticOrganizationalMaturityFromTransport(
   const transport = semanticOrganizationalMaturityTransportSchema.parse(value);
   const transportDesign = transport.ownershipAndCrossFunctionalDesign;
   const missingInformationConclusion =
-    /\b(?:not (?:described|stated|specified|provided|available|established)|no (?:evidence|information)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;
+    /\b(?:missing|not (?:described|stated|specified|provided|available|established|evidenced)|no (?:evidence|information|details?|description|mention)|absence of (?:evidence|information|details?|description)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;
   const toDomainDimension = (
     dimension: z.infer<typeof transportOwnershipDesignDimensionSchema>,
   ) => {
@@ -463,6 +518,63 @@ export function semanticOrganizationalMaturityFromTransport(
       transportDesign.unrealisticOwnership,
     ),
   };
+  const ownershipDimensionByAssessmentArea = {
+    ROLE_BOUNDARIES: "roleBoundaries",
+    TEAM_BOUNDARIES: "teamBoundaries",
+    HANDOFFS: "handoffs",
+    SHARED_OWNERSHIP: "sharedOwnership",
+    CROSS_FUNCTIONAL_RELATIONSHIPS: "crossFunctionalRelationships",
+    UNRELATED_RESPONSIBILITIES: "unrelatedResponsibilities",
+    SCOPE_CREEP: "scopeCreep",
+    MULTIPLE_JOBS_COMBINED: "multipleJobsCombined",
+    UNREALISTIC_OWNERSHIP: "unrealisticOwnership",
+  } as const;
+  for (const signal of transport.weakSignals) {
+    if (missingInformationConclusion.test(signal.finding)) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+        "Organizational Maturity weak signals require affirmative evidence of an actual weakness",
+      );
+    }
+    const dimensionKey =
+      ownershipDimensionByAssessmentArea[
+        signal.assessmentArea as keyof typeof ownershipDimensionByAssessmentArea
+      ];
+    if (
+      dimensionKey &&
+      transportDesign[dimensionKey].evidenceState === "NOT_ESTABLISHED"
+    ) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+        "A NOT_ESTABLISHED ownership dimension cannot also be a weak signal",
+      );
+    }
+    const relatedUnknownReferences = new Set(
+      transport.unknowns
+        .filter(
+          (unknown) => unknown.assessmentArea === signal.assessmentArea,
+        )
+        .flatMap((unknown) => unknown.evidenceReferences),
+    );
+    if (
+      relatedUnknownReferences.size > 0 &&
+      signal.affirmativeEvidenceReferences.every((reference) =>
+        relatedUnknownReferences.has(reference),
+      )
+    ) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+        "The same unresolved evidence cannot also support a weak signal",
+      );
+    }
+  }
+  const convertedWeakSignals = transport.weakSignals.map((signal) => ({
+    finding: signal.finding,
+    evidenceReferences: signal.affirmativeEvidenceReferences,
+  }));
+  const convertedUnknowns = transport.unknowns.map(
+    ({ assessmentArea: _assessmentArea, ...unknown }) => unknown,
+  );
   const dimensionLabels: Record<keyof typeof convertedDimensions, string> = {
     roleBoundaries: "Role boundaries",
     teamBoundaries: "Team boundaries",
@@ -486,7 +598,7 @@ export function semanticOrganizationalMaturityFromTransport(
     unrealisticOwnership: "unrealistic-ownership",
   };
   const existingUnknownCodes = new Set(
-    transport.unknowns.map((unknown) => unknown.code),
+    convertedUnknowns.map((unknown) => unknown.code),
   );
   const dimensionUnknowns = (
     Object.entries(convertedDimensions) as Array<
@@ -511,7 +623,8 @@ export function semanticOrganizationalMaturityFromTransport(
         ...convertedDimensions,
         evidenceReferences: transportDesign.evidenceReferences,
       },
-      unknowns: [...transport.unknowns, ...dimensionUnknowns],
+      weakSignals: convertedWeakSignals,
+      unknowns: [...convertedUnknowns, ...dimensionUnknowns],
     },
     code: "ORGANIZATIONAL_MATURITY_DOMAIN_INVALID",
     message: "Organizational Maturity violated the domain contract",

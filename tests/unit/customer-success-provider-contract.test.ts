@@ -107,6 +107,42 @@ function unknownOwnershipDimension() {
   };
 }
 
+function supportedWeakSignal(
+  assessmentArea:
+    | "EXISTING_CS_FUNCTION"
+    | "CUSTOMER_OPERATING_MODEL"
+    | "ROLE_BOUNDARIES"
+    | "TEAM_BOUNDARIES"
+    | "HANDOFFS"
+    | "SHARED_OWNERSHIP"
+    | "CROSS_FUNCTIONAL_RELATIONSHIPS"
+    | "UNRELATED_RESPONSIBILITIES"
+    | "SCOPE_CREEP"
+    | "MULTIPLE_JOBS_COMBINED"
+    | "UNREALISTIC_OWNERSHIP" = "SCOPE_CREEP",
+  findingText = "The posting explicitly combines ownership across separate functions.",
+) {
+  return {
+    assessmentArea,
+    evidenceState: "SUPPORTED_WEAKNESS" as const,
+    finding: findingText,
+    affirmativeEvidenceReferences: evidenceReferences,
+  };
+}
+
+function maturityUnknown(
+  assessmentArea: ReturnType<typeof supportedWeakSignal>["assessmentArea"],
+  code = "maturity-information-unknown",
+) {
+  return {
+    assessmentArea,
+    code,
+    description: "The available evidence does not resolve this information.",
+    materiality: "Completeness is reduced.",
+    evidenceReferences: [] as string[],
+  };
+}
+
 function validOrganizationalMaturity() {
   return {
     score: 75,
@@ -512,6 +548,202 @@ describe("Customer Success provider/application contracts", () => {
     expect(
       domain.ownershipAndCrossFunctionalDesign.unrealisticOwnership.unknown,
     ).toBe(true);
+  });
+
+  it("accepts an affirmatively supported structural weakness and restores the unchanged domain finding", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.scopeCreep =
+      supportedOwnershipDimension("SUPPORTED_PRESENT");
+    transport.weakSignals = [supportedWeakSignal()];
+
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+
+    expect(domain.weakSignals).toEqual([
+      {
+        finding:
+          "The posting explicitly combines ownership across separate functions.",
+        evidenceReferences,
+      },
+    ]);
+    expect(JSON.stringify(domain)).not.toContain("SUPPORTED_WEAKNESS");
+    expect(JSON.stringify(domain)).not.toContain("assessmentArea");
+    expect(JSON.stringify(domain)).not.toContain(
+      "affirmativeEvidenceReferences",
+    );
+  });
+
+  it.each([
+    ["HANDOFFS", "Formal handoffs are not described."],
+    ["EXISTING_CS_FUNCTION", "Staffing and capacity are missing."],
+    ["CUSTOMER_OPERATING_MODEL", "Operating metrics are not provided."],
+    [
+      "TEAM_BOUNDARIES",
+      "Technical and implementation boundaries are not established.",
+    ],
+  ] as const)(
+    "rejects missing information in %s weak signals",
+    (assessmentArea, findingText) => {
+      const transport = validOrganizationalMaturity();
+      transport.weakSignals = [
+        supportedWeakSignal(assessmentArea, findingText),
+      ];
+      expect(
+        semanticOrganizationalMaturityTransportSchema.safeParse(transport)
+          .success,
+      ).toBe(true);
+      expectNonRetryableEvidenceFailure(
+        () =>
+          semanticOrganizationalMaturityFromTransport(
+            transport,
+            availableEvidence,
+          ),
+        "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+      );
+    },
+  );
+
+  it("keeps an unresolved fact only in Unknowns without creating a weak signal", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.handoffs =
+      unknownOwnershipDimension();
+    transport.unknowns = [maturityUnknown("HANDOFFS")];
+
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+
+    expect(domain.weakSignals).toEqual([]);
+    expect(domain.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "maturity-information-unknown" }),
+      ]),
+    );
+  });
+
+  it("rejects a weak signal for an ownership dimension that is NOT_ESTABLISHED", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.handoffs =
+      unknownOwnershipDimension();
+    transport.weakSignals = [
+      supportedWeakSignal(
+        "HANDOFFS",
+        "The handoff process creates repeated ownership failures.",
+      ),
+    ];
+
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+        ),
+      "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+    );
+  });
+
+  it("rejects the same evidence as both unresolved and affirmatively weak", () => {
+    const transport = validOrganizationalMaturity();
+    transport.unknowns = [
+      {
+        ...maturityUnknown("CUSTOMER_OPERATING_MODEL"),
+        evidenceReferences,
+      },
+    ];
+    transport.weakSignals = [
+      supportedWeakSignal(
+        "CUSTOMER_OPERATING_MODEL",
+        "The documented operating process is internally inconsistent.",
+      ),
+    ];
+
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+        ),
+      "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+    );
+  });
+
+  it("allows a distinct evidenced weakness alongside a separate Unknown in the same criterion", () => {
+    const transport = validOrganizationalMaturity();
+    transport.unknowns = [
+      {
+        ...maturityUnknown("CUSTOMER_OPERATING_MODEL"),
+        evidenceReferences,
+      },
+    ];
+    transport.weakSignals = [
+      {
+        ...supportedWeakSignal(
+          "CUSTOMER_OPERATING_MODEL",
+          "The posting explicitly assigns renewal accountability without a defined renewal process.",
+        ),
+        affirmativeEvidenceReferences: ["e2"],
+      },
+    ];
+
+    const domain = semanticOrganizationalMaturityFromTransport(transport, [
+      ...availableEvidence,
+      { referenceId: "e2", sourceType: "MANUAL" },
+    ]);
+
+    expect(domain.weakSignals[0]?.evidenceReferences).toEqual(["e2"]);
+    expect(domain.unknowns[0]?.evidenceReferences).toEqual(evidenceReferences);
+  });
+
+  it("preserves valid Terra-style mixed output and supported positive signals", () => {
+    const transport = validOrganizationalMaturity();
+    transport.score = 56;
+    transport.ownershipAndCrossFunctionalDesign.teamBoundaries =
+      unknownOwnershipDimension();
+    transport.ownershipAndCrossFunctionalDesign.handoffs =
+      unknownOwnershipDimension();
+    transport.unknowns = [
+      maturityUnknown("TEAM_BOUNDARIES", "team-boundaries-unknown"),
+      maturityUnknown("HANDOFFS", "handoffs-unknown"),
+    ];
+
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+
+    expect(domain.score).toBe(56);
+    expect(domain.positiveSignals).toEqual([finding]);
+    expect(domain.weakSignals).toEqual([]);
+    expect(domain.ownershipAndCrossFunctionalDesign.teamBoundaries.unknown).toBe(
+      true,
+    );
+  });
+
+  it("requires provider weak signals to declare affirmative state, area, and evidence", () => {
+    const missingMetadata = validOrganizationalMaturity() as Record<
+      string,
+      any
+    >;
+    missingMetadata.weakSignals = [finding];
+    expect(
+      semanticOrganizationalMaturityTransportSchema.safeParse(missingMetadata)
+        .success,
+    ).toBe(false);
+
+    const missingEvidence = validOrganizationalMaturity();
+    missingEvidence.weakSignals = [
+      {
+        ...supportedWeakSignal(),
+        affirmativeEvidenceReferences: [],
+      },
+    ];
+    expect(
+      semanticOrganizationalMaturityTransportSchema.safeParse(missingEvidence)
+        .success,
+    ).toBe(false);
   });
 
   it("structurally enforces Alex Fit experience and work-style evidence branches", () => {
