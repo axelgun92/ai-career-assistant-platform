@@ -1,4 +1,8 @@
-import { customerSuccessSemanticOperationIds } from "@ai-career/customer-success";
+import {
+  createCustomerSuccessEvaluator,
+  customerSuccessOrganizationalMaturityPromptVersion,
+  customerSuccessSemanticOperationIds,
+} from "@ai-career/customer-success";
 import {
   StageExecutionError,
   createSemanticExecutor,
@@ -6,7 +10,10 @@ import {
   type SemanticOperationAttempt,
   type SemanticOperationExecutionPolicy,
 } from "@ai-career/evaluation";
-import { readSemanticEnvironment } from "@ai-career/shared";
+import {
+  customerSuccessProductionSemanticPolicyVersion,
+  readSemanticEnvironment,
+} from "@ai-career/shared";
 import { semanticExecutorConfigFromEnvironment } from "../../apps/web/src/server/semantic-execution-config";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -79,26 +86,50 @@ function productionEnvironment(overrides: Record<string, string> = {}) {
 }
 
 describe("per-semantic-operation execution routing", () => {
-  it("keeps every production Customer Success operation on Terra by default", () => {
+  it("routes only production Organizational Maturity to Luna by default", () => {
     const config = semanticExecutorConfigFromEnvironment(
       productionEnvironment(),
     );
 
     expect(config.executionPolicy?.version).toBe(
-      "customer-success-semantic-policy-v1-all-terra",
+      customerSuccessProductionSemanticPolicyVersion,
     );
     expect(Object.keys(config.executionPolicy?.operations ?? {})).toEqual(
       customerSuccessSemanticOperationIds,
     );
     expect(
-      Object.values(config.executionPolicy?.operations ?? {}).every(
-        (configuredRoute) =>
+      config.executionPolicy?.operations[
+        "customer-success.organizational-maturity"
+      ],
+    ).toEqual({
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      pricingVersion: "openai-gpt-5.6-luna-standard-2026-08-26",
+      reasoningEffort: "medium",
+      maximumOutputTokens: 12_000,
+      timeoutMs: 120_000,
+      semanticRetryLimit: 1,
+    });
+    expect(
+      Object.entries(config.executionPolicy?.operations ?? {})
+        .filter(
+          ([operationId]) =>
+            operationId !== "customer-success.organizational-maturity",
+        )
+        .every(
+          ([, configuredRoute]) =>
           configuredRoute.provider === "openai" &&
           configuredRoute.model === "gpt-5.6-terra" &&
           configuredRoute.pricingVersion ===
             "openai-gpt-5.6-terra-standard-2026-07-30",
-      ),
+        ),
     ).toBe(true);
+    expect(
+      config.executionPolicy?.operations["customer-success.resume-match"],
+    ).toMatchObject({
+      model: "gpt-5.6-terra",
+      pricingVersion: "openai-gpt-5.6-terra-standard-2026-07-30",
+    });
     expect(
       config.pricingConfigurations?.find(
         (pricing) => pricing.model === "gpt-5.6-luna",
@@ -110,6 +141,63 @@ describe("per-semantic-operation execution routing", () => {
       cachedInputCostPerMillionTokens: 0.02,
       outputCostPerMillionTokens: 1.2,
     });
+  });
+
+  it("keeps the approved Organizational Maturity v3 prompt", () => {
+    expect(customerSuccessOrganizationalMaturityPromptVersion).toBe(
+      "cs-organizational-maturity-v3",
+    );
+    expect(
+      createCustomerSuccessEvaluator().stages.find(
+        (stage) => stage.id === "organizational-maturity",
+      )?.promptVersion,
+    ).toBe("cs-organizational-maturity-v3");
+  });
+
+  it("records production Organizational Maturity retries only on Luna with Luna pricing", async () => {
+    const attempts: SemanticOperationAttempt[] = [];
+    const models: string[] = [];
+    const config = semanticExecutorConfigFromEnvironment(
+      productionEnvironment(),
+    );
+    const executor = createSemanticExecutor({
+      config,
+      transport: {
+        async execute(request) {
+          models.push(request.model);
+          return {
+            outputText: models.length === 1 ? "{}" : '{"ok":true}',
+            providerRequestId: `req-${models.length}`,
+            usage: {
+              inputTokens: 1_000,
+              cachedInputTokens: 100,
+              reasoningTokens: 50,
+              outputTokens: 500,
+              totalTokens: 1_500,
+            },
+          };
+        },
+      },
+      recorder: { async record(attempt) { attempts.push(attempt); } },
+    });
+
+    await expect(
+      executor.execute(
+        operation("customer-success.organizational-maturity"),
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(models).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+    expect(attempts).toHaveLength(2);
+    expect(
+      attempts.every(
+        (attempt) =>
+          attempt.model === "gpt-5.6-luna" &&
+          attempt.pricingConfiguration.version ===
+            "openai-gpt-5.6-luna-standard-2026-08-26" &&
+          attempt.estimatedCost === 0.000782,
+      ),
+    ).toBe(true);
+    expect(executor.usage()).toEqual({ callsUsed: 2, callBudget: 16 });
   });
 
   it("allows one operation to be explicitly routed to Luna", async () => {

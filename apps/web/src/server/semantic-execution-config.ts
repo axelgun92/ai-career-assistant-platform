@@ -1,4 +1,7 @@
-import { customerSuccessSemanticOperationIds } from "@ai-career/customer-success";
+import {
+  customerSuccessSemanticOperationIds,
+  type CustomerSuccessSemanticOperationId,
+} from "@ai-career/customer-success";
 import {
   defineSemanticExecutionPolicy,
   semanticOperationExecutionPolicySchema,
@@ -8,6 +11,7 @@ import {
 } from "@ai-career/evaluation";
 import {
   readSemanticEnvironment,
+  gpt56LunaPricingConfiguration,
   semanticPricingConfigurationsFromEnvironment,
   semanticPricingFromEnvironment,
   type SemanticEnvironment,
@@ -19,6 +23,18 @@ const operationOverridesSchema = z.record(
   z.string().trim().min(1),
   operationOverrideSchema,
 );
+
+const approvedProductionOperationOverrides: Partial<
+  Record<
+    CustomerSuccessSemanticOperationId,
+    Partial<SemanticOperationExecutionPolicy>
+  >
+> = {
+  "customer-success.organizational-maturity": {
+    model: gpt56LunaPricingConfiguration.model,
+    pricingVersion: gpt56LunaPricingConfiguration.version,
+  },
+};
 
 function readOperationOverrides(value: string) {
   let parsed: unknown;
@@ -58,7 +74,11 @@ export function semanticExecutorConfigFromEnvironment(
     operations: Object.fromEntries(
       customerSuccessSemanticOperationIds.map((operationId) => [
         operationId,
-        { ...defaultRoute, ...overrides[operationId] },
+        {
+          ...defaultRoute,
+          ...approvedProductionOperationOverrides[operationId],
+          ...overrides[operationId],
+        },
       ]),
     ),
   });

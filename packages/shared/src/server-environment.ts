@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const customerSuccessProductionSemanticPolicyVersion =
+  "customer-success-semantic-policy-v2-organizational-maturity-luna";
+
 const postgresConnectionString = z.string().min(1).refine(
   (value) => {
     try {
@@ -42,7 +45,7 @@ export const semanticEnvironmentSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .default("customer-success-semantic-policy-v1-all-terra"),
+    .default(customerSuccessProductionSemanticPolicyVersion),
   AI_OPERATION_EXECUTION_OVERRIDES_JSON: z.string().default("{}"),
   AI_PRICING_PROVIDER: z.string().trim().min(1).default("openai"),
   AI_PRICING_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),

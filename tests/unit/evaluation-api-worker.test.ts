@@ -11,15 +11,33 @@ import {
   type EvaluationTaskRepository,
   type SemanticOperationAttempt,
 } from "@ai-career/evaluation";
-import { readSemanticEnvironment } from "@ai-career/shared";
+import {
+  customerSuccessProductionSemanticPolicyVersion,
+  readSemanticEnvironment,
+} from "@ai-career/shared";
 import { createEvaluationApiHandlers } from "../../apps/web/src/server/evaluation-api";
 import { createEvaluationService } from "../../apps/web/src/server/evaluation-service";
+import { createCustomerSuccessEvaluationProcessor } from "../../apps/web/src/server/customer-success-evaluation-processor";
+import { semanticExecutorConfigFromEnvironment } from "../../apps/web/src/server/semantic-execution-config";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { testSemanticPricing } from "../fixtures/semantic-pricing";
 
 const timestamp = new Date("2026-08-17T12:00:00.000Z");
+
+function productionSemanticConfig(apiKey = "test-key-not-a-secret") {
+  return semanticExecutorConfigFromEnvironment(
+    readSemanticEnvironment({
+      OPENAI_API_KEY: apiKey,
+      AI_MODEL: "gpt-5.6-terra",
+      AI_MAX_OUTPUT_TOKENS: "12000",
+      AI_RETRY_LIMIT: "1",
+      AI_CALL_BUDGET: "16",
+      AI_REQUEST_TIMEOUT_MS: "120000",
+    }),
+  );
+}
 
 function taskRecord(status: EvaluationTask["status"] = "PENDING") {
   return evaluationTaskSchema.parse({
@@ -164,15 +182,7 @@ describe("evaluation API", () => {
         async loadSubject() { return subject; },
       } as unknown as EvaluationRepository,
       tasks,
-      semanticConfig: {
-        apiKey: "server-only-secret",
-        model: "gpt-5.6-terra",
-        maxOutputTokens: 12_000,
-        retryLimit: 1,
-        callBudget: 16,
-        timeoutMs: 120_000,
-        pricing: testSemanticPricing,
-      },
+      semanticConfig: productionSemanticConfig("server-only-secret"),
       jobMaxAttempts: 3,
     });
     const response = await createEvaluationApiHandlers(service).post(
@@ -189,6 +199,24 @@ describe("evaluation API", () => {
       status: "PENDING",
     });
     expect(JSON.stringify(tasks.enqueuedInput)).not.toContain("server-only-secret");
+    expect(tasks.enqueuedInput).toMatchObject({
+      executionMetadata: {
+        semanticExecutionPolicyVersion:
+          customerSuccessProductionSemanticPolicyVersion,
+        semanticOperationExecutionPolicy: {
+          "customer-success.organizational-maturity": {
+            model: "gpt-5.6-luna",
+            pricingVersion:
+              "openai-gpt-5.6-luna-standard-2026-08-26",
+          },
+          "customer-success.resume-match": {
+            model: "gpt-5.6-terra",
+            pricingVersion:
+              "openai-gpt-5.6-terra-standard-2026-07-30",
+          },
+        },
+      },
+    });
   });
 
   it("returns safe errors for a missing opportunity, unsupported domain, and missing profile", async () => {
@@ -308,6 +336,34 @@ describe("evaluation API", () => {
 
   it("requires explicit server-side semantic configuration", () => {
     expect(() => readSemanticEnvironment({})).toThrow();
+  });
+
+  it("rejects a queued evaluation from the previous routing policy version", async () => {
+    const evaluation = {
+      ...snapshot("PENDING"),
+      executionMetadata: {
+        semanticExecutionPolicyVersion:
+          "customer-success-semantic-policy-v1-all-terra",
+      },
+    };
+    const task = {
+      ...taskRecord("PENDING"),
+      evaluationId: evaluation.id,
+    };
+    const processor = createCustomerSuccessEvaluationProcessor({
+      evaluations: {
+        async getEvaluationSnapshot() {
+          return evaluation;
+        },
+      } as unknown as EvaluationRepository,
+      tasks: fakeTaskRepository(task),
+      semanticConfig: productionSemanticConfig(),
+    });
+
+    await expect(processor.process(task)).rejects.toMatchObject({
+      code: "SEMANTIC_EXECUTION_POLICY_MISMATCH",
+      retryable: false,
+    });
   });
 
   it("loads the versioned Terra pricing configuration centrally", () => {
