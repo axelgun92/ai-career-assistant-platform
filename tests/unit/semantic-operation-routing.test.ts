@@ -2,6 +2,7 @@ import {
   createCustomerSuccessEvaluator,
   customerSuccessOrganizationalMaturityPromptVersion,
   customerSuccessSemanticOperationIds,
+  type CustomerSuccessSemanticOperationId,
 } from "@ai-career/customer-success";
 import {
   StageExecutionError,
@@ -23,6 +24,23 @@ import {
 } from "../fixtures/semantic-pricing";
 
 const operationSchema = z.object({ ok: z.boolean() }).strict();
+
+const productionLunaOperationIds = [
+  "customer-success.job-evaluation",
+  "customer-success.company-alignment",
+  "customer-success.organizational-maturity",
+  "customer-success.alex-fit",
+  "customer-success.burnout-risk",
+  "customer-success.opportunity-priority",
+] as const satisfies readonly CustomerSuccessSemanticOperationId[];
+
+const productionTerraOperationIds = [
+  "customer-success.jd-reconstruction",
+  "customer-success.resume-match",
+  // The no-history Ghost Job Risk branch is deterministic. Its unchanged
+  // evidence-backed semantic branch retains the default Terra route.
+  "customer-success.ghost-job-risk",
+] as const satisfies readonly CustomerSuccessSemanticOperationId[];
 
 function operation(operationId: string) {
   return {
@@ -86,7 +104,7 @@ function productionEnvironment(overrides: Record<string, string> = {}) {
 }
 
 describe("per-semantic-operation execution routing", () => {
-  it("routes only production Organizational Maturity to Luna by default", () => {
+  it("uses the complete approved production Customer Success model map", () => {
     const config = semanticExecutorConfigFromEnvironment(
       productionEnvironment(),
     );
@@ -94,42 +112,34 @@ describe("per-semantic-operation execution routing", () => {
     expect(config.executionPolicy?.version).toBe(
       customerSuccessProductionSemanticPolicyVersion,
     );
+    expect(customerSuccessProductionSemanticPolicyVersion).toBe(
+      "customer-success-semantic-policy-v3-mixed-terra-luna",
+    );
     expect(Object.keys(config.executionPolicy?.operations ?? {})).toEqual(
       customerSuccessSemanticOperationIds,
     );
-    expect(
-      config.executionPolicy?.operations[
-        "customer-success.organizational-maturity"
-      ],
-    ).toEqual({
-      provider: "openai",
-      model: "gpt-5.6-luna",
-      pricingVersion: "openai-gpt-5.6-luna-standard-2026-08-26",
-      reasoningEffort: "medium",
-      maximumOutputTokens: 12_000,
-      timeoutMs: 120_000,
-      semanticRetryLimit: 1,
-    });
-    expect(
-      Object.entries(config.executionPolicy?.operations ?? {})
-        .filter(
-          ([operationId]) =>
-            operationId !== "customer-success.organizational-maturity",
-        )
-        .every(
-          ([, configuredRoute]) =>
-          configuredRoute.provider === "openai" &&
-          configuredRoute.model === "gpt-5.6-terra" &&
-          configuredRoute.pricingVersion ===
-            "openai-gpt-5.6-terra-standard-2026-07-30",
-        ),
-    ).toBe(true);
-    expect(
-      config.executionPolicy?.operations["customer-success.resume-match"],
-    ).toMatchObject({
-      model: "gpt-5.6-terra",
-      pricingVersion: "openai-gpt-5.6-terra-standard-2026-07-30",
-    });
+    for (const operationId of productionLunaOperationIds) {
+      expect(config.executionPolicy?.operations[operationId]).toEqual({
+        provider: "openai",
+        model: "gpt-5.6-luna",
+        pricingVersion: "openai-gpt-5.6-luna-standard-2026-08-26",
+        reasoningEffort: "medium",
+        maximumOutputTokens: 12_000,
+        timeoutMs: 120_000,
+        semanticRetryLimit: 1,
+      });
+    }
+    for (const operationId of productionTerraOperationIds) {
+      expect(config.executionPolicy?.operations[operationId]).toEqual({
+        provider: "openai",
+        model: "gpt-5.6-terra",
+        pricingVersion: "openai-gpt-5.6-terra-standard-2026-07-30",
+        reasoningEffort: "medium",
+        maximumOutputTokens: 12_000,
+        timeoutMs: 120_000,
+        semanticRetryLimit: 1,
+      });
+    }
     expect(
       config.pricingConfigurations?.find(
         (pricing) => pricing.model === "gpt-5.6-luna",
@@ -154,51 +164,56 @@ describe("per-semantic-operation execution routing", () => {
     ).toBe("cs-organizational-maturity-v3");
   });
 
-  it("records production Organizational Maturity retries only on Luna with Luna pricing", async () => {
-    const attempts: SemanticOperationAttempt[] = [];
-    const models: string[] = [];
-    const config = semanticExecutorConfigFromEnvironment(
-      productionEnvironment(),
-    );
-    const executor = createSemanticExecutor({
-      config,
-      transport: {
-        async execute(request) {
-          models.push(request.model);
-          return {
-            outputText: models.length === 1 ? "{}" : '{"ok":true}',
-            providerRequestId: `req-${models.length}`,
-            usage: {
-              inputTokens: 1_000,
-              cachedInputTokens: 100,
-              reasoningTokens: 50,
-              outputTokens: 500,
-              totalTokens: 1_500,
-            },
-          };
+  it.each(productionLunaOperationIds)(
+    "records production %s retries only on Luna with Luna pricing",
+    async (operationId) => {
+      const attempts: SemanticOperationAttempt[] = [];
+      const models: string[] = [];
+      const config = semanticExecutorConfigFromEnvironment(
+        productionEnvironment(),
+      );
+      const executor = createSemanticExecutor({
+        config,
+        transport: {
+          async execute(request) {
+            models.push(request.model);
+            return {
+              outputText: models.length === 1 ? "{}" : '{"ok":true}',
+              providerRequestId: `req-${models.length}`,
+              usage: {
+                inputTokens: 1_000,
+                cachedInputTokens: 100,
+                reasoningTokens: 50,
+                outputTokens: 500,
+                totalTokens: 1_500,
+              },
+            };
+          },
         },
-      },
-      recorder: { async record(attempt) { attempts.push(attempt); } },
-    });
+        recorder: {
+          async record(attempt) {
+            attempts.push(attempt);
+          },
+        },
+      });
 
-    await expect(
-      executor.execute(
-        operation("customer-success.organizational-maturity"),
-      ),
-    ).resolves.toEqual({ ok: true });
-    expect(models).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
-    expect(attempts).toHaveLength(2);
-    expect(
-      attempts.every(
-        (attempt) =>
-          attempt.model === "gpt-5.6-luna" &&
-          attempt.pricingConfiguration.version ===
-            "openai-gpt-5.6-luna-standard-2026-08-26" &&
-          attempt.estimatedCost === 0.000782,
-      ),
-    ).toBe(true);
-    expect(executor.usage()).toEqual({ callsUsed: 2, callBudget: 16 });
-  });
+      await expect(executor.execute(operation(operationId))).resolves.toEqual({
+        ok: true,
+      });
+      expect(models).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+      expect(attempts).toHaveLength(2);
+      expect(
+        attempts.every(
+          (attempt) =>
+            attempt.model === "gpt-5.6-luna" &&
+            attempt.pricingConfiguration.version ===
+              "openai-gpt-5.6-luna-standard-2026-08-26" &&
+            attempt.estimatedCost === 0.000782,
+        ),
+      ).toBe(true);
+      expect(executor.usage()).toEqual({ callsUsed: 2, callBudget: 16 });
+    },
+  );
 
   it("allows one operation to be explicitly routed to Luna", async () => {
     const config = semanticExecutorConfigFromEnvironment(
@@ -348,6 +363,48 @@ describe("per-semantic-operation execution routing", () => {
         StageExecutionError,
       );
       expect(models).toEqual(["gpt-5.6-luna"]);
+    },
+  );
+
+  it.each(["validation", "provider"] as const)(
+    "never falls back from Terra to Luna after a Terra %s failure",
+    async (failureKind) => {
+      const models: string[] = [];
+      const executor = createSemanticExecutor({
+        config: routedConfig({
+          operations: {
+            terra: route(
+              testSemanticPricing.model,
+              testSemanticPricing.version,
+            ),
+          },
+        }),
+        transport: {
+          async execute(request) {
+            models.push(request.model);
+            if (failureKind === "provider") {
+              throw new Error("provider unavailable");
+            }
+            return {
+              outputText: "{}",
+              providerRequestId: null,
+              usage: {
+                inputTokens: null,
+                cachedInputTokens: null,
+                reasoningTokens: null,
+                outputTokens: null,
+                totalTokens: null,
+              },
+            };
+          },
+        },
+        recorder: { async record() {} },
+      });
+
+      await expect(executor.execute(operation("terra"))).rejects.toBeInstanceOf(
+        StageExecutionError,
+      );
+      expect(models).toEqual(["gpt-5.6-terra"]);
     },
   );
 

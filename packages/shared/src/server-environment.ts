@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const customerSuccessProductionSemanticPolicyVersion =
-  "customer-success-semantic-policy-v2-organizational-maturity-luna";
+  "customer-success-semantic-policy-v3-mixed-terra-luna";
 
 const postgresConnectionString = z.string().min(1).refine(
   (value) => {

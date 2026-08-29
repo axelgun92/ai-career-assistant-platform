@@ -30,7 +30,27 @@ const approvedProductionOperationOverrides: Partial<
     Partial<SemanticOperationExecutionPolicy>
   >
 > = {
+  "customer-success.job-evaluation": {
+    model: gpt56LunaPricingConfiguration.model,
+    pricingVersion: gpt56LunaPricingConfiguration.version,
+  },
+  "customer-success.company-alignment": {
+    model: gpt56LunaPricingConfiguration.model,
+    pricingVersion: gpt56LunaPricingConfiguration.version,
+  },
   "customer-success.organizational-maturity": {
+    model: gpt56LunaPricingConfiguration.model,
+    pricingVersion: gpt56LunaPricingConfiguration.version,
+  },
+  "customer-success.alex-fit": {
+    model: gpt56LunaPricingConfiguration.model,
+    pricingVersion: gpt56LunaPricingConfiguration.version,
+  },
+  "customer-success.burnout-risk": {
+    model: gpt56LunaPricingConfiguration.model,
+    pricingVersion: gpt56LunaPricingConfiguration.version,
+  },
+  "customer-success.opportunity-priority": {
     model: gpt56LunaPricingConfiguration.model,
     pricingVersion: gpt56LunaPricingConfiguration.version,
   },

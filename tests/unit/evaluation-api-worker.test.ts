@@ -161,6 +161,7 @@ describe("evaluation API", () => {
   it("returns 202 and enqueues a versioned Customer Success evaluation without persisting the API key", async () => {
     const subject = validSubject();
     const tasks = fakeTaskRepository();
+    const semanticConfig = productionSemanticConfig("server-only-secret");
     const service = createEvaluationService({
       queries: {
         async findOpportunityForEvaluation() {
@@ -182,7 +183,7 @@ describe("evaluation API", () => {
         async loadSubject() { return subject; },
       } as unknown as EvaluationRepository,
       tasks,
-      semanticConfig: productionSemanticConfig("server-only-secret"),
+      semanticConfig,
       jobMaxAttempts: 3,
     });
     const response = await createEvaluationApiHandlers(service).post(
@@ -204,7 +205,32 @@ describe("evaluation API", () => {
         semanticExecutionPolicyVersion:
           customerSuccessProductionSemanticPolicyVersion,
         semanticOperationExecutionPolicy: {
+          "customer-success.jd-reconstruction": {
+            model: "gpt-5.6-terra",
+            pricingVersion:
+              "openai-gpt-5.6-terra-standard-2026-07-30",
+          },
+          "customer-success.job-evaluation": {
+            model: "gpt-5.6-luna",
+            pricingVersion:
+              "openai-gpt-5.6-luna-standard-2026-08-26",
+          },
+          "customer-success.company-alignment": {
+            model: "gpt-5.6-luna",
+            pricingVersion:
+              "openai-gpt-5.6-luna-standard-2026-08-26",
+          },
           "customer-success.organizational-maturity": {
+            model: "gpt-5.6-luna",
+            pricingVersion:
+              "openai-gpt-5.6-luna-standard-2026-08-26",
+          },
+          "customer-success.alex-fit": {
+            model: "gpt-5.6-luna",
+            pricingVersion:
+              "openai-gpt-5.6-luna-standard-2026-08-26",
+          },
+          "customer-success.burnout-risk": {
             model: "gpt-5.6-luna",
             pricingVersion:
               "openai-gpt-5.6-luna-standard-2026-08-26",
@@ -214,9 +240,28 @@ describe("evaluation API", () => {
             pricingVersion:
               "openai-gpt-5.6-terra-standard-2026-07-30",
           },
+          "customer-success.opportunity-priority": {
+            model: "gpt-5.6-luna",
+            pricingVersion:
+              "openai-gpt-5.6-luna-standard-2026-08-26",
+          },
+          "customer-success.ghost-job-risk": {
+            model: "gpt-5.6-terra",
+            pricingVersion:
+              "openai-gpt-5.6-terra-standard-2026-07-30",
+          },
         },
       },
     });
+    expect(
+      (
+        tasks.enqueuedInput as {
+          executionMetadata: {
+            semanticOperationExecutionPolicy: unknown;
+          };
+        }
+      ).executionMetadata.semanticOperationExecutionPolicy,
+    ).toEqual(semanticConfig.executionPolicy?.operations);
   });
 
   it("returns safe errors for a missing opportunity, unsupported domain, and missing profile", async () => {
@@ -338,12 +383,12 @@ describe("evaluation API", () => {
     expect(() => readSemanticEnvironment({})).toThrow();
   });
 
-  it("rejects a queued evaluation from the previous routing policy version", async () => {
+  it("rejects a queued evaluation from the previous v2 routing policy", async () => {
     const evaluation = {
       ...snapshot("PENDING"),
       executionMetadata: {
         semanticExecutionPolicyVersion:
-          "customer-success-semantic-policy-v1-all-terra",
+          "customer-success-semantic-policy-v2-organizational-maturity-luna",
       },
     };
     const task = {

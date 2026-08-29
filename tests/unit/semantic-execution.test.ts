@@ -1,5 +1,6 @@
 import {
   customerSuccessOrganizationalMaturityPromptVersion,
+  customerSuccessProductionPromptVersion,
   customerSuccessJdReconstructionSchema,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
@@ -2421,6 +2422,46 @@ describe("production semantic execution", () => {
     expect(captured.slice(1).every((item) => !item.untrustedSourceContent)).toBe(
       true,
     );
+    expect(
+      captured.map((item) => [item.operationId, item.promptVersion]),
+    ).toEqual([
+      [
+        "customer-success.jd-reconstruction",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.job-evaluation",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.company-alignment",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.organizational-maturity",
+        customerSuccessOrganizationalMaturityPromptVersion,
+      ],
+      [
+        "customer-success.alex-fit",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.burnout-risk",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.resume-match",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.opportunity-priority",
+        customerSuccessProductionPromptVersion,
+      ],
+      [
+        "customer-success.ghost-job-risk",
+        customerSuccessProductionPromptVersion,
+      ],
+    ]);
     const maturityOperation = captured.find(
       (item) =>
         item.operationId === "customer-success.organizational-maturity",
