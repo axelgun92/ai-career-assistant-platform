@@ -17,7 +17,7 @@ const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
 export const customerSuccessOrganizationalMaturityPromptVersion =
-  "cs-organizational-maturity-v4";
+  "cs-organizational-maturity-v5";
 
 export const organizationalMaturityOperatingModelRules = {
   renewalFocused:
@@ -478,6 +478,48 @@ export const semanticOrganizationalMaturityTransportSchema = z
 
 type ResponsibilityMap = z.infer<typeof responsibilityMapSchema>;
 
+function hasMaterialRenewalResponsibility(responsibilityMap: ResponsibilityMap) {
+  const renewal = responsibilityMap.areas.renewals;
+  return Boolean(
+    renewal &&
+      ["PRIMARY", "SUBSTANTIAL"].includes(renewal.prominence) &&
+      renewal.evidenceReferences.length > 0,
+  );
+}
+
+const nonRenewalPatternsSchema = z
+  .array(substantialOperatingModelPatternSchema.exclude(["RENEWAL_FOCUSED"]))
+  .describe(organizationalMaturityOperatingModelRules.renewalFocused);
+
+const nonRenewalMaturityTransportSchema =
+  semanticOrganizationalMaturityTransportSchema.extend({
+    customerOperatingModel: z.union([
+      transportCustomerOperatingModelSchema.options[0].extend({
+        classification:
+          transportCustomerOperatingModelSchema.options[0].shape.classification.exclude([
+            "RENEWAL_FOCUSED",
+          ]),
+        substantialPatterns: nonRenewalPatternsSchema,
+      }),
+      transportCustomerOperatingModelSchema.options[1].extend({
+        substantialPatterns: nonRenewalPatternsSchema.min(2),
+      }),
+      transportCustomerOperatingModelSchema.options[2].extend({
+        substantialPatterns: nonRenewalPatternsSchema.max(0),
+      }),
+    ]),
+  });
+
+export function createSemanticOrganizationalMaturityTransportSchema(
+  responsibilityMap: ResponsibilityMap,
+) {
+  // Resolve the input-dependent rule before generation. Other patterns retain
+  // their existing semantic meaning and choice space; ownership is not a gate.
+  return hasMaterialRenewalResponsibility(responsibilityMap)
+    ? semanticOrganizationalMaturityTransportSchema
+    : nonRenewalMaturityTransportSchema;
+}
+
 export function assertCustomerOperatingModelResponsibilitySupport(
   operatingModel: {
     classification: z.infer<typeof customerOperatingModelSchema>;
@@ -490,12 +532,7 @@ export function assertCustomerOperatingModelResponsibilitySupport(
     operatingModel.substantialPatterns.includes("RENEWAL_FOCUSED");
   if (!assertsRenewalFocus) return;
 
-  const renewal = responsibilityMap.areas.renewals;
-  if (
-    !renewal ||
-    !["PRIMARY", "SUBSTANTIAL"].includes(renewal.prominence) ||
-    renewal.evidenceReferences.length === 0
-  ) {
+  if (!hasMaterialRenewalResponsibility(responsibilityMap)) {
     semanticContractViolation(
       "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
       "Renewal-focused operating models require affirmative evidence of material renewal responsibility",

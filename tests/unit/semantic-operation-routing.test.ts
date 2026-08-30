@@ -155,13 +155,13 @@ describe("per-semantic-operation execution routing", () => {
 
   it("uses the versioned Organizational Maturity renewal-contract prompt", () => {
     expect(customerSuccessOrganizationalMaturityPromptVersion).toBe(
-      "cs-organizational-maturity-v4",
+      "cs-organizational-maturity-v5",
     );
     expect(
       createCustomerSuccessEvaluator().stages.find(
         (stage) => stage.id === "organizational-maturity",
       )?.promptVersion,
-    ).toBe("cs-organizational-maturity-v4");
+    ).toBe("cs-organizational-maturity-v5");
   });
 
   it.each(productionLunaOperationIds)(

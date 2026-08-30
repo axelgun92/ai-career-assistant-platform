@@ -1,5 +1,6 @@
 import {
   customerSuccessOrganizationalMaturityPromptVersion,
+  createSemanticOrganizationalMaturityTransportSchema,
   customerSuccessOpportunityPriorityPromptVersion,
   customerSuccessProductionPromptVersion,
   customerSuccessJdReconstructionSchema,
@@ -542,6 +543,49 @@ describe("production semantic execution", () => {
       expect(serialized).toContain(rule.split(";")[0]);
     }
   });
+
+  it.each([false, true])(
+    "generates strict input-constrained maturity enums with renewal eligibility %s",
+    (eligible) => {
+      const map = semanticReconstructionFromTransport(
+        validJdReconstructionTransport(),
+      ).responsibilityMap;
+      if (eligible) {
+        map.areas.renewals = {
+          prominence: "SUBSTANTIAL",
+          ownership: "UNKNOWN",
+          evidenceReferences: ["jd-1"],
+        };
+      }
+      const { jsonSchema, violations } = auditOpenAiProviderSchema(
+        createSemanticOrganizationalMaturityTransportSchema(map),
+      );
+      expect(violations).toEqual([]);
+      const properties = jsonSchema.properties as Record<string, any>;
+      const baselineProperties = auditOpenAiProviderSchema(
+        semanticOrganizationalMaturityTransportSchema,
+      ).jsonSchema.properties as Record<string, any>;
+      const variants = properties.customerOperatingModel.anyOf;
+      const baselineVariants = baselineProperties.customerOperatingModel.anyOf;
+      const expectedValues = (values: string[]) =>
+        eligible ? values : values.filter(value => value !== "RENEWAL_FOCUSED");
+      expect(variants[0].properties.classification.enum).toEqual(
+        expectedValues(baselineVariants[0].properties.classification.enum),
+      );
+      for (let index = 0; index < variants.length; index++) {
+        expect(variants[index].properties.substantialPatterns.items.enum).toEqual(
+          expectedValues(baselineVariants[index].properties.substantialPatterns.items.enum),
+        );
+      }
+      expect(variants[1].properties.substantialPatterns.minItems).toBe(2);
+      expect(variants[2].properties.substantialPatterns.maxItems).toBe(0);
+      for (const key of Object.keys(baselineProperties)) {
+        if (key !== "customerOperatingModel") {
+          expect(properties[key]).toEqual(baselineProperties[key]);
+        }
+      }
+    },
+  );
 
   it("uses evidence indexes rather than unconstrained evidence IDs in the Opportunity Priority provider schema", () => {
     const { jsonSchema, violations } = auditOpenAiProviderSchema(
@@ -2407,7 +2451,11 @@ describe("production semantic execution", () => {
     await captureInvocation(operations.evaluateJob({} as never));
     await captureInvocation(operations.evaluateCompanyAlignment({} as never));
     await captureInvocation(
-      operations.evaluateOrganizationalMaturity({} as never),
+      operations.evaluateOrganizationalMaturity({
+        responsibilityMap: semanticReconstructionFromTransport(
+          validJdReconstructionTransport(),
+        ).responsibilityMap,
+      } as never),
     );
     await captureInvocation(operations.evaluateAlexFit({} as never));
     await captureInvocation(operations.evaluateBurnoutRisk({} as never));
@@ -2438,7 +2486,10 @@ describe("production semantic execution", () => {
       semanticReconstructionTransportSchema,
       semanticJobEvaluationTransportSchema,
       semanticCompanyAlignmentTransportSchema,
-      semanticOrganizationalMaturityTransportSchema,
+      createSemanticOrganizationalMaturityTransportSchema(
+        semanticReconstructionFromTransport(validJdReconstructionTransport())
+          .responsibilityMap,
+      ),
       semanticAlexFitTransportSchema,
       semanticBurnoutRiskTransportSchema,
       semanticResumeMatchTransportSchema,

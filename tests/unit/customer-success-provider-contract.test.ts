@@ -1,4 +1,6 @@
 import {
+  createSemanticOrganizationalMaturityTransportSchema,
+  customerOperatingModelSchema,
   semanticAlexFitFromTransport,
   semanticAlexFitTransportSchema,
   semanticBurnoutRiskFromTransport,
@@ -199,6 +201,7 @@ function responsibilityMapWithRenewals(
     | "RECEIVES_HANDOFF"
     | "HANDS_OFF"
     | "UNKNOWN" = "UNKNOWN",
+  supportingEvidence = prominence === "UNKNOWN" ? [] : evidenceReferences,
 ) {
   return {
     areas: Object.fromEntries(
@@ -208,8 +211,7 @@ function responsibilityMapWithRenewals(
           ? {
               prominence,
               ownership,
-              evidenceReferences:
-                prominence === "UNKNOWN" ? [] : evidenceReferences,
+              evidenceReferences: supportingEvidence,
             }
           : {
               prominence: "UNKNOWN",
@@ -492,6 +494,121 @@ describe("Customer Success provider/application contracts", () => {
       semanticOrganizationalMaturityTransportSchema.safeParse(invalidUnknown)
         .success,
     ).toBe(false);
+  });
+
+  it.each(["UNKNOWN", "SECONDARY", "OCCASIONAL", "ABSENT"] as const)(
+    "removes renewal focus from both provider fields for %s prominence",
+    (prominence) => {
+      const schema = createSemanticOrganizationalMaturityTransportSchema(
+        responsibilityMapWithRenewals(prominence),
+      );
+      for (const classification of [
+        "RENEWAL_FOCUSED", "HYBRID", "ADOPTION_FOCUSED", "UNKNOWN",
+      ]) {
+        const candidate = validOrganizationalMaturity();
+        expect(schema.safeParse({
+          ...candidate,
+          customerOperatingModel: {
+            ...candidate.customerOperatingModel,
+            classification,
+            substantialPatterns: ["ADOPTION_FOCUSED", "RENEWAL_FOCUSED"],
+          },
+        }).success).toBe(false);
+      }
+      const candidate = validOrganizationalMaturity();
+      expect(schema.safeParse({
+        ...candidate,
+        customerOperatingModel: {
+          ...candidate.customerOperatingModel,
+          classification: "RENEWAL_FOCUSED",
+          substantialPatterns: [],
+        },
+      }).success).toBe(false);
+      expect(schema.safeParse(candidate).success).toBe(true);
+    },
+  );
+
+  it.each(["PRIMARY", "SUBSTANTIAL"] as const)(
+    "allows evidenced %s renewal focus without requiring renewal ownership",
+    (prominence) => {
+      for (const ownership of ["OWNS", "SHARES", "SUPPORTS", "COLLABORATES", "UNKNOWN"] as const) {
+        const map = responsibilityMapWithRenewals(prominence, ownership);
+        const schema = createSemanticOrganizationalMaturityTransportSchema(map);
+        const candidate = {
+          ...validOrganizationalMaturity(),
+          customerOperatingModel: {
+            classification: "RENEWAL_FOCUSED" as const,
+            explanation: "Material renewal work is established, independently of ownership.",
+            evidenceReferences,
+            substantialPatterns: ["RENEWAL_FOCUSED"],
+          },
+        };
+        const domain = semanticOrganizationalMaturityFromTransport(
+          schema.parse(candidate), availableEvidence, map,
+        );
+        expect(semanticOrganizationalMaturitySchema.parse(domain)).toEqual(domain);
+        expect(organizationalMaturityDataSchema.parse({ evaluated: true, maturity: domain })).toEqual({ evaluated: true, maturity: domain });
+        expect(domain.customerOperatingModel).toEqual(candidate.customerOperatingModel);
+      }
+    },
+  );
+
+  it.each(["PRIMARY", "SUBSTANTIAL"] as const)(
+    "blocks %s renewal focus with no supporting evidence before generation",
+    (prominence) => {
+      const map = responsibilityMapWithRenewals(prominence, "OWNS", []);
+      const candidate = {
+        ...validOrganizationalMaturity(),
+        customerOperatingModel: {
+          classification: "HYBRID" as const,
+          explanation: "The provider claims renewal focus without evidence.",
+          evidenceReferences,
+          substantialPatterns: ["ADOPTION_FOCUSED", "RENEWAL_FOCUSED"],
+        },
+      };
+      expect(createSemanticOrganizationalMaturityTransportSchema(map).safeParse(candidate).success).toBe(false);
+      expectNonRetryableEvidenceFailure(
+        () => semanticOrganizationalMaturityFromTransport(candidate, availableEvidence, map),
+        "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
+      );
+    },
+  );
+
+  it("rejects the saved v4 failure combination at the request-specific provider boundary", () => {
+    const candidate = {
+      ...validOrganizationalMaturity(),
+      score: 58,
+      customerOperatingModel: {
+        classification: "HYBRID" as const,
+        explanation: "Repeatable adoption, education and enablement programs exist; renewals and implementation are not established.",
+        evidenceReferences,
+        substantialPatterns: ["ADOPTION_FOCUSED", "EDUCATION_FOCUSED", "ENABLEMENT_FOCUSED", "RENEWAL_FOCUSED"],
+      },
+    };
+    expect(semanticOrganizationalMaturityTransportSchema.safeParse(candidate).success).toBe(true);
+    expect(createSemanticOrganizationalMaturityTransportSchema(
+      responsibilityMapWithRenewals("UNKNOWN"),
+    ).safeParse(candidate).success).toBe(false);
+  });
+
+  it("preserves every unrelated pattern and the public domain shape", () => {
+    const map = responsibilityMapWithRenewals("UNKNOWN");
+    const schema = createSemanticOrganizationalMaturityTransportSchema(map);
+    for (const pattern of customerOperatingModelSchema.options.filter(
+      value => !["HYBRID", "UNKNOWN", "RENEWAL_FOCUSED"].includes(value),
+    )) {
+      const candidate = {
+        ...validOrganizationalMaturity(),
+        customerOperatingModel: {
+          classification: pattern,
+          explanation: "The non-renewal pattern retains its existing semantic interpretation.",
+          evidenceReferences,
+          substantialPatterns: [pattern],
+        },
+      };
+      expect(semanticOrganizationalMaturityFromTransport(schema.parse(candidate), availableEvidence, map))
+        .toEqual(semanticOrganizationalMaturityFromTransport(semanticOrganizationalMaturityTransportSchema.parse(candidate), availableEvidence, map));
+    }
   });
 
   it("rejects RENEWAL_FOCUSED when renewal responsibility is Unknown", () => {

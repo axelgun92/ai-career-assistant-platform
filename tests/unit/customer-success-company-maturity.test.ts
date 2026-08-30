@@ -3,6 +3,7 @@ import {
   companyAlignmentDataSchema,
   createCustomerSuccessDomainData,
   createCustomerSuccessEvaluator,
+  createProductionCustomerSuccessSemanticOperations,
   customerOperatingModelSchema,
   customerSegmentClassificationSchema,
   customerTypeClassificationSchema,
@@ -16,15 +17,21 @@ import {
   type CustomerSuccessSemanticOperations,
   type CustomerSuccessPreferences,
 } from "@ai-career/customer-success";
-import { createEvaluationExecutor } from "@ai-career/evaluation";
+import {
+  createEvaluationExecutor,
+  createSemanticExecutor,
+  type SemanticOperationAttempt,
+} from "@ai-career/evaluation";
 import { describe, expect, it } from "vitest";
 import {
   createCustomerSuccessFixtureOperations,
   customerSuccessTestPreferences,
+  toOrganizationalMaturityProviderTransport,
   type CompanyAlignmentFixtureOptions,
   type CustomerSuccessScenario,
   type OrganizationalMaturityFixtureOptions,
 } from "../fixtures/customer-success";
+import { testLunaSemanticPricing } from "../fixtures/semantic-pricing";
 import {
   createNeutralEvaluationSubject,
   InMemoryEvaluationRepository,
@@ -472,6 +479,83 @@ describe("Customer Success Organizational Maturity", () => {
         maturity.maturity.customerOperatingModel.substantialPatterns,
     ).toEqual(["ADOPTION_FOCUSED", "EDUCATION_FOCUSED"]);
   });
+
+  it.each(["UNKNOWN", "PRIMARY", "SUBSTANTIAL"] as const)(
+    "runs the production schema and conversion through the complete stage for %s renewal prominence",
+    async (prominence) => {
+      const eligible = prominence !== "UNKNOWN";
+      const base = createCustomerSuccessFixtureOperations({ scenario: "strong" }).semanticOperations;
+      let maturityInput: Parameters<CustomerSuccessSemanticOperations["evaluateOrganizationalMaturity"]>[0];
+      const attempts: SemanticOperationAttempt[] = [];
+      const semanticExecutor = createSemanticExecutor({
+        config: {
+          apiKey: "fake-test-key",
+          model: "gpt-5.6-luna",
+          maxOutputTokens: 12_000,
+          retryLimit: 0,
+          callBudget: 1,
+          timeoutMs: 5_000,
+          pricing: testLunaSemanticPricing,
+        },
+        recorder: { async record(attempt) { attempts.push(attempt); } },
+        transport: {
+          async execute(request) {
+            expect(request.operationId).toBe("customer-success.organizational-maturity");
+            const properties = request.jsonSchema.properties as Record<string, any>;
+            const variants = properties.customerOperatingModel.anyOf;
+            expect(variants[0].properties.classification.enum.includes("RENEWAL_FOCUSED")).toBe(eligible);
+            for (const variant of variants) {
+              expect(variant.properties.substantialPatterns.items.enum.includes("RENEWAL_FOCUSED")).toBe(eligible);
+            }
+            const candidate = semanticOrganizationalMaturitySchema.parse(
+              await base.evaluateOrganizationalMaturity(maturityInput),
+            );
+            candidate.customerOperatingModel = {
+              classification: eligible ? "RENEWAL_FOCUSED" : "HYBRID",
+              explanation: "The selected substantial work is supported by the authoritative maps.",
+              evidenceReferences: ["actual-work"],
+              substantialPatterns: eligible ? ["RENEWAL_FOCUSED"] : ["ADOPTION_FOCUSED", "EDUCATION_FOCUSED"],
+            };
+            return {
+              outputText: JSON.stringify(toOrganizationalMaturityProviderTransport(candidate)),
+              providerRequestId: "fake-maturity-request",
+              usage: { inputTokens: null, outputTokens: null, cachedInputTokens: null, reasoningTokens: null, totalTokens: null },
+            };
+          },
+        },
+      });
+      const production = createProductionCustomerSuccessSemanticOperations(semanticExecutor);
+      const { result } = await run({ operations: {
+        ...base,
+        async reconstructJobDescription(input) {
+          const reconstruction = await base.reconstructJobDescription(input);
+          reconstruction.responsibilityMap.areas.renewals = {
+            prominence,
+            ownership: "UNKNOWN",
+            evidenceReferences: eligible ? ["actual-work"] : [],
+          };
+          return reconstruction;
+        },
+        async evaluateOrganizationalMaturity(input) {
+          maturityInput = input;
+          return production.evaluateOrganizationalMaturity(input);
+        },
+      } });
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.status).toBe("SUCCESS");
+      expect(result.evaluation.stageResults[3]?.status).toBe("COMPLETED");
+      const maturity = organizationalMaturityDataSchema.parse(
+        result.evaluation.stageResults[3]?.result?.data,
+      );
+      expect(maturity.evaluated).toBe(true);
+      if (!maturity.evaluated) return;
+      expect(maturity.maturity.customerOperatingModel.classification).toBe(
+        eligible ? "RENEWAL_FOCUSED" : "HYBRID",
+      );
+      expect(maturity.maturity.ownershipAndCrossFunctionalDesign.scopeCreep.unknown).toBe(true);
+      expect(maturity.maturity.ownershipAndCrossFunctionalDesign.scopeCreep.conclusion).toBeNull();
+    },
+  );
 
   it("rejects an unsupported renewal-focused pattern at the complete-stage boundary", async () => {
     const base = createCustomerSuccessFixtureOperations({

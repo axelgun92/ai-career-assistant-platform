@@ -28,10 +28,10 @@ import {
   semanticOpportunityPriorityTransportSchema,
 } from "../schemas/opportunity-priority";
 import {
+  createSemanticOrganizationalMaturityTransportSchema,
   customerSuccessOrganizationalMaturityPromptVersion,
   organizationalMaturitySemanticInstructions,
   semanticOrganizationalMaturityFromTransport,
-  semanticOrganizationalMaturityTransportSchema,
 } from "../schemas/organizational-maturity";
 import {
   semanticResumeMatchFromTransport,
@@ -141,7 +141,9 @@ export function createProductionCustomerSuccessSemanticOperations(
         await operation(executor, {
           operationId: "customer-success.organizational-maturity",
           promptVersion: customerSuccessOrganizationalMaturityPromptVersion,
-          schema: semanticOrganizationalMaturityTransportSchema,
+          schema: createSemanticOrganizationalMaturityTransportSchema(
+            input.responsibilityMap,
+          ),
           instructions: organizationalMaturitySemanticInstructions,
           trustedContext: input,
         }),
