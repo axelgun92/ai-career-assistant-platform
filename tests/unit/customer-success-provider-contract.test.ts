@@ -10,10 +10,12 @@ import {
   semanticJobEvaluationTransportSchema,
   semanticOpportunityPriorityFromTransport,
   semanticOpportunityPriorityTransportSchema,
+  opportunityPriorityEvidenceCatalog,
   semanticOrganizationalMaturityFromTransport,
   organizationalMaturityDataSchema,
   semanticOrganizationalMaturitySchema,
   semanticOrganizationalMaturityTransportSchema,
+  responsibilityAreas,
 } from "@ai-career/customer-success";
 import { describe, expect, it } from "vitest";
 
@@ -181,6 +183,45 @@ function validOrganizationalMaturity() {
   };
 }
 
+function responsibilityMapWithRenewals(
+  prominence:
+    | "PRIMARY"
+    | "SUBSTANTIAL"
+    | "SECONDARY"
+    | "OCCASIONAL"
+    | "ABSENT"
+    | "UNKNOWN",
+  ownership:
+    | "OWNS"
+    | "SHARES"
+    | "SUPPORTS"
+    | "COLLABORATES"
+    | "RECEIVES_HANDOFF"
+    | "HANDS_OFF"
+    | "UNKNOWN" = "UNKNOWN",
+) {
+  return {
+    areas: Object.fromEntries(
+      responsibilityAreas.map((area) => [
+        area,
+        area === "renewals"
+          ? {
+              prominence,
+              ownership,
+              evidenceReferences:
+                prominence === "UNKNOWN" ? [] : evidenceReferences,
+            }
+          : {
+              prominence: "UNKNOWN",
+              ownership: "UNKNOWN",
+              evidenceReferences: [],
+            },
+      ]),
+    ),
+    other: [],
+  } as never;
+}
+
 function validAlexFit() {
   return {
     classification: "STRONG" as const,
@@ -226,7 +267,29 @@ function validBurnoutRisk() {
   };
 }
 
-function validOpportunityPriority() {
+function validOpportunityPriorityTransport() {
+  return {
+    score: 80,
+    scoreExplanation: "The opportunity merits priority.",
+    scoreEvidenceIndexes: [0],
+    strategicValueSummary: "Strategic value is supported.",
+    strategicValueEvidenceIndexes: [0],
+    applicationEffort: {
+      classification: "LOW" as const,
+      explanation: "Low effort is supported.",
+      evidenceIndexes: [0],
+    },
+    reasonsForPrioritization: [
+      { finding: finding.finding, evidenceIndexes: [0] },
+    ],
+    reasonsForReducedPriority: [],
+    unknowns: [],
+    evidenceIndexes: [0],
+    contradictions: [],
+  };
+}
+
+function validOpportunityPriorityDomain() {
   return {
     score: 80,
     scoreExplanation: "The opportunity merits priority.",
@@ -238,7 +301,9 @@ function validOpportunityPriority() {
       explanation: "Low effort is supported.",
       evidenceReferences,
     },
-    reasonsForPrioritization: [finding],
+    reasonsForPrioritization: [
+      { finding: finding.finding, evidenceReferences: [...evidenceReferences] },
+    ],
     reasonsForReducedPriority: [],
     unknowns: [],
     evidenceReferences,
@@ -428,6 +493,70 @@ describe("Customer Success provider/application contracts", () => {
         .success,
     ).toBe(false);
   });
+
+  it("rejects RENEWAL_FOCUSED when renewal responsibility is Unknown", () => {
+    const transport = validOrganizationalMaturity() as Record<string, any>;
+    transport.customerOperatingModel = {
+      classification: "HYBRID" as const,
+      explanation: "The model combines adoption and renewal work.",
+      evidenceReferences,
+      substantialPatterns: ["ADOPTION_FOCUSED", "RENEWAL_FOCUSED"],
+    };
+
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+          responsibilityMapWithRenewals("UNKNOWN"),
+        ),
+      "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
+    );
+  });
+
+  it.each(["OWNS", "SHARES", "SUPPORTS", "COLLABORATES", "UNKNOWN"] as const)(
+    "allows materially renewal-focused work with %s ownership",
+    (ownership) => {
+      const transport = validOrganizationalMaturity() as Record<string, any>;
+      transport.customerOperatingModel = {
+        classification: "RENEWAL_FOCUSED" as const,
+        explanation: "Renewals are a substantial operating pattern.",
+        evidenceReferences,
+        substantialPatterns: ["RENEWAL_FOCUSED"],
+      };
+
+      const result = semanticOrganizationalMaturityFromTransport(
+        transport,
+        availableEvidence,
+        responsibilityMapWithRenewals("SUBSTANTIAL", ownership),
+      );
+      expect(result.customerOperatingModel.classification).toBe(
+        "RENEWAL_FOCUSED",
+      );
+    },
+  );
+
+  it.each(["SECONDARY", "OCCASIONAL", "ABSENT"] as const)(
+    "rejects RENEWAL_FOCUSED when renewal prominence is only %s",
+    (prominence) => {
+      const transport = validOrganizationalMaturity() as Record<string, any>;
+      transport.customerOperatingModel = {
+        classification: "RENEWAL_FOCUSED" as const,
+        explanation: "Renewals are claimed as the operating model.",
+        evidenceReferences,
+        substantialPatterns: ["RENEWAL_FOCUSED"],
+      };
+      expectNonRetryableEvidenceFailure(
+        () =>
+          semanticOrganizationalMaturityFromTransport(
+            transport,
+            availableEvidence,
+            responsibilityMapWithRenewals(prominence, "SUPPORTS"),
+          ),
+        "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
+      );
+    },
+  );
 
   it("retains Organizational Maturity runtime validation as defense in depth", () => {
     const invalid = semanticOrganizationalMaturityFromTransport(
@@ -785,15 +914,15 @@ describe("Customer Success provider/application contracts", () => {
   });
 
   it("structurally enforces Opportunity Priority and Ghost Job Risk branches", () => {
-    const priority = validOpportunityPriority();
-    priority.applicationEffort.evidenceReferences = [];
+    const priority = validOpportunityPriorityTransport();
+    priority.applicationEffort.evidenceIndexes = [];
     expect(
       semanticOpportunityPriorityTransportSchema.safeParse(priority).success,
     ).toBe(false);
     priority.applicationEffort = {
       classification: "UNKNOWN" as never,
       explanation: "Application effort is unknown.",
-      evidenceReferences: [],
+      evidenceIndexes: [],
     };
     expect(
       semanticOpportunityPriorityTransportSchema.safeParse(priority).success,
@@ -814,6 +943,65 @@ describe("Customer Success provider/application contracts", () => {
     expect(
       semanticGhostJobRiskTransportSchema.safeParse(unknownRisk).success,
     ).toBe(true);
+  });
+
+  it.each([
+    "postingTiming",
+    "strategicBridgeValue",
+    "alexFit",
+    "burnoutRisk",
+  ])("rejects the ordinary Opportunity Priority label %s as evidence", (label) => {
+    const priority = validOpportunityPriorityTransport() as Record<string, any>;
+    priority.scoreEvidenceIndexes = [label];
+    expect(
+      semanticOpportunityPriorityTransportSchema.safeParse(priority).success,
+    ).toBe(false);
+  });
+
+  it("restores valid source and upstream-derived evidence indexes to Core evidence IDs", () => {
+    const available = [
+      { referenceId: "jd-evidence", sourceType: "JOB_DESCRIPTION" },
+      { referenceId: "derived-stage-evidence", sourceType: "DERIVED" },
+    ];
+    const transport = validOpportunityPriorityTransport();
+    transport.strategicValueEvidenceIndexes = [1];
+    transport.evidenceIndexes = [0, 1];
+
+    expect(opportunityPriorityEvidenceCatalog(available)).toEqual([
+      { evidenceIndex: 0, ...available[0] },
+      { evidenceIndex: 1, ...available[1] },
+    ]);
+    const expected = validOpportunityPriorityDomain();
+    expected.scoreEvidenceReferences = ["jd-evidence"];
+    expected.strategicValueEvidenceReferences = ["derived-stage-evidence"];
+    expected.applicationEffort.evidenceReferences = ["jd-evidence"];
+    expected.reasonsForPrioritization[0]!.evidenceReferences = ["jd-evidence"];
+    expected.evidenceReferences = [
+      "jd-evidence",
+      "derived-stage-evidence",
+    ];
+    expect(
+      semanticOpportunityPriorityFromTransport(transport, {
+        availableEvidence: available,
+        postingTimingEvidenceReferences: [],
+      }),
+    ).toEqual(expected);
+  });
+
+  it.each([
+    [[2], "out-of-range"],
+    [[0, 0], "duplicated"],
+  ] as const)("rejects %s Opportunity Priority evidence indexes", (indexes) => {
+    const transport = validOpportunityPriorityTransport();
+    transport.scoreEvidenceIndexes = [...indexes];
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOpportunityPriorityFromTransport(transport, {
+          availableEvidence,
+          postingTimingEvidenceReferences: [],
+        }),
+      "OPPORTUNITY_PRIORITY_EVIDENCE_INVALID",
+    );
   });
 
   it("converts every valid transport to the unchanged domain shape", () => {
@@ -853,11 +1041,14 @@ describe("Customer Success provider/application contracts", () => {
       ),
     ).toEqual(validBurnoutRisk());
     expect(
-      semanticOpportunityPriorityFromTransport(validOpportunityPriority(), {
+      semanticOpportunityPriorityFromTransport(
+        validOpportunityPriorityTransport(),
+        {
         availableEvidence,
         postingTimingEvidenceReferences: [],
-      }),
-    ).toEqual(validOpportunityPriority());
+        },
+      ),
+    ).toEqual(validOpportunityPriorityDomain());
   });
 
   it("makes input-dependent contract failures non-retryable", () => {
@@ -893,7 +1084,7 @@ describe("Customer Success provider/application contracts", () => {
       ],
       [
         () =>
-          semanticOpportunityPriorityFromTransport(validOpportunityPriority(), {
+          semanticOpportunityPriorityFromTransport(validOpportunityPriorityTransport(), {
             availableEvidence,
             postingTimingEvidenceReferences: evidenceReferences,
           }),

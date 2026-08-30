@@ -2,6 +2,7 @@ import {
   createCustomerSuccessFixtureOperations,
   customerSuccessTestPreferences,
   toOrganizationalMaturityProviderTransport,
+  toOpportunityPriorityProviderTransport,
   toResumeMatchProviderTransport,
   type ResumeMatchFixtureOptions,
 } from "../fixtures/customer-success";
@@ -9,6 +10,7 @@ import type {
   SemanticReconstruction,
   SemanticOrganizationalMaturity,
   SemanticResumeMatch,
+  SemanticOpportunityPriority,
 } from "@ai-career/customer-success";
 import { customerSuccessSemanticOperationIds } from "@ai-career/customer-success";
 import { createManualOpportunityService } from "@ai-career/core";
@@ -203,9 +205,26 @@ function deterministicTransport(input: {
           }
           break;
         case "customer-success.opportunity-priority":
-          output = await fixture.semanticOperations.evaluateOpportunityPriority(
-            trusted as never,
-          );
+          {
+            const availableEvidenceCatalog =
+              trusted.availableEvidenceCatalog as Array<{
+                evidenceIndex: number;
+                referenceId: string;
+                sourceType: string;
+              }>;
+            const availableEvidence = availableEvidenceCatalog.map(
+              ({ evidenceIndex: _evidenceIndex, ...evidence }) => evidence,
+            );
+            const domain =
+              await fixture.semanticOperations.evaluateOpportunityPriority({
+                ...trusted,
+                availableEvidence,
+              } as never);
+            output = toOpportunityPriorityProviderTransport(
+              domain as SemanticOpportunityPriority,
+              availableEvidenceCatalog,
+            );
+          }
           break;
         case "customer-success.ghost-job-risk":
           {
@@ -555,6 +574,53 @@ describe("production evaluation vertical slice", () => {
       operationId: "customer-success.organizational-maturity",
       status: "SUCCESS",
     });
+  });
+
+  it("does not retry or switch models for an invalid Opportunity Priority evidence index", async () => {
+    const calls = new Map<string, number>();
+    const selectedModels = new Map<string, string[]>();
+    const { task, response } = await runFlow({
+      onOperationCall(operationId) {
+        calls.set(operationId, (calls.get(operationId) ?? 0) + 1);
+      },
+      onRequest(operationId, model) {
+        selectedModels.set(operationId, [
+          ...(selectedModels.get(operationId) ?? []),
+          model,
+        ]);
+      },
+      transformOutput(operationId, output) {
+        if (operationId !== "customer-success.opportunity-priority") {
+          return output;
+        }
+        return {
+          ...(output as Record<string, unknown>),
+          scoreEvidenceIndexes: [999_999],
+        };
+      },
+    });
+
+    expect(calls.get("customer-success.opportunity-priority")).toBe(1);
+    expect(selectedModels.get("customer-success.opportunity-priority")).toEqual([
+      "gpt-5.6-terra",
+    ]);
+    expect(task).toMatchObject({
+      status: "FAILED",
+      attempt: 1,
+      errorCode: "OPPORTUNITY_PRIORITY_EVIDENCE_INVALID",
+    });
+    expect(response.stages[7]).toMatchObject({
+      stageId: "opportunity-priority",
+      status: "FAILED",
+      retryable: false,
+      failureCode: "OPPORTUNITY_PRIORITY_EVIDENCE_INVALID",
+    });
+    expect(
+      response.operations.filter(
+        (attempt) =>
+          attempt.operationId === "customer-success.opportunity-priority",
+      ),
+    ).toHaveLength(1);
   });
 
   it("persists a semantic attempt for a sparse manual opportunity with production pricing", async () => {

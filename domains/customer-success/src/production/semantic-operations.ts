@@ -22,6 +22,8 @@ import {
   semanticReconstructionTransportSchema,
 } from "../schemas/maps";
 import {
+  customerSuccessOpportunityPriorityPromptVersion,
+  opportunityPriorityEvidenceCatalog,
   semanticOpportunityPriorityFromTransport,
   semanticOpportunityPriorityTransportSchema,
 } from "../schemas/opportunity-priority";
@@ -144,6 +146,7 @@ export function createProductionCustomerSuccessSemanticOperations(
           trustedContext: input,
         }),
         input.availableEvidence,
+        input.responsibilityMap,
       );
     },
     async evaluateAlexFit(input) {
@@ -194,16 +197,22 @@ export function createProductionCustomerSuccessSemanticOperations(
       );
     },
     async evaluateOpportunityPriority(input) {
+      const { availableEvidence, ...validatedFactors } = input;
       return semanticOpportunityPriorityFromTransport(
         await operation(executor, {
           operationId: "customer-success.opportunity-priority",
+          promptVersion: customerSuccessOpportunityPriorityPromptVersion,
           schema: semanticOpportunityPriorityTransportSchema,
           instructions:
-            "Assess application timing and strategic attention from the supplied validated factors. Do not consume or predict the final recommendation, and do not use a weighted formula.",
-          trustedContext: input,
+            "Assess application timing and strategic attention from the supplied validated factors. Every provider evidenceIndexes field must contain only zero-based evidenceIndex values from availableEvidenceCatalog. Upstream field names and stage/result names are context labels, not evidence indexes. Cite the underlying catalog evidence supporting an upstream conclusion. Do not consume or predict the final recommendation, and do not use a weighted formula.",
+          trustedContext: {
+            ...validatedFactors,
+            availableEvidenceCatalog:
+              opportunityPriorityEvidenceCatalog(availableEvidence),
+          },
         }),
         {
-          availableEvidence: input.availableEvidence,
+          availableEvidence,
           postingTimingEvidenceReferences:
             input.postingTiming.evidenceReferences,
         },

@@ -473,6 +473,92 @@ describe("Customer Success Organizational Maturity", () => {
     ).toEqual(["ADOPTION_FOCUSED", "EDUCATION_FOCUSED"]);
   });
 
+  it("rejects an unsupported renewal-focused pattern at the complete-stage boundary", async () => {
+    const base = createCustomerSuccessFixtureOperations({
+      scenario: "strong",
+    }).semanticOperations;
+    const { result } = await run({
+      operations: {
+        ...base,
+        async evaluateOrganizationalMaturity(input) {
+          const maturity = (await base.evaluateOrganizationalMaturity(
+            input,
+          )) as Record<string, any>;
+          return {
+            ...maturity,
+            customerOperatingModel: {
+              classification: "HYBRID",
+              explanation:
+                "The model is claimed to combine adoption and renewal work.",
+              evidenceReferences: ["actual-work"],
+              substantialPatterns: [
+                "ADOPTION_FOCUSED",
+                "RENEWAL_FOCUSED",
+              ],
+            },
+          };
+        },
+      },
+    });
+
+    expect(result.evaluation.stageResults[3]).toEqual(
+      expect.objectContaining({
+        status: "FAILED",
+        failureCode: "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
+      }),
+    );
+  });
+
+  it("allows renewal-focused work without renewal ownership when substantial responsibility is evidenced", async () => {
+    const base = createCustomerSuccessFixtureOperations({
+      scenario: "strong",
+    }).semanticOperations;
+    const { result } = await run({
+      operations: {
+        ...base,
+        async reconstructJobDescription(input) {
+          const reconstruction = await base.reconstructJobDescription(input);
+          return {
+            ...reconstruction,
+            responsibilityMap: {
+              ...reconstruction.responsibilityMap,
+              areas: {
+                ...reconstruction.responsibilityMap.areas,
+                renewals: {
+                  prominence: "SUBSTANTIAL" as const,
+                  ownership: "UNKNOWN" as const,
+                  evidenceReferences: ["actual-work"],
+                },
+              },
+            },
+          };
+        },
+        async evaluateOrganizationalMaturity(input) {
+          const maturity = (await base.evaluateOrganizationalMaturity(
+            input,
+          )) as Record<string, any>;
+          return {
+            ...maturity,
+            customerOperatingModel: {
+              classification: "RENEWAL_FOCUSED",
+              explanation:
+                "Renewals are a substantial responsibility even though commercial ownership is unresolved.",
+              evidenceReferences: ["actual-work"],
+              substantialPatterns: ["RENEWAL_FOCUSED"],
+            },
+          };
+        },
+      },
+    });
+
+    expect(result.evaluation.stageResults[3]?.status).toBe("COMPLETED");
+    expect(
+      result.domainResult?.organizationalMaturity.evaluated &&
+        result.domainResult.organizationalMaturity.maturity
+          .customerOperatingModel.classification,
+    ).toBe("RENEWAL_FOCUSED");
+  });
+
   it("distinguishes collaboration and handoffs from ownership or poor maturity", async () => {
     const { result } = await run();
     const maturity = result.domainResult!.organizationalMaturity;

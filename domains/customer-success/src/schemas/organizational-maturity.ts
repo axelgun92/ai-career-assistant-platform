@@ -10,13 +10,19 @@ import {
   parseSemanticDomainResult,
   semanticContractViolation,
 } from "./semantic-contract";
+import { responsibilityMapSchema } from "./maps";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
 export const customerSuccessOrganizationalMaturityPromptVersion =
-  "cs-organizational-maturity-v3";
+  "cs-organizational-maturity-v4";
+
+export const organizationalMaturityOperatingModelRules = {
+  renewalFocused:
+    "RENEWAL_FOCUSED means renewals are an affirmatively evidenced Primary or Substantial responsibility pattern. Renewal ownership is not required: owned, shared, supported, collaborative, or Unknown ownership may qualify when the responsibility prominence and its evidence establish material renewal involvement. Secondary, Occasional, Absent, or Unknown renewal prominence does not establish a renewal-focused operating model.",
+} as const;
 
 export const organizationalMaturityCalibration = {
   measure:
@@ -120,6 +126,7 @@ export const organizationalMaturitySemanticInstructions = [
   `Broad-responsibility interpretation: ${organizationalMaturityCalibration.broadResponsibilityRules.join(" ")}`,
   organizationalMaturityCalibration.collaborationOwnershipRule,
   organizationalMaturityCalibration.teamBoundariesRule,
+  organizationalMaturityOperatingModelRules.renewalFocused,
   `Weak-signal handling: ${organizationalMaturityCalibration.weakSignalRules.join(" ")}`,
   `Evidence-state meanings: SUPPORTED_PRESENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_PRESENT} SUPPORTED_ABSENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_ABSENT} NOT_ESTABLISHED means ${organizationalMaturityCalibration.evidenceStates.NOT_ESTABLISHED}`,
   `Do not assess ${organizationalMaturityCalibration.excludedMeasures.join(", ")}. Do not use weights, keyword points, prestige, culture, management assumptions, or a mathematical scoring formula.`,
@@ -162,6 +169,10 @@ const substantialOperatingModelPatternSchema = customerOperatingModelSchema.excl
   "HYBRID",
   "UNKNOWN",
 ]);
+
+const substantialOperatingModelPatternsSchema = z
+  .array(substantialOperatingModelPatternSchema)
+  .describe(organizationalMaturityOperatingModelRules.renewalFocused);
 
 const maturityCriterionSchema = <T extends z.ZodEnum>(classification: T) =>
   z
@@ -251,7 +262,7 @@ export const semanticOrganizationalMaturitySchema = z
     customerOperatingModel: maturityCriterionSchema(
       customerOperatingModelSchema,
     ).extend({
-      substantialPatterns: z.array(substantialOperatingModelPatternSchema),
+      substantialPatterns: substantialOperatingModelPatternsSchema,
     }).superRefine((value, context) => {
       if (
         value.classification === "HYBRID" &&
@@ -318,7 +329,7 @@ const transportCustomerOperatingModelSchema = z.union([
       ]),
       explanation: requiredText,
       evidenceReferences: evidenceReferences.min(1),
-      substantialPatterns: z.array(substantialOperatingModelPatternSchema),
+      substantialPatterns: substantialOperatingModelPatternsSchema,
     })
     .strict(),
   z
@@ -326,9 +337,7 @@ const transportCustomerOperatingModelSchema = z.union([
       classification: z.literal("HYBRID"),
       explanation: requiredText,
       evidenceReferences: evidenceReferences.min(1),
-      substantialPatterns: z
-        .array(substantialOperatingModelPatternSchema)
-        .min(2),
+      substantialPatterns: substantialOperatingModelPatternsSchema.min(2),
     })
     .strict(),
   z
@@ -336,9 +345,7 @@ const transportCustomerOperatingModelSchema = z.union([
       classification: z.literal("UNKNOWN"),
       explanation: requiredText,
       evidenceReferences,
-      substantialPatterns: z
-        .array(substantialOperatingModelPatternSchema)
-        .max(0),
+      substantialPatterns: substantialOperatingModelPatternsSchema.max(0),
     })
     .strict(),
 ]);
@@ -469,11 +476,56 @@ export const semanticOrganizationalMaturityTransportSchema = z
   .object(semanticOrganizationalMaturityTransportShape)
   .strict();
 
+type ResponsibilityMap = z.infer<typeof responsibilityMapSchema>;
+
+export function assertCustomerOperatingModelResponsibilitySupport(
+  operatingModel: {
+    classification: z.infer<typeof customerOperatingModelSchema>;
+    substantialPatterns: z.infer<typeof substantialOperatingModelPatternSchema>[];
+  },
+  responsibilityMap: ResponsibilityMap,
+) {
+  const assertsRenewalFocus =
+    operatingModel.classification === "RENEWAL_FOCUSED" ||
+    operatingModel.substantialPatterns.includes("RENEWAL_FOCUSED");
+  if (!assertsRenewalFocus) return;
+
+  const renewal = responsibilityMap.areas.renewals;
+  if (
+    !renewal ||
+    !["PRIMARY", "SUBSTANTIAL"].includes(renewal.prominence) ||
+    renewal.evidenceReferences.length === 0
+  ) {
+    semanticContractViolation(
+      "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
+      "Renewal-focused operating models require affirmative evidence of material renewal responsibility",
+    );
+  }
+}
+
 export function semanticOrganizationalMaturityFromTransport(
   value: z.input<typeof semanticOrganizationalMaturityTransportSchema>,
   availableEvidence: AvailableSemanticEvidence[],
+  responsibilityMap?: ResponsibilityMap,
 ) {
   const transport = semanticOrganizationalMaturityTransportSchema.parse(value);
+  if (
+    transport.customerOperatingModel.classification === "RENEWAL_FOCUSED" ||
+    transport.customerOperatingModel.substantialPatterns.includes(
+      "RENEWAL_FOCUSED",
+    )
+  ) {
+    if (!responsibilityMap) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_OPERATING_MODEL_INVALID",
+        "Renewal-focused operating models require the authoritative Responsibility Map",
+      );
+    }
+    assertCustomerOperatingModelResponsibilitySupport(
+      transport.customerOperatingModel,
+      responsibilityMap,
+    );
+  }
   const transportDesign = transport.ownershipAndCrossFunctionalDesign;
   const missingInformationConclusion =
     /\b(?:missing|not (?:described|stated|specified|provided|available|established|evidenced)|no (?:evidence|information|details?|description|mention)|absence of (?:evidence|information|details?|description)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;

@@ -14,6 +14,9 @@ import {
 const requiredText = z.string().trim().min(1);
 const evidenceReferences = z.array(requiredText);
 
+export const customerSuccessOpportunityPriorityPromptVersion =
+  "cs-opportunity-priority-v2";
+
 export const postingAgePrioritySchema = z.enum([
   "HIGHEST_PRIORITY",
   "STRONG_PRIORITY",
@@ -104,27 +107,98 @@ export const semanticOpportunityPrioritySchema = z
   })
   .strict();
 
+const evidenceIndexes = z
+  .array(z.number().int().nonnegative())
+  .describe(
+    "Zero-based evidenceIndex values from availableEvidenceCatalog. Field names, stage names, result labels, and evidence reference strings are not valid values.",
+  );
+
+const transportSupportedFindingSchema = z
+  .object({
+    finding: requiredText,
+    evidenceIndexes: evidenceIndexes.min(1),
+  })
+  .strict();
+
+const transportUnknownSchema = z
+  .object({
+    code: requiredText.regex(/^[a-z][a-z0-9-]*$/),
+    description: requiredText,
+    materiality: requiredText.nullable(),
+    evidenceIndexes,
+  })
+  .strict();
+
+const transportContradictionSchema = z
+  .object({
+    claimA: requiredText,
+    claimB: requiredText,
+    interpretation: requiredText,
+    relevantField: requiredText.nullable(),
+    significance: requiredText.nullable(),
+    evidenceIndexesA: evidenceIndexes.min(1),
+    evidenceIndexesB: evidenceIndexes.min(1),
+  })
+  .strict();
+
 const transportApplicationEffortSchema = z.union([
   z
     .object({
       classification: z.enum(["LOW", "MODERATE", "HIGH"]),
       explanation: requiredText,
-      evidenceReferences: evidenceReferences.min(1),
+      evidenceIndexes: evidenceIndexes.min(1),
     })
     .strict(),
   z
     .object({
       classification: z.literal("UNKNOWN"),
       explanation: requiredText,
-      evidenceReferences,
+      evidenceIndexes,
     })
     .strict(),
 ]);
 
-export const semanticOpportunityPriorityTransportSchema =
-  semanticOpportunityPrioritySchema
-    .extend({ applicationEffort: transportApplicationEffortSchema })
-    .strict();
+export const semanticOpportunityPriorityTransportSchema = z
+  .object({
+    score: z.number().int().min(0).max(100),
+    scoreExplanation: requiredText,
+    scoreEvidenceIndexes: evidenceIndexes.min(1),
+    strategicValueSummary: requiredText,
+    strategicValueEvidenceIndexes: evidenceIndexes.min(1),
+    applicationEffort: transportApplicationEffortSchema,
+    reasonsForPrioritization: z.array(transportSupportedFindingSchema),
+    reasonsForReducedPriority: z.array(transportSupportedFindingSchema),
+    unknowns: z.array(transportUnknownSchema),
+    evidenceIndexes: evidenceIndexes.min(1),
+    contradictions: z.array(transportContradictionSchema),
+  })
+  .strict();
+
+export function opportunityPriorityEvidenceCatalog<
+  T extends AvailableSemanticEvidence,
+>(availableEvidence: readonly T[]) {
+  return availableEvidence.map((evidence, evidenceIndex) => ({
+    evidenceIndex,
+    ...evidence,
+  }));
+}
+
+function restoreEvidenceReferences(
+  indexes: number[],
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const seen = new Set<number>();
+  return indexes.map((index) => {
+    if (seen.has(index) || index >= availableEvidence.length) {
+      semanticContractViolation(
+        "OPPORTUNITY_PRIORITY_EVIDENCE_INVALID",
+        "Opportunity Priority references unavailable evidence",
+      );
+    }
+    seen.add(index);
+    return availableEvidence[index]!.referenceId;
+  });
+}
 
 export function semanticOpportunityPriorityFromTransport(
   value: z.input<typeof semanticOpportunityPriorityTransportSchema>,
@@ -134,9 +208,52 @@ export function semanticOpportunityPriorityFromTransport(
   },
 ) {
   const transport = semanticOpportunityPriorityTransportSchema.parse(value);
+  const restore = (indexes: number[]) =>
+    restoreEvidenceReferences(indexes, input.availableEvidence);
   const result = parseSemanticDomainResult({
     schema: semanticOpportunityPrioritySchema,
-    value: transport,
+    value: {
+      score: transport.score,
+      scoreExplanation: transport.scoreExplanation,
+      scoreEvidenceReferences: restore(transport.scoreEvidenceIndexes),
+      strategicValueSummary: transport.strategicValueSummary,
+      strategicValueEvidenceReferences: restore(
+        transport.strategicValueEvidenceIndexes,
+      ),
+      applicationEffort: {
+        classification: transport.applicationEffort.classification,
+        explanation: transport.applicationEffort.explanation,
+        evidenceReferences: restore(
+          transport.applicationEffort.evidenceIndexes,
+        ),
+      },
+      reasonsForPrioritization: transport.reasonsForPrioritization.map(
+        ({ evidenceIndexes: indexes, ...finding }) => ({
+          ...finding,
+          evidenceReferences: restore(indexes),
+        }),
+      ),
+      reasonsForReducedPriority: transport.reasonsForReducedPriority.map(
+        ({ evidenceIndexes: indexes, ...finding }) => ({
+          ...finding,
+          evidenceReferences: restore(indexes),
+        }),
+      ),
+      unknowns: transport.unknowns.map(
+        ({ evidenceIndexes: indexes, ...unknown }) => ({
+          ...unknown,
+          evidenceReferences: restore(indexes),
+        }),
+      ),
+      evidenceReferences: restore(transport.evidenceIndexes),
+      contradictions: transport.contradictions.map(
+        ({ evidenceIndexesA, evidenceIndexesB, ...contradiction }) => ({
+          ...contradiction,
+          evidenceReferencesA: restore(evidenceIndexesA),
+          evidenceReferencesB: restore(evidenceIndexesB),
+        }),
+      ),
+    },
     code: "OPPORTUNITY_PRIORITY_DOMAIN_INVALID",
     message: "Opportunity Priority violated the domain contract",
   });

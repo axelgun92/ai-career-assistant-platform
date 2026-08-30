@@ -1,9 +1,11 @@
 import {
   customerSuccessOrganizationalMaturityPromptVersion,
+  customerSuccessOpportunityPriorityPromptVersion,
   customerSuccessProductionPromptVersion,
   customerSuccessJdReconstructionSchema,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
+  organizationalMaturityOperatingModelRules,
   semanticAlexFitSchema,
   semanticAlexFitTransportSchema,
   semanticBurnoutRiskSchema,
@@ -533,9 +535,32 @@ describe("production semantic execution", () => {
     expect(serialized).toContain(
       organizationalMaturityCalibration.teamBoundariesRule,
     );
+    expect(serialized).toContain(
+      organizationalMaturityOperatingModelRules.renewalFocused,
+    );
     for (const rule of organizationalMaturityCalibration.weakSignalRules) {
       expect(serialized).toContain(rule.split(";")[0]);
     }
+  });
+
+  it("uses evidence indexes rather than unconstrained evidence IDs in the Opportunity Priority provider schema", () => {
+    const { jsonSchema, violations } = auditOpenAiProviderSchema(
+      semanticOpportunityPriorityTransportSchema,
+    );
+    const serialized = JSON.stringify(jsonSchema);
+    const properties = jsonSchema.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(violations).toEqual([]);
+    expect(properties.scoreEvidenceIndexes?.type).toBe("array");
+    expect(
+      (properties.scoreEvidenceIndexes?.items as Record<string, unknown>)?.type,
+    ).toBe("integer");
+    expect(serialized).toContain("availableEvidenceCatalog");
+    expect(serialized).not.toContain("scoreEvidenceReferences");
+    expect(serialized).not.toContain("strategicValueEvidenceReferences");
   });
 
   it("generates an OpenAI-compatible strict JD reconstruction schema", () => {
@@ -2390,7 +2415,12 @@ describe("production semantic execution", () => {
       requirementMap: authoritativeResumeMatchRequirements(),
       availableEvidence: resumeMatchAvailableEvidence(),
     } as never);
-    await captureInvocation(operations.evaluateOpportunityPriority({} as never));
+    await captureInvocation(
+      operations.evaluateOpportunityPriority({
+        availableEvidence: [],
+        postingTiming: { evidenceReferences: [] },
+      } as never),
+    );
     await captureInvocation(operations.evaluateGhostJobRisk({} as never));
 
     expect(captured.map((item) => item.operationId)).toEqual([
@@ -2455,7 +2485,7 @@ describe("production semantic execution", () => {
       ],
       [
         "customer-success.opportunity-priority",
-        customerSuccessProductionPromptVersion,
+        customerSuccessOpportunityPriorityPromptVersion,
       ],
       [
         "customer-success.ghost-job-risk",
@@ -2490,8 +2520,26 @@ describe("production semantic execution", () => {
     expect(maturityOperation.domainInstructions).toContain(
       organizationalMaturityCalibration.teamBoundariesRule,
     );
+    expect(maturityOperation.domainInstructions).toContain(
+      organizationalMaturityOperatingModelRules.renewalFocused,
+    );
     for (const rule of organizationalMaturityCalibration.weakSignalRules) {
       expect(maturityOperation.domainInstructions).toContain(rule);
     }
+    const priorityOperation = captured.find(
+      (item) => item.operationId === "customer-success.opportunity-priority",
+    )!;
+    expect(priorityOperation.promptVersion).toBe(
+      customerSuccessOpportunityPriorityPromptVersion,
+    );
+    expect(priorityOperation.domainInstructions).toContain(
+      "Upstream field names and stage/result names are context labels",
+    );
+    expect(priorityOperation.trustedContext).toEqual(
+      expect.objectContaining({ availableEvidenceCatalog: [] }),
+    );
+    expect(priorityOperation.trustedContext).not.toHaveProperty(
+      "availableEvidence",
+    );
   });
 });

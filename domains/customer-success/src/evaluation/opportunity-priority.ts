@@ -13,6 +13,7 @@ import { burnoutRiskDataSchema } from "../schemas/burnout-risk";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
 import { organizationalMaturityDataSchema } from "../schemas/organizational-maturity";
 import {
+  customerSuccessOpportunityPriorityPromptVersion,
   opportunityPriorityDataSchema,
   semanticOpportunityPrioritySchema,
   type OpportunityPriorityData,
@@ -163,7 +164,7 @@ export function createOpportunityPriorityStage() {
     id: "opportunity-priority",
     version: "cs-opportunity-priority-v1",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-opportunity-priority-v1",
+    promptVersion: customerSuccessOpportunityPriorityPromptVersion,
     onFailure: "STOP",
     maxAttempts: 2,
     invalidOutputRetryable: true,

@@ -153,15 +153,15 @@ describe("per-semantic-operation execution routing", () => {
     });
   });
 
-  it("keeps the approved Organizational Maturity v3 prompt", () => {
+  it("uses the versioned Organizational Maturity renewal-contract prompt", () => {
     expect(customerSuccessOrganizationalMaturityPromptVersion).toBe(
-      "cs-organizational-maturity-v3",
+      "cs-organizational-maturity-v4",
     );
     expect(
       createCustomerSuccessEvaluator().stages.find(
         (stage) => stage.id === "organizational-maturity",
       )?.promptVersion,
-    ).toBe("cs-organizational-maturity-v3");
+    ).toBe("cs-organizational-maturity-v4");
   });
 
   it.each(productionLunaOperationIds)(

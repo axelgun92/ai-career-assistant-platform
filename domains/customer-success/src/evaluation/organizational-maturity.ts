@@ -5,6 +5,7 @@ import {
 import type { CustomerSuccessDomainData } from "../evaluator";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
 import {
+  assertCustomerOperatingModelResponsibilitySupport,
   customerSuccessOrganizationalMaturityPromptVersion,
   organizationalMaturityBand,
   organizationalMaturityDataSchema,
@@ -84,6 +85,10 @@ export function createOrganizationalMaturityStage() {
             availableEvidence: reconstruction.evidence,
           },
         ),
+      );
+      assertCustomerOperatingModelResponsibilitySupport(
+        maturity.customerOperatingModel,
+        reconstruction.responsibilityMap,
       );
       const design = maturity.ownershipAndCrossFunctionalDesign;
       const references = new Set([

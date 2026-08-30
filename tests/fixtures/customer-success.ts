@@ -236,6 +236,73 @@ export function toOrganizationalMaturityProviderTransport(
   };
 }
 
+export function toOpportunityPriorityProviderTransport(
+  priority: SemanticOpportunityPriority,
+  availableEvidenceCatalog: Array<{
+    evidenceIndex: number;
+    referenceId: string;
+  }>,
+) {
+  const indexByReference = new Map(
+    availableEvidenceCatalog.map((evidence) => [
+      evidence.referenceId,
+      evidence.evidenceIndex,
+    ]),
+  );
+  const indexes = (references: string[]) =>
+    references.map((reference) => {
+      const index = indexByReference.get(reference);
+      if (index === undefined) {
+        throw new Error(
+          `Opportunity Priority fixture evidence is unavailable: ${reference}`,
+        );
+      }
+      return index;
+    });
+  return {
+    score: priority.score,
+    scoreExplanation: priority.scoreExplanation,
+    scoreEvidenceIndexes: indexes(priority.scoreEvidenceReferences),
+    strategicValueSummary: priority.strategicValueSummary,
+    strategicValueEvidenceIndexes: indexes(
+      priority.strategicValueEvidenceReferences,
+    ),
+    applicationEffort: {
+      classification: priority.applicationEffort.classification,
+      explanation: priority.applicationEffort.explanation,
+      evidenceIndexes: indexes(
+        priority.applicationEffort.evidenceReferences,
+      ),
+    },
+    reasonsForPrioritization: priority.reasonsForPrioritization.map(
+      ({ evidenceReferences, ...finding }) => ({
+        ...finding,
+        evidenceIndexes: indexes(evidenceReferences),
+      }),
+    ),
+    reasonsForReducedPriority: priority.reasonsForReducedPriority.map(
+      ({ evidenceReferences, ...finding }) => ({
+        ...finding,
+        evidenceIndexes: indexes(evidenceReferences),
+      }),
+    ),
+    unknowns: priority.unknowns.map(
+      ({ evidenceReferences, ...unknown }) => ({
+        ...unknown,
+        evidenceIndexes: indexes(evidenceReferences),
+      }),
+    ),
+    evidenceIndexes: indexes(priority.evidenceReferences),
+    contradictions: priority.contradictions.map(
+      ({ evidenceReferencesA, evidenceReferencesB, ...contradiction }) => ({
+        ...contradiction,
+        evidenceIndexesA: indexes(evidenceReferencesA),
+        evidenceIndexesB: indexes(evidenceReferencesB),
+      }),
+    ),
+  };
+}
+
 function toJdReconstructionProviderTransport(
   reconstruction: SemanticReconstruction,
 ) {
@@ -1804,9 +1871,24 @@ export function createCustomerSuccessFixtureTransport(input: {
           }
           break;
         case "customer-success.opportunity-priority":
-          output = await fixture.semanticOperations.evaluateOpportunityPriority(
-            trusted as never,
-          );
+          {
+            const availableEvidenceCatalog =
+              trusted.availableEvidenceCatalog as Array<
+                EvidenceRecordDraft & { evidenceIndex: number }
+              >;
+            const availableEvidence = availableEvidenceCatalog.map(
+              ({ evidenceIndex: _evidenceIndex, ...evidence }) => evidence,
+            );
+            const domain =
+              await fixture.semanticOperations.evaluateOpportunityPriority({
+                ...trusted,
+                availableEvidence,
+              } as never);
+            output = toOpportunityPriorityProviderTransport(
+              domain as SemanticOpportunityPriority,
+              availableEvidenceCatalog,
+            );
+          }
           break;
         case "customer-success.ghost-job-risk":
           {
