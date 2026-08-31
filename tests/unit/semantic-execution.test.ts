@@ -3,6 +3,7 @@ import {
   createSemanticOrganizationalMaturityTransportSchema,
   customerSuccessOpportunityPriorityPromptVersion,
   customerSuccessProductionPromptVersion,
+  customerSuccessResumeMatchPromptVersion,
   customerSuccessJdReconstructionSchema,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
@@ -350,6 +351,8 @@ function validResumeMatchTransport() {
         requirementIndex: 0,
         classification: "TRANSFERABLE_MATCH" as const,
         matchedExperienceSpecificity: "TRANSFERABLE" as const,
+        experienceEvidenceBasis:
+          "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE" as const,
         importanceExplanation: "The requirement is explicitly required.",
         decisionImpact: "NON_DECISIVE" as const,
         decisionImpactExplanation:
@@ -386,10 +389,10 @@ function validResumeMatchTransport() {
             signal: "AUTONOMY" as const,
             assessment: "UNKNOWN" as const,
             explanation: "Autonomy is not established.",
-            evidenceReferences: [],
+            evidenceIndexes: [],
           },
         ],
-        evidenceReferences: [],
+        evidenceIndexes: [],
       },
       effectiveLevelFit: "TARGET_LEVEL" as const,
       explanation: "The complete evidence supports target-level consideration.",
@@ -405,7 +408,6 @@ function validResumeMatchTransport() {
       },
     ],
     partialMatches: [],
-    genuineGaps: [],
     unknowns: [],
     positioningRecommendations: [
       {
@@ -422,12 +424,31 @@ function validResumeMatchTransport() {
 }
 
 function resumeMatchAvailableEvidence(
-  additional: Array<{ referenceId: string; sourceType: string }> = [],
+  additional: Array<{
+    referenceId: string;
+    sourceType: string;
+    evidenceType?: string;
+  }> = [],
 ) {
   return [
-    { referenceId: "jd-1", sourceType: "JOB_DESCRIPTION" },
-    { referenceId: "profile-1", sourceType: "USER_PROFILE" },
-    ...additional,
+    {
+      referenceId: "jd-1",
+      sourceType: "JOB_DESCRIPTION",
+      evidenceType: "RESPONSIBILITY",
+    },
+    {
+      referenceId: "profile-1",
+      sourceType: "USER_PROFILE",
+      evidenceType: "TRANSFERABLE_EXPERIENCE",
+    },
+    ...additional.map((evidence) => ({
+      evidenceType:
+        evidence.evidenceType ??
+        (evidence.sourceType === "USER_PROFILE"
+          ? "TRANSFERABLE_EXPERIENCE"
+          : "RESPONSIBILITY"),
+      ...evidence,
+    })),
   ];
 }
 
@@ -444,6 +465,7 @@ function decisiveResumeMatchTransport() {
         ...assessment,
         classification: "GENUINE_GAP" as const,
         matchedExperienceSpecificity: "UNSUPPORTED" as const,
+        experienceEvidenceBasis: "NO_SUPPORTING_EXPERIENCE" as const,
         decisionImpact: "DECISIVE_DISQUALIFIER" as const,
         decisionImpactExplanation:
           "The required qualification is decisively unsupported.",
@@ -1065,6 +1087,7 @@ describe("production semantic execution", () => {
       "requirementIndex",
       "classification",
       "matchedExperienceSpecificity",
+      "experienceEvidenceBasis",
       "importanceExplanation",
       "decisionImpact",
       "decisionImpactExplanation",
@@ -1089,6 +1112,175 @@ describe("production semantic execution", () => {
       JSON.stringify(properties.positioningRecommendations),
     ).toContain('"evidence"');
     expect(assessmentSchema).toContain('"decisionImpactEvidence"');
+    expect(properties).not.toHaveProperty("genuineGaps");
+    expect(
+      JSON.stringify(effectiveSeniorityProperties.actualResponsibilitySeniority),
+    ).toContain('"evidenceIndexes"');
+    expect(
+      JSON.stringify(effectiveSeniorityProperties.actualResponsibilitySeniority),
+    ).not.toContain('"evidenceReferences"');
+  });
+
+  it("restores Actual Responsibility Seniority exclusively from job-side evidence indexes", () => {
+    const transport = validResumeMatchTransport();
+    transport.effectiveSeniority.actualResponsibilitySeniority = {
+      classification: "MID_LEVEL",
+      summary: "The role carries mid-level responsibility.",
+      signals: [{
+        signal: "AUTONOMY",
+        assessment: "MODERATE",
+        explanation: "The role owns a defined customer program.",
+        evidenceIndexes: [0],
+      }],
+      evidenceIndexes: [0],
+    };
+    const evidence = resumeMatchAvailableEvidence();
+    const match = semanticResumeMatchFromTransport(
+      transport,
+      authoritativeResumeMatchRequirements(),
+      evidence,
+    );
+
+    expect(
+      match.effectiveSeniority.actualResponsibilitySeniority.evidenceReferences,
+    ).toEqual(["jd-1"]);
+    expect(
+      match.effectiveSeniority.actualResponsibilitySeniority.signals[0]
+        ?.evidenceReferences,
+    ).toEqual(["jd-1"]);
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        {
+          ...transport,
+          effectiveSeniority: {
+            ...transport.effectiveSeniority,
+            actualResponsibilitySeniority: {
+              ...transport.effectiveSeniority.actualResponsibilitySeniority,
+              evidenceIndexes: [1],
+            },
+          },
+        },
+        authoritativeResumeMatchRequirements(),
+        evidence,
+      ),
+    ).toThrowError(expect.objectContaining({
+      code: "RESUME_MATCH_EVIDENCE_INVALID",
+      retryable: false,
+    }));
+  });
+
+  it("rejects generic experience and certification evidence as specialized industry matches", () => {
+    const industryRequirement = [{
+      ...authoritativeResumeMatchRequirements()[0]!,
+      requirement: "Direct SaaS industry experience",
+      category: "INDUSTRY" as const,
+      experienceSpecificity: "Direct SaaS work experience",
+    }];
+    const transport = validResumeMatchTransport();
+    const base = transport.requirementAssessments[0]!;
+    const specializedPartial = {
+      ...base,
+      classification: "PARTIAL_MATCH" as const,
+      matchedExperienceSpecificity: "RELATED_CUSTOMER_RELATIONSHIP" as const,
+      supportedPortion: "Some specialization is directly supported.",
+      unsupportedPortion: "The complete specialization is not supported.",
+      experienceEvidenceBasis:
+        "DIRECT_OR_RELATED_WORK_EXPERIENCE" as const,
+    };
+    const withAssessment = (assessment: typeof specializedPartial) => ({
+      ...transport,
+      requirementAssessments: [assessment],
+    });
+
+    for (const evidenceType of ["TRANSFERABLE_EXPERIENCE", "SKILL"] as const) {
+      expect(() =>
+        semanticResumeMatchFromTransport(
+          withAssessment({
+            ...specializedPartial,
+            experienceEvidenceBasis:
+              evidenceType === "SKILL"
+                ? "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE"
+                : "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+          } as typeof specializedPartial),
+          industryRequirement,
+          resumeMatchAvailableEvidence().map((evidence) =>
+            evidence.referenceId === "profile-1"
+              ? { ...evidence, evidenceType }
+              : evidence,
+          ),
+        ),
+      ).toThrowError(expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        retryable: false,
+      }));
+    }
+
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        withAssessment(specializedPartial),
+        industryRequirement,
+        resumeMatchAvailableEvidence().map((evidence) =>
+          evidence.referenceId === "profile-1"
+            ? { ...evidence, evidenceType: "DIRECT_EXPERIENCE" }
+            : evidence,
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  it("does not let certification readiness erase a direct SaaS gap and derives Genuine Gaps", () => {
+    const industryRequirement = [{
+      ...authoritativeResumeMatchRequirements()[0]!,
+      requirement: "Direct SaaS work experience",
+      category: "INDUSTRY" as const,
+      strength: "IDEAL" as const,
+      experienceSpecificity: "Direct SaaS work experience",
+    }];
+    const gap = decisiveResumeMatchTransport();
+    const {
+      decisionImpactEvidence: _decisionImpactEvidence,
+      ...assessment
+    } = gap.requirementAssessments[0]!;
+    gap.requirementAssessments = [{
+      ...assessment,
+      decisionImpact: "NON_DECISIVE",
+      decisionImpactExplanation:
+        "The ideal direct-experience gap is real but non-decisive.",
+      decisionImpactEvidenceReferences: [],
+      profileEvidenceReferences: ["profile-gap", "profile-certification"],
+    } as never];
+    const match = semanticResumeMatchFromTransport(
+      gap,
+      industryRequirement,
+      resumeMatchAvailableEvidence([
+        {
+          referenceId: "profile-gap",
+          sourceType: "USER_PROFILE",
+          evidenceType: "TRANSFERABLE_EXPERIENCE",
+        },
+        {
+          referenceId: "profile-certification",
+          sourceType: "USER_PROFILE",
+          evidenceType: "SKILL",
+        },
+      ]),
+    );
+
+    expect(match.requirementAssessments[0]).toMatchObject({
+      classification: "GENUINE_GAP",
+      strength: "IDEAL",
+      decisionImpact: "NON_DECISIVE",
+    });
+    expect(match.genuineGaps).toEqual([{
+      finding: match.requirementAssessments[0]!.explanation,
+      evidenceReferences: [
+        ...match.requirementAssessments[0]!.jdEvidenceReferences,
+        ...match.requirementAssessments[0]!.profileEvidenceReferences,
+      ],
+    }]);
+    expect(match.genuineGaps[0]?.evidenceReferences).toContain(
+      "profile-certification",
+    );
   });
 
   it("enforces every structurally expressible Resume Match evidence rule", () => {
@@ -1237,8 +1429,9 @@ describe("production semantic execution", () => {
     const transport = validResumeMatchTransport();
     transport.requirementAssessments[0] = {
       ...transport.requirementAssessments[0]!,
-      classification: "UNKNOWN",
-      matchedExperienceSpecificity: "UNKNOWN",
+        classification: "UNKNOWN",
+        matchedExperienceSpecificity: "UNKNOWN",
+        experienceEvidenceBasis: "UNKNOWN",
       decisionImpact: "NON_DECISIVE",
       decisionImpactEvidenceReferences: [],
       profileEvidenceReferences: [],
@@ -1265,7 +1458,11 @@ describe("production semantic execution", () => {
       name: string;
       create?: () => ReturnType<typeof validResumeMatchTransport>;
       mutate(value: Record<string, any>): void;
-      evidence?: Array<{ referenceId: string; sourceType: string }>;
+      evidence?: Array<{
+        referenceId: string;
+        sourceType: string;
+        evidenceType: string;
+      }>;
     }> = [
       {
         name: "duplicate references",
@@ -1337,7 +1534,7 @@ describe("production semantic execution", () => {
       {
         name: "unresolved seniority-signal reference",
         mutate: (value) => {
-          value.effectiveSeniority.actualResponsibilitySeniority.signals[0].evidenceReferences = ["missing"];
+          value.effectiveSeniority.actualResponsibilitySeniority.signals[0].evidenceIndexes = [999];
         },
       },
       {
@@ -2582,7 +2779,7 @@ describe("production semantic execution", () => {
       ],
       [
         "customer-success.resume-match",
-        customerSuccessProductionPromptVersion,
+        customerSuccessResumeMatchPromptVersion,
       ],
       [
         "customer-success.opportunity-priority",

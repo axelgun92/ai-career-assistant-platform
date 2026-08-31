@@ -40,7 +40,9 @@ import {
   semanticOrganizationalMaturityFromTransport,
 } from "../schemas/organizational-maturity";
 import {
+  customerSuccessResumeMatchPromptVersion,
   semanticResumeMatchFromTransport,
+  semanticResumeMatchJobEvidenceCatalog,
   semanticResumeMatchRequirementsForProvider,
   semanticResumeMatchTransportSchema,
 } from "../schemas/resume-match";
@@ -194,22 +196,29 @@ export function createProductionCustomerSuccessSemanticOperations(
       );
     },
     async evaluateResumeMatch(input) {
-      const { preferences, requirementMap, ...trustedContext } = input;
+      const { preferences, requirementMap, availableEvidence, ...trustedContext } =
+        input;
+      const jobEvidenceCatalog =
+        semanticResumeMatchJobEvidenceCatalog(availableEvidence);
       return semanticResumeMatchFromTransport(
         await operation(executor, {
           operationId: "customer-success.resume-match",
+          promptVersion: customerSuccessResumeMatchPromptVersion,
           schema: semanticResumeMatchTransportSchema,
           instructions:
-            "Compare every supplied Requirement Map entry to separately identified JD and candidate-profile evidence. Preserve requirement metadata and order. Distinguish direct, partial, transferable, and genuine gaps. A required gap is decisive only with JD and profile evidence proving it is a true must-have disqualifier; ambiguity must remain material uncertainty.",
+            "Compare every supplied Requirement Map entry to separately identified JD and candidate-profile evidence. Preserve requirement metadata and order. Actual Responsibility Seniority answers only what level of responsibility the job carries: use the supplied jobEvidenceCatalog indexes and never candidate/profile evidence for its classification or signals. Distinguish direct, partial, transferable, and genuine gaps. For a specialized industry or direct-work-experience requirement, generic customer-facing work, certifications, coursework, tools, self-study, or readiness do not establish the specialization or direct employment experience; they may be positioning context only. Declare the experienceEvidenceBasis truthfully. A required gap is decisive only with JD and profile evidence proving it is a true must-have disqualifier; preferred, ideal, and nice-to-have gaps remain non-decisive unless the authoritative contract says otherwise. Missing evidence remains Unknown unless the supplied profile explicitly establishes the gap.",
           userConfiguration: preferences,
           trustedContext: {
             ...trustedContext,
+            availableEvidence,
+            jobEvidenceCatalog,
             requirementMap:
               semanticResumeMatchRequirementsForProvider(requirementMap),
           },
         }),
         requirementMap,
-        input.availableEvidence,
+        availableEvidence,
+        jobEvidenceCatalog,
       );
     },
     async evaluateOpportunityPriority(input) {

@@ -18,6 +18,8 @@ const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
+export const customerSuccessResumeMatchPromptVersion = "cs-resume-match-v2";
+
 export const requirementMatchClassificationSchema = z.enum([
   "STRONG_MATCH",
   "TRANSFERABLE_MATCH",
@@ -325,6 +327,14 @@ const transportUnknownCode = z
   .min(1)
   .regex(/^[a-z][a-z0-9-]*$/);
 
+export const requirementExperienceEvidenceBasisSchema = z.enum([
+  "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+  "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+  "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+  "NO_SUPPORTING_EXPERIENCE",
+  "UNKNOWN",
+]);
+
 const transportRequirementFields = {
   requirementIndex: z.number().int().nonnegative(),
   importanceExplanation: transportRequiredText,
@@ -349,6 +359,11 @@ const transportStrongRequirementSchema = z
       "RELATED_CUSTOMER_RELATIONSHIP",
       "BROADER_CUSTOMER_FACING",
     ]),
+    experienceEvidenceBasis: z.enum([
+      "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+    ]),
     supportedPortion: transportOptionalText,
     unsupportedPortion: transportOptionalText,
     profileEvidenceReferences: transportEvidenceReferences.min(1),
@@ -360,6 +375,9 @@ const transportTransferableRequirementSchema = z
     ...transportNonGapFields,
     classification: z.literal("TRANSFERABLE_MATCH"),
     matchedExperienceSpecificity: z.literal("TRANSFERABLE"),
+    experienceEvidenceBasis: z.literal(
+      "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+    ),
     supportedPortion: transportOptionalText,
     unsupportedPortion: transportOptionalText,
     profileEvidenceReferences: transportEvidenceReferences.min(1),
@@ -371,6 +389,11 @@ const transportPartialRequirementSchema = z
     ...transportNonGapFields,
     classification: z.literal("PARTIAL_MATCH"),
     matchedExperienceSpecificity: matchedExperienceSpecificitySchema,
+    experienceEvidenceBasis: z.enum([
+      "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+    ]),
     supportedPortion: transportRequiredText,
     unsupportedPortion: transportRequiredText,
     profileEvidenceReferences: transportEvidenceReferences.min(1),
@@ -381,6 +404,7 @@ const transportGapFields = {
   ...transportRequirementFields,
   classification: z.literal("GENUINE_GAP"),
   matchedExperienceSpecificity: z.literal("UNSUPPORTED"),
+  experienceEvidenceBasis: z.literal("NO_SUPPORTING_EXPERIENCE"),
   supportedPortion: transportOptionalText,
   unsupportedPortion: transportOptionalText,
   profileEvidenceReferences: transportEvidenceReferences.min(1),
@@ -418,6 +442,7 @@ const transportUnknownRequirementSchema = z
     ...transportRequirementFields,
     classification: z.literal("UNKNOWN"),
     matchedExperienceSpecificity: z.literal("UNKNOWN"),
+    experienceEvidenceBasis: z.literal("UNKNOWN"),
     decisionImpact: z.literal("NON_DECISIVE"),
     decisionImpactEvidenceReferences: transportEvidenceReferences,
     supportedPortion: transportOptionalText,
@@ -448,7 +473,7 @@ const transportSenioritySignalSchema = z.union([
       signal: senioritySignalTypeSchema,
       assessment: z.enum(["ROUTINE", "MODERATE", "ADVANCED"]),
       explanation: transportRequiredText,
-      evidenceReferences: transportEvidenceReferences.min(1),
+      evidenceIndexes: z.array(z.number().int().nonnegative()).min(1),
     })
     .strict(),
   z
@@ -456,7 +481,7 @@ const transportSenioritySignalSchema = z.union([
       signal: senioritySignalTypeSchema,
       assessment: z.literal("UNKNOWN"),
       explanation: transportRequiredText,
-      evidenceReferences: transportEvidenceReferences,
+      evidenceIndexes: z.array(z.number().int().nonnegative()),
     })
     .strict(),
 ]);
@@ -472,7 +497,7 @@ const transportActualResponsibilitySenioritySchema = z.union([
       ]),
       summary: transportRequiredText,
       signals: z.array(transportSenioritySignalSchema),
-      evidenceReferences: transportEvidenceReferences.min(1),
+      evidenceIndexes: z.array(z.number().int().nonnegative()).min(1),
     })
     .strict(),
   z
@@ -480,7 +505,7 @@ const transportActualResponsibilitySenioritySchema = z.union([
       classification: z.literal("UNKNOWN"),
       summary: transportRequiredText,
       signals: z.array(transportSenioritySignalSchema),
-      evidenceReferences: transportEvidenceReferences,
+      evidenceIndexes: z.array(z.number().int().nonnegative()),
     })
     .strict(),
 ]);
@@ -534,7 +559,6 @@ export const semanticResumeMatchTransportSchema = z
       .strict(),
     strongStrengths: z.array(transportSupportedFindingSchema),
     partialMatches: z.array(transportSupportedFindingSchema),
-    genuineGaps: z.array(transportSupportedFindingSchema),
     unknowns: z.array(transportUnknownSchema),
     positioningRecommendations: z.array(
       z
@@ -561,6 +585,17 @@ export function semanticResumeMatchRequirementsForProvider(
     .filter((requirement) => !requirement.ambiguity.isAmbiguous);
 }
 
+export function semanticResumeMatchJobEvidenceCatalog<
+  TEvidence extends Pick<
+    EvidenceRecordDraft,
+    "referenceId" | "sourceType" | "evidenceType"
+  >,
+>(availableEvidence: TEvidence[]) {
+  return availableEvidence
+    .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
+    .map((evidence, evidenceIndex) => ({ evidenceIndex, ...evidence }));
+}
+
 function authoritativeResultViolation(message: string): never {
   throw new StageExecutionError({
     code: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
@@ -579,8 +614,29 @@ function evidenceResultViolation(message: string): never {
 
 type AvailableResumeMatchEvidence = Pick<
   EvidenceRecordDraft,
-  "referenceId" | "sourceType"
+  "referenceId" | "sourceType" | "evidenceType"
 >;
+
+type ResumeMatchJobEvidenceCatalog = ReturnType<
+  typeof semanticResumeMatchJobEvidenceCatalog
+>;
+
+function evidenceReferencesFromIndexes(
+  indexes: number[],
+  catalog: ResumeMatchJobEvidenceCatalog,
+  label: string,
+) {
+  if (new Set(indexes).size !== indexes.length) {
+    evidenceResultViolation(`${label} contains duplicate evidence indexes`);
+  }
+  return indexes.map((index) => {
+    const evidence = catalog[index];
+    if (!evidence || evidence.evidenceIndex !== index) {
+      evidenceResultViolation(`${label} references unknown job evidence`);
+    }
+    return evidence.referenceId;
+  });
+}
 
 function mergeBothSourceEvidence(input: {
   jdEvidenceReferences: string[];
@@ -665,6 +721,106 @@ function validateResumeMatchEvidence(
     jd(assessment.jdEvidenceReferences, `${label} JD evidence`);
     profile(assessment.profileEvidenceReferences, `${label} profile evidence`);
     const requirement = requirements[assessment.requirementIndex];
+    const transportAssessment = transport.requirementAssessments.find(
+      (candidate) => candidate.requirementIndex === assessment.requirementIndex,
+    );
+    if (!transportAssessment && !assessment.isAmbiguous) {
+      authoritativeResultViolation(`${label} is missing its semantic assessment`);
+    }
+    if (transportAssessment) {
+      const profileEvidence = assessment.profileEvidenceReferences.map(
+        (reference) => knownEvidence.get(reference)!,
+      );
+      const hasEvidenceType = (types: string[]) =>
+        profileEvidence.some((evidence) => types.includes(evidence.evidenceType));
+      if (
+        transportAssessment.experienceEvidenceBasis ===
+          "DIRECT_OR_RELATED_WORK_EXPERIENCE" &&
+        !hasEvidenceType(["DIRECT_EXPERIENCE", "RELATED_EXPERIENCE"])
+      ) {
+        evidenceResultViolation(
+          `${label} claims direct or related work experience without matching experience evidence`,
+        );
+      }
+      if (
+        transportAssessment.experienceEvidenceBasis ===
+          "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE" &&
+        !hasEvidenceType([
+          "DIRECT_EXPERIENCE",
+          "RELATED_EXPERIENCE",
+          "TRANSFERABLE_EXPERIENCE",
+          "TRANSFERABLE_SKILL",
+        ])
+      ) {
+        evidenceResultViolation(
+          `${label} claims transferable experience without experience evidence`,
+        );
+      }
+      if (
+        transportAssessment.experienceEvidenceBasis ===
+          "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE" &&
+        !hasEvidenceType(["SKILL", "TRANSFERABLE_SKILL"])
+      ) {
+        evidenceResultViolation(
+          `${label} claims relevant skill or knowledge without skill evidence`,
+        );
+      }
+      if (
+        requirement?.category === "INDUSTRY" &&
+        ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(
+          assessment.classification,
+        ) &&
+        (transportAssessment.experienceEvidenceBasis !==
+          "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
+          !hasEvidenceType(["DIRECT_EXPERIENCE"]))
+      ) {
+        evidenceResultViolation(
+          `${label} treats a specialized industry requirement as a match without direct specialized-experience evidence`,
+        );
+      }
+      if (
+        requirement?.category === "EXPERIENCE" &&
+        transportAssessment.experienceEvidenceBasis ===
+          "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE" &&
+        assessment.classification !== "UNKNOWN"
+      ) {
+        evidenceResultViolation(
+          `${label} treats skill or knowledge evidence as employment experience`,
+        );
+      }
+      const directExperienceRequested =
+        requirement?.category === "EXPERIENCE" &&
+        /\bdirect\b/i.test(
+          [requirement.requirement, requirement.experienceSpecificity]
+            .filter(Boolean)
+            .join(" "),
+        );
+      if (
+        directExperienceRequested &&
+        ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(
+          assessment.classification,
+        ) &&
+        (transportAssessment.experienceEvidenceBasis !==
+          "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
+          !hasEvidenceType(["DIRECT_EXPERIENCE"]))
+      ) {
+        evidenceResultViolation(
+          `${label} treats preparation or transferable experience as direct work experience`,
+        );
+      }
+      if (
+        ["DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS"].includes(
+          assessment.matchedExperienceSpecificity,
+        ) &&
+        (transportAssessment.experienceEvidenceBasis !==
+          "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
+          !hasEvidenceType(["DIRECT_EXPERIENCE"]))
+      ) {
+        evidenceResultViolation(
+          `${label} claims direct experience without direct profile experience evidence`,
+        );
+      }
+    }
     if (
       requirement &&
       !assessment.jdEvidenceReferences.some((reference) =>
@@ -693,10 +849,6 @@ function validateResumeMatchEvidence(
       );
     }
     if (assessment.decisionImpact === "DECISIVE_DISQUALIFIER") {
-      const transportAssessment = transport.requirementAssessments.find(
-        (candidate) =>
-          candidate.requirementIndex === assessment.requirementIndex,
-      );
       if (
         !transportAssessment ||
         !("decisionImpactEvidence" in transportAssessment)
@@ -738,13 +890,13 @@ function validateResumeMatchEvidence(
   })) {
     any(dimension.evidenceReferences, `Effective Seniority ${name} evidence`);
   }
-  any(
+  jd(
     match.effectiveSeniority.actualResponsibilitySeniority.evidenceReferences,
     "Actual-responsibility seniority evidence",
   );
   for (const signal of match.effectiveSeniority.actualResponsibilitySeniority
     .signals) {
-    any(signal.evidenceReferences, `Seniority signal ${signal.signal} evidence`);
+    jd(signal.evidenceReferences, `Seniority signal ${signal.signal} evidence`);
   }
   const effectiveEvidence = match.effectiveSeniority.evidenceReferences;
   jd(
@@ -831,6 +983,8 @@ export function semanticResumeMatchFromTransport(
   value: z.input<typeof semanticResumeMatchTransportSchema>,
   authoritativeRequirementMap: z.input<typeof requirementMapSchema>,
   availableEvidence: AvailableResumeMatchEvidence[],
+  jobEvidenceCatalog: ResumeMatchJobEvidenceCatalog =
+    semanticResumeMatchJobEvidenceCatalog(availableEvidence),
 ): SemanticResumeMatch {
   const transport = semanticResumeMatchTransportSchema.parse(value);
   const requirements = requirementMapSchema.parse(authoritativeRequirementMap);
@@ -878,6 +1032,38 @@ export function semanticResumeMatchFromTransport(
     );
   }
 
+  const requirementAssessments = requirements.map((requirement, index) =>
+    requirement.ambiguity.isAmbiguous
+      ? deterministicAmbiguousAssessment(requirement, index)
+      : (() => {
+          const assessment = assessmentsByIndex.get(index)!;
+          const {
+            experienceEvidenceBasis: _experienceEvidenceBasis,
+            ...assessmentWithoutBasis
+          } = assessment;
+          const semanticAssessment =
+            "decisionImpactEvidence" in assessmentWithoutBasis
+              ? (({ decisionImpactEvidence, ...semanticFields }) => ({
+                  ...semanticFields,
+                  decisionImpactEvidenceReferences:
+                    mergeBothSourceEvidence(decisionImpactEvidence),
+                }))(assessmentWithoutBasis)
+              : assessmentWithoutBasis;
+          return {
+            ...semanticAssessment,
+            requirementIndex: index,
+            requirementText: requirement.requirement,
+            category: requirement.category,
+            strength: requirement.strength,
+            statedYears: requirement.statedYears,
+            statedYearsMaximum: requirement.statedYearsMaximum,
+            statedYearsOpenEnded: requirement.statedYearsOpenEnded,
+            requestedExperienceSpecificity: requirement.experienceSpecificity,
+            isAmbiguous: requirement.ambiguity.isAmbiguous,
+            ambiguityExplanation: requirement.ambiguity.explanation,
+          };
+        })(),
+  );
   const {
     scoreEvidence,
     effectiveSeniority: transportEffectiveSeniority,
@@ -887,38 +1073,45 @@ export function semanticResumeMatchFromTransport(
   const domainCandidate = {
     ...transportResult,
     scoreEvidenceReferences: mergeBothSourceEvidence(scoreEvidence),
-    requirementAssessments: requirements.map((requirement, index) =>
-      requirement.ambiguity.isAmbiguous
-        ? deterministicAmbiguousAssessment(requirement, index)
-        : (() => {
-            const assessment = assessmentsByIndex.get(index)!;
-            const semanticAssessment =
-              "decisionImpactEvidence" in assessment
-                ? (({ decisionImpactEvidence, ...semanticFields }) => ({
-                    ...semanticFields,
-                    decisionImpactEvidenceReferences:
-                      mergeBothSourceEvidence(decisionImpactEvidence),
-                  }))(assessment)
-                : assessment;
-            return {
-              ...semanticAssessment,
-              requirementIndex: index,
-              requirementText: requirement.requirement,
-              category: requirement.category,
-              strength: requirement.strength,
-              statedYears: requirement.statedYears,
-              statedYearsMaximum: requirement.statedYearsMaximum,
-              statedYearsOpenEnded: requirement.statedYearsOpenEnded,
-              requestedExperienceSpecificity: requirement.experienceSpecificity,
-              isAmbiguous: requirement.ambiguity.isAmbiguous,
-              ambiguityExplanation: requirement.ambiguity.explanation,
-            };
-          })(),
-    ),
+    requirementAssessments,
+    genuineGaps: requirementAssessments
+      .filter((assessment) => assessment.classification === "GENUINE_GAP")
+      .map((assessment) => ({
+        finding: assessment.explanation,
+        evidenceReferences: [
+          ...assessment.jdEvidenceReferences,
+          ...assessment.profileEvidenceReferences,
+        ],
+      })),
     effectiveSeniority: {
-      ...((({ evidence: _evidence, ...semanticFields }) => semanticFields)(
-        transportEffectiveSeniority,
-      )),
+      ...((({
+        evidence: _evidence,
+        actualResponsibilitySeniority,
+        ...semanticFields
+      }) => ({
+        ...semanticFields,
+        actualResponsibilitySeniority: {
+          ...(({
+            evidenceIndexes: _evidenceIndexes,
+            ...responsibilityFields
+          }) => responsibilityFields)(actualResponsibilitySeniority),
+          signals: actualResponsibilitySeniority.signals.map(
+            ({ evidenceIndexes, ...signal }) => ({
+              ...signal,
+              evidenceReferences: evidenceReferencesFromIndexes(
+                evidenceIndexes,
+                jobEvidenceCatalog,
+                `Seniority signal ${signal.signal}`,
+              ),
+            }),
+          ),
+          evidenceReferences: evidenceReferencesFromIndexes(
+            actualResponsibilitySeniority.evidenceIndexes,
+            jobEvidenceCatalog,
+            "Actual-responsibility seniority",
+          ),
+        },
+      }))(transportEffectiveSeniority)),
       evidenceReferences: mergeBothSourceEvidence(
         transportEffectiveSeniority.evidence,
       ),

@@ -11,6 +11,7 @@ import { burnoutRiskDataSchema } from "../schemas/burnout-risk";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
 import { organizationalMaturityDataSchema } from "../schemas/organizational-maturity";
 import {
+  customerSuccessResumeMatchPromptVersion,
   resumeMatchDataSchema,
   semanticResumeMatchSchema,
   type ResumeMatchData,
@@ -77,9 +78,9 @@ function authoritativeResultViolation(
 export function createResumeMatchStage() {
   return defineEvaluationStage<CustomerSuccessDomainData, ResumeMatchData>({
     id: "resume-match",
-    version: "cs-resume-match-v1",
+    version: "cs-resume-match-v2",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-resume-match-v1",
+    promptVersion: customerSuccessResumeMatchPromptVersion,
     onFailure: "STOP",
     maxAttempts: 2,
     invalidOutputRetryable: true,
@@ -300,6 +301,52 @@ export function createResumeMatchStage() {
       if (missing.length > 0) {
         throw new StructuredOutputValidationError(
           `Resume Match references unknown evidence: ${missing.join(", ")}`,
+        );
+      }
+
+      const responsibilitySeniority =
+        match.effectiveSeniority.actualResponsibilitySeniority;
+      if (
+        responsibilitySeniority.evidenceReferences.some(
+          (reference) =>
+            knownEvidence.get(reference)?.sourceType === "USER_PROFILE",
+        )
+      ) {
+        authoritativeResultViolation(
+          "Actual Responsibility Seniority must use job-side evidence",
+          "RESUME_MATCH_ROLE_SENIORITY_EVIDENCE_INVALID",
+        );
+      }
+      for (const signal of match.effectiveSeniority
+        .actualResponsibilitySeniority.signals) {
+        if (
+          signal.evidenceReferences.some(
+            (reference) =>
+              knownEvidence.get(reference)?.sourceType === "USER_PROFILE",
+          )
+        ) {
+          authoritativeResultViolation(
+            `Actual Responsibility Seniority ${signal.signal} must use job-side evidence`,
+            "RESUME_MATCH_ROLE_SENIORITY_EVIDENCE_INVALID",
+          );
+        }
+      }
+
+      const expectedGenuineGaps = match.requirementAssessments
+        .filter((assessment) => assessment.classification === "GENUINE_GAP")
+        .map((assessment) => ({
+          finding: assessment.explanation,
+          evidenceReferences: [
+            ...assessment.jdEvidenceReferences,
+            ...assessment.profileEvidenceReferences,
+          ],
+        }));
+      if (
+        JSON.stringify(match.genuineGaps) !==
+        JSON.stringify(expectedGenuineGaps)
+      ) {
+        authoritativeResultViolation(
+          "Resume Match Genuine Gaps are inconsistent with requirement assessments",
         );
       }
 

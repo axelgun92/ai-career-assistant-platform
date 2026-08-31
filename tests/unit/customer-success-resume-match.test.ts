@@ -537,6 +537,56 @@ describe("Customer Success requirement matching", () => {
 });
 
 describe("Customer Success Resume Match score and Effective Seniority", () => {
+  it("rejects candidate-only evidence for Actual Responsibility Seniority", async () => {
+    const execution = await runWithResumeMatchMutation({
+      mutate(value) {
+        const profileReference = value.requirementAssessments[0]!
+          .profileEvidenceReferences[0]!;
+        value.effectiveSeniority.actualResponsibilitySeniority = {
+          classification: "MID_LEVEL",
+          summary: "The candidate appears mid-level.",
+          signals: [{
+            signal: "AUTONOMY",
+            assessment: "MODERATE",
+            explanation: "The candidate independently managed prior work.",
+            evidenceReferences: [profileReference],
+          }],
+          evidenceReferences: [profileReference],
+        };
+        return value;
+      },
+    });
+
+    expect(execution.result.evaluation.stageResults[6]).toMatchObject({
+      status: "FAILED",
+      failureCode: "RESUME_MATCH_ROLE_SENIORITY_EVIDENCE_INVALID",
+      retryable: false,
+    });
+    expect(execution.semanticFixture.stats.resumeMatchCalls).toBe(1);
+  });
+
+  it("rejects provider-generated Genuine Gaps that diverge from assessments", async () => {
+    const execution = await runWithResumeMatchMutation({
+      mutate(value) {
+        value.genuineGaps = [];
+        value.requirementAssessments[0] = {
+          ...value.requirementAssessments[0]!,
+          classification: "GENUINE_GAP",
+          matchedExperienceSpecificity: "UNSUPPORTED",
+          decisionImpact: "NON_DECISIVE",
+        };
+        return value;
+      },
+    });
+
+    expect(execution.result.evaluation.stageResults[6]).toMatchObject({
+      status: "FAILED",
+      failureCode: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID",
+      retryable: false,
+    });
+    expect(execution.semanticFixture.stats.resumeMatchCalls).toBe(1);
+  });
+
   it.each([
     [0, "VERY_LOW"],
     [19, "VERY_LOW"],

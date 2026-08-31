@@ -111,7 +111,10 @@ type ProviderRequirement = SemanticReconstruction["requirements"][number] & {
 export function toResumeMatchProviderTransport(
   output: SemanticResumeMatch,
   providerRequirements: ProviderRequirement[],
-  availableEvidence: Pick<EvidenceRecordDraft, "referenceId" | "sourceType">[],
+  availableEvidence: Pick<
+    EvidenceRecordDraft,
+    "referenceId" | "sourceType" | "evidenceType"
+  >[],
 ) {
   const profileReferences = new Set(
     availableEvidence
@@ -126,14 +129,29 @@ export function toResumeMatchProviderTransport(
       profileReferences.has(reference),
     ),
   });
+  const jobEvidenceIndexes = new Map(
+    availableEvidence
+      .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
+      .map((evidence, index) => [evidence.referenceId, index]),
+  );
+  const toJobEvidenceIndexes = (references: string[]) =>
+    references.map((reference) => {
+      const index = jobEvidenceIndexes.get(reference);
+      if (index === undefined) {
+        throw new Error("Role seniority fixture requires job-side evidence");
+      }
+      return index;
+    });
   const {
     scoreEvidenceReferences,
     effectiveSeniority,
     positioningRecommendations,
+    genuineGaps: _genuineGaps,
     ...result
   } = output;
   const {
     evidenceReferences: effectiveSeniorityEvidenceReferences,
+    actualResponsibilitySeniority,
     ...effectiveSeniorityFields
   } = effectiveSeniority;
   return {
@@ -164,6 +182,23 @@ export function toResumeMatchProviderTransport(
             : { ...assessment, decisionImpactEvidenceReferences };
         return {
           ...semanticAssessment,
+          experienceEvidenceBasis:
+            assessment.classification === "UNKNOWN"
+              ? "UNKNOWN"
+              : assessment.classification === "GENUINE_GAP"
+                ? "NO_SUPPORTING_EXPERIENCE"
+                : assessment.classification === "TRANSFERABLE_MATCH"
+                  ? "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
+                  : providerRequirements[assessment.requirementIndex]!
+                        .category === "TOOL"
+                    ? "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE"
+                    : [
+                          "DIRECT_SAAS_CUSTOMER_SUCCESS",
+                          "DIRECT_CUSTOMER_SUCCESS",
+                          "RELATED_CUSTOMER_RELATIONSHIP",
+                        ].includes(assessment.matchedExperienceSpecificity)
+                      ? "DIRECT_OR_RELATED_WORK_EXPERIENCE"
+                      : "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
           requirementIndex:
             providerRequirements[assessment.requirementIndex]!.requirementIndex,
         };
@@ -171,6 +206,21 @@ export function toResumeMatchProviderTransport(
     ),
     effectiveSeniority: {
       ...effectiveSeniorityFields,
+      actualResponsibilitySeniority: {
+        ...(({
+          evidenceReferences: _evidenceReferences,
+          ...responsibilityFields
+        }) => responsibilityFields)(actualResponsibilitySeniority),
+        signals: actualResponsibilitySeniority.signals.map(
+          ({ evidenceReferences, ...signal }) => ({
+            ...signal,
+            evidenceIndexes: toJobEvidenceIndexes(evidenceReferences),
+          }),
+        ),
+        evidenceIndexes: toJobEvidenceIndexes(
+          actualResponsibilitySeniority.evidenceReferences,
+        ),
+      },
       evidence: splitEvidence(effectiveSeniorityEvidenceReferences),
     },
     positioningRecommendations: positioningRecommendations.map(
