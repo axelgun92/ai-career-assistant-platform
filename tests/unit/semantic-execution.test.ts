@@ -13,6 +13,8 @@ import {
   customerSuccessAlexFitPromptVersion,
   semanticBurnoutRiskSchema,
   semanticBurnoutRiskTransportSchema,
+  createSemanticBurnoutRiskTransportSchema,
+  customerSuccessBurnoutRiskPromptVersion,
   semanticCompanyAlignmentSchema,
   semanticCompanyAlignmentTransportSchema,
   semanticGhostJobRiskSchema,
@@ -545,6 +547,15 @@ describe("production semantic execution", () => {
   it.each([1, 56, 1500])("keeps the request-bound Alex Fit schema within strict limits for %i evidence records", (count) => {
     const evidence = Array.from({ length: count }, (_, index) => ({ referenceId: `evidence-${index}`, sourceType: "MANUAL" }));
     expect(auditOpenAiProviderSchema(createSemanticAlexFitTransportSchema(evidence)).violations).toEqual([]);
+  });
+
+  it.each([1, 56, 1500])("audits the actual bounded Burnout Risk schema for %i source facts", (count) => {
+    const evidence = semanticReconstructionFromTransport(validJdReconstructionTransport()).evidence[0];
+    const facts = Array.from({ length: count }, (_, index) => ({ ...evidence,
+      referenceId: `burnout-${index}`, origin: "EXPLICIT" as const,
+      evidenceLevel: "CONFIRMED" as const, sourceText: "Working hours are explicitly bounded.", sourceType: "MANUAL",
+    }));
+    expect(auditOpenAiProviderSchema(createSemanticBurnoutRiskTransportSchema(facts)).violations).toEqual([]);
   });
 
   it("exposes Organizational Maturity calibration in the strict provider schema", () => {
@@ -2496,7 +2507,7 @@ describe("production semantic execution", () => {
       } as never),
     );
     await captureInvocation(operations.evaluateAlexFit({ availableEvidence: [{ referenceId: "jd-evidence", sourceType: "MANUAL" }] } as never));
-    await captureInvocation(operations.evaluateBurnoutRisk({} as never));
+    await captureInvocation(operations.evaluateBurnoutRisk({ availableEvidence: maturityReconstruction.evidence } as never));
     await operations.evaluateResumeMatch({
       requirementMap: authoritativeResumeMatchRequirements(),
       availableEvidence: resumeMatchAvailableEvidence(),
@@ -2530,7 +2541,7 @@ describe("production semantic execution", () => {
         organizationalMaturityRelationshipCatalog(maturityReconstruction.ownershipMap, maturityReconstruction.evidence),
       ),
       createSemanticAlexFitTransportSchema([{ referenceId: "jd-evidence", sourceType: "MANUAL" }]),
-      semanticBurnoutRiskTransportSchema,
+      createSemanticBurnoutRiskTransportSchema(maturityReconstruction.evidence),
       semanticResumeMatchTransportSchema,
       semanticOpportunityPriorityTransportSchema,
       semanticGhostJobRiskTransportSchema,
@@ -2567,7 +2578,7 @@ describe("production semantic execution", () => {
       ],
       [
         "customer-success.burnout-risk",
-        customerSuccessProductionPromptVersion,
+        customerSuccessBurnoutRiskPromptVersion,
       ],
       [
         "customer-success.resume-match",

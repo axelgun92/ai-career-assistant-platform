@@ -7,6 +7,7 @@ import { alexFitDataSchema } from "../schemas/alex-fit";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
 import {
   burnoutRiskDataSchema,
+  customerSuccessBurnoutRiskPromptVersion,
   semanticBurnoutRiskSchema,
   type BurnoutRiskData,
 } from "../schemas/burnout-risk";
@@ -27,9 +28,9 @@ export function burnoutRiskBand(score: number) {
 export function createBurnoutRiskStage() {
   return defineEvaluationStage<CustomerSuccessDomainData, BurnoutRiskData>({
     id: "burnout-risk",
-    version: "cs-burnout-risk-v1",
+    version: "cs-burnout-risk-v2",
     ruleVersion: "cs-rules-v1.1",
-    promptVersion: "cs-burnout-risk-v1",
+    promptVersion: customerSuccessBurnoutRiskPromptVersion,
     onFailure: "STOP",
     maxAttempts: 2,
     invalidOutputRetryable: true,

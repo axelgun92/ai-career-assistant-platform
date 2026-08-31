@@ -8,8 +8,11 @@ import {
   semanticAlexFitFromIndexedTransport,
 } from "../schemas/alex-fit";
 import {
-  semanticBurnoutRiskFromTransport,
-  semanticBurnoutRiskTransportSchema,
+  burnoutRiskAffirmativeFactCatalog,
+  burnoutRiskSemanticInstructions,
+  createSemanticBurnoutRiskTransportSchema,
+  customerSuccessBurnoutRiskPromptVersion,
+  semanticBurnoutRiskFromAffirmativeTransport,
 } from "../schemas/burnout-risk";
 import {
   semanticCompanyAlignmentFromTransport,
@@ -178,14 +181,14 @@ export function createProductionCustomerSuccessSemanticOperations(
     },
     async evaluateBurnoutRisk(input) {
       const { preferences, ...trustedContext } = input;
-      return semanticBurnoutRiskFromTransport(
+      return semanticBurnoutRiskFromAffirmativeTransport(
         await operation(executor, {
           operationId: "customer-success.burnout-risk",
-          schema: semanticBurnoutRiskTransportSchema,
-          instructions:
-            "Assess workload and burnout risk from evidenced role design, ownership, travel, and prior validated results. Broad collaboration alone is not scope creep, and missing information is not negative evidence.",
+          promptVersion: customerSuccessBurnoutRiskPromptVersion,
+          schema: createSemanticBurnoutRiskTransportSchema(input.availableEvidence),
+          instructions: burnoutRiskSemanticInstructions,
           userConfiguration: preferences,
-          trustedContext,
+          trustedContext: { ...trustedContext, affirmativeFactCatalog: burnoutRiskAffirmativeFactCatalog(input.availableEvidence) },
         }),
         input.availableEvidence,
       );

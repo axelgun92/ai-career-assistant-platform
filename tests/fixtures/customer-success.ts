@@ -1,5 +1,6 @@
 import {
   defineCustomerSuccessPreferences,
+  burnoutRiskAffirmativeFactCatalog,
   ownershipFunctions,
   organizationalMaturityRelationshipTransport,
   responsibilityAreas,
@@ -29,6 +30,27 @@ export type CustomerSuccessScenario =
   | "unrelated"
   | "software-only"
   | "contradictory";
+
+// Test-only encoding. This declares controlled fixture judgments; it must not
+// be used to project a historical model score whose support has changed.
+export function toBurnoutRiskProviderTransport(domain: SemanticBurnoutRisk, evidence: EvidenceRecordDraft[]) {
+  const catalog = burnoutRiskAffirmativeFactCatalog(evidence);
+  const indexes = (references: string[]) => references.map(reference => {
+    const index = catalog.findIndex(fact => fact.evidenceReference === reference);
+    if (index < 0) throw new Error("Fixture lacks an affirmative Burnout Risk fact");
+    return index;
+  });
+  const finding = (item: SemanticBurnoutRisk["positiveIndicators"][number], effect: "SUPPORTED_RISK" | "SUPPORTED_MITIGATION") => ({
+    finding: item.finding, effect, evidenceState: "SUPPORTED_PRESENT" as const,
+    factIndexes: indexes(item.evidenceReferences),
+  });
+  const { scoreEvidenceReferences, ...rest } = domain;
+  return {
+    ...rest, scoreFactIndexes: indexes(scoreEvidenceReferences),
+    majorContributors: domain.majorContributors.map(item => finding(item, "SUPPORTED_RISK")),
+    positiveIndicators: domain.positiveIndicators.map(item => finding(item, "SUPPORTED_MITIGATION")),
+  };
+}
 
 export interface CompanyAlignmentFixtureOptions {
   businessModel?: SemanticCompanyAlignment["businessModel"]["classification"];
@@ -1871,10 +1893,10 @@ export function createCustomerSuccessFixtureTransport(input: {
           } as never) as SemanticAlexFit, trusted.availableEvidenceCatalog as Parameters<typeof toAlexFitProviderTransport>[1]);
           break;
         case "customer-success.burnout-risk":
-          output = await fixture.semanticOperations.evaluateBurnoutRisk({
+          output = toBurnoutRiskProviderTransport(await fixture.semanticOperations.evaluateBurnoutRisk({
             ...trusted,
             preferences: payload.userConfiguration,
-          } as never);
+          } as never) as SemanticBurnoutRisk, trusted.availableEvidence as EvidenceRecordDraft[]);
           break;
         case "customer-success.resume-match":
           {
