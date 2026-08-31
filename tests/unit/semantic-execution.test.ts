@@ -9,7 +9,8 @@ import {
   organizationalMaturityRelationshipCatalog,
   organizationalMaturityOperatingModelRules,
   semanticAlexFitSchema,
-  semanticAlexFitTransportSchema,
+  createSemanticAlexFitTransportSchema,
+  customerSuccessAlexFitPromptVersion,
   semanticBurnoutRiskSchema,
   semanticBurnoutRiskTransportSchema,
   semanticCompanyAlignmentSchema,
@@ -528,7 +529,7 @@ describe("production semantic execution", () => {
     ["Job Evaluation", semanticJobEvaluationTransportSchema],
     ["Company Alignment", semanticCompanyAlignmentTransportSchema],
     ["Organizational Maturity", semanticOrganizationalMaturityTransportSchema],
-    ["Alex Fit", semanticAlexFitTransportSchema],
+    ["Alex Fit", createSemanticAlexFitTransportSchema([{ referenceId: "jd-evidence", sourceType: "MANUAL" }])],
     ["Burnout Risk", semanticBurnoutRiskTransportSchema],
     ["Resume Match", semanticResumeMatchTransportSchema],
     ["Opportunity Priority", semanticOpportunityPriorityTransportSchema],
@@ -540,6 +541,11 @@ describe("production semantic execution", () => {
       expect(audit.violations).toEqual([]);
     },
   );
+
+  it.each([1, 56, 1500])("keeps the request-bound Alex Fit schema within strict limits for %i evidence records", (count) => {
+    const evidence = Array.from({ length: count }, (_, index) => ({ referenceId: `evidence-${index}`, sourceType: "MANUAL" }));
+    expect(auditOpenAiProviderSchema(createSemanticAlexFitTransportSchema(evidence)).violations).toEqual([]);
+  });
 
   it("exposes Organizational Maturity calibration in the strict provider schema", () => {
     const { jsonSchema, violations } = auditOpenAiProviderSchema(
@@ -2489,7 +2495,7 @@ describe("production semantic execution", () => {
         availableEvidence: maturityReconstruction.evidence,
       } as never),
     );
-    await captureInvocation(operations.evaluateAlexFit({} as never));
+    await captureInvocation(operations.evaluateAlexFit({ availableEvidence: [{ referenceId: "jd-evidence", sourceType: "MANUAL" }] } as never));
     await captureInvocation(operations.evaluateBurnoutRisk({} as never));
     await operations.evaluateResumeMatch({
       requirementMap: authoritativeResumeMatchRequirements(),
@@ -2523,7 +2529,7 @@ describe("production semantic execution", () => {
           .responsibilityMap,
         organizationalMaturityRelationshipCatalog(maturityReconstruction.ownershipMap, maturityReconstruction.evidence),
       ),
-      semanticAlexFitTransportSchema,
+      createSemanticAlexFitTransportSchema([{ referenceId: "jd-evidence", sourceType: "MANUAL" }]),
       semanticBurnoutRiskTransportSchema,
       semanticResumeMatchTransportSchema,
       semanticOpportunityPriorityTransportSchema,
@@ -2557,7 +2563,7 @@ describe("production semantic execution", () => {
       ],
       [
         "customer-success.alex-fit",
-        customerSuccessProductionPromptVersion,
+        customerSuccessAlexFitPromptVersion,
       ],
       [
         "customer-success.burnout-risk",

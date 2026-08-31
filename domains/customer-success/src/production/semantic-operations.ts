@@ -2,8 +2,10 @@ import type { SemanticExecutor } from "@ai-career/evaluation";
 import type { ZodType } from "zod";
 import type { CustomerSuccessSemanticOperations } from "../extraction/extractor";
 import {
-  semanticAlexFitFromTransport,
-  semanticAlexFitTransportSchema,
+  alexFitEvidenceCatalog,
+  createSemanticAlexFitTransportSchema,
+  customerSuccessAlexFitPromptVersion,
+  semanticAlexFitFromIndexedTransport,
 } from "../schemas/alex-fit";
 import {
   semanticBurnoutRiskFromTransport,
@@ -160,17 +162,18 @@ export function createProductionCustomerSuccessSemanticOperations(
       );
     },
     async evaluateAlexFit(input) {
-      const { preferences, ...trustedContext } = input;
-      return semanticAlexFitFromTransport(
+      const { preferences, availableEvidence, ...trustedContext } = input;
+      return semanticAlexFitFromIndexedTransport(
         await operation(executor, {
           operationId: "customer-success.alex-fit",
-          schema: semanticAlexFitTransportSchema,
+          promptVersion: customerSuccessAlexFitPromptVersion,
+          schema: createSemanticAlexFitTransportSchema(availableEvidence),
           instructions:
-            "Assess categorical fit against the supplied versioned candidate profile and preferences. Distinguish direct, related, and transferable experience and do not invent candidate facts.",
+            "Assess categorical fit against the supplied versioned candidate profile and preferences. Distinguish direct, related, and transferable experience and do not invent candidate facts. Every evidenceIndexes field must use only the zero-based evidenceIndex values in availableEvidenceCatalog. Upstream Unknown codes, stage names, dimensions, requirement IDs, and labels are context, not evidence. Preserve missing information through Unknown/context explanations, not fabricated evidence or positive/negative facts.",
           userConfiguration: preferences,
-          trustedContext,
+          trustedContext: { ...trustedContext, availableEvidenceCatalog: alexFitEvidenceCatalog(availableEvidence) },
         }),
-        input.availableEvidence,
+        availableEvidence,
       );
     },
     async evaluateBurnoutRisk(input) {

@@ -241,6 +241,28 @@ export function toOrganizationalMaturityProviderTransport(
   };
 }
 
+export function toAlexFitProviderTransport(
+  value: SemanticAlexFit,
+  catalog: Array<{ referenceId: string; evidenceIndex: number }>,
+): unknown {
+  const indexes = new Map(catalog.map(item => [item.referenceId, item.evidenceIndex]));
+  function convert(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(convert);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => {
+      if (/^evidenceReferences(?:A|B)?$/.test(key)) {
+        return [key.replace("evidenceReferences", "evidenceIndexes"), (child as string[]).map(reference => {
+          const index = indexes.get(reference);
+          if (index === undefined) throw new Error("Fixture references unavailable Alex Fit evidence");
+          return index;
+        })];
+      }
+      return [key, convert(child)];
+    }));
+  }
+  return convert(value);
+}
+
 export function toOpportunityPriorityProviderTransport(
   priority: SemanticOpportunityPriority,
   availableEvidenceCatalog: Array<{
@@ -1842,10 +1864,11 @@ export function createCustomerSuccessFixtureTransport(input: {
           );
           break;
         case "customer-success.alex-fit":
-          output = await fixture.semanticOperations.evaluateAlexFit({
+          output = toAlexFitProviderTransport(await fixture.semanticOperations.evaluateAlexFit({
             ...trusted,
+            availableEvidence: trusted.availableEvidenceCatalog,
             preferences: payload.userConfiguration,
-          } as never);
+          } as never) as SemanticAlexFit, trusted.availableEvidenceCatalog as Parameters<typeof toAlexFitProviderTransport>[1]);
           break;
         case "customer-success.burnout-risk":
           output = await fixture.semanticOperations.evaluateBurnoutRisk({

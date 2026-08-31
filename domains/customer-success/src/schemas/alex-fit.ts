@@ -8,6 +8,7 @@ import type { AvailableSemanticEvidence } from "./semantic-contract";
 import {
   assertSemanticEvidenceReferences,
   parseSemanticDomainResult,
+  semanticContractViolation,
 } from "./semantic-contract";
 
 const requiredText = z.string().trim().min(1);
@@ -133,12 +134,102 @@ const transportWorkingStyleAlignmentSchema = z.union([
     .strict(),
 ]);
 
+// Legacy string-reference shape remains readable for historical/offline results.
+// Production requests use createSemanticAlexFitTransportSchema below.
 export const semanticAlexFitTransportSchema = semanticAlexFitSchema
   .extend({
     experienceAlignment: transportExperienceAlignmentSchema,
     workingStyleAlignment: z.array(transportWorkingStyleAlignmentSchema),
   })
   .strict();
+
+export const customerSuccessAlexFitPromptVersion = "cs-alex-fit-v2";
+
+// Only the stage's JD + profile ledger supplies evidence. Upstream Unknown
+// codes, requirement IDs and dimension names remain context, never catalog rows.
+export function alexFitEvidenceCatalog<T extends AvailableSemanticEvidence>(
+  availableEvidence: T[],
+) {
+  const references = new Set<string>();
+  if (availableEvidence.length === 0) {
+    semanticContractViolation("ALEX_FIT_EVIDENCE_CATALOG_INVALID", "Alex Fit requires an available evidence catalog");
+  }
+  return availableEvidence.map((evidence, evidenceIndex) => {
+    if (!evidence.referenceId.trim() || references.has(evidence.referenceId)) {
+      semanticContractViolation("ALEX_FIT_EVIDENCE_CATALOG_INVALID", "Alex Fit evidence identifiers must be nonempty and unique");
+    }
+    references.add(evidence.referenceId);
+    return { ...evidence, evidenceIndex };
+  });
+}
+
+export function createSemanticAlexFitTransportSchema(
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const catalog = alexFitEvidenceCatalog(availableEvidence);
+  const indexes = z.array(z.number().int().min(0).max(catalog.length - 1));
+  const finding = supportedAlignmentFindingSchema.omit({ evidenceReferences: true })
+    .extend({ evidenceIndexes: indexes.min(1) }).strict();
+  const unknown = companyAlignmentUnknownSchema.omit({ evidenceReferences: true })
+    .extend({ evidenceIndexes: indexes }).strict();
+  const experience = z.union([
+    z.object({ relationship: z.enum(["DIRECT", "RELATED", "TRANSFERABLE"]), explanation: requiredText, evidenceIndexes: indexes.min(1) }).strict(),
+    z.object({ relationship: z.enum(["UNSUPPORTED", "UNKNOWN"]), explanation: requiredText, evidenceIndexes: indexes }).strict(),
+  ]);
+  const workStyle = z.union([
+    z.object({ area: requiredText, alignment: z.enum(["SUPPORTED", "CONCERN"]), explanation: requiredText, evidenceIndexes: indexes.min(1) }).strict(),
+    z.object({ area: requiredText, alignment: z.literal("UNKNOWN"), explanation: requiredText, evidenceIndexes: indexes }).strict(),
+  ]);
+  return semanticAlexFitTransportSchema.omit({ evidenceReferences: true }).extend({
+    experienceAlignment: experience,
+    workingStyleAlignment: z.array(workStyle),
+    careerStrategyAlignment: fitAssessmentSchema.omit({ evidenceReferences: true }).extend({ evidenceIndexes: indexes.min(1) }).strict(),
+    strongestMatches: z.array(finding),
+    partialMatches: z.array(finding),
+    concerns: z.array(finding),
+    strategicValue: z.array(finding),
+    unknowns: z.array(unknown),
+    evidenceIndexes: indexes.min(1),
+    contradictions: z.array(contradictionDraftSchema.omit({ evidenceReferencesA: true, evidenceReferencesB: true }).extend({
+      evidenceIndexesA: indexes.min(1), evidenceIndexesB: indexes.min(1),
+    }).strict()),
+  }).strict();
+}
+
+export function semanticAlexFitFromIndexedTransport(
+  value: unknown,
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const catalog = alexFitEvidenceCatalog(availableEvidence);
+  const transport = parseSemanticDomainResult({
+    schema: createSemanticAlexFitTransportSchema(availableEvidence), value,
+    code: "ALEX_FIT_EVIDENCE_INVALID",
+    message: "Alex Fit provider output must use valid available evidence indexes",
+  });
+  // Repeated citations have always been allowed within a finding. Preserve
+  // them; the complete stage selects distinct ledger records using its Set.
+  const restore = (indexes: number[]) => indexes.map(index => catalog[index].referenceId);
+  const restoreFinding = <T extends { evidenceIndexes: number[] }>(item: T) => {
+    const { evidenceIndexes, ...rest } = item;
+    return { ...rest, evidenceReferences: restore(evidenceIndexes) };
+  };
+  const { evidenceIndexes, ...rest } = transport;
+  return semanticAlexFitFromTransport({
+    ...rest,
+    experienceAlignment: restoreFinding(transport.experienceAlignment),
+    workingStyleAlignment: transport.workingStyleAlignment.map(restoreFinding),
+    careerStrategyAlignment: restoreFinding(transport.careerStrategyAlignment),
+    strongestMatches: transport.strongestMatches.map(restoreFinding),
+    partialMatches: transport.partialMatches.map(restoreFinding),
+    concerns: transport.concerns.map(restoreFinding),
+    strategicValue: transport.strategicValue.map(restoreFinding),
+    unknowns: transport.unknowns.map(restoreFinding),
+    evidenceReferences: restore(evidenceIndexes),
+    contradictions: transport.contradictions.map(({ evidenceIndexesA, evidenceIndexesB, ...contradiction }) => ({
+      ...contradiction, evidenceReferencesA: restore(evidenceIndexesA), evidenceReferencesB: restore(evidenceIndexesB),
+    })),
+  }, availableEvidence);
+}
 
 export function semanticAlexFitFromTransport(
   value: z.input<typeof semanticAlexFitTransportSchema>,

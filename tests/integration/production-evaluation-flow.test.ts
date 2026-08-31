@@ -2,12 +2,14 @@ import {
   createCustomerSuccessFixtureOperations,
   customerSuccessTestPreferences,
   toOrganizationalMaturityProviderTransport,
+  toAlexFitProviderTransport,
   toOpportunityPriorityProviderTransport,
   toResumeMatchProviderTransport,
   type ResumeMatchFixtureOptions,
 } from "../fixtures/customer-success";
 import type {
   SemanticReconstruction,
+  SemanticAlexFit,
   SemanticOrganizationalMaturity,
   SemanticResumeMatch,
   SemanticOpportunityPriority,
@@ -169,10 +171,11 @@ function deterministicTransport(input: {
           );
           break;
         case "customer-success.alex-fit":
-          output = await fixture.semanticOperations.evaluateAlexFit({
+          output = toAlexFitProviderTransport(await fixture.semanticOperations.evaluateAlexFit({
             ...trusted,
+            availableEvidence: trusted.availableEvidenceCatalog,
             preferences: payload.userConfiguration,
-          } as never);
+          } as never) as SemanticAlexFit, trusted.availableEvidenceCatalog as Parameters<typeof toAlexFitProviderTransport>[1]);
           break;
         case "customer-success.burnout-risk":
           output = await fixture.semanticOperations.evaluateBurnoutRisk({
