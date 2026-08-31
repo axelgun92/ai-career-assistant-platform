@@ -18,11 +18,170 @@ import {
   semanticOrganizationalMaturitySchema,
   semanticOrganizationalMaturityTransportSchema,
   responsibilityAreas,
+  ownershipFunctions,
+  organizationalMaturityRelationshipCatalog,
+  organizationalMaturityRelationshipTransport,
+  restoreOrganizationalMaturityRelationships,
 } from "@ai-career/customer-success";
 import { describe, expect, it } from "vitest";
 
 const availableEvidence = [{ referenceId: "e1", sourceType: "MANUAL" }];
 const evidenceReferences = ["e1"];
+
+describe("Organizational Maturity authoritative cross-functional relationships", () => {
+  const evidence = ["education-work", "marketing-work", "product-team", "sales-team", "support-team", "education-team", "handoff"].map(
+    (referenceId) => ({ referenceId, sourceType: "MANUAL" }),
+  );
+  const map = {
+    functions: {
+      education: { relationship: "OWNS" as const, evidenceReferences: ["education-work"] },
+      marketing: { relationship: "OWNS" as const, evidenceReferences: ["marketing-work"] },
+      product: { relationship: "COLLABORATES" as const, evidenceReferences: ["product-team"] },
+      sales: { relationship: "COLLABORATES" as const, evidenceReferences: ["sales-team"] },
+      support: { relationship: "COLLABORATES" as const, evidenceReferences: ["support-team"] },
+    },
+  };
+
+  it.each(ownershipFunctions)("does not turn owned %s work into a separate collaborator", (functionName) => {
+    const catalog = organizationalMaturityRelationshipCatalog({ functions: {
+      [functionName]: { relationship: "OWNS", evidenceReferences: ["education-work"] },
+    } }, evidence);
+    expect(catalog).toEqual([]);
+    expect(organizationalMaturityRelationshipTransport(catalog)).toEqual({
+      evidenceState: "NOT_ESTABLISHED", conclusion: null, evidenceReferences: [],
+    });
+  });
+
+  it("keeps Product/Sales/Support collaboration while excluding owned Education/Marketing", () => {
+    const catalog = organizationalMaturityRelationshipCatalog(map, evidence);
+    expect(catalog.map((entry) => entry.function)).toEqual(["sales", "support", "product"]);
+    const dimension = organizationalMaturityRelationshipTransport(catalog);
+    expect(dimension.conclusion).toBe("Cross-functional relationships: collaborates with Sales; collaborates with Support; collaborates with Product.");
+    expect(dimension.evidenceReferences).toEqual(["sales-team", "support-team", "product-team"]);
+    expect(map.functions.education.relationship).toBe("OWNS");
+  });
+
+  it.each(["COLLABORATES", "SHARES", "HANDS_OFF_TO", "RECEIVES_FROM"] as const)(
+    "preserves explicit %s relationships without recasting every relationship as collaboration", (relationship) => {
+      const catalog = organizationalMaturityRelationshipCatalog({ functions: {
+        education: { relationship, evidenceReferences: ["education-team"] },
+      } }, evidence);
+      expect(catalog[0]?.relationship).toBe(relationship);
+      expect(organizationalMaturityRelationshipTransport(catalog).conclusion).toContain("Education");
+      if (relationship !== "COLLABORATES") expect(organizationalMaturityRelationshipTransport(catalog).conclusion).not.toContain("collaborates");
+    },
+  );
+
+  it("allows owned education responsibilities alongside an independently evidenced Education collaborator", () => {
+    const responsibilities = responsibilityMapWithRenewals("UNKNOWN");
+    responsibilities.areas.education = { prominence: "PRIMARY", ownership: "OWNS", evidenceReferences: ["education-work"] };
+    const catalog = organizationalMaturityRelationshipCatalog({ functions: {
+      education: { relationship: "COLLABORATES", evidenceReferences: ["education-team"] },
+    } }, evidence);
+    const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilities, catalog);
+    const candidate = validOrganizationalMaturity();
+    const transport = { ...candidate, ownershipAndCrossFunctionalDesign: {
+      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: organizationalMaturityRelationshipTransport(catalog),
+    } };
+    expect(schema.safeParse(transport).success).toBe(true);
+    expect(responsibilities.areas.education.ownership).toBe("OWNS");
+  });
+
+  it("requires resolvable relationship evidence and does not turn unclear boundaries into supported absence", () => {
+    expect(() => organizationalMaturityRelationshipCatalog({ functions: {
+      education: { relationship: "COLLABORATES", evidenceReferences: ["missing"] },
+    } }, evidence)).toThrow("authoritative relationship evidence");
+    expect(() => organizationalMaturityRelationshipCatalog({ functions: {
+      education: { relationship: "COLLABORATES", evidenceReferences: [] },
+    } }, evidence)).toThrow();
+    expect(organizationalMaturityRelationshipCatalog({ functions: {
+      education: { relationship: "UNCLEAR_BOUNDARIES", evidenceReferences: ["education-work"] },
+    } }, evidence)).toEqual([]);
+  });
+
+  it("rejects unsupported collaborators and ownership-only evidence in the request-specific schema", () => {
+    const catalog = organizationalMaturityRelationshipCatalog(map, evidence);
+    const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilityMapWithRenewals("UNKNOWN"), catalog);
+    const candidate = validOrganizationalMaturity();
+    const dimension = organizationalMaturityRelationshipTransport(catalog);
+    const make = (replacement: unknown) => ({ ...candidate, ownershipAndCrossFunctionalDesign: {
+      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: replacement,
+    } });
+    expect(schema.safeParse(make(dimension)).success).toBe(true);
+    expect(schema.safeParse(make({ ...dimension, conclusion: "Collaborates with Education and Marketing." })).success).toBe(false);
+    expect(schema.safeParse(make({ ...dimension, evidenceReferences: ["education-work"] })).success).toBe(false);
+    expect(schema.safeParse(make({ ...dimension, evidenceReferences: [] })).success).toBe(false);
+    expect(schema.safeParse(make({ ...dimension, evidenceState: "SUPPORTED_ABSENT" })).success).toBe(false);
+    expect(schema.safeParse(make({ ...dimension, conclusion: null })).success).toBe(false);
+  });
+
+  it("forces Unknown when only owned work is known, without discarding education operating-model evidence", () => {
+    const catalog = organizationalMaturityRelationshipCatalog({ functions: { education: map.functions.education } }, evidence);
+    const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilityMapWithRenewals("UNKNOWN"), catalog);
+    const candidate = validOrganizationalMaturity();
+    const transport = { ...candidate, customerOperatingModel: {
+      ...candidate.customerOperatingModel, classification: "EDUCATION_FOCUSED", substantialPatterns: ["EDUCATION_FOCUSED"],
+    }, ownershipAndCrossFunctionalDesign: {
+      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: organizationalMaturityRelationshipTransport(catalog),
+    } };
+    expect(schema.safeParse(transport).success).toBe(true);
+    const domain = semanticOrganizationalMaturityFromTransport(schema.parse(transport), [...availableEvidence, ...evidence], responsibilityMapWithRenewals("UNKNOWN"), catalog);
+    expect(domain.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships).toEqual({ unknown: true, conclusion: null, evidenceReferences: [] });
+    expect(domain.unknowns.map((unknown) => unknown.code)).toContain("organizational-maturity-cross-functional-relationships-not-established");
+    expect(domain.weakSignals).toEqual([]);
+    expect(domain.customerOperatingModel.classification).toBe("EDUCATION_FOCUSED");
+    expect(domain.score).toBe(candidate.score);
+    expect(schema.safeParse({ ...transport, ownershipAndCrossFunctionalDesign: {
+      ...transport.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: supportedOwnershipDimension(),
+    } }).success).toBe(false);
+  });
+
+  it("retains weak-signal/Unknown rejection after authoritative relationship restoration", () => {
+    const catalog = organizationalMaturityRelationshipCatalog({ functions: { education: map.functions.education } }, evidence);
+    const candidate = validOrganizationalMaturity();
+    const transport = { ...candidate,
+      weakSignals: [supportedWeakSignal("CROSS_FUNCTIONAL_RELATIONSHIPS")],
+      ownershipAndCrossFunctionalDesign: { ...candidate.ownershipAndCrossFunctionalDesign,
+        crossFunctionalRelationships: organizationalMaturityRelationshipTransport(catalog) },
+    };
+    expect(() => semanticOrganizationalMaturityFromTransport(transport, [...availableEvidence, ...evidence], responsibilityMapWithRenewals("UNKNOWN"), catalog))
+      .toThrow("NOT_ESTABLISHED ownership dimension cannot also be a weak signal");
+  });
+
+  it("restores complete relationship evidence deterministically and projects legacy v5 without changing public shape or other fields", () => {
+    const catalog = organizationalMaturityRelationshipCatalog(map, evidence);
+    const candidate = validOrganizationalMaturity();
+    candidate.score = 58;
+    candidate.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships = {
+      evidenceState: "SUPPORTED_PRESENT", conclusion: "Collaborates with Product and Education through education ownership.", evidenceReferences: ["product-team", "education-work"],
+    };
+    const sources = [...availableEvidence, ...evidence];
+    const legacy = semanticOrganizationalMaturityFromTransport(candidate, sources);
+    const snapshot = structuredClone(legacy);
+    const projected = restoreOrganizationalMaturityRelationships(legacy, map, sources);
+    const converted = semanticOrganizationalMaturityFromTransport(candidate, sources, responsibilityMapWithRenewals("UNKNOWN"), catalog);
+    expect(projected).toEqual(converted);
+    expect(legacy).toEqual(snapshot);
+    expect(projected).toEqual({ ...legacy, ownershipAndCrossFunctionalDesign: {
+      ...legacy.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: {
+        unknown: false, conclusion: organizationalMaturityRelationshipTransport(catalog).conclusion,
+        evidenceReferences: ["sales-team", "support-team", "product-team"],
+      },
+    } });
+    expect(semanticOrganizationalMaturitySchema.parse(projected)).toEqual(projected);
+    expect(restoreOrganizationalMaturityRelationships(projected, map, sources)).toEqual(projected);
+    expect(organizationalMaturityDataSchema.parse({ evaluated: true, maturity: JSON.parse(JSON.stringify(projected)) })).toEqual({ evaluated: true, maturity: projected });
+    const dimension = organizationalMaturityRelationshipTransport(catalog);
+    const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilityMapWithRenewals("UNKNOWN"), catalog);
+    const repeated = { ...candidate, ownershipAndCrossFunctionalDesign: {
+      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: { ...dimension, evidenceReferences: ["product-team", "product-team"] },
+    } };
+    expect(semanticOrganizationalMaturityFromTransport(schema.parse(repeated), sources, responsibilityMapWithRenewals("UNKNOWN"), catalog)).toEqual(projected);
+    expect(() => restoreOrganizationalMaturityRelationships({ ...legacy, ownershipAndCrossFunctionalDesign: {
+      ...legacy.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: { ...legacy.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships, evidenceReferences: ["missing"] },
+    } }, map, sources)).toThrow("unavailable evidence");
+  });
+});
 const finding = { finding: "Supported finding.", evidenceReferences };
 
 function knownJobDimension() {

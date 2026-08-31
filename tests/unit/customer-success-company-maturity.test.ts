@@ -10,6 +10,7 @@ import {
   defineCustomerSuccessPreferences,
   existingCustomerSuccessFunctionSchema,
   organizationalMaturityBand,
+  organizationalMaturityRelationshipCatalog,
   organizationalMaturityDataSchema,
   productTypeClassificationSchema,
   semanticCompanyAlignmentSchema,
@@ -75,6 +76,7 @@ async function run(input?: {
   failOrganizationalMaturityOnce?: boolean;
   companyName?: string;
   preferences?: CustomerSuccessPreferences;
+  userProfile?: ReturnType<typeof createNeutralEvaluationSubject>["userProfile"];
 }) {
   const fixture = createCustomerSuccessFixtureOperations({
     scenario: input?.scenario ?? "strong",
@@ -84,6 +86,7 @@ async function run(input?: {
     failOrganizationalMaturityOnce: input?.failOrganizationalMaturityOnce,
   });
   const subject = createSubject({ companyName: input?.companyName });
+  if (input?.userProfile) subject.userProfile = input.userProfile;
   const repository = new InMemoryEvaluationRepository(subject);
   const executor = createEvaluationExecutor(repository);
   const evaluator = createCustomerSuccessEvaluator();
@@ -517,7 +520,8 @@ describe("Customer Success Organizational Maturity", () => {
               substantialPatterns: eligible ? ["RENEWAL_FOCUSED"] : ["ADOPTION_FOCUSED", "EDUCATION_FOCUSED"],
             };
             return {
-              outputText: JSON.stringify(toOrganizationalMaturityProviderTransport(candidate)),
+              outputText: JSON.stringify(toOrganizationalMaturityProviderTransport(candidate,
+                organizationalMaturityRelationshipCatalog(maturityInput.ownershipMap, maturityInput.availableEvidence))),
               providerRequestId: "fake-maturity-request",
               usage: { inputTokens: null, outputTokens: null, cachedInputTokens: null, reasoningTokens: null, totalTokens: null },
             };
@@ -936,5 +940,61 @@ describe("Customer Success Organizational Maturity", () => {
       "COMPLETED",
     ]);
     expect(recovered.evaluation.stageResults[3]?.attempt).toBe(2);
+  });
+
+  it("projects legacy Education overstatement at the complete stage and preserves all nine downstream contracts", async () => {
+    const base = createCustomerSuccessFixtureOperations({ scenario: "strong" }).semanticOperations;
+    let original: ReturnType<typeof semanticOrganizationalMaturitySchema.parse>;
+    const consumers: string[] = [];
+    const check = (name: string, value: unknown) => {
+      consumers.push(name);
+      const data = organizationalMaturityDataSchema.parse(value);
+      expect(data.evaluated).toBe(true);
+      if (!data.evaluated) throw new Error("Expected evaluated fixture");
+      const dimension = data.maturity.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships;
+      expect(dimension.conclusion).toContain("Product");
+      expect(dimension.conclusion).not.toContain("Education");
+      expect(dimension.unknown).toBe(false);
+      expect(data.maturity.score).toBe(original.score);
+    };
+    const { result } = await run({ userProfile: {
+      id: "11111111-1111-4111-8111-111111111111", version: 1,
+      data: {
+        label: "Synthetic downstream compatibility profile",
+        careerGoals: [{ id: "goal", statement: "Develop a software customer-success career." }],
+        experience: [{ id: "experience", statement: "Owned customer onboarding, adoption, education, and retention.", relationship: "DIRECT" }],
+        skills: [{ id: "skill", statement: "Customer enablement." }],
+        transferableSkills: [{ id: "transfer", statement: "Facilitation and communication." }],
+        workPreferences: [{ id: "work", statement: "Strategic documented work." }],
+        locationPreferences: null, compensationPreferences: null, companyPreferences: null, domainPreferences: null,
+      },
+    }, operations: {
+      ...base,
+      async reconstructJobDescription(input) {
+        const reconstruction = await base.reconstructJobDescription(input);
+        reconstruction.ownershipMap.functions.education = { relationship: "OWNS", evidenceReferences: ["actual-work"] };
+        return reconstruction;
+      },
+      async evaluateOrganizationalMaturity(input) {
+        original = semanticOrganizationalMaturitySchema.parse(await base.evaluateOrganizationalMaturity(input));
+        original.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships = {
+          unknown: false, conclusion: "Collaborates with Product and Education through education ownership.",
+          evidenceReferences: ["product-collaboration", "actual-work"],
+        };
+        return original;
+      },
+      async evaluateAlexFit(input) { check("alex-fit", input.organizationalMaturity); return base.evaluateAlexFit(input); },
+      async evaluateBurnoutRisk(input) { check("burnout-risk", input.organizationalMaturity); return base.evaluateBurnoutRisk(input); },
+      async evaluateResumeMatch(input) { check("resume-match", input.organizationalMaturity); return base.evaluateResumeMatch(input); },
+    } });
+    expect(consumers).toEqual(["alex-fit", "burnout-risk", "resume-match"]);
+    expect(result.evaluation.status).toBe("COMPLETED");
+    expect(result.evaluation.stageResults).toHaveLength(9);
+    expect(result.evaluation.stageResults.every((stage) => stage.status === "COMPLETED")).toBe(true);
+    expect(result.domainResult!.organizationalMaturity).toMatchObject({ evaluated: true, maturity: {
+      score: original!.score, customerOperatingModel: original!.customerOperatingModel,
+      positiveSignals: original!.positiveSignals, weakSignals: original!.weakSignals, contradictions: original!.contradictions,
+    } });
+    expect(original!.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships.conclusion).toContain("Education");
   });
 });

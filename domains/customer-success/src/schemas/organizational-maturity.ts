@@ -10,14 +10,18 @@ import {
   parseSemanticDomainResult,
   semanticContractViolation,
 } from "./semantic-contract";
-import { responsibilityMapSchema } from "./maps";
+import {
+  ownershipFunctions,
+  ownershipMapSchema,
+  responsibilityMapSchema,
+} from "./maps";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
 export const customerSuccessOrganizationalMaturityPromptVersion =
-  "cs-organizational-maturity-v5";
+  "cs-organizational-maturity-v6";
 
 export const organizationalMaturityOperatingModelRules = {
   renewalFocused:
@@ -86,6 +90,8 @@ export const organizationalMaturityCalibration = {
   ],
   collaborationOwnershipRule:
     "Cross-functional collaboration must remain distinct from ownership of another function's work.",
+  functionalOwnershipRule:
+    "Ownership of functional work does not establish a separate collaborating team or stakeholder of the same name. Use the authoritative crossFunctionalRelationshipCatalog for named relationships, not OWNS or UNCLEAR_BOUNDARIES entries. Education, Marketing, or any other owned work may still support responsibility and operating-model conclusions. Preserve the catalog's distinctions between collaboration, shared work, and handoffs; do not infer healthy boundaries from a relationship's existence.",
   teamBoundariesRule:
     "Team boundaries require affirmative evidence of how responsibilities are divided between organizational teams or functions. A reporting line or collaboration with named functions alone does not establish team boundaries; explicit retained ownership, handoffs, or organizational separation may establish them.",
   weakSignalRules: [
@@ -125,6 +131,7 @@ export const organizationalMaturitySemanticInstructions = [
   `Unknown handling: ${organizationalMaturityCalibration.unknownRules.join(" ")}`,
   `Broad-responsibility interpretation: ${organizationalMaturityCalibration.broadResponsibilityRules.join(" ")}`,
   organizationalMaturityCalibration.collaborationOwnershipRule,
+  organizationalMaturityCalibration.functionalOwnershipRule,
   organizationalMaturityCalibration.teamBoundariesRule,
   organizationalMaturityOperatingModelRules.renewalFocused,
   `Weak-signal handling: ${organizationalMaturityCalibration.weakSignalRules.join(" ")}`,
@@ -476,6 +483,118 @@ export const semanticOrganizationalMaturityTransportSchema = z
   .object(semanticOrganizationalMaturityTransportShape)
   .strict();
 
+const relationshipDescriptions = {
+  SHARES: "shares work with",
+  COLLABORATES: "collaborates with",
+  HANDS_OFF_TO: "hands off to",
+  RECEIVES_FROM: "receives work from",
+} as const;
+
+const functionLabels = {
+  customerSuccess: "Customer Success",
+  sales: "Sales",
+  support: "Support",
+  product: "Product",
+  implementation: "Implementation",
+  education: "Education",
+  community: "Community",
+  marketing: "Marketing",
+  projectManagement: "Project Management",
+} as const;
+
+// The Responsibility Map can describe owned Education work while the Ownership
+// Map independently records collaboration with Education. OWNS alone is not a
+// relationship with another team. Do not reinterpret raw JD prose here.
+export function organizationalMaturityRelationshipCatalog(
+  ownershipMap: z.infer<typeof ownershipMapSchema>,
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  const map = ownershipMapSchema.parse(ownershipMap);
+  return ownershipFunctions.flatMap((functionName) => {
+    const entry = map.functions[functionName];
+    if (
+      !entry ||
+      entry.relationship === "OWNS" ||
+      entry.relationship === "UNCLEAR_BOUNDARIES"
+    ) return [];
+    assertSemanticEvidenceReferences({
+      references: entry.evidenceReferences,
+      availableEvidence,
+      code: "ORGANIZATIONAL_MATURITY_RELATIONSHIP_EVIDENCE_INVALID",
+      message: "Cross-functional relationships require available authoritative relationship evidence",
+    });
+    return [{
+      function: functionName,
+      relationship: entry.relationship,
+      evidenceReferences: [...new Set(entry.evidenceReferences)],
+    }];
+  });
+}
+
+type RelationshipCatalog = ReturnType<
+  typeof organizationalMaturityRelationshipCatalog
+>;
+
+export function organizationalMaturityRelationshipTransport(
+  catalog: RelationshipCatalog,
+) {
+  if (catalog.length === 0) return {
+    evidenceState: "NOT_ESTABLISHED" as const,
+    conclusion: null,
+    evidenceReferences: [] as string[],
+  };
+  const relationships = catalog.map((entry) =>
+    `${relationshipDescriptions[entry.relationship]} ${functionLabels[entry.function]}`,
+  );
+  return {
+    evidenceState: "SUPPORTED_PRESENT" as const,
+    conclusion: `Cross-functional relationships: ${relationships.join("; ")}.`,
+    evidenceReferences: [...new Set(catalog.flatMap((entry) => entry.evidenceReferences))],
+  };
+}
+
+// Also usable to project an already-validated historical result without a new
+// semantic call or a persisted-contract migration. No score or other dimension
+// is recalculated, and the source object is not mutated.
+export function restoreOrganizationalMaturityRelationships(
+  maturity: z.infer<typeof semanticOrganizationalMaturitySchema>,
+  ownershipMap: z.infer<typeof ownershipMapSchema>,
+  availableEvidence: AvailableSemanticEvidence[],
+) {
+  assertSemanticEvidenceReferences({
+    references:
+      maturity.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships.evidenceReferences,
+    availableEvidence,
+    code: "ORGANIZATIONAL_MATURITY_EVIDENCE_INVALID",
+    message: "Organizational Maturity references unavailable evidence",
+  });
+  const dimension = organizationalMaturityRelationshipTransport(
+    organizationalMaturityRelationshipCatalog(ownershipMap, availableEvidence),
+  );
+  const code = "organizational-maturity-cross-functional-relationships-not-established";
+  const unknowns = maturity.unknowns.filter((unknown) => unknown.code !== code);
+  if (dimension.evidenceState === "NOT_ESTABLISHED") {
+    unknowns.push({
+      code,
+      description: "Cross-functional relationship design is not established by the available evidence.",
+      materiality: "This limits completeness of the ownership and cross-functional design assessment.",
+      evidenceReferences: [],
+    });
+  }
+  return semanticOrganizationalMaturitySchema.parse({
+    ...maturity,
+    unknowns,
+    ownershipAndCrossFunctionalDesign: {
+      ...maturity.ownershipAndCrossFunctionalDesign,
+      crossFunctionalRelationships: {
+        conclusion: dimension.conclusion,
+        unknown: dimension.evidenceState === "NOT_ESTABLISHED",
+        evidenceReferences: dimension.evidenceReferences,
+      },
+    },
+  });
+}
+
 type ResponsibilityMap = z.infer<typeof responsibilityMapSchema>;
 
 function hasMaterialRenewalResponsibility(responsibilityMap: ResponsibilityMap) {
@@ -512,12 +631,35 @@ const nonRenewalMaturityTransportSchema =
 
 export function createSemanticOrganizationalMaturityTransportSchema(
   responsibilityMap: ResponsibilityMap,
+  relationshipCatalog?: RelationshipCatalog,
 ) {
   // Resolve the input-dependent rule before generation. Other patterns retain
   // their existing semantic meaning and choice space; ownership is not a gate.
-  return hasMaterialRenewalResponsibility(responsibilityMap)
+  const schema = hasMaterialRenewalResponsibility(responsibilityMap)
     ? semanticOrganizationalMaturityTransportSchema
     : nonRenewalMaturityTransportSchema;
+  // The context-free schema remains available for historical transport parsing.
+  // Production always supplies the validated, request-specific catalog.
+  if (relationshipCatalog === undefined) return schema;
+  const dimension = organizationalMaturityRelationshipTransport(relationshipCatalog);
+  const references = dimension.evidenceReferences;
+  const dimensionSchema = dimension.evidenceState === "NOT_ESTABLISHED"
+    ? z.object({
+        evidenceState: z.literal("NOT_ESTABLISHED"),
+        conclusion: z.null(),
+        evidenceReferences: evidenceReferences.max(0),
+      }).strict()
+    : z.object({
+        evidenceState: z.literal("SUPPORTED_PRESENT"),
+        conclusion: z.literal(dimension.conclusion),
+        evidenceReferences: z.array(z.enum(references as [string, ...string[]])).min(1),
+      }).strict();
+  return schema.extend({
+    ownershipAndCrossFunctionalDesign:
+      schema.shape.ownershipAndCrossFunctionalDesign.extend({
+        crossFunctionalRelationships: dimensionSchema,
+      }),
+  });
 }
 
 export function assertCustomerOperatingModelResponsibilitySupport(
@@ -544,6 +686,7 @@ export function semanticOrganizationalMaturityFromTransport(
   value: z.input<typeof semanticOrganizationalMaturityTransportSchema>,
   availableEvidence: AvailableSemanticEvidence[],
   responsibilityMap?: ResponsibilityMap,
+  relationshipCatalog?: RelationshipCatalog,
 ) {
   const transport = semanticOrganizationalMaturityTransportSchema.parse(value);
   if (
@@ -563,7 +706,19 @@ export function semanticOrganizationalMaturityFromTransport(
       responsibilityMap,
     );
   }
-  const transportDesign = transport.ownershipAndCrossFunctionalDesign;
+  assertSemanticEvidenceReferences({
+    references:
+      transport.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships.evidenceReferences,
+    availableEvidence,
+    code: "ORGANIZATIONAL_MATURITY_EVIDENCE_INVALID",
+    message: "Organizational Maturity references unavailable evidence",
+  });
+  const transportDesign = {
+    ...transport.ownershipAndCrossFunctionalDesign,
+    ...(relationshipCatalog === undefined ? {} : {
+      crossFunctionalRelationships: organizationalMaturityRelationshipTransport(relationshipCatalog),
+    }),
+  };
   const missingInformationConclusion =
     /\b(?:missing|not (?:described|stated|specified|provided|available|established|evidenced)|no (?:evidence|information|details?|description|mention)|absence of (?:evidence|information|details?|description)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;
   const toDomainDimension = (

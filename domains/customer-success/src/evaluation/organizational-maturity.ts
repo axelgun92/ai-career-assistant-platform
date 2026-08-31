@@ -10,6 +10,7 @@ import {
   organizationalMaturityBand,
   organizationalMaturityDataSchema,
   semanticOrganizationalMaturitySchema,
+  restoreOrganizationalMaturityRelationships,
   type OrganizationalMaturityData,
 } from "../schemas/organizational-maturity";
 import {
@@ -74,17 +75,21 @@ export function createOrganizationalMaturityStage() {
       const reconstruction =
         context.domainData.reconstruction ?? hardFilters.reconstruction;
       context.domainData.reconstruction = reconstruction;
-      const maturity = semanticOrganizationalMaturitySchema.parse(
-        await context.domainData.semanticOperations.evaluateOrganizationalMaturity(
-          {
-            responsibilityMap: reconstruction.responsibilityMap,
-            requirementMap: reconstruction.requirements,
-            ownershipMap: reconstruction.ownershipMap,
-            jobEvaluation,
-            companyAlignment,
-            availableEvidence: reconstruction.evidence,
-          },
+      const maturity = restoreOrganizationalMaturityRelationships(
+        semanticOrganizationalMaturitySchema.parse(
+          await context.domainData.semanticOperations.evaluateOrganizationalMaturity(
+            {
+              responsibilityMap: reconstruction.responsibilityMap,
+              requirementMap: reconstruction.requirements,
+              ownershipMap: reconstruction.ownershipMap,
+              jobEvaluation,
+              companyAlignment,
+              availableEvidence: reconstruction.evidence,
+            },
+          ),
         ),
+        reconstruction.ownershipMap,
+        reconstruction.evidence,
       );
       assertCustomerOperatingModelResponsibilitySupport(
         maturity.customerOperatingModel,

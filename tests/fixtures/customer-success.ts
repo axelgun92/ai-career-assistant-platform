@@ -1,6 +1,7 @@
 import {
   defineCustomerSuccessPreferences,
   ownershipFunctions,
+  organizationalMaturityRelationshipTransport,
   responsibilityAreas,
   type CustomerSuccessSemanticOperations,
   type SemanticCompanyAlignment,
@@ -173,6 +174,7 @@ const organizationalMaturityOwnershipDimensions = [
 
 export function toOrganizationalMaturityProviderTransport(
   maturity: SemanticOrganizationalMaturity,
+  relationshipCatalog?: Parameters<typeof organizationalMaturityRelationshipTransport>[0],
 ) {
   const design = maturity.ownershipAndCrossFunctionalDesign;
   const weakSignalAssessmentArea =
@@ -215,6 +217,9 @@ export function toOrganizationalMaturityProviderTransport(
     ownershipAndCrossFunctionalDesign: {
       summary: design.summary,
       ...dimensions,
+      ...(relationshipCatalog === undefined ? {} : {
+        crossFunctionalRelationships: organizationalMaturityRelationshipTransport(relationshipCatalog),
+      }),
       evidenceReferences: design.evidenceReferences,
     },
     weakSignals: maturity.weakSignals.map((signal) => ({
@@ -1833,6 +1838,7 @@ export function createCustomerSuccessFixtureTransport(input: {
             (await fixture.semanticOperations.evaluateOrganizationalMaturity(
               trusted as never,
             )) as SemanticOrganizationalMaturity,
+            trusted.crossFunctionalRelationshipCatalog as Parameters<typeof toOrganizationalMaturityProviderTransport>[1],
           );
           break;
         case "customer-success.alex-fit":

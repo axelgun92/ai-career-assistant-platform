@@ -6,6 +6,7 @@ import {
   customerSuccessJdReconstructionSchema,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
+  organizationalMaturityRelationshipCatalog,
   organizationalMaturityOperatingModelRules,
   semanticAlexFitSchema,
   semanticAlexFitTransportSchema,
@@ -492,6 +493,36 @@ function mixedAuthoritativeResumeMatchRequirements() {
 }
 
 describe("production semantic execution", () => {
+  it.each([false, true])("audits the relationship-constrained schema with known relationships %s", (known) => {
+    const reconstruction = semanticReconstructionFromTransport(validJdReconstructionTransport());
+    for (const renewalEligible of [false, true]) {
+      reconstruction.responsibilityMap.areas.renewals = {
+        prominence: renewalEligible ? "SUBSTANTIAL" : "UNKNOWN", ownership: "UNKNOWN",
+        evidenceReferences: renewalEligible ? ["jd-1"] : [],
+      };
+      const catalog = organizationalMaturityRelationshipCatalog({ functions: known ? {
+        product: { relationship: "COLLABORATES", evidenceReferences: ["jd-1"] },
+        education: { relationship: "OWNS", evidenceReferences: ["jd-1"] },
+      } : {} }, [{ referenceId: "jd-1", sourceType: "MANUAL" }]);
+      const { jsonSchema, violations } = auditOpenAiProviderSchema(
+        createSemanticOrganizationalMaturityTransportSchema(reconstruction.responsibilityMap, catalog),
+      );
+      expect(violations).toEqual([]);
+      const properties = jsonSchema.properties as Record<string, any>;
+      const dimension = properties.ownershipAndCrossFunctionalDesign.properties.crossFunctionalRelationships;
+      expect(dimension.properties.evidenceState.const).toBe(known ? "SUPPORTED_PRESENT" : "NOT_ESTABLISHED");
+      if (known) {
+        expect(dimension.properties.conclusion.const).toBe("Cross-functional relationships: collaborates with Product.");
+        expect(dimension.properties.evidenceReferences.items.enum ?? [dimension.properties.evidenceReferences.items.const]).toEqual(["jd-1"]);
+      } else {
+        expect(dimension.properties.conclusion.type).toBe("null");
+        expect(dimension.properties.evidenceReferences.maxItems).toBe(0);
+      }
+      const variants = properties.customerOperatingModel.anyOf;
+      for (const variant of variants) expect(variant.properties.substantialPatterns.items.enum.includes("RENEWAL_FOCUSED")).toBe(renewalEligible);
+    }
+  });
+
   it.each([
     ["JD Reconstruction", semanticReconstructionTransportSchema],
     ["Job Evaluation", semanticJobEvaluationTransportSchema],
@@ -2450,11 +2481,12 @@ describe("production semantic execution", () => {
     });
     await captureInvocation(operations.evaluateJob({} as never));
     await captureInvocation(operations.evaluateCompanyAlignment({} as never));
+    const maturityReconstruction = semanticReconstructionFromTransport(validJdReconstructionTransport());
     await captureInvocation(
       operations.evaluateOrganizationalMaturity({
-        responsibilityMap: semanticReconstructionFromTransport(
-          validJdReconstructionTransport(),
-        ).responsibilityMap,
+        responsibilityMap: maturityReconstruction.responsibilityMap,
+        ownershipMap: maturityReconstruction.ownershipMap,
+        availableEvidence: maturityReconstruction.evidence,
       } as never),
     );
     await captureInvocation(operations.evaluateAlexFit({} as never));
@@ -2482,20 +2514,21 @@ describe("production semantic execution", () => {
       "customer-success.opportunity-priority",
       "customer-success.ghost-job-risk",
     ]);
-    expect(captured.map((item) => item.schema)).toEqual([
+    expect(captured.map((item) => z.toJSONSchema(item.schema, { unrepresentable: "any" }))).toEqual([
       semanticReconstructionTransportSchema,
       semanticJobEvaluationTransportSchema,
       semanticCompanyAlignmentTransportSchema,
       createSemanticOrganizationalMaturityTransportSchema(
         semanticReconstructionFromTransport(validJdReconstructionTransport())
           .responsibilityMap,
+        organizationalMaturityRelationshipCatalog(maturityReconstruction.ownershipMap, maturityReconstruction.evidence),
       ),
       semanticAlexFitTransportSchema,
       semanticBurnoutRiskTransportSchema,
       semanticResumeMatchTransportSchema,
       semanticOpportunityPriorityTransportSchema,
       semanticGhostJobRiskTransportSchema,
-    ]);
+    ].map((schema) => z.toJSONSchema(schema, { unrepresentable: "any" })));
     expect(captured[0]?.untrustedSourceContent).toBe("UNTRUSTED-JD-INSTRUCTION");
     expect(JSON.stringify(captured[0]?.trustedContext)).not.toContain(
       "UNTRUSTED-JD-INSTRUCTION",
@@ -2568,6 +2601,11 @@ describe("production semantic execution", () => {
     expect(maturityOperation.domainInstructions).toContain(
       organizationalMaturityCalibration.collaborationOwnershipRule,
     );
+    expect(maturityOperation.domainInstructions).toContain(organizationalMaturityCalibration.functionalOwnershipRule);
+    expect(maturityOperation.trustedContext).toEqual(expect.objectContaining({
+      ownershipMap: maturityReconstruction.ownershipMap,
+      crossFunctionalRelationshipCatalog: organizationalMaturityRelationshipCatalog(maturityReconstruction.ownershipMap, maturityReconstruction.evidence),
+    }));
     expect(maturityOperation.domainInstructions).toContain(
       organizationalMaturityCalibration.teamBoundariesRule,
     );

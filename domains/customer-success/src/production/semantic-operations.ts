@@ -31,6 +31,7 @@ import {
   createSemanticOrganizationalMaturityTransportSchema,
   customerSuccessOrganizationalMaturityPromptVersion,
   organizationalMaturitySemanticInstructions,
+  organizationalMaturityRelationshipCatalog,
   semanticOrganizationalMaturityFromTransport,
 } from "../schemas/organizational-maturity";
 import {
@@ -137,18 +138,25 @@ export function createProductionCustomerSuccessSemanticOperations(
       );
     },
     async evaluateOrganizationalMaturity(input) {
+      const crossFunctionalRelationshipCatalog =
+        organizationalMaturityRelationshipCatalog(
+          input.ownershipMap,
+          input.availableEvidence,
+        );
       return semanticOrganizationalMaturityFromTransport(
         await operation(executor, {
           operationId: "customer-success.organizational-maturity",
           promptVersion: customerSuccessOrganizationalMaturityPromptVersion,
           schema: createSemanticOrganizationalMaturityTransportSchema(
             input.responsibilityMap,
+            crossFunctionalRelationshipCatalog,
           ),
           instructions: organizationalMaturitySemanticInstructions,
-          trustedContext: input,
+          trustedContext: { ...input, crossFunctionalRelationshipCatalog },
         }),
         input.availableEvidence,
         input.responsibilityMap,
+        crossFunctionalRelationshipCatalog,
       );
     },
     async evaluateAlexFit(input) {

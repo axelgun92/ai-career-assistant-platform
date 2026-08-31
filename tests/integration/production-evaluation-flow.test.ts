@@ -165,6 +165,7 @@ function deterministicTransport(input: {
             (await fixture.semanticOperations.evaluateOrganizationalMaturity(
               trusted as never,
             )) as SemanticOrganizationalMaturity,
+            trusted.crossFunctionalRelationshipCatalog as Parameters<typeof toOrganizationalMaturityProviderTransport>[1],
           );
           break;
         case "customer-success.alex-fit":
