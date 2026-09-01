@@ -749,6 +749,21 @@ function evidenceResultViolation(message: string): never {
   });
 }
 
+function assertUniqueRequirementProfileEvidenceReferences(
+  transport: z.infer<typeof semanticResumeMatchTransportSchema>,
+) {
+  for (const assessment of transport.requirementAssessments) {
+    if (
+      new Set(assessment.profileEvidenceReferences).size !==
+      assessment.profileEvidenceReferences.length
+    ) {
+      evidenceResultViolation(
+        `Requirement ${assessment.requirementIndex} profile evidence contains duplicate evidence references`,
+      );
+    }
+  }
+}
+
 type AvailableResumeMatchEvidence = Pick<
   EvidenceRecordDraft,
   "referenceId" | "sourceType" | "evidenceType"
@@ -1124,6 +1139,7 @@ export function semanticResumeMatchFromTransport(
     semanticResumeMatchJobEvidenceCatalog(availableEvidence),
 ): SemanticResumeMatch {
   const transport = semanticResumeMatchTransportSchema.parse(value);
+  assertUniqueRequirementProfileEvidenceReferences(transport);
   const requirements = requirementMapSchema.parse(authoritativeRequirementMap);
   const assessmentsByIndex = new Map<
     number,

@@ -1233,6 +1233,52 @@ describe("production semantic execution", () => {
     expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
   });
 
+  it("rejects duplicate requirement profile evidence before authoritative restoration", () => {
+    const transport = validResumeMatchTransport();
+    transport.requirementAssessments[0]!.profileEvidenceReferences = [
+      "profile-1",
+      "profile-1",
+    ];
+
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        transport,
+        authoritativeResumeMatchRequirements(),
+        resumeMatchAvailableEvidence(),
+      ),
+    ).toThrowError(expect.objectContaining({
+      code: "RESUME_MATCH_EVIDENCE_INVALID",
+      message:
+        "Requirement 0 profile evidence contains duplicate evidence references",
+      retryable: false,
+    }));
+  });
+
+  it("accepts multiple unique profile references from the selected evidence-basis catalog", () => {
+    const evidence = resumeMatchAvailableEvidence([
+      {
+        referenceId: "profile-transferable-2",
+        sourceType: "USER_PROFILE",
+        evidenceType: "TRANSFERABLE_SKILL",
+      },
+    ]);
+    const schema = createSemanticResumeMatchTransportSchema(evidence);
+    const transport = validResumeMatchTransport();
+    transport.requirementAssessments[0]!.profileEvidenceReferences = [
+      "profile-1",
+      "profile-transferable-2",
+    ];
+
+    expect(schema.safeParse(transport).success).toBe(true);
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        transport,
+        authoritativeResumeMatchRequirements(),
+        evidence,
+      ),
+    ).not.toThrow();
+  });
+
   it("restores Actual Responsibility Seniority exclusively from job-side evidence indexes", () => {
     const transport = validResumeMatchTransport();
     transport.effectiveSeniority.actualResponsibilitySeniority = {
