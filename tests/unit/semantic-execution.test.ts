@@ -29,6 +29,7 @@ import {
   semanticReconstructionFromTransport,
   semanticReconstructionTransportSchema,
   semanticResumeMatchFromTransport,
+  createSemanticResumeMatchTransportSchema,
   semanticResumeMatchRequirementsForProvider,
   resumeMatchDataSchema,
   semanticResumeMatchSchema,
@@ -1119,6 +1120,117 @@ describe("production semantic execution", () => {
     expect(
       JSON.stringify(effectiveSeniorityProperties.actualResponsibilitySeniority),
     ).not.toContain('"evidenceReferences"');
+  });
+
+  it("structurally limits each Resume Match evidence basis to compatible profile evidence", () => {
+    const evidence = resumeMatchAvailableEvidence([
+      { referenceId: "profile-direct", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
+      { referenceId: "profile-related", sourceType: "USER_PROFILE", evidenceType: "RELATED_EXPERIENCE" },
+      { referenceId: "profile-skill", sourceType: "USER_PROFILE", evidenceType: "SKILL" },
+      { referenceId: "profile-certification", sourceType: "USER_PROFILE", evidenceType: "SKILL" },
+      { referenceId: "profile-coursework", sourceType: "USER_PROFILE", evidenceType: "SKILL" },
+      { referenceId: "profile-self-study", sourceType: "USER_PROFILE", evidenceType: "SKILL" },
+      { referenceId: "profile-tool", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_SKILL" },
+      { referenceId: "profile-preference", sourceType: "USER_PROFILE", evidenceType: "WORK_PREFERENCE" },
+    ]);
+    const schema = createSemanticResumeMatchTransportSchema(evidence);
+    const withAssessment = (input: {
+      classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
+      basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE" | "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE" | "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE";
+      reference: string;
+    }) => {
+      const value = structuredClone(validResumeMatchTransport());
+      value.requirementAssessments = [{
+        ...value.requirementAssessments[0]!,
+        classification: input.classification,
+        matchedExperienceSpecificity:
+          input.classification === "TRANSFERABLE_MATCH"
+            ? "TRANSFERABLE"
+            : input.classification === "PARTIAL_MATCH"
+              ? "RELATED_CUSTOMER_RELATIONSHIP"
+              : "BROADER_CUSTOMER_FACING",
+        experienceEvidenceBasis: input.basis,
+        supportedPortion: input.classification === "PARTIAL_MATCH" ? "A supported portion." : null,
+        unsupportedPortion: input.classification === "PARTIAL_MATCH" ? "An unsupported portion." : null,
+        profileEvidenceReferences: [input.reference],
+      } as never];
+      return value;
+    };
+
+    expect(schema.safeParse(withAssessment({
+      classification: "STRONG_MATCH",
+      basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      reference: "profile-direct",
+    })).success).toBe(true);
+    expect(schema.safeParse(withAssessment({
+      classification: "PARTIAL_MATCH",
+      basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      reference: "profile-related",
+    })).success).toBe(true);
+    expect(schema.safeParse(withAssessment({
+      classification: "TRANSFERABLE_MATCH",
+      basis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      reference: "profile-1",
+    })).success).toBe(true);
+    expect(schema.safeParse(withAssessment({
+      classification: "PARTIAL_MATCH",
+      basis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+      reference: "profile-skill",
+    })).success).toBe(true);
+    for (const readinessReference of [
+      "profile-certification",
+      "profile-coursework",
+      "profile-self-study",
+      "profile-tool",
+    ]) {
+      expect(schema.safeParse(withAssessment({
+        classification: "PARTIAL_MATCH",
+        basis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+        reference: readinessReference,
+      })).success).toBe(true);
+    }
+
+    for (const incompatibleReference of [
+      "profile-1",
+      "profile-skill",
+      "profile-certification",
+      "profile-coursework",
+      "profile-self-study",
+      "profile-tool",
+      "profile-preference",
+    ]) {
+      expect(schema.safeParse(withAssessment({
+        classification: "STRONG_MATCH",
+        basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+        reference: incompatibleReference,
+      })).success).toBe(false);
+    }
+    expect(schema.safeParse(withAssessment({
+      classification: "STRONG_MATCH",
+      basis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+      reference: "profile-direct",
+    })).success).toBe(false);
+    expect(schema.safeParse(withAssessment({
+      classification: "STRONG_MATCH",
+      basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      reference: "profile-missing",
+    })).success).toBe(false);
+  });
+
+  it("removes positive Resume Match basis variants whose compatible profile catalog is empty", () => {
+    const schema = createSemanticResumeMatchTransportSchema(
+      resumeMatchAvailableEvidence(),
+    );
+    const value = structuredClone(validResumeMatchTransport());
+    value.requirementAssessments = [{
+      ...value.requirementAssessments[0]!,
+      classification: "STRONG_MATCH",
+      matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+      experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+    } as never];
+    expect(schema.safeParse(value).success).toBe(false);
+    expect(schema.safeParse(validResumeMatchTransport()).success).toBe(true);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
   });
 
   it("restores Actual Responsibility Seniority exclusively from job-side evidence indexes", () => {
@@ -2739,7 +2851,7 @@ describe("production semantic execution", () => {
       ),
       createSemanticAlexFitTransportSchema([{ referenceId: "jd-evidence", sourceType: "MANUAL" }]),
       createSemanticBurnoutRiskTransportSchema(maturityReconstruction.evidence),
-      semanticResumeMatchTransportSchema,
+      createSemanticResumeMatchTransportSchema(resumeMatchAvailableEvidence()),
       semanticOpportunityPriorityTransportSchema,
       semanticGhostJobRiskTransportSchema,
     ].map((schema) => z.toJSONSchema(schema, { unrepresentable: "any" })));

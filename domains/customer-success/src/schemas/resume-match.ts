@@ -459,6 +459,133 @@ const transportRequirementAssessmentSchema = z.union([
   transportUnknownRequirementSchema,
 ]);
 
+const directOrRelatedWorkEvidenceTypes = new Set([
+  "DIRECT_EXPERIENCE",
+  "RELATED_EXPERIENCE",
+]);
+const broaderOrTransferableWorkEvidenceTypes = new Set([
+  "DIRECT_EXPERIENCE",
+  "RELATED_EXPERIENCE",
+  "TRANSFERABLE_EXPERIENCE",
+  "TRANSFERABLE_SKILL",
+]);
+const requirementRelevantKnowledgeEvidenceTypes = new Set([
+  "SKILL",
+  "TRANSFERABLE_SKILL",
+]);
+
+type PositiveExperienceEvidenceBasis = Exclude<
+  z.infer<typeof requirementExperienceEvidenceBasisSchema>,
+  "NO_SUPPORTING_EXPERIENCE" | "UNKNOWN"
+>;
+
+function providerProfileReferenceSchema(referenceIds: string[]) {
+  const uniqueReferenceIds = [...new Set(referenceIds)];
+  if (uniqueReferenceIds.length === 0) {
+    return null;
+  }
+  return z.array(
+    uniqueReferenceIds.length === 1
+      ? z.literal(uniqueReferenceIds[0]!)
+      : z.enum(uniqueReferenceIds as [string, ...string[]]),
+  ).min(1);
+}
+
+function profileReferencesForEvidenceBasis(
+  availableEvidence: AvailableResumeMatchEvidence[],
+  evidenceBasis: PositiveExperienceEvidenceBasis,
+) {
+  const eligibleTypes =
+    evidenceBasis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
+      ? directOrRelatedWorkEvidenceTypes
+      : evidenceBasis === "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
+        ? broaderOrTransferableWorkEvidenceTypes
+        : requirementRelevantKnowledgeEvidenceTypes;
+  return availableEvidence
+    .filter(
+      (evidence) =>
+        evidence.sourceType === "USER_PROFILE" &&
+        eligibleTypes.has(evidence.evidenceType),
+    )
+    .map((evidence) => evidence.referenceId);
+}
+
+function createPositiveRequirementSchema(input: {
+  classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
+  evidenceBasis: PositiveExperienceEvidenceBasis;
+  profileReferenceIds: string[];
+}) {
+  const profileEvidenceReferences = providerProfileReferenceSchema(
+    input.profileReferenceIds,
+  );
+  if (!profileEvidenceReferences) {
+    return null;
+  }
+  const matchedExperienceSpecificity =
+    input.classification === "STRONG_MATCH"
+      ? z.enum([
+          "DIRECT_SAAS_CUSTOMER_SUCCESS",
+          "DIRECT_CUSTOMER_SUCCESS",
+          "RELATED_CUSTOMER_RELATIONSHIP",
+          "BROADER_CUSTOMER_FACING",
+        ])
+      : input.classification === "TRANSFERABLE_MATCH"
+        ? z.literal("TRANSFERABLE")
+        : matchedExperienceSpecificitySchema;
+  return z
+    .object({
+      ...transportNonGapFields,
+      classification: z.literal(input.classification),
+      matchedExperienceSpecificity,
+      experienceEvidenceBasis: z.literal(input.evidenceBasis),
+      supportedPortion:
+        input.classification === "PARTIAL_MATCH"
+          ? transportRequiredText
+          : transportOptionalText,
+      unsupportedPortion:
+        input.classification === "PARTIAL_MATCH"
+          ? transportRequiredText
+          : transportOptionalText,
+      profileEvidenceReferences,
+    })
+    .strict();
+}
+
+function providerRequirementAssessmentSchema(
+  availableEvidence: AvailableResumeMatchEvidence[],
+) {
+  const bases: PositiveExperienceEvidenceBasis[] = [
+    "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+    "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+    "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
+  ];
+  const positiveSchemas = bases.flatMap((evidenceBasis) => {
+    const profileReferenceIds = profileReferencesForEvidenceBasis(
+      availableEvidence,
+      evidenceBasis,
+    );
+    const classifications = (
+      evidenceBasis === "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
+        ? ["STRONG_MATCH", "TRANSFERABLE_MATCH", "PARTIAL_MATCH"]
+        : ["STRONG_MATCH", "PARTIAL_MATCH"]
+    ) as Array<"STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH">;
+    return classifications
+      .map((classification) =>
+        createPositiveRequirementSchema({
+          classification,
+          evidenceBasis,
+          profileReferenceIds,
+        }),
+      )
+      .filter((schema): schema is NonNullable<typeof schema> => schema !== null);
+  });
+  return z.union([
+    ...positiveSchemas,
+    transportGapRequirementSchema,
+    transportUnknownRequirementSchema,
+  ] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]) as unknown as typeof transportRequirementAssessmentSchema;
+}
+
 const transportSeniorityDimensionSchema = z
   .object({
     summary: transportRequiredText,
@@ -572,6 +699,16 @@ export const semanticResumeMatchTransportSchema = z
     contradictions: z.array(transportContradictionSchema),
   })
   .strict();
+
+export function createSemanticResumeMatchTransportSchema(
+  availableEvidence: AvailableResumeMatchEvidence[],
+) {
+  return semanticResumeMatchTransportSchema.extend({
+    requirementAssessments: z.array(
+      providerRequirementAssessmentSchema(availableEvidence),
+    ),
+  });
+}
 
 export function semanticResumeMatchRequirementsForProvider(
   authoritativeRequirementMap: z.input<typeof requirementMapSchema>,
