@@ -553,7 +553,20 @@ function createPositiveRequirementSchema(input: {
 
 function providerRequirementAssessmentSchema(
   availableEvidence: AvailableResumeMatchEvidence[],
+  requirementMap?: z.infer<typeof requirementMapSchema>,
 ) {
+  const industryIndexes = requirementMap?.flatMap((requirement, index) =>
+    requirement.category === "INDUSTRY" ? [index] : [],
+  );
+  const otherIndexes = requirementMap?.flatMap((requirement, index) =>
+    requirement.category !== "INDUSTRY" ? [index] : [],
+  );
+  const constrainIndexes = (schema: z.ZodObject, indexes: number[]) =>
+    schema.extend({
+      requirementIndex: indexes.length === 1
+        ? z.literal(indexes[0]!)
+        : z.union(indexes.map((index) => z.literal(index)) as [z.ZodLiteral<number>, z.ZodLiteral<number>, ...z.ZodLiteral<number>[]]),
+    });
   const bases: PositiveExperienceEvidenceBasis[] = [
     "DIRECT_OR_RELATED_WORK_EXPERIENCE",
     "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
@@ -579,8 +592,27 @@ function providerRequirementAssessmentSchema(
       )
       .filter((schema): schema is NonNullable<typeof schema> => schema !== null);
   });
+  const ordinarySchemas = otherIndexes === undefined
+    ? positiveSchemas
+    : otherIndexes.length === 0
+      ? []
+      : positiveSchemas.map((schema) => constrainIndexes(schema, otherIndexes));
+  const specializedSchemas = industryIndexes?.length
+    ? (["STRONG_MATCH", "PARTIAL_MATCH"] as const).flatMap((classification) => {
+        const schema = createPositiveRequirementSchema({
+          classification,
+          evidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+          profileReferenceIds: availableEvidence.filter((evidence) =>
+            evidence.sourceType === "USER_PROFILE" &&
+            evidence.evidenceType === "DIRECT_EXPERIENCE",
+          ).map((evidence) => evidence.referenceId),
+        });
+        return schema ? [constrainIndexes(schema, industryIndexes)] : [];
+      })
+    : [];
   return z.union([
-    ...positiveSchemas,
+    ...ordinarySchemas,
+    ...specializedSchemas,
     transportGapRequirementSchema,
     transportUnknownRequirementSchema,
   ] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]) as unknown as typeof transportRequirementAssessmentSchema;
@@ -702,10 +734,16 @@ export const semanticResumeMatchTransportSchema = z
 
 export function createSemanticResumeMatchTransportSchema(
   availableEvidence: AvailableResumeMatchEvidence[],
+  authoritativeRequirementMap?: z.input<typeof requirementMapSchema>,
 ) {
   return semanticResumeMatchTransportSchema.extend({
     requirementAssessments: z.array(
-      providerRequirementAssessmentSchema(availableEvidence),
+      providerRequirementAssessmentSchema(
+        availableEvidence,
+        authoritativeRequirementMap === undefined
+          ? undefined
+          : requirementMapSchema.parse(authoritativeRequirementMap),
+      ),
     ),
   });
 }
@@ -1140,6 +1178,22 @@ export function semanticResumeMatchFromTransport(
 ): SemanticResumeMatch {
   const transport = semanticResumeMatchTransportSchema.parse(value);
   assertUniqueRequirementProfileEvidenceReferences(transport);
+  // JSON Schema cannot compare sibling arrays. Reject before constructing any
+  // domain result; never repair the model's evidence selection by substitution.
+  const knownEvidence = new Map(availableEvidence.map((item) => [item.referenceId, item]));
+  for (const assessment of transport.requirementAssessments) {
+    const label = `Requirement ${assessment.requirementIndex}`;
+    assertEvidenceReferences({ references: assessment.jdEvidenceReferences, knownEvidence, label: `${label} JD evidence`, expectedSource: "JD" });
+    assertEvidenceReferences({ references: assessment.profileEvidenceReferences, knownEvidence, label: `${label} profile evidence`, expectedSource: "PROFILE" });
+    const decisionReferences = "decisionImpactEvidence" in assessment
+      ? mergeBothSourceEvidence(assessment.decisionImpactEvidence)
+      : assessment.decisionImpactEvidenceReferences;
+    assertEvidenceReferences({ references: decisionReferences, knownEvidence, label: `${label} decision-impact evidence` });
+    const assessmentReferences = new Set([...assessment.jdEvidenceReferences, ...assessment.profileEvidenceReferences]);
+    if (decisionReferences.some((reference) => !assessmentReferences.has(reference))) {
+      evidenceResultViolation(`${label} decision-impact evidence is outside its assessment evidence`);
+    }
+  }
   const requirements = requirementMapSchema.parse(authoritativeRequirementMap);
   const assessmentsByIndex = new Map<
     number,
@@ -1163,6 +1217,18 @@ export function semanticResumeMatchFromTransport(
       );
     }
     const authoritative = requirements[assessment.requirementIndex]!;
+    if (
+      authoritative.category === "INDUSTRY" &&
+      ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(assessment.classification) &&
+      (assessment.experienceEvidenceBasis !== "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
+        !assessment.profileEvidenceReferences.some((reference) =>
+          knownEvidence.get(reference)?.evidenceType === "DIRECT_EXPERIENCE",
+        ))
+    ) {
+      evidenceResultViolation(
+        `Requirement ${assessment.requirementIndex} treats a specialized industry requirement as a match without direct specialized-experience evidence`,
+      );
+    }
     if (
       assessment.decisionImpact === "DECISIVE_DISQUALIFIER" &&
       authoritative.strength !== "REQUIRED"

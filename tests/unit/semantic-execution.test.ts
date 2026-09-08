@@ -1279,6 +1279,80 @@ describe("production semantic execution", () => {
     ).not.toThrow();
   });
 
+  it("rejects decision evidence outside its own assessment before domain construction", () => {
+    const evidence = resumeMatchAvailableEvidence([
+      { referenceId: "other-profile", sourceType: "USER_PROFILE" },
+    ]);
+    for (const decisive of [false, true]) {
+      const value = decisive ? decisiveResumeMatchTransport() : validResumeMatchTransport();
+      const assessment = value.requirementAssessments[0]!;
+      if ("decisionImpactEvidence" in assessment) {
+        assessment.decisionImpactEvidence.profileEvidenceReferences = ["other-profile"];
+      } else {
+        assessment.decisionImpactEvidenceReferences = ["other-profile"];
+      }
+      expect(semanticResumeMatchTransportSchema.safeParse(value).success).toBe(true);
+      // An empty authoritative map would otherwise fail identity restoration.
+      expect(() => semanticResumeMatchFromTransport(value, [], evidence)).toThrowError(
+        expect.objectContaining({
+          code: "RESUME_MATCH_EVIDENCE_INVALID",
+          message: "Requirement 0 decision-impact evidence is outside its assessment evidence",
+          retryable: false,
+        }),
+      );
+    }
+    expect(() => semanticResumeMatchFromTransport(
+      decisiveResumeMatchTransport(), authoritativeResumeMatchRequirements(), evidence,
+    )).not.toThrow();
+  });
+
+  it("binds industry match variants to authoritative requirement indexes and direct evidence", () => {
+    for (const specialization of ["nonprofit", "SMB", "fundraising/development", "SaaS"]) {
+      const requirements = [
+        ...authoritativeResumeMatchRequirements(),
+        { ...authoritativeResumeMatchRequirements()[0]!, category: "INDUSTRY" as const,
+          requirement: `${specialization} experience`, strength: "NICE_TO_HAVE" as const },
+      ];
+      const evidence = resumeMatchAvailableEvidence([
+        { referenceId: "specialized-direct", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
+      ]);
+      const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+      const value = validResumeMatchTransport();
+      const partial = {
+        ...value.requirementAssessments[0]!, requirementIndex: 1,
+        classification: "PARTIAL_MATCH" as const,
+        supportedPortion: "Some relevant work is supported.",
+        unsupportedPortion: "The remaining scope is unsupported.",
+      };
+      value.requirementAssessments = [partial];
+      expect(schema.safeParse(value).success).toBe(false);
+      value.requirementAssessments = [{ ...partial, requirementIndex: 0 }];
+      expect(schema.safeParse(value).success).toBe(true);
+      value.requirementAssessments = [{ ...partial,
+        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+        profileEvidenceReferences: ["specialized-direct"],
+      }];
+      expect(schema.safeParse(value).success).toBe(true);
+      const emptyDirectCatalog = createSemanticResumeMatchTransportSchema(
+        resumeMatchAvailableEvidence(), requirements,
+      );
+      expect(emptyDirectCatalog.safeParse(value).success).toBe(false);
+      expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+      expect(auditOpenAiProviderSchema(emptyDirectCatalog).violations).toEqual([]);
+
+      const gap = decisiveResumeMatchTransport();
+      const { decisionImpactEvidence: _decisionEvidence, ...gapFields } = gap.requirementAssessments[0]!;
+      const nonDecisiveGap = { ...gapFields, requirementIndex: 1,
+        decisionImpact: "NON_DECISIVE" as const, decisionImpactEvidenceReferences: [],
+      };
+      expect(schema.safeParse({ ...value, requirementAssessments: [nonDecisiveGap] }).success).toBe(true);
+      expect(schema.safeParse({ ...value, requirementAssessments: [{ ...partial,
+        classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
+        experienceEvidenceBasis: "UNKNOWN", profileEvidenceReferences: [],
+      }] }).success).toBe(true);
+    }
+  });
+
   it("restores Actual Responsibility Seniority exclusively from job-side evidence indexes", () => {
     const transport = validResumeMatchTransport();
     transport.effectiveSeniority.actualResponsibilitySeniority = {
@@ -2897,7 +2971,7 @@ describe("production semantic execution", () => {
       ),
       createSemanticAlexFitTransportSchema([{ referenceId: "jd-evidence", sourceType: "MANUAL" }]),
       createSemanticBurnoutRiskTransportSchema(maturityReconstruction.evidence),
-      createSemanticResumeMatchTransportSchema(resumeMatchAvailableEvidence()),
+      createSemanticResumeMatchTransportSchema(resumeMatchAvailableEvidence(), authoritativeResumeMatchRequirements()),
       semanticOpportunityPriorityTransportSchema,
       semanticGhostJobRiskTransportSchema,
     ].map((schema) => z.toJSONSchema(schema, { unrepresentable: "any" })));
