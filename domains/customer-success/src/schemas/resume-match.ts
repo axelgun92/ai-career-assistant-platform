@@ -492,6 +492,60 @@ type PositiveExperienceEvidenceBasis = Exclude<
   "NO_SUPPORTING_EXPERIENCE" | "UNKNOWN"
 >;
 
+type ResumeMatchRequirement = z.infer<typeof requirementMapSchema>[number];
+type PositiveRequirementClassification =
+  | "STRONG_MATCH"
+  | "TRANSFERABLE_MATCH"
+  | "PARTIAL_MATCH";
+
+const positiveSpecificities = {
+  STRONG_MATCH: [
+    "DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS",
+    "RELATED_CUSTOMER_RELATIONSHIP", "BROADER_CUSTOMER_FACING",
+  ],
+  TRANSFERABLE_MATCH: ["TRANSFERABLE"],
+  // Preserve the existing partial-match contract, including unresolved portions.
+  PARTIAL_MATCH: matchedExperienceSpecificitySchema.options,
+} satisfies Record<PositiveRequirementClassification, string[]>;
+
+function requiresDirectWork(requirement?: ResumeMatchRequirement) {
+  return requirement?.category === "INDUSTRY" || (
+    requirement?.category === "EXPERIENCE" &&
+    /\bdirect\b/i.test(
+      [requirement.requirement, requirement.experienceSpecificity].filter(Boolean).join(" "),
+    )
+  );
+}
+
+// One relational model for provider variants and pre-domain conversion checks.
+// These are the existing evidence rules, not a new interpretation of match quality.
+function positiveRequirementCompatibility(
+  classification: PositiveRequirementClassification,
+  specificity: string,
+  basis: PositiveExperienceEvidenceBasis,
+  requirement?: ResumeMatchRequirement,
+): ReadonlySet<string> {
+  if (
+    !(positiveSpecificities[classification] as readonly string[]).includes(specificity) ||
+    (classification === "TRANSFERABLE_MATCH" && basis !== "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE") ||
+    (requirement?.category === "EXPERIENCE" && basis === "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE")
+  ) return new Set();
+  if (
+    requiresDirectWork(requirement) ||
+    specificity === "DIRECT_CUSTOMER_SUCCESS" ||
+    specificity === "DIRECT_SAAS_CUSTOMER_SUCCESS"
+  ) {
+    return basis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
+      ? new Set(["DIRECT_EXPERIENCE"])
+      : new Set();
+  }
+  return basis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
+    ? directOrRelatedWorkEvidenceTypes
+    : basis === "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
+      ? broaderOrTransferableWorkEvidenceTypes
+      : requirementRelevantKnowledgeEvidenceTypes;
+}
+
 function providerProfileReferenceSchema(referenceIds: string[]) {
   const uniqueReferenceIds = [...new Set(referenceIds)];
   if (uniqueReferenceIds.length === 0) {
@@ -504,29 +558,11 @@ function providerProfileReferenceSchema(referenceIds: string[]) {
   ).min(1);
 }
 
-function profileReferencesForEvidenceBasis(
-  availableEvidence: AvailableResumeMatchEvidence[],
-  evidenceBasis: PositiveExperienceEvidenceBasis,
-) {
-  const eligibleTypes =
-    evidenceBasis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
-      ? directOrRelatedWorkEvidenceTypes
-      : evidenceBasis === "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
-        ? broaderOrTransferableWorkEvidenceTypes
-        : requirementRelevantKnowledgeEvidenceTypes;
-  return availableEvidence
-    .filter(
-      (evidence) =>
-        evidence.sourceType === "USER_PROFILE" &&
-        eligibleTypes.has(evidence.evidenceType),
-    )
-    .map((evidence) => evidence.referenceId);
-}
-
 function createPositiveRequirementSchema(input: {
   classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
   evidenceBasis: PositiveExperienceEvidenceBasis;
   profileReferenceIds: string[];
+  specificities: string[];
 }) {
   const profileEvidenceReferences = providerProfileReferenceSchema(
     input.profileReferenceIds,
@@ -534,17 +570,7 @@ function createPositiveRequirementSchema(input: {
   if (!profileEvidenceReferences) {
     return null;
   }
-  const matchedExperienceSpecificity =
-    input.classification === "STRONG_MATCH"
-      ? z.enum([
-          "DIRECT_SAAS_CUSTOMER_SUCCESS",
-          "DIRECT_CUSTOMER_SUCCESS",
-          "RELATED_CUSTOMER_RELATIONSHIP",
-          "BROADER_CUSTOMER_FACING",
-        ])
-      : input.classification === "TRANSFERABLE_MATCH"
-        ? z.literal("TRANSFERABLE")
-        : matchedExperienceSpecificitySchema;
+  const matchedExperienceSpecificity = z.enum(input.specificities as [string, ...string[]]);
   return z
     .object({
       ...providerNonGapFields,
@@ -625,14 +651,10 @@ function providerRequirementAssessmentSchema(
   availableEvidence: AvailableResumeMatchEvidence[],
   requirementMap?: z.infer<typeof requirementMapSchema>,
 ) {
-  const industryIndexes = requirementMap?.flatMap((requirement, index) =>
-    requirement.category === "INDUSTRY" ? [index] : [],
-  );
-  const otherIndexes = requirementMap?.flatMap((requirement, index) =>
-    requirement.category !== "INDUSTRY" ? [index] : [],
-  );
-  const constrainIndexes = (schema: z.ZodObject, indexes: number[]) =>
-    schema.extend({
+  const semanticRequirements = requirementMap?.map((requirement, index) => ({ requirement, index }))
+    .filter(({ requirement }) => !requirement.ambiguity.isAmbiguous);
+  const constrainIndexes = (schema: z.ZodObject, indexes?: number[]) =>
+    indexes === undefined ? schema : schema.extend({
       requirementIndex: indexes.length === 1
         ? z.literal(indexes[0]!)
         : z.union(indexes.map((index) => z.literal(index)) as [z.ZodLiteral<number>, z.ZodLiteral<number>, ...z.ZodLiteral<number>[]]),
@@ -642,50 +664,65 @@ function providerRequirementAssessmentSchema(
     "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
     "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
   ];
-  const positiveSchemas = bases.flatMap((evidenceBasis) => {
-    const profileReferenceIds = profileReferencesForEvidenceBasis(
-      availableEvidence,
-      evidenceBasis,
-    );
-    const classifications = (
-      evidenceBasis === "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
-        ? ["STRONG_MATCH", "TRANSFERABLE_MATCH", "PARTIAL_MATCH"]
-        : ["STRONG_MATCH", "PARTIAL_MATCH"]
-    ) as Array<"STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH">;
-    return classifications
-      .map((classification) =>
-        createPositiveRequirementSchema({
-          classification,
-          evidenceBasis,
-          profileReferenceIds,
-        }),
-      )
-      .filter((schema): schema is NonNullable<typeof schema> => schema !== null);
-  });
-  const ordinarySchemas = otherIndexes === undefined
-    ? positiveSchemas
-    : otherIndexes.length === 0
-      ? []
-      : positiveSchemas.map((schema) => constrainIndexes(schema, otherIndexes));
-  const specializedSchemas = industryIndexes?.length
-    ? (["STRONG_MATCH", "PARTIAL_MATCH"] as const).flatMap((classification) => {
-        const schema = createPositiveRequirementSchema({
-          classification,
-          evidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
-          profileReferenceIds: availableEvidence.filter((evidence) =>
-            evidence.sourceType === "USER_PROFILE" &&
-            evidence.evidenceType === "DIRECT_EXPERIENCE",
-          ).map((evidence) => evidence.referenceId),
-        });
-        return schema ? [constrainIndexes(schema, industryIndexes)] : [];
-      })
-    : [];
-  return z.union([
-    ...ordinarySchemas,
-    ...specializedSchemas,
-    providerGapRequirementSchema,
-    providerUnknownRequirementSchema,
-  ] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]);
+  // Group equal eligibility rules, avoiding a repeated schema for every JD row.
+  const groups = new Map<string, { requirement?: ResumeMatchRequirement; indexes?: number[] }>();
+  if (semanticRequirements === undefined) groups.set("unspecified", {});
+  for (const { requirement, index } of semanticRequirements ?? []) {
+    const key = requiresDirectWork(requirement) ? "direct" : requirement.category === "EXPERIENCE" ? "experience" : "ordinary";
+    const group = groups.get(key) ?? { requirement, indexes: [] };
+    group.indexes!.push(index);
+    groups.set(key, group);
+  }
+  const schemas: z.ZodObject[] = [];
+  for (const group of groups.values()) {
+    for (const evidenceBasis of bases) {
+      for (const classification of Object.keys(positiveSpecificities) as PositiveRequirementClassification[]) {
+        const catalogs = new Map<string, { specificities: string[]; profileReferenceIds: string[] }>();
+        for (const specificity of positiveSpecificities[classification]) {
+          const types = positiveRequirementCompatibility(classification, specificity, evidenceBasis, group.requirement);
+          const profileReferenceIds = availableEvidence.filter((evidence) =>
+            evidence.sourceType === "USER_PROFILE" && types.has(evidence.evidenceType),
+          ).map((evidence) => evidence.referenceId);
+          if (profileReferenceIds.length === 0) continue;
+          const key = JSON.stringify(profileReferenceIds);
+          const catalog = catalogs.get(key) ?? { specificities: [], profileReferenceIds };
+          catalog.specificities.push(specificity);
+          catalogs.set(key, catalog);
+        }
+        for (const catalog of catalogs.values()) {
+          const schema = createPositiveRequirementSchema({ classification, evidenceBasis, ...catalog });
+          if (schema) schemas.push(constrainIndexes(schema, group.indexes));
+        }
+      }
+    }
+  }
+  const allIndexes = semanticRequirements?.map(({ index }) => index);
+  const profileReferences = providerProfileReferenceSchema(availableEvidence
+    .filter((evidence) => evidence.sourceType === "USER_PROFILE")
+    .map((evidence) => evidence.referenceId));
+  const jdReferences = providerProfileReferenceSchema(availableEvidence
+    .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
+    .map((evidence) => evidence.referenceId));
+  for (const schema of providerGapRequirementSchema.options) {
+    const indexes = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER"
+      ? semanticRequirements?.filter(({ requirement }) => requirement.strength === "REQUIRED").map(({ index }) => index)
+      : allIndexes;
+    if (profileReferences && (indexes === undefined || indexes.length > 0)) {
+      schemas.push(constrainIndexes(schema.extend({ profileEvidenceReferences: profileReferences }), indexes));
+    }
+  }
+  if (allIndexes === undefined || allIndexes.length > 0) {
+    schemas.push(constrainIndexes(providerUnknownRequirementSchema.extend({
+      profileEvidenceReferences: profileReferences ? z.array(profileReferences.element) : transportEvidenceReferences.max(0),
+    }), allIndexes));
+  }
+  const sourcedSchemas = schemas.map((schema) => schema.extend({
+    jdEvidenceReferences: jdReferences ?? transportEvidenceReferences.min(1),
+  }));
+  // The containing array is bounded to zero for an entirely ambiguous/empty map.
+  return sourcedSchemas.length === 0 ? providerUnknownRequirementSchema
+    : sourcedSchemas.length === 1 ? sourcedSchemas[0]!
+      : z.union([sourcedSchemas[0]!, sourcedSchemas[1]!, ...sourcedSchemas.slice(2)]);
 }
 
 const transportSeniorityDimensionSchema = z
@@ -806,15 +843,13 @@ export function createSemanticResumeMatchTransportSchema(
   availableEvidence: AvailableResumeMatchEvidence[],
   authoritativeRequirementMap?: z.input<typeof requirementMapSchema>,
 ) {
+  const requirements = authoritativeRequirementMap === undefined
+    ? undefined : requirementMapSchema.parse(authoritativeRequirementMap);
+  const assessments = z.array(providerRequirementAssessmentSchema(availableEvidence, requirements));
   return semanticResumeMatchTransportSchema.extend({
-    requirementAssessments: z.array(
-      providerRequirementAssessmentSchema(
-        availableEvidence,
-        authoritativeRequirementMap === undefined
-          ? undefined
-          : requirementMapSchema.parse(authoritativeRequirementMap),
-      ),
-    ),
+    requirementAssessments: requirements?.every((requirement) => requirement.ambiguity.isAmbiguous) ||
+      !availableEvidence.some((evidence) => evidence.sourceType !== "USER_PROFILE")
+      ? assessments.max(0) : assessments,
   });
 }
 
@@ -1380,6 +1415,32 @@ export function semanticResumeMatchFromTransport(
       evidenceResultViolation(
         `Requirement ${assessment.requirementIndex} treats a specialized industry requirement as a match without direct specialized-experience evidence`,
       );
+    }
+    if (
+      assessment.classification === "STRONG_MATCH" ||
+      assessment.classification === "TRANSFERABLE_MATCH" ||
+      assessment.classification === "PARTIAL_MATCH"
+    ) {
+      const compatibleTypes = positiveRequirementCompatibility(
+        assessment.classification,
+        assessment.matchedExperienceSpecificity,
+        assessment.experienceEvidenceBasis,
+        authoritative,
+      );
+      if (
+        compatibleTypes.size === 0 ||
+        assessment.profileEvidenceReferences.length === 0 ||
+        assessment.profileEvidenceReferences.some((reference) =>
+          !compatibleTypes.has(knownEvidence.get(reference)!.evidenceType),
+        )
+      ) {
+        evidenceResultViolation(
+          `Requirement ${assessment.requirementIndex} has incompatible classification, specificity, evidence basis or profile evidence`,
+        );
+      }
+    }
+    if (!assessment.jdEvidenceReferences.some((reference) => authoritative.evidenceReferences.includes(reference))) {
+      evidenceResultViolation(`Requirement ${assessment.requirementIndex} is not connected to authoritative JD evidence`);
     }
     if (
       assessment.decisionImpact === "DECISIVE_DISQUALIFIER" &&

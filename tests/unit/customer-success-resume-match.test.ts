@@ -1,6 +1,7 @@
 import {
   createCustomerSuccessDomainData,
   createCustomerSuccessEvaluator,
+  createSemanticResumeMatchTransportSchema,
   effectiveLevelFitSchema,
   requirementMatchClassificationSchema,
   resumeMatchBand,
@@ -197,11 +198,27 @@ describe("Customer Success Resume Match pipeline", () => {
               requirement,
           ),
         });
-        const transport = toResumeMatchProviderTransport(
+        const legacyTransport = toResumeMatchProviderTransport(
           domain,
           providerRequirements,
           input.availableEvidence,
         );
+        const transport = {
+          ...legacyTransport,
+          requirementAssessments: legacyTransport.requirementAssessments.map((assessment) => {
+            if ("decisionImpactEvidence" in assessment && assessment.decisionImpactEvidence) {
+              const { decisionImpactEvidence, ...fields } = assessment;
+              return { ...fields, decisionImpactEvidence: {
+                jdEvidenceIndexes: decisionImpactEvidence.jdEvidenceReferences.map((reference) => assessment.jdEvidenceReferences.indexOf(reference)),
+                profileEvidenceIndexes: decisionImpactEvidence.profileEvidenceReferences.map((reference) => assessment.profileEvidenceReferences.indexOf(reference)),
+              } };
+            }
+            const { decisionImpactEvidenceReferences, ...fields } = assessment;
+            const localEvidence = [...assessment.jdEvidenceReferences, ...assessment.profileEvidenceReferences];
+            return { ...fields, decisionImpactEvidenceIndexes: (decisionImpactEvidenceReferences ?? []).map((reference) => localEvidence.indexOf(reference)) };
+          }),
+        };
+        expect(createSemanticResumeMatchTransportSchema(input.availableEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
         return semanticResumeMatchFromTransport(
           transport,
           input.requirementMap,

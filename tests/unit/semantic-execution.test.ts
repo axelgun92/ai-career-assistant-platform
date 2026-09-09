@@ -557,6 +557,124 @@ function mixedAuthoritativeResumeMatchRequirements() {
 }
 
 describe("production semantic execution", () => {
+  it("binds the complete positive classification/specificity/basis/type matrix", () => {
+    const types = ["DIRECT_EXPERIENCE", "RELATED_EXPERIENCE", "TRANSFERABLE_EXPERIENCE", "TRANSFERABLE_SKILL", "SKILL"];
+    const evidence = resumeMatchAvailableEvidence(types.map((evidenceType) => ({
+      referenceId: `profile-${evidenceType}`, sourceType: "USER_PROFILE", evidenceType,
+    })));
+    const requirements = [{ ...authoritativeResumeMatchRequirements()[0]!, category: "CAPABILITY" as const }];
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+    const specifics = ["DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS", "RELATED_CUSTOMER_RELATIONSHIP", "BROADER_CUSTOMER_FACING", "TRANSFERABLE", "UNSUPPORTED", "UNKNOWN"];
+    const bases = ["DIRECT_OR_RELATED_WORK_EXPERIENCE", "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE", "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE"];
+    for (const classification of ["STRONG_MATCH", "TRANSFERABLE_MATCH", "PARTIAL_MATCH"]) {
+      for (const specificity of specifics) for (const basis of bases) for (const type of types) {
+        const classificationAllows = classification === "STRONG_MATCH" ? specifics.slice(0, 4).includes(specificity)
+          : classification === "TRANSFERABLE_MATCH" ? specificity === "TRANSFERABLE" && basis === bases[1] : true;
+        const direct = specifics.slice(0, 2).includes(specificity);
+        const typeAllows = direct ? basis === bases[0] && type === "DIRECT_EXPERIENCE"
+          : basis === bases[0] ? ["DIRECT_EXPERIENCE", "RELATED_EXPERIENCE"].includes(type)
+            : basis === bases[1] ? type !== "SKILL" : ["SKILL", "TRANSFERABLE_SKILL"].includes(type);
+        const value = { ...validProviderResumeMatchTransport(), requirementAssessments: [{
+          ...validProviderResumeMatchTransport().requirementAssessments[0]!,
+          classification, matchedExperienceSpecificity: specificity, experienceEvidenceBasis: basis,
+          profileEvidenceReferences: [`profile-${type}`],
+          supportedPortion: "Supported portion", unsupportedPortion: "Unsupported portion",
+        }] };
+        const expected = classificationAllows && typeAllows;
+        expect(schema.safeParse(value).success, `${classification}/${specificity}/${basis}/${type}`).toBe(expected);
+        if (expected) expect(() => semanticResumeMatchFromTransport(value, requirements, evidence)).not.toThrow();
+      }
+    }
+  });
+
+  it("binds direct-work, employment and decisive-gap eligibility to authoritative requirements", () => {
+    const base = authoritativeResumeMatchRequirements()[0]!;
+    const requirements = [
+      base,
+      { ...base, requirement: "Direct customer work", strength: "PREFERRED" as const },
+      { ...base, requirement: "Nonprofit specialization", category: "INDUSTRY" as const, strength: "NICE_TO_HAVE" as const },
+      { ...base, category: "TOOL" as const, strength: "IDEAL" as const },
+      { ...base, ambiguity: { isAmbiguous: true, explanation: "Undefined criterion" } },
+    ];
+    const evidence = resumeMatchAvailableEvidence([
+      { referenceId: "direct", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
+      { referenceId: "skill", sourceType: "USER_PROFILE", evidenceType: "SKILL" },
+    ]);
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+    const value = validProviderResumeMatchTransport();
+    const assessment = value.requirementAssessments[0]!;
+    const accepts = (fields: Record<string, unknown>) => schema.safeParse({ ...value, requirementAssessments: [{ ...assessment, ...fields }] }).success;
+    for (const index of [0, 1, 2]) {
+      expect(accepts({ requirementIndex: index, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
+        experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidenceReferences: ["skill"], supportedPortion: "Knowledge", unsupportedPortion: "Employment" })).toBe(false);
+    }
+    expect(accepts({ requirementIndex: 3, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
+      experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidenceReferences: ["skill"], supportedPortion: "Knowledge", unsupportedPortion: "Unverified use" })).toBe(true);
+    for (const index of [1, 2]) {
+      expect(accepts({ requirementIndex: index })).toBe(false);
+      expect(accepts({ requirementIndex: index, classification: "STRONG_MATCH", matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE", profileEvidenceReferences: ["direct"] })).toBe(true);
+    }
+    for (const index of [0, 1, 2, 3, 4, 5]) {
+      const gap = decisiveProviderResumeMatchTransport();
+      gap.requirementAssessments[0]!.requirementIndex = index;
+      expect(schema.safeParse(gap).success).toBe(index === 0);
+      const { decisionImpactEvidence: _evidence, ...fields } = gap.requirementAssessments[0]!;
+      for (const decisionImpact of ["NON_DECISIVE", "MATERIAL_UNCERTAINTY"]) {
+        expect(schema.safeParse({ ...gap, requirementAssessments: [{ ...fields, decisionImpact, decisionImpactEvidenceIndexes: [] }] }).success).toBe(index < 4);
+      }
+      expect(accepts({ requirementIndex: index, classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
+        experienceEvidenceBasis: "UNKNOWN", profileEvidenceReferences: [] })).toBe(index < 4);
+    }
+    const allAmbiguous = [requirements[4]!];
+    const emptySchema = createSemanticResumeMatchTransportSchema(evidence, allAmbiguous);
+    expect(emptySchema.safeParse(value).success).toBe(false);
+    expect(emptySchema.safeParse({ ...value, requirementAssessments: [] }).success).toBe(true);
+    expect(auditOpenAiProviderSchema(emptySchema).violations).toEqual([]);
+  });
+
+  it("rejects legacy direct-specificity incompatibility before domain construction", () => {
+    const value = validResumeMatchTransport();
+    const incompatible = { ...value, requirementAssessments: [{ ...value.requirementAssessments[0]!,
+      classification: "STRONG_MATCH", matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+    }] };
+    expect(semanticResumeMatchTransportSchema.safeParse(incompatible).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(incompatible, authoritativeResumeMatchRequirements(), resumeMatchAvailableEvidence())).toThrowError(
+      expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }),
+    );
+  });
+
+  it("keeps Unknown context and gap evidence source-safe, including empty catalogs", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    const schema = createSemanticResumeMatchTransportSchema(evidence, authoritativeResumeMatchRequirements());
+    const base = validProviderResumeMatchTransport();
+    const unknown = { ...base, requirementAssessments: [{ ...base.requirementAssessments[0]!,
+      classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN", experienceEvidenceBasis: "UNKNOWN",
+      profileEvidenceReferences: [] as string[],
+    }] };
+    expect(schema.safeParse(unknown).success).toBe(true);
+    // Contextual profile evidence is allowed for Unknown; it does not assert a match.
+    unknown.requirementAssessments[0]!.profileEvidenceReferences = ["profile-1"];
+    expect(schema.safeParse(unknown).success).toBe(true);
+    for (const reference of ["jd-1", "missing-profile"]) {
+      unknown.requirementAssessments[0]!.profileEvidenceReferences = [reference];
+      expect(schema.safeParse(unknown).success).toBe(false);
+      const gap = decisiveProviderResumeMatchTransport();
+      gap.requirementAssessments[0]!.profileEvidenceReferences = [reference];
+      expect(schema.safeParse(gap).success).toBe(false);
+    }
+    unknown.requirementAssessments[0]!.profileEvidenceReferences = [];
+    unknown.requirementAssessments[0]!.jdEvidenceReferences = ["profile-1"];
+    expect(schema.safeParse(unknown).success).toBe(false);
+    unknown.requirementAssessments[0]!.jdEvidenceReferences = ["jd-1"];
+    const noProfile = createSemanticResumeMatchTransportSchema(evidence.filter((item) => item.sourceType !== "USER_PROFILE"), authoritativeResumeMatchRequirements());
+    expect(noProfile.shape.requirementAssessments.safeParse(unknown.requirementAssessments).success).toBe(true);
+    expect(noProfile.shape.requirementAssessments.safeParse(decisiveProviderResumeMatchTransport().requirementAssessments).success).toBe(false);
+    expect(auditOpenAiProviderSchema(noProfile).violations).toEqual([]);
+  });
+
   it.each([false, true])("audits the relationship-constrained schema with known relationships %s", (known) => {
     const reconstruction = semanticReconstructionFromTransport(validJdReconstructionTransport());
     for (const renewalEligible of [false, true]) {
