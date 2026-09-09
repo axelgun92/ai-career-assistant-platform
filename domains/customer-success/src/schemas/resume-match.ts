@@ -349,6 +349,19 @@ const transportNonGapFields = {
   decisionImpactEvidenceReferences: transportEvidenceReferences,
 };
 
+// Provider-facing decision-impact evidence is assessment-local. OpenAI JSON
+// Schema cannot express a subset relationship between sibling arrays, so the
+// provider returns positions into the evidence it selected for this assessment
+// instead of independently selecting Core evidence identifiers again.
+const transportDecisionImpactEvidenceIndexes = z.array(
+  z.number().int().nonnegative(),
+);
+const providerNonGapFields = {
+  ...transportRequirementFields,
+  decisionImpact: z.literal("NON_DECISIVE"),
+  decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
+};
+
 const transportStrongRequirementSchema = z
   .object({
     ...transportNonGapFields,
@@ -534,7 +547,7 @@ function createPositiveRequirementSchema(input: {
         : matchedExperienceSpecificitySchema;
   return z
     .object({
-      ...transportNonGapFields,
+      ...providerNonGapFields,
       classification: z.literal(input.classification),
       matchedExperienceSpecificity,
       experienceEvidenceBasis: z.literal(input.evidenceBasis),
@@ -550,6 +563,63 @@ function createPositiveRequirementSchema(input: {
     })
     .strict();
 }
+
+const providerGapFields = {
+  ...transportRequirementFields,
+  classification: z.literal("GENUINE_GAP"),
+  matchedExperienceSpecificity: z.literal("UNSUPPORTED"),
+  experienceEvidenceBasis: z.literal("NO_SUPPORTING_EXPERIENCE"),
+  supportedPortion: transportOptionalText,
+  unsupportedPortion: transportOptionalText,
+  profileEvidenceReferences: transportEvidenceReferences.min(1),
+};
+
+const providerGapRequirementSchema = z.union([
+  z
+    .object({
+      ...providerGapFields,
+      decisionImpact: z.literal("DECISIVE_DISQUALIFIER"),
+      decisionImpactExplanation: transportRequiredText,
+      decisionImpactEvidence: z
+        .object({
+          jdEvidenceIndexes: transportDecisionImpactEvidenceIndexes.min(1),
+          profileEvidenceIndexes:
+            transportDecisionImpactEvidenceIndexes.min(1),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...providerGapFields,
+      decisionImpact: z.literal("MATERIAL_UNCERTAINTY"),
+      decisionImpactExplanation: transportRequiredText,
+      decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
+    })
+    .strict(),
+  z
+    .object({
+      ...providerGapFields,
+      decisionImpact: z.literal("NON_DECISIVE"),
+      decisionImpactExplanation: transportRequiredText,
+      decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
+    })
+    .strict(),
+]);
+
+const providerUnknownRequirementSchema = z
+  .object({
+    ...transportRequirementFields,
+    classification: z.literal("UNKNOWN"),
+    matchedExperienceSpecificity: z.literal("UNKNOWN"),
+    experienceEvidenceBasis: z.literal("UNKNOWN"),
+    decisionImpact: z.literal("NON_DECISIVE"),
+    decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
+    supportedPortion: transportOptionalText,
+    unsupportedPortion: transportOptionalText,
+    profileEvidenceReferences: transportEvidenceReferences,
+  })
+  .strict();
 
 function providerRequirementAssessmentSchema(
   availableEvidence: AvailableResumeMatchEvidence[],
@@ -613,9 +683,9 @@ function providerRequirementAssessmentSchema(
   return z.union([
     ...ordinarySchemas,
     ...specializedSchemas,
-    transportGapRequirementSchema,
-    transportUnknownRequirementSchema,
-  ] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]) as unknown as typeof transportRequirementAssessmentSchema;
+    providerGapRequirementSchema,
+    providerUnknownRequirementSchema,
+  ] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]]);
 }
 
 const transportSeniorityDimensionSchema = z
@@ -826,6 +896,80 @@ function evidenceReferencesFromIndexes(
     }
     return evidence.referenceId;
   });
+}
+
+function evidenceReferencesFromLocalIndexes(
+  indexes: number[],
+  assessmentEvidence: string[],
+  label: string,
+) {
+  if (new Set(indexes).size !== indexes.length) {
+    evidenceResultViolation(`${label} contains duplicate local evidence indexes`);
+  }
+  return indexes.map((index) => {
+    const reference = assessmentEvidence[index];
+    if (reference === undefined) {
+      evidenceResultViolation(`${label} references evidence outside its assessment`);
+    }
+    return reference;
+  });
+}
+
+type ProviderRequirementAssessment = {
+  requirementIndex: number;
+  jdEvidenceReferences: string[];
+  profileEvidenceReferences: string[];
+  decisionImpactEvidenceIndexes?: number[];
+  decisionImpactEvidence?: {
+    jdEvidenceIndexes: number[];
+    profileEvidenceIndexes: number[];
+  };
+  [key: string]: unknown;
+};
+
+function restoreAssessmentLocalDecisionImpactEvidence(input: unknown) {
+  const providerTransport = input as Record<string, unknown> & {
+    requirementAssessments: ProviderRequirementAssessment[];
+  };
+  return {
+    ...providerTransport,
+    requirementAssessments: providerTransport.requirementAssessments.map(
+      (assessment) => {
+        const label = `Requirement ${assessment.requirementIndex} decision-impact evidence`;
+        if (assessment.decisionImpactEvidence) {
+          const { decisionImpactEvidence, ...rest } = assessment;
+          return {
+            ...rest,
+            decisionImpactEvidence: {
+              jdEvidenceReferences: evidenceReferencesFromLocalIndexes(
+                decisionImpactEvidence.jdEvidenceIndexes,
+                assessment.jdEvidenceReferences,
+                `${label} JD evidence`,
+              ),
+              profileEvidenceReferences: evidenceReferencesFromLocalIndexes(
+                decisionImpactEvidence.profileEvidenceIndexes,
+                assessment.profileEvidenceReferences,
+                `${label} profile evidence`,
+              ),
+            },
+          };
+        }
+        const { decisionImpactEvidenceIndexes, ...rest } = assessment;
+        return {
+          ...rest,
+          decisionImpactEvidenceReferences:
+            evidenceReferencesFromLocalIndexes(
+              decisionImpactEvidenceIndexes ?? [],
+              [
+                ...assessment.jdEvidenceReferences,
+                ...assessment.profileEvidenceReferences,
+              ],
+              label,
+            ),
+        };
+      },
+    ),
+  };
 }
 
 function mergeBothSourceEvidence(input: {
@@ -1170,13 +1314,21 @@ function deterministicAmbiguousAssessment(
 }
 
 export function semanticResumeMatchFromTransport(
-  value: z.input<typeof semanticResumeMatchTransportSchema>,
+  value: unknown,
   authoritativeRequirementMap: z.input<typeof requirementMapSchema>,
   availableEvidence: AvailableResumeMatchEvidence[],
   jobEvidenceCatalog: ResumeMatchJobEvidenceCatalog =
     semanticResumeMatchJobEvidenceCatalog(availableEvidence),
 ): SemanticResumeMatch {
-  const transport = semanticResumeMatchTransportSchema.parse(value);
+  const providerResult = createSemanticResumeMatchTransportSchema(
+    availableEvidence,
+    authoritativeRequirementMap,
+  ).safeParse(value);
+  const transport = semanticResumeMatchTransportSchema.parse(
+    providerResult.success
+      ? restoreAssessmentLocalDecisionImpactEvidence(providerResult.data)
+      : value,
+  );
   assertUniqueRequirementProfileEvidenceReferences(transport);
   // JSON Schema cannot compare sibling arrays. Reject before constructing any
   // domain result; never repair the model's evidence selection by substitution.

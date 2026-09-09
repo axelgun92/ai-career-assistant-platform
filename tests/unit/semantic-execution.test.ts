@@ -424,6 +424,44 @@ function validResumeMatchTransport() {
   };
 }
 
+function validProviderResumeMatchTransport() {
+  const transport = validResumeMatchTransport();
+  const {
+    decisionImpactEvidenceReferences: _decisionImpactEvidenceReferences,
+    ...assessment
+  } = transport.requirementAssessments[0]!;
+  return {
+    ...transport,
+    requirementAssessments: [
+      {
+        ...assessment,
+        decisionImpactEvidenceIndexes: [] as number[],
+      },
+    ],
+  };
+}
+
+function decisiveProviderResumeMatchTransport() {
+  const transport = decisiveResumeMatchTransport();
+  const { decisionImpactEvidence, ...assessment } =
+    transport.requirementAssessments[0]!;
+  return {
+    ...transport,
+    requirementAssessments: [
+      {
+        ...assessment,
+        decisionImpactEvidence: {
+          jdEvidenceIndexes: decisionImpactEvidence.jdEvidenceReferences.map(
+            () => 0,
+          ),
+          profileEvidenceIndexes:
+            decisionImpactEvidence.profileEvidenceReferences.map(() => 0),
+        },
+      },
+    ],
+  };
+}
+
 function resumeMatchAvailableEvidence(
   additional: Array<{
     referenceId: string;
@@ -1139,7 +1177,7 @@ describe("production semantic execution", () => {
       basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE" | "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE" | "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE";
       reference: string;
     }) => {
-      const value = structuredClone(validResumeMatchTransport());
+      const value = structuredClone(validProviderResumeMatchTransport());
       value.requirementAssessments = [{
         ...value.requirementAssessments[0]!,
         classification: input.classification,
@@ -1221,7 +1259,7 @@ describe("production semantic execution", () => {
     const schema = createSemanticResumeMatchTransportSchema(
       resumeMatchAvailableEvidence(),
     );
-    const value = structuredClone(validResumeMatchTransport());
+    const value = structuredClone(validProviderResumeMatchTransport());
     value.requirementAssessments = [{
       ...value.requirementAssessments[0]!,
       classification: "STRONG_MATCH",
@@ -1229,12 +1267,12 @@ describe("production semantic execution", () => {
       experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
     } as never];
     expect(schema.safeParse(value).success).toBe(false);
-    expect(schema.safeParse(validResumeMatchTransport()).success).toBe(true);
+    expect(schema.safeParse(validProviderResumeMatchTransport()).success).toBe(true);
     expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
   });
 
   it("rejects duplicate requirement profile evidence before authoritative restoration", () => {
-    const transport = validResumeMatchTransport();
+    const transport = validProviderResumeMatchTransport();
     transport.requirementAssessments[0]!.profileEvidenceReferences = [
       "profile-1",
       "profile-1",
@@ -1263,7 +1301,7 @@ describe("production semantic execution", () => {
       },
     ]);
     const schema = createSemanticResumeMatchTransportSchema(evidence);
-    const transport = validResumeMatchTransport();
+    const transport = validProviderResumeMatchTransport();
     transport.requirementAssessments[0]!.profileEvidenceReferences = [
       "profile-1",
       "profile-transferable-2",
@@ -1306,6 +1344,179 @@ describe("production semantic execution", () => {
     )).not.toThrow();
   });
 
+  it("uses assessment-local decision-impact evidence in the production provider contract", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    const schema = createSemanticResumeMatchTransportSchema(
+      evidence,
+      authoritativeResumeMatchRequirements(),
+    );
+    const { jsonSchema, violations } = auditOpenAiProviderSchema(schema);
+    const assessmentSchema = JSON.stringify(
+      (
+        (jsonSchema.properties as Record<string, Record<string, unknown>>)
+          .requirementAssessments!.items as Record<string, unknown>
+      ),
+    );
+
+    expect(violations).toEqual([]);
+    expect(assessmentSchema).toContain('"decisionImpactEvidenceIndexes"');
+    expect(assessmentSchema).toContain('"jdEvidenceIndexes"');
+    expect(assessmentSchema).toContain('"profileEvidenceIndexes"');
+    expect(assessmentSchema).not.toContain(
+      '"decisionImpactEvidenceReferences"',
+    );
+  });
+
+  it("restores valid assessment-local decision-impact indexes to Core evidence identifiers", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    const transport = validProviderResumeMatchTransport();
+    transport.requirementAssessments[0]!.decisionImpactEvidenceIndexes = [0, 1];
+
+    expect(
+      createSemanticResumeMatchTransportSchema(
+        evidence,
+        authoritativeResumeMatchRequirements(),
+      ).safeParse(transport).success,
+    ).toBe(true);
+    const domain = semanticResumeMatchFromTransport(
+      transport,
+      authoritativeResumeMatchRequirements(),
+      evidence,
+    );
+    expect(
+      domain.requirementAssessments[0]!.decisionImpactEvidenceReferences,
+    ).toEqual(["jd-1", "profile-1"]);
+  });
+
+  it("resolves decision-impact indexes against each assessment rather than another assessment", () => {
+    const requirements = [
+      ...authoritativeResumeMatchRequirements(),
+      {
+        ...authoritativeResumeMatchRequirements()[0]!,
+        requirement: "A second customer requirement",
+        evidenceReferences: ["jd-2"],
+      },
+    ];
+    const evidence = resumeMatchAvailableEvidence([
+      { referenceId: "jd-2", sourceType: "JOB_DESCRIPTION" },
+      { referenceId: "profile-2", sourceType: "USER_PROFILE" },
+    ]);
+    const transport = validProviderResumeMatchTransport();
+    const first = transport.requirementAssessments[0]!;
+    first.decisionImpactEvidenceIndexes = [1];
+    const second = {
+      ...first,
+      requirementIndex: 1,
+      jdEvidenceReferences: ["jd-2"],
+      profileEvidenceReferences: ["profile-2"],
+      decisionImpactEvidenceIndexes: [1],
+    };
+    transport.requirementAssessments = [first, second];
+
+    const domain = semanticResumeMatchFromTransport(
+      transport,
+      requirements,
+      evidence,
+    );
+    expect(
+      domain.requirementAssessments.map(
+        (assessment) => assessment.decisionImpactEvidenceReferences,
+      ),
+    ).toEqual([["profile-1"], ["profile-2"]]);
+  });
+
+  it("rejects out-of-range and duplicate assessment-local decision-impact indexes", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    for (const [indexes, message] of [
+      [
+        [2],
+        "Requirement 0 decision-impact evidence references evidence outside its assessment",
+      ],
+      [
+        [0, 0],
+        "Requirement 0 decision-impact evidence contains duplicate local evidence indexes",
+      ],
+    ] as const) {
+      const transport = validProviderResumeMatchTransport();
+      transport.requirementAssessments[0]!.decisionImpactEvidenceIndexes = [
+        ...indexes,
+      ];
+      expect(() =>
+        semanticResumeMatchFromTransport(
+          transport,
+          authoritativeResumeMatchRequirements(),
+          evidence,
+        ),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "RESUME_MATCH_EVIDENCE_INVALID",
+          message,
+          retryable: false,
+        }),
+      );
+    }
+  });
+
+  it("restores decisive decision-impact evidence only from its assessment-local source catalogs", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    const transport = decisiveProviderResumeMatchTransport();
+    const domain = semanticResumeMatchFromTransport(
+      transport,
+      authoritativeResumeMatchRequirements(),
+      evidence,
+    );
+    expect(
+      domain.requirementAssessments[0]!.decisionImpactEvidenceReferences,
+    ).toEqual(["jd-1", "profile-1"]);
+
+    transport.requirementAssessments[0]!.decisionImpactEvidence.profileEvidenceIndexes = [1];
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        transport,
+        authoritativeResumeMatchRequirements(),
+        evidence,
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        message:
+          "Requirement 0 decision-impact evidence profile evidence references evidence outside its assessment",
+        retryable: false,
+      }),
+    );
+  });
+
+  it("does not silently project the legacy provider relationship that escaped assessment evidence", () => {
+    const evidence = resumeMatchAvailableEvidence([
+      { referenceId: "other-profile", sourceType: "USER_PROFILE" },
+    ]);
+    const rejected = validResumeMatchTransport();
+    rejected.requirementAssessments[0]!.decisionImpactEvidenceReferences = [
+      "other-profile",
+    ];
+
+    expect(
+      createSemanticResumeMatchTransportSchema(
+        evidence,
+        authoritativeResumeMatchRequirements(),
+      ).safeParse(rejected).success,
+    ).toBe(false);
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        rejected,
+        authoritativeResumeMatchRequirements(),
+        evidence,
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        message:
+          "Requirement 0 decision-impact evidence is outside its assessment evidence",
+        retryable: false,
+      }),
+    );
+  });
+
   it("binds industry match variants to authoritative requirement indexes and direct evidence", () => {
     for (const specialization of ["nonprofit", "SMB", "fundraising/development", "SaaS"]) {
       const requirements = [
@@ -1317,7 +1528,7 @@ describe("production semantic execution", () => {
         { referenceId: "specialized-direct", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
       ]);
       const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
-      const value = validResumeMatchTransport();
+      const value = validProviderResumeMatchTransport();
       const partial = {
         ...value.requirementAssessments[0]!, requirementIndex: 1,
         classification: "PARTIAL_MATCH" as const,
@@ -1340,10 +1551,10 @@ describe("production semantic execution", () => {
       expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
       expect(auditOpenAiProviderSchema(emptyDirectCatalog).violations).toEqual([]);
 
-      const gap = decisiveResumeMatchTransport();
+      const gap = decisiveProviderResumeMatchTransport();
       const { decisionImpactEvidence: _decisionEvidence, ...gapFields } = gap.requirementAssessments[0]!;
       const nonDecisiveGap = { ...gapFields, requirementIndex: 1,
-        decisionImpact: "NON_DECISIVE" as const, decisionImpactEvidenceReferences: [],
+        decisionImpact: "NON_DECISIVE" as const, decisionImpactEvidenceIndexes: [],
       };
       expect(schema.safeParse({ ...value, requirementAssessments: [nonDecisiveGap] }).success).toBe(true);
       expect(schema.safeParse({ ...value, requirementAssessments: [{ ...partial,
