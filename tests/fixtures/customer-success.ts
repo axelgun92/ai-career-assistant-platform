@@ -169,19 +169,22 @@ export function toResumeMatchProviderTransport(
         isAmbiguous: _isAmbiguous,
         ambiguityExplanation: _ambiguityExplanation,
         decisionImpactEvidenceReferences,
+        jdEvidenceReferences,
+        profileEvidenceReferences,
         ...assessment
       }) => {
-        const semanticAssessment =
-          assessment.decisionImpact === "DECISIVE_DISQUALIFIER"
-            ? {
-                ...assessment,
-                decisionImpactEvidence: splitEvidence(
-                  decisionImpactEvidenceReferences,
-                ),
-              }
-            : { ...assessment, decisionImpactEvidenceReferences };
+        const partition = (references: string[]) => ({
+          decisionImpactReferences: references.filter((reference) => decisionImpactEvidenceReferences.includes(reference)),
+          assessmentOnlyReferences: references.filter((reference) => !decisionImpactEvidenceReferences.includes(reference)),
+        });
+        if (decisionImpactEvidenceReferences.some((reference) =>
+          ![...jdEvidenceReferences, ...profileEvidenceReferences].includes(reference))) {
+          throw new Error("Fixture decision-impact evidence must belong to its assessment");
+        }
         return {
-          ...semanticAssessment,
+          ...assessment,
+          jdEvidence: partition(jdEvidenceReferences),
+          profileEvidence: partition(profileEvidenceReferences),
           experienceEvidenceBasis:
             assessment.classification === "UNKNOWN"
               ? "UNKNOWN"

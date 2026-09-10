@@ -349,17 +349,9 @@ const transportNonGapFields = {
   decisionImpactEvidenceReferences: transportEvidenceReferences,
 };
 
-// Provider-facing decision-impact evidence is assessment-local. OpenAI JSON
-// Schema cannot express a subset relationship between sibling arrays, so the
-// provider returns positions into the evidence it selected for this assessment
-// instead of independently selecting Core evidence identifiers again.
-const transportDecisionImpactEvidenceIndexes = z.array(
-  z.number().int().nonnegative(),
-);
 const providerNonGapFields = {
   ...transportRequirementFields,
   decisionImpact: z.literal("NON_DECISIVE"),
-  decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
 };
 
 const transportStrongRequirementSchema = z
@@ -546,16 +538,26 @@ function positiveRequirementCompatibility(
       : requirementRelevantKnowledgeEvidenceTypes;
 }
 
-function providerProfileReferenceSchema(referenceIds: string[]) {
+function providerProfileReferenceSchema(
+  referenceIds: string[],
+  catalogs: Map<string, z.ZodType<string>>,
+) {
   const uniqueReferenceIds = [...new Set(referenceIds)];
   if (uniqueReferenceIds.length === 0) {
     return null;
   }
-  return z.array(
-    uniqueReferenceIds.length === 1
+  const key = JSON.stringify(uniqueReferenceIds);
+  let element = catalogs.get(key);
+  if (!element) {
+    element = (uniqueReferenceIds.length === 1
       ? z.literal(uniqueReferenceIds[0]!)
-      : z.enum(uniqueReferenceIds as [string, ...string[]]),
-  ).min(1);
+      : z.enum(uniqueReferenceIds as [string, ...string[]]))
+      .meta({ id: `resumeMatchEvidenceCatalog${catalogs.size}` });
+    catalogs.set(key, element);
+  }
+  // Named definitions keep repeated source/basis catalogs within the strict
+  // provider enum limit. Catalog instances belong to this schema construction.
+  return z.array(element).min(1);
 }
 
 function createPositiveRequirementSchema(input: {
@@ -563,9 +565,11 @@ function createPositiveRequirementSchema(input: {
   evidenceBasis: PositiveExperienceEvidenceBasis;
   profileReferenceIds: string[];
   specificities: string[];
+  referenceCatalogs: Map<string, z.ZodType<string>>;
 }) {
   const profileEvidenceReferences = providerProfileReferenceSchema(
     input.profileReferenceIds,
+    input.referenceCatalogs,
   );
   if (!profileEvidenceReferences) {
     return null;
@@ -606,13 +610,6 @@ const providerGapRequirementSchema = z.union([
       ...providerGapFields,
       decisionImpact: z.literal("DECISIVE_DISQUALIFIER"),
       decisionImpactExplanation: transportRequiredText,
-      decisionImpactEvidence: z
-        .object({
-          jdEvidenceIndexes: transportDecisionImpactEvidenceIndexes.min(1),
-          profileEvidenceIndexes:
-            transportDecisionImpactEvidenceIndexes.min(1),
-        })
-        .strict(),
     })
     .strict(),
   z
@@ -620,7 +617,6 @@ const providerGapRequirementSchema = z.union([
       ...providerGapFields,
       decisionImpact: z.literal("MATERIAL_UNCERTAINTY"),
       decisionImpactExplanation: transportRequiredText,
-      decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
     })
     .strict(),
   z
@@ -628,7 +624,6 @@ const providerGapRequirementSchema = z.union([
       ...providerGapFields,
       decisionImpact: z.literal("NON_DECISIVE"),
       decisionImpactExplanation: transportRequiredText,
-      decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
     })
     .strict(),
 ]);
@@ -640,17 +635,44 @@ const providerUnknownRequirementSchema = z
     matchedExperienceSpecificity: z.literal("UNKNOWN"),
     experienceEvidenceBasis: z.literal("UNKNOWN"),
     decisionImpact: z.literal("NON_DECISIVE"),
-    decisionImpactEvidenceIndexes: transportDecisionImpactEvidenceIndexes,
     supportedPortion: transportOptionalText,
     unsupportedPortion: transportOptionalText,
     profileEvidenceReferences: transportEvidenceReferences,
   })
   .strict();
 
+// Each reference is authored once, in the part of the assessment it supports.
+// Decisive gaps need decision-impact evidence from both sources. Other known
+// assessments need evidence in at least one partition; Unknown profile context
+// may be empty. No pointer targets another model-generated collection.
+function providerAssessmentEvidenceSchema(
+  references: z.ZodArray,
+  required: boolean,
+  decisive: boolean,
+  emptyCatalog = false,
+) {
+  // Reuse the element catalog, not the original array's minimum-length checks.
+  const choices = emptyCatalog ? z.array(references.element).max(0) : z.array(references.element);
+  const object = z.object({
+    decisionImpactReferences: choices,
+    assessmentOnlyReferences: choices,
+  }).strict();
+  if (decisive) return object.extend({ decisionImpactReferences: choices.min(1) });
+  if (!required) return object;
+  return z.union([
+    object.extend({ decisionImpactReferences: choices.min(1) }),
+    object.extend({
+      decisionImpactReferences: choices.max(0),
+      assessmentOnlyReferences: choices.min(1),
+    }),
+  ]);
+}
+
 function providerRequirementAssessmentSchema(
   availableEvidence: AvailableResumeMatchEvidence[],
   requirementMap?: z.infer<typeof requirementMapSchema>,
 ) {
+  const referenceCatalogs = new Map<string, z.ZodType<string>>();
   const semanticRequirements = requirementMap?.map((requirement, index) => ({ requirement, index }))
     .filter(({ requirement }) => !requirement.ambiguity.isAmbiguous);
   const constrainIndexes = (schema: z.ZodObject, indexes?: number[]) =>
@@ -690,7 +712,7 @@ function providerRequirementAssessmentSchema(
           catalogs.set(key, catalog);
         }
         for (const catalog of catalogs.values()) {
-          const schema = createPositiveRequirementSchema({ classification, evidenceBasis, ...catalog });
+          const schema = createPositiveRequirementSchema({ classification, evidenceBasis, ...catalog, referenceCatalogs });
           if (schema) schemas.push(constrainIndexes(schema, group.indexes));
         }
       }
@@ -699,10 +721,10 @@ function providerRequirementAssessmentSchema(
   const allIndexes = semanticRequirements?.map(({ index }) => index);
   const profileReferences = providerProfileReferenceSchema(availableEvidence
     .filter((evidence) => evidence.sourceType === "USER_PROFILE")
-    .map((evidence) => evidence.referenceId));
+    .map((evidence) => evidence.referenceId), referenceCatalogs);
   const jdReferences = providerProfileReferenceSchema(availableEvidence
     .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
-    .map((evidence) => evidence.referenceId));
+    .map((evidence) => evidence.referenceId), referenceCatalogs);
   for (const schema of providerGapRequirementSchema.options) {
     const indexes = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER"
       ? semanticRequirements?.filter(({ requirement }) => requirement.strength === "REQUIRED").map(({ index }) => index)
@@ -716,11 +738,21 @@ function providerRequirementAssessmentSchema(
       profileEvidenceReferences: profileReferences ? z.array(profileReferences.element) : transportEvidenceReferences.max(0),
     }), allIndexes));
   }
-  const sourcedSchemas = schemas.map((schema) => schema.extend({
-    jdEvidenceReferences: jdReferences ?? transportEvidenceReferences.min(1),
-  }));
+  const bindEvidence = (schema: z.ZodObject) => {
+    const decisive = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER";
+    return schema.omit({ jdEvidenceReferences: true, profileEvidenceReferences: true }).extend({
+      jdEvidence: providerAssessmentEvidenceSchema(
+        jdReferences ?? transportEvidenceReferences.min(1), true, decisive,
+      ),
+      profileEvidence: providerAssessmentEvidenceSchema(
+        schema.shape.profileEvidenceReferences, schema.shape.classification.value !== "UNKNOWN", decisive,
+        !profileReferences,
+      ),
+    });
+  };
+  const sourcedSchemas = schemas.map(bindEvidence);
   // The containing array is bounded to zero for an entirely ambiguous/empty map.
-  return sourcedSchemas.length === 0 ? providerUnknownRequirementSchema
+  return sourcedSchemas.length === 0 ? bindEvidence(providerUnknownRequirementSchema)
     : sourcedSchemas.length === 1 ? sourcedSchemas[0]!
       : z.union([sourcedSchemas[0]!, sourcedSchemas[1]!, ...sourcedSchemas.slice(2)]);
 }
@@ -933,36 +965,19 @@ function evidenceReferencesFromIndexes(
   });
 }
 
-function evidenceReferencesFromLocalIndexes(
-  indexes: number[],
-  assessmentEvidence: string[],
-  label: string,
-) {
-  if (new Set(indexes).size !== indexes.length) {
-    evidenceResultViolation(`${label} contains duplicate local evidence indexes`);
-  }
-  return indexes.map((index) => {
-    const reference = assessmentEvidence[index];
-    if (reference === undefined) {
-      evidenceResultViolation(`${label} references evidence outside its assessment`);
-    }
-    return reference;
-  });
-}
-
+type AssessmentEvidencePartition = {
+  decisionImpactReferences: string[];
+  assessmentOnlyReferences: string[];
+};
 type ProviderRequirementAssessment = {
   requirementIndex: number;
-  jdEvidenceReferences: string[];
-  profileEvidenceReferences: string[];
-  decisionImpactEvidenceIndexes?: number[];
-  decisionImpactEvidence?: {
-    jdEvidenceIndexes: number[];
-    profileEvidenceIndexes: number[];
-  };
+  decisionImpact: string;
+  jdEvidence: AssessmentEvidencePartition;
+  profileEvidence: AssessmentEvidencePartition;
   [key: string]: unknown;
 };
 
-function restoreAssessmentLocalDecisionImpactEvidence(input: unknown) {
+function restoreAssessmentEvidence(input: unknown) {
   const providerTransport = input as Record<string, unknown> & {
     requirementAssessments: ProviderRequirementAssessment[];
   };
@@ -970,37 +985,31 @@ function restoreAssessmentLocalDecisionImpactEvidence(input: unknown) {
     ...providerTransport,
     requirementAssessments: providerTransport.requirementAssessments.map(
       (assessment) => {
-        const label = `Requirement ${assessment.requirementIndex} decision-impact evidence`;
-        if (assessment.decisionImpactEvidence) {
-          const { decisionImpactEvidence, ...rest } = assessment;
-          return {
-            ...rest,
-            decisionImpactEvidence: {
-              jdEvidenceReferences: evidenceReferencesFromLocalIndexes(
-                decisionImpactEvidence.jdEvidenceIndexes,
-                assessment.jdEvidenceReferences,
-                `${label} JD evidence`,
-              ),
-              profileEvidenceReferences: evidenceReferencesFromLocalIndexes(
-                decisionImpactEvidence.profileEvidenceIndexes,
-                assessment.profileEvidenceReferences,
-                `${label} profile evidence`,
-              ),
-            },
-          };
-        }
-        const { decisionImpactEvidenceIndexes, ...rest } = assessment;
+        const { jdEvidence, profileEvidence, ...rest } = assessment;
+        const restore = (partition: AssessmentEvidencePartition, source: string) => {
+          const references = [...partition.decisionImpactReferences, ...partition.assessmentOnlyReferences];
+          if (new Set(references).size !== references.length) {
+            evidenceResultViolation(
+              `Requirement ${assessment.requirementIndex} ${source} evidence contains duplicate evidence references`,
+            );
+          }
+          return references;
+        };
+        const jdEvidenceReferences = restore(jdEvidence, "JD");
+        const profileEvidenceReferences = restore(profileEvidence, "profile");
         return {
           ...rest,
-          decisionImpactEvidenceReferences:
-            evidenceReferencesFromLocalIndexes(
-              decisionImpactEvidenceIndexes ?? [],
-              [
-                ...assessment.jdEvidenceReferences,
-                ...assessment.profileEvidenceReferences,
-              ],
-              label,
-            ),
+          jdEvidenceReferences,
+          profileEvidenceReferences,
+          ...(assessment.decisionImpact === "DECISIVE_DISQUALIFIER"
+            ? { decisionImpactEvidence: {
+                jdEvidenceReferences: jdEvidence.decisionImpactReferences,
+                profileEvidenceReferences: profileEvidence.decisionImpactReferences,
+              } }
+            : { decisionImpactEvidenceReferences: [
+                ...jdEvidence.decisionImpactReferences,
+                ...profileEvidence.decisionImpactReferences,
+              ] }),
         };
       },
     ),
@@ -1361,7 +1370,7 @@ export function semanticResumeMatchFromTransport(
   ).safeParse(value);
   const transport = semanticResumeMatchTransportSchema.parse(
     providerResult.success
-      ? restoreAssessmentLocalDecisionImpactEvidence(providerResult.data)
+      ? restoreAssessmentEvidence(providerResult.data)
       : value,
   );
   assertUniqueRequirementProfileEvidenceReferences(transport);

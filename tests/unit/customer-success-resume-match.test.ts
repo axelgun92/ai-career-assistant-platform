@@ -2,6 +2,7 @@ import {
   createCustomerSuccessDomainData,
   createCustomerSuccessEvaluator,
   createSemanticResumeMatchTransportSchema,
+  createProductionCustomerSuccessSemanticOperations,
   effectiveLevelFitSchema,
   requirementMatchClassificationSchema,
   resumeMatchBand,
@@ -11,9 +12,10 @@ import {
   type CustomerSuccessSemanticOperations,
   type SemanticResumeMatch,
 } from "@ai-career/customer-success";
-import { createEvaluationExecutor } from "@ai-career/evaluation";
+import { createEvaluationExecutor, createSemanticExecutor } from "@ai-career/evaluation";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { testSemanticPricing } from "../fixtures/semantic-pricing";
 import {
   createCustomerSuccessFixtureOperations,
   customerSuccessTestPreferences,
@@ -180,6 +182,8 @@ describe("Customer Success Resume Match pipeline", () => {
 
   it("executes provider transport conversion through the complete stage and unchanged downstream contracts", async () => {
     const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    let fakeProviderCalls = 0;
+    let recordedAttempts = 0;
     let authoritativeRequirements: Array<{
       requirement: string;
       category: string;
@@ -198,32 +202,29 @@ describe("Customer Success Resume Match pipeline", () => {
               requirement,
           ),
         });
-        const legacyTransport = toResumeMatchProviderTransport(
+        const transport = toResumeMatchProviderTransport(
           domain,
           providerRequirements,
           input.availableEvidence,
         );
-        const transport = {
-          ...legacyTransport,
-          requirementAssessments: legacyTransport.requirementAssessments.map((assessment) => {
-            if ("decisionImpactEvidence" in assessment && assessment.decisionImpactEvidence) {
-              const { decisionImpactEvidence, ...fields } = assessment;
-              return { ...fields, decisionImpactEvidence: {
-                jdEvidenceIndexes: decisionImpactEvidence.jdEvidenceReferences.map((reference) => assessment.jdEvidenceReferences.indexOf(reference)),
-                profileEvidenceIndexes: decisionImpactEvidence.profileEvidenceReferences.map((reference) => assessment.profileEvidenceReferences.indexOf(reference)),
-              } };
-            }
-            const { decisionImpactEvidenceReferences, ...fields } = assessment;
-            const localEvidence = [...assessment.jdEvidenceReferences, ...assessment.profileEvidenceReferences];
-            return { ...fields, decisionImpactEvidenceIndexes: (decisionImpactEvidenceReferences ?? []).map((reference) => localEvidence.indexOf(reference)) };
-          }),
-        };
         expect(createSemanticResumeMatchTransportSchema(input.availableEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
-        return semanticResumeMatchFromTransport(
-          transport,
-          input.requirementMap,
-          input.availableEvidence,
-        );
+        const executor = createSemanticExecutor({
+          recorder: { async record(attempt) {
+            expect(attempt.status).toBe("SUCCESS");
+            recordedAttempts++;
+          } },
+          config: {
+            apiKey: "fake-unused-key", model: "gpt-5.6-terra", maxOutputTokens: 12000,
+            retryLimit: 0, callBudget: 1, timeoutMs: 5000, pricing: testSemanticPricing,
+          },
+          transport: { async execute(request) {
+            fakeProviderCalls++;
+            expect(request.operationId).toBe("customer-success.resume-match");
+            return { outputText: JSON.stringify(transport), providerRequestId: "offline-resume-match",
+              usage: { inputTokens: null, outputTokens: null, cachedInputTokens: null, reasoningTokens: null, totalTokens: null } };
+          } },
+        });
+        return createProductionCustomerSuccessSemanticOperations(executor).evaluateResumeMatch(input);
       },
     };
 
@@ -231,9 +232,12 @@ describe("Customer Success Resume Match pipeline", () => {
       operations,
       rawText: `3 years of experience. ${defaultJobDescription}`,
     });
+    expect(result.evaluation.stageResults[6]?.status, result.evaluation.stageResults[6]?.errorMessage ?? undefined).toBe("COMPLETED");
     const resumeMatch = result.domainResult!.resumeMatch;
 
     expect(result.evaluation.stageResults[6]?.status).toBe("COMPLETED");
+    expect(fakeProviderCalls).toBe(1);
+    expect(recordedAttempts).toBe(1);
     expect(resumeMatch.evaluated).toBe(true);
     if (!resumeMatch.evaluated) throw new Error("Resume Match was not evaluated");
     expect(
