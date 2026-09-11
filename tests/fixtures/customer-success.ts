@@ -1508,9 +1508,13 @@ export function createCustomerSuccessFixtureOperations(input: {
       if (!directProfileReference || !transferableProfileReference) {
         throw new Error("The Resume Match fixture requires profile evidence");
       }
-      const requirementEvidence = resumeInput.requirementMap.flatMap(
-        (requirement) => requirement.evidenceReferences,
-      );
+      const requirementEvidence = [
+        ...new Set(
+          resumeInput.requirementMap.flatMap(
+            (requirement) => requirement.evidenceReferences,
+          ),
+        ),
+      ];
       const requirementIndexes = resumeInput.requirementMap.map((_, index) => index);
       const classifications = options.requirementClassifications ?? [];
       const specificities = options.matchedExperienceSpecificities ?? [];
