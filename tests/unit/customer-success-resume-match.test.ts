@@ -180,7 +180,7 @@ describe("Customer Success Resume Match pipeline", () => {
     );
   });
 
-  it("executes provider transport conversion through the complete stage and unchanged downstream contracts", async () => {
+  it.each([false, true])("executes the complete production partition path (overlap rejected: %s)", async (overlap) => {
     const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
     let fakeProviderCalls = 0;
     let recordedAttempts = 0;
@@ -207,6 +207,17 @@ describe("Customer Success Resume Match pipeline", () => {
           providerRequirements,
           input.availableEvidence,
         );
+        for (const assessment of transport.requirementAssessments) {
+          for (const source of ["jdEvidence", "profileEvidence"] as const) {
+            const partition = assessment[source];
+            const reference = partition.assessmentOnlyReferences.shift();
+            if (reference) partition.decisionImpactReferences.push(reference);
+          }
+        }
+        if (overlap) {
+          const assessment = transport.requirementAssessments.find((item) => item.profileEvidence.decisionImpactReferences.length > 0)!;
+          assessment.profileEvidence.assessmentOnlyReferences.push(assessment.profileEvidence.decisionImpactReferences[0]!);
+        }
         expect(createSemanticResumeMatchTransportSchema(input.availableEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
         const executor = createSemanticExecutor({
           recorder: { async record(attempt) {
@@ -215,7 +226,7 @@ describe("Customer Success Resume Match pipeline", () => {
           } },
           config: {
             apiKey: "fake-unused-key", model: "gpt-5.6-terra", maxOutputTokens: 12000,
-            retryLimit: 0, callBudget: 1, timeoutMs: 5000, pricing: testSemanticPricing,
+            retryLimit: 2, callBudget: 4, timeoutMs: 5000, pricing: testSemanticPricing,
           },
           transport: { async execute(request) {
             fakeProviderCalls++;
@@ -232,6 +243,14 @@ describe("Customer Success Resume Match pipeline", () => {
       operations,
       rawText: `3 years of experience. ${defaultJobDescription}`,
     });
+    if (overlap) {
+      expect(fakeProviderCalls).toBe(1);
+      expect(recordedAttempts).toBe(1);
+      expect(result.evaluation.stageResults[6]).toMatchObject({ status: "FAILED", failureCode: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false, attempt: 1 });
+      expect(result.evaluation.stageResults.slice(0, 6).every((stage) => stage.status === "COMPLETED")).toBe(true);
+      expect(fixture.stats.opportunityPriorityCalls).toBe(0);
+      return;
+    }
     expect(result.evaluation.stageResults[6]?.status, result.evaluation.stageResults[6]?.errorMessage ?? undefined).toBe("COMPLETED");
     const resumeMatch = result.domainResult!.resumeMatch;
 

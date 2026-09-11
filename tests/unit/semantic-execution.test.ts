@@ -1459,7 +1459,7 @@ describe("production semantic execution", () => {
     ).toThrowError(expect.objectContaining({
       code: "RESUME_MATCH_EVIDENCE_INVALID",
       message:
-        "Requirement 0 profile evidence contains duplicate evidence references",
+        "Requirement 0 profile evidence contains duplicate evidence references (within assessment-only partition)",
       retryable: false,
     }));
   });
@@ -1659,6 +1659,93 @@ describe("production semantic execution", () => {
         );
       }
     }
+  });
+
+  it("exhaustively preserves or rejects two-reference partition assignments for both sources", () => {
+    const evidence = resumeMatchAvailableEvidence([
+      { referenceId: "jd-context", sourceType: "JOB_DESCRIPTION" },
+      { referenceId: "profile-context", sourceType: "USER_PROFILE" },
+    ]);
+    const requirements = authoritativeResumeMatchRequirements();
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    for (const source of ["jdEvidence", "profileEvidence"] as const) {
+      const references = source === "jdEvidence" ? ["jd-1", "jd-context"] : ["profile-1", "profile-context"];
+      // 0 omitted, 1 impact, 2 assessment-only, 3 illegally in both.
+      for (let first = 1; first <= 3; first++) for (let second = 0; second <= 3; second++) {
+        const value = validProviderResumeMatchTransport();
+        const states = [first, second];
+        const partition = {
+          decisionImpactReferences: references.filter((_, i) => (states[i]! & 1) !== 0),
+          assessmentOnlyReferences: references.filter((_, i) => (states[i]! & 2) !== 0),
+        };
+        value.requirementAssessments[0]![source] = partition;
+        const original = JSON.stringify(value);
+        // JSON Schema cannot express cross-array disjointness: conversion must.
+        expect(schema.safeParse(value).success).toBe(true);
+        if (states.includes(3)) {
+          expect(() => semanticResumeMatchFromTransport(value, requirements, evidence)).toThrowError(
+            expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }),
+          );
+        } else {
+          const result = semanticResumeMatchFromTransport(value, requirements, evidence);
+          const assessment = result.requirementAssessments[0]!;
+          expect(source === "jdEvidence" ? assessment.jdEvidenceReferences : assessment.profileEvidenceReferences)
+            .toEqual([...partition.decisionImpactReferences, ...partition.assessmentOnlyReferences]);
+          expect(assessment.decisionImpactEvidenceReferences).toEqual(partition.decisionImpactReferences);
+        }
+        expect(JSON.stringify(value)).toBe(original);
+      }
+    }
+    expect(JSON.stringify(auditOpenAiProviderSchema(schema).jsonSchema)).toContain("Disjoint evidence partitions");
+  });
+
+  it("reports all invalid partitions without leaking references or repairing input", () => {
+    const value = validProviderResumeMatchTransport();
+    value.requirementAssessments.push({ ...structuredClone(value.requirementAssessments[0]!), requirementIndex: 1 });
+    for (const assessment of value.requirementAssessments) {
+      for (const source of ["jdEvidence", "profileEvidence"] as const) {
+        const partition = assessment[source];
+        partition.decisionImpactReferences = [...partition.assessmentOnlyReferences];
+      }
+    }
+    const before = JSON.stringify(value);
+    try {
+      semanticResumeMatchFromTransport(value, Array.from({ length: 2 }, () => authoritativeResumeMatchRequirements()[0]!), resumeMatchAvailableEvidence());
+      expect.fail("Expected all partition overlaps to be rejected");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false });
+      const message = (error as Error).message;
+      for (const index of [0, 1]) for (const source of ["JD", "profile"]) {
+        expect(message).toContain(`Requirement ${index} ${source} evidence contains duplicate evidence references`);
+      }
+      expect(message).not.toContain("jd-1");
+      expect(message).not.toContain("profile-1");
+    }
+    expect(JSON.stringify(value)).toBe(before);
+  });
+
+  it("does not fall through to historical flat parsing for malformed grouped partitions", () => {
+    const requirements = authoritativeResumeMatchRequirements();
+    const evidence = resumeMatchAvailableEvidence();
+    for (const invalid of [
+      { decisionImpactReferences: [], assessmentOnlyReferences: [] },
+      { decisionImpactReferences: [], assessmentOnlyReferences: ["jd-1"] },
+      { decisionImpactReferences: [], assessmentOnlyReferences: ["unresolved"] },
+      { decisionImpactReferences: [] },
+    ]) {
+      const value = validProviderResumeMatchTransport();
+      const malformed = { ...value, requirementAssessments: [{ ...value.requirementAssessments[0], profileEvidence: invalid }] };
+      expect(() => semanticResumeMatchFromTransport(malformed, requirements, evidence)).toThrowError(
+        expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }),
+      );
+    }
+    expect(() => semanticResumeMatchFromTransport(validResumeMatchTransport(), requirements, evidence)).not.toThrow();
+  });
+
+  it("rejects conflicting source identities before partition restoration", () => {
+    expect(() => semanticResumeMatchFromTransport(validProviderResumeMatchTransport(), authoritativeResumeMatchRequirements(),
+      resumeMatchAvailableEvidence([{ referenceId: "jd-1", sourceType: "USER_PROFILE" }]),
+    )).toThrowError(expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }));
   });
 
   it("does not silently project the legacy provider relationship that escaped assessment evidence", () => {

@@ -654,18 +654,22 @@ function providerAssessmentEvidenceSchema(
   // Reuse the element catalog, not the original array's minimum-length checks.
   const choices = emptyCatalog ? z.array(references.element).max(0) : z.array(references.element);
   const object = z.object({
-    decisionImpactReferences: choices,
-    assessmentOnlyReferences: choices,
+    decisionImpactReferences: choices.describe(
+      "Unique references supporting this assessment's decision impact. A reference selected here MUST NOT appear in assessmentOnlyReferences. Each reference belongs to exactly one partition within this source and requirement.",
+    ),
+    assessmentOnlyReferences: choices.describe(
+      "Unique references supporting only the assessment, excluding EVERY reference selected in decisionImpactReferences. These references do not become decision-impact evidence. Never repeat a reference within or across the two partitions.",
+    ),
   }).strict();
-  if (decisive) return object.extend({ decisionImpactReferences: choices.min(1) });
-  if (!required) return object;
-  return z.union([
-    object.extend({ decisionImpactReferences: choices.min(1) }),
+  const partition = decisive ? object.extend({ decisionImpactReferences: object.shape.decisionImpactReferences.min(1) })
+    : !required ? object : z.union([
+    object.extend({ decisionImpactReferences: object.shape.decisionImpactReferences.min(1) }),
     object.extend({
-      decisionImpactReferences: choices.max(0),
-      assessmentOnlyReferences: choices.min(1),
+      decisionImpactReferences: object.shape.decisionImpactReferences.max(0),
+      assessmentOnlyReferences: object.shape.assessmentOnlyReferences.min(1),
     }),
   ]);
+  return partition.describe("Disjoint evidence partitions for one source and one requirement. Select each reference at most once across BOTH arrays. Assessment-only evidence is excluded from decision impact; do not copy decision-impact references into it.");
 }
 
 function providerRequirementAssessmentSchema(
@@ -981,22 +985,39 @@ function restoreAssessmentEvidence(input: unknown) {
   const providerTransport = input as Record<string, unknown> & {
     requirementAssessments: ProviderRequirementAssessment[];
   };
+  // Strict JSON Schema cannot compare sibling arrays. Check every partition
+  // before restoring any assessment; never deduplicate or guess intended use.
+  // Keep this outside provider Zod refinements: unchanged invalid selections
+  // must fail non-retryably, not consume the semantic executor's retry budget.
+  const duplicatePartitions: string[] = [];
+  for (const assessment of providerTransport.requirementAssessments) {
+    for (const [source, partition] of [
+      ["JD", assessment.jdEvidence],
+      ["profile", assessment.profileEvidence],
+    ] as const) {
+      const impact = new Set(partition.decisionImpactReferences);
+      const assessmentOnly = new Set(partition.assessmentOnlyReferences);
+      const reasons: string[] = [];
+      if (impact.size !== partition.decisionImpactReferences.length) reasons.push("within decision-impact partition");
+      if (assessmentOnly.size !== partition.assessmentOnlyReferences.length) reasons.push("within assessment-only partition");
+      if (partition.assessmentOnlyReferences.some((reference) => impact.has(reference))) reasons.push("across decision-impact and assessment-only partitions");
+      if (reasons.length > 0) {
+        duplicatePartitions.push(`Requirement ${assessment.requirementIndex} ${source} evidence contains duplicate evidence references (${reasons.join("; ")})`);
+      }
+    }
+  }
+  if (duplicatePartitions.length > 0) evidenceResultViolation(duplicatePartitions.join("; "));
   return {
     ...providerTransport,
     requirementAssessments: providerTransport.requirementAssessments.map(
       (assessment) => {
         const { jdEvidence, profileEvidence, ...rest } = assessment;
-        const restore = (partition: AssessmentEvidencePartition, source: string) => {
+        const restore = (partition: AssessmentEvidencePartition) => {
           const references = [...partition.decisionImpactReferences, ...partition.assessmentOnlyReferences];
-          if (new Set(references).size !== references.length) {
-            evidenceResultViolation(
-              `Requirement ${assessment.requirementIndex} ${source} evidence contains duplicate evidence references`,
-            );
-          }
           return references;
         };
-        const jdEvidenceReferences = restore(jdEvidence, "JD");
-        const profileEvidenceReferences = restore(profileEvidence, "profile");
+        const jdEvidenceReferences = restore(jdEvidence);
+        const profileEvidenceReferences = restore(profileEvidence);
         return {
           ...rest,
           jdEvidenceReferences,
@@ -1364,10 +1385,26 @@ export function semanticResumeMatchFromTransport(
   jobEvidenceCatalog: ResumeMatchJobEvidenceCatalog =
     semanticResumeMatchJobEvidenceCatalog(availableEvidence),
 ): SemanticResumeMatch {
+  // A duplicated inventory ID could otherwise denote both JD and profile
+  // evidence. Reject it before source catalogs or partitions can restore IDs.
+  if (new Set(availableEvidence.map((item) => item.referenceId)).size !== availableEvidence.length) {
+    evidenceResultViolation("Available Resume Match evidence contains duplicate reference identifiers");
+  }
   const providerResult = createSemanticResumeMatchTransportSchema(
     availableEvidence,
     authoritativeRequirementMap,
   ).safeParse(value);
+  const assessments = value !== null && typeof value === "object" && "requirementAssessments" in value
+    ? value.requirementAssessments : null;
+  const hasGroupedEvidence = Array.isArray(assessments) && assessments.some(
+    (assessment) => assessment !== null && typeof assessment === "object" &&
+      ("jdEvidence" in assessment || "profileEvidence" in assessment),
+  );
+  if (!providerResult.success && hasGroupedEvidence) {
+    // Historical flat results remain readable. Malformed current partitions
+    // must not fall through to that reader and become retryable Zod failures.
+    evidenceResultViolation("Resume Match grouped assessment evidence or compatibility is invalid");
+  }
   const transport = semanticResumeMatchTransportSchema.parse(
     providerResult.success
       ? restoreAssessmentEvidence(providerResult.data)
