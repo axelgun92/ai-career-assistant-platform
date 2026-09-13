@@ -171,7 +171,10 @@ describe("Alex Fit complete production stage and downstream fake flow", () => {
     const repo = new InMemoryEvaluationRepository(subject);
     const { evaluation: snapshot, domainResult } = await createEvaluationExecutor(repo).execute({ opportunityId: subject.opportunity.id, userProfileId: subject.userProfile.id,
       evaluator: createCustomerSuccessEvaluator(), domainData: createCustomerSuccessDomainData({ preferences: customerSuccessTestPreferences, semanticOperations: createProductionCustomerSuccessSemanticOperations(semantic) }) });
-    expect(snapshot.status).toBe("COMPLETED");
+    expect(
+      snapshot.status,
+      JSON.stringify(snapshot.stageResults.find((stage) => stage.status === "FAILED")),
+    ).toBe("COMPLETED");
     expect(snapshot.stageResults).toHaveLength(9);
     expect(snapshot.stageResults.every(s => s.status === "COMPLETED")).toBe(true);
     const alex = snapshot.stageResults.find(s => s.stageId === "alex-fit")!;
@@ -179,10 +182,24 @@ describe("Alex Fit complete production stage and downstream fake flow", () => {
     expect(JSON.stringify(alex.result!.data)).not.toContain("evidenceIndexes");
     const payload = JSON.parse(requests.find(r => r.operationId === "customer-success.alex-fit")!.input).trustedStructuredContext;
     expect(payload.availableEvidenceCatalog.some((e: { sourceType: string }) => e.sourceType === "USER_PROFILE")).toBe(true);
-    for (const id of ["customer-success.burnout-risk", "customer-success.resume-match", "customer-success.opportunity-priority"]) {
+    for (const id of ["customer-success.burnout-risk", "customer-success.opportunity-priority"]) {
       const prior = JSON.parse(requests.find(r => r.operationId === id)!.input).trustedStructuredContext.alexFit;
       expect(prior).toEqual(alex.result!.data);
     }
+    const resumePrior = JSON.parse(
+      requests.find(
+        (request) => request.operationId === "customer-success.resume-match",
+      )!.input,
+    ).trustedStructuredContext.alexFit;
+    expect(resumePrior).toMatchObject({
+      evaluated: true,
+      fit: {
+        classification: (alex.result!.data as { fit: { classification: string } }).fit
+          .classification,
+      },
+    });
+    expect(JSON.stringify(resumePrior)).not.toContain("actual-work");
+    expect(JSON.stringify(resumePrior)).toContain("jd-0");
     expect(domainResult?.alexFit).toEqual(alex.result!.data);
     expect(snapshot.recommendation).not.toBeNull();
     expect(requests.filter(r => r.operationId === "customer-success.alex-fit")).toHaveLength(1);

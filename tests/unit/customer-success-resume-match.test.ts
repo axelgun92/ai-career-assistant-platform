@@ -1,6 +1,7 @@
 import {
   createCustomerSuccessDomainData,
   createCustomerSuccessEvaluator,
+  createResumeMatchProviderInputProjection,
   createSemanticResumeMatchTransportSchema,
   createProductionCustomerSuccessSemanticOperations,
   effectiveLevelFitSchema,
@@ -193,11 +194,19 @@ describe("Customer Success Resume Match pipeline", () => {
       ...fixture.semanticOperations,
       async evaluateResumeMatch(input) {
         authoritativeRequirements = input.requirementMap;
-        const providerRequirements =
+        const providerInput = createResumeMatchProviderInputProjection(
+          input.availableEvidence,
+        );
+        const fixtureRequirements =
           semanticResumeMatchRequirementsForProvider(input.requirementMap);
+        const providerRequirements =
+          semanticResumeMatchRequirementsForProvider(
+            input.requirementMap,
+            providerInput.providerReferenceByCoreReference,
+          );
         const domain = await fixture.semanticOperations.evaluateResumeMatch({
           ...input,
-          requirementMap: providerRequirements.map(
+          requirementMap: fixtureRequirements.map(
             ({ requirementIndex: _requirementIndex, ...requirement }) =>
               requirement,
           ),
@@ -206,7 +215,11 @@ describe("Customer Success Resume Match pipeline", () => {
           domain,
           providerRequirements,
           input.availableEvidence,
+          providerInput.providerReferenceByCoreReference,
         );
+        if (!overlap) {
+          transport.summary = `Supported by [${providerInput.jdEvidenceCatalog[0]!.evidenceReference}] and ${providerInput.profileEvidenceCatalog[0]!.evidenceReference}.`;
+        }
         for (const assessment of transport.requirementAssessments) {
           for (const source of ["jdEvidence", "profileEvidence"] as const) {
             const partition = assessment[source];
@@ -218,7 +231,7 @@ describe("Customer Success Resume Match pipeline", () => {
           const assessment = transport.requirementAssessments.find((item) => item.profileEvidence.decisionImpactReferences.length > 0)!;
           assessment.profileEvidence.assessmentOnlyReferences.push(assessment.profileEvidence.decisionImpactReferences[0]!);
         }
-        expect(createSemanticResumeMatchTransportSchema(input.availableEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
+        expect(createSemanticResumeMatchTransportSchema(providerInput.schemaEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
         const executor = createSemanticExecutor({
           recorder: { async record(attempt) {
             expect(attempt.status).toBe("SUCCESS");
@@ -259,6 +272,7 @@ describe("Customer Success Resume Match pipeline", () => {
     expect(recordedAttempts).toBe(1);
     expect(resumeMatch.evaluated).toBe(true);
     if (!resumeMatch.evaluated) throw new Error("Resume Match was not evaluated");
+    expect(JSON.stringify(resumeMatch)).not.toMatch(/(?:jd|profile)-\d+/);
     expect(
       resumeMatch.match.requirementAssessments.map((assessment) => ({
         requirement: assessment.requirementText,

@@ -190,21 +190,46 @@ function deterministicTransport(input: {
                 requirementIndex: number;
               }
             >;
+            const jdEvidenceCatalog = trusted.jdEvidenceCatalog as Array<{
+              evidenceReference: string;
+              evidenceType: string;
+              statement: string;
+              sourceType: string;
+            }>;
+            const profileEvidenceCatalog =
+              trusted.profileEvidenceCatalog as Array<{
+                evidenceReference: string;
+                evidenceType: string;
+                statement: string;
+              }>;
+            const providerEvidence = [
+              ...jdEvidenceCatalog.map((evidence) => ({
+                referenceId: evidence.evidenceReference,
+                sourceType: evidence.sourceType,
+                evidenceType: evidence.evidenceType,
+                claim: evidence.statement,
+              })),
+              ...profileEvidenceCatalog.map((evidence) => ({
+                referenceId: evidence.evidenceReference,
+                sourceType: "USER_PROFILE",
+                evidenceType: evidence.evidenceType,
+                claim: evidence.statement,
+              })),
+            ];
             const domain = await fixture.semanticOperations.evaluateResumeMatch({
               ...trusted,
               requirementMap: providerRequirements.map(
                 ({ requirementIndex: _requirementIndex, ...requirement }) =>
                   requirement,
               ),
+              userProfile: { version: 1 },
+              availableEvidence: providerEvidence,
               preferences: payload.userConfiguration,
             } as never);
             output = toResumeMatchProviderTransport(
               domain as SemanticResumeMatch,
               providerRequirements,
-              trusted.availableEvidence as Array<{
-                referenceId: string;
-                sourceType: string;
-              }>,
+              providerEvidence,
             );
           }
           break;

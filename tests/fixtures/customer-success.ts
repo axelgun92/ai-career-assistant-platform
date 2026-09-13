@@ -115,6 +115,7 @@ export function toResumeMatchProviderTransport(
     EvidenceRecordDraft,
     "referenceId" | "sourceType" | "evidenceType"
   >[],
+  providerReferenceByCoreReference?: ReadonlyMap<string, string>,
 ) {
   const profileReferences = new Set(
     availableEvidence
@@ -154,7 +155,7 @@ export function toResumeMatchProviderTransport(
     actualResponsibilitySeniority,
     ...effectiveSeniorityFields
   } = effectiveSeniority;
-  return {
+  const providerOutput = {
     ...result,
     scoreEvidence: splitEvidence(scoreEvidenceReferences),
     requirementAssessments: output.requirementAssessments.map(
@@ -233,6 +234,39 @@ export function toResumeMatchProviderTransport(
       }),
     ),
   };
+  if (!providerReferenceByCoreReference) return providerOutput;
+
+  const evidenceReferenceKeys = new Set([
+    "evidenceReferences",
+    "jdEvidenceReferences",
+    "profileEvidenceReferences",
+    "decisionImpactReferences",
+    "assessmentOnlyReferences",
+    "evidenceReferencesA",
+    "evidenceReferencesB",
+  ]);
+  const mapEvidenceReferences = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(mapEvidenceReferences);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        key,
+        evidenceReferenceKeys.has(key) && Array.isArray(child)
+          ? child.map((reference) => {
+              const providerReference =
+                providerReferenceByCoreReference.get(String(reference));
+              if (!providerReference) {
+                throw new Error(
+                  `Fixture references evidence outside the provider catalog: ${String(reference)}`,
+                );
+              }
+              return providerReference;
+            })
+          : mapEvidenceReferences(child),
+      ]),
+    );
+  };
+  return mapEvidenceReferences(providerOutput) as typeof providerOutput;
 }
 
 const organizationalMaturityOwnershipDimensions = [
@@ -1515,6 +1549,18 @@ export function createCustomerSuccessFixtureOperations(input: {
           ),
         ),
       ];
+      const actualWorkReference =
+        resumeInput.availableEvidence.find(
+          (item) =>
+            item.sourceType !== "USER_PROFILE" &&
+            item.evidenceType === "RESPONSIBILITY",
+        )?.referenceId ??
+        resumeInput.availableEvidence.find(
+          (item) => item.sourceType !== "USER_PROFILE",
+        )?.referenceId;
+      if (!actualWorkReference) {
+        throw new Error("The Resume Match fixture requires job-side evidence");
+      }
       const requirementIndexes = resumeInput.requirementMap.map((_, index) => index);
       const classifications = options.requirementClassifications ?? [];
       const specificities = options.matchedExperienceSpecificities ?? [];
@@ -1590,13 +1636,13 @@ export function createCustomerSuccessFixtureOperations(input: {
       const responsibilitySeniority =
         options.actualResponsibilitySeniority ?? "MID_LEVEL";
       const jdSeniorityReferences = [
-        "actual-work",
+        actualWorkReference,
         ...(requirementEvidence.length > 0 ? requirementEvidence : []),
       ];
       const combinedEvidence = [
         ...new Set([...jdSeniorityReferences, directProfileReference]),
       ];
-      const contradictionReference = requirementEvidence[0] ?? "role-inference";
+      const contradictionReference = requirementEvidence[0] ?? actualWorkReference;
       const contradictions = options.contradiction
         ? [
             {
@@ -1618,7 +1664,7 @@ export function createCustomerSuccessFixtureOperations(input: {
               relevantField: "effectiveSeniority",
               significance: "MATERIAL" as const,
               evidenceReferencesA: [contradictionReference],
-              evidenceReferencesB: ["actual-work"],
+              evidenceReferencesB: [actualWorkReference],
             },
           ]
         : [];
@@ -1674,10 +1720,10 @@ export function createCustomerSuccessFixtureOperations(input: {
                     : "MODERATE",
                 explanation:
                   "The actual-work evidence establishes the controlled responsibility level.",
-                evidenceReferences: ["actual-work"],
+                evidenceReferences: [actualWorkReference],
               },
             ],
-            evidenceReferences: ["actual-work"],
+            evidenceReferences: [actualWorkReference],
           },
           effectiveLevelFit: levelFit,
           explanation:
@@ -1722,7 +1768,7 @@ export function createCustomerSuccessFixtureOperations(input: {
           {
             recommendation:
               "Emphasize the evidenced customer-outcome work using truthful profile language; do not claim unsupported direct experience or metrics.",
-            evidenceReferences: ["actual-work", directProfileReference],
+            evidenceReferences: [actualWorkReference, directProfileReference],
           },
         ],
         evidenceReferences: combinedEvidence,
@@ -1963,18 +2009,46 @@ export function createCustomerSuccessFixtureTransport(input: {
             if (!providerRequirements) {
               throw new Error("Resume Match provider requirements are missing");
             }
+            const jdEvidenceCatalog = trusted.jdEvidenceCatalog as Array<{
+              evidenceReference: string;
+              evidenceType: string;
+              statement: string;
+              sourceType: string;
+            }>;
+            const profileEvidenceCatalog =
+              trusted.profileEvidenceCatalog as Array<{
+                evidenceReference: string;
+                evidenceType: string;
+                statement: string;
+              }>;
+            const providerEvidence = [
+              ...jdEvidenceCatalog.map((evidence) => ({
+                referenceId: evidence.evidenceReference,
+                sourceType: evidence.sourceType,
+                evidenceType: evidence.evidenceType,
+                claim: evidence.statement,
+              })),
+              ...profileEvidenceCatalog.map((evidence) => ({
+                referenceId: evidence.evidenceReference,
+                sourceType: "USER_PROFILE",
+                evidenceType: evidence.evidenceType,
+                claim: evidence.statement,
+              })),
+            ];
             const domain = await fixture.semanticOperations.evaluateResumeMatch({
               ...trusted,
               requirementMap: providerRequirements.map(
                 ({ requirementIndex: _requirementIndex, ...requirement }) =>
                   requirement,
               ),
+              userProfile: { version: 1 },
+              availableEvidence: providerEvidence,
               preferences: payload.userConfiguration,
             } as never);
             output = toResumeMatchProviderTransport(
               domain as SemanticResumeMatch,
               providerRequirements,
-              trusted.availableEvidence as EvidenceRecordDraft[],
+              providerEvidence,
             );
           }
           break;

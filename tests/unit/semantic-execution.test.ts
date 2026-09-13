@@ -5,6 +5,7 @@ import {
   customerSuccessProductionPromptVersion,
   customerSuccessResumeMatchPromptVersion,
   customerSuccessJdReconstructionSchema,
+  createResumeMatchProviderInputProjection,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
   organizationalMaturityRelationshipCatalog,
@@ -30,6 +31,7 @@ import {
   semanticReconstructionTransportSchema,
   semanticResumeMatchFromTransport,
   createSemanticResumeMatchTransportSchema,
+  semanticResumeMatchJobEvidenceCatalog,
   semanticResumeMatchRequirementsForProvider,
   resumeMatchDataSchema,
   semanticResumeMatchSchema,
@@ -465,6 +467,8 @@ function resumeMatchAvailableEvidence(
     referenceId: string;
     sourceType: string;
     evidenceType?: string;
+    claim?: string;
+    sourceText?: string;
   }> = [],
 ) {
   return [
@@ -487,6 +491,44 @@ function resumeMatchAvailableEvidence(
       ...evidence,
     })),
   ];
+}
+
+function withResumeMatchProviderReferences(
+  value: unknown,
+  evidence: ReturnType<typeof resumeMatchAvailableEvidence>,
+): unknown {
+  let jdIndex = 0;
+  let profileIndex = 0;
+  const references = new Map(
+    evidence.map((item) => [
+      item.referenceId,
+      item.sourceType === "USER_PROFILE"
+        ? `profile-${profileIndex++}`
+        : `jd-${jdIndex++}`,
+    ]),
+  );
+  const evidenceKeys = new Set([
+    "evidenceReferences",
+    "jdEvidenceReferences",
+    "profileEvidenceReferences",
+    "decisionImpactReferences",
+    "assessmentOnlyReferences",
+    "evidenceReferencesA",
+    "evidenceReferencesB",
+  ]);
+  const project = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(project);
+    if (input === null || typeof input !== "object") return input;
+    return Object.fromEntries(
+      Object.entries(input).map(([key, child]) => [
+        key,
+        evidenceKeys.has(key) && Array.isArray(child)
+          ? child.map((reference) => references.get(String(reference)) ?? reference)
+          : project(child),
+      ]),
+    );
+  };
+  return project(value);
 }
 
 function decisiveResumeMatchTransport() {
@@ -555,6 +597,183 @@ function mixedAuthoritativeResumeMatchRequirements() {
 }
 
 describe("production semantic execution", () => {
+  it("builds one canonical production-shaped Resume Match evidence input", async () => {
+    const evidenceRecord = (
+      source: "jd" | "profile",
+      index: number,
+      evidenceType: string,
+    ) => {
+      const statement = `${source.toUpperCase()} canonical evidence statement ${index}: ${"materially relevant customer-success evidence ".repeat(8)}`;
+      return {
+        referenceId: `core-${source}-evidence-reference-${String(index).padStart(2, "0")}-accepted-baseline`,
+        criterionId: "customer-success-resume-match",
+        claim: statement,
+        sourceType: source === "profile" ? "USER_PROFILE" : "JOB_DESCRIPTION",
+        sourceRecordId: null,
+        provenanceId: null,
+        sourceField: source === "profile" ? "experience" : "jobDescription",
+        sourceReference:
+          source === "profile" ? "user-profile:fixture:v1" : "fixture:job-description",
+        sourceText: statement,
+        evidenceType,
+        origin: "EXPLICIT" as const,
+        evidenceLevel: "CONFIRMED" as const,
+        collectedAt: null,
+      };
+    };
+    const jdEvidence = Array.from({ length: 20 }, (_, index) =>
+      evidenceRecord("jd", index, index < 16 ? "REQUIREMENT" : "RESPONSIBILITY"),
+    );
+    const profileEvidence = Array.from({ length: 29 }, (_, index) =>
+      evidenceRecord(
+        "profile",
+        index,
+        [
+          "DIRECT_EXPERIENCE",
+          "RELATED_EXPERIENCE",
+          "TRANSFERABLE_EXPERIENCE",
+          "TRANSFERABLE_SKILL",
+          "SKILL",
+        ][index % 5]!,
+      ),
+    );
+    const availableEvidence = [...jdEvidence, ...profileEvidence];
+    const requirements = Array.from({ length: 16 }, (_, index) => ({
+      ...authoritativeResumeMatchRequirements()[0]!,
+      requirement: `Production-shaped requirement ${index}`,
+      category: (["EXPERIENCE", "CAPABILITY", "TOOL", "INDUSTRY"] as const)[
+        index % 4
+      ]!,
+      evidenceReferences: [jdEvidence[index]!.referenceId],
+    }));
+    const profileStatements = profileEvidence.map((evidence, index) => ({
+      id: `profile-statement-${index}`,
+      statement: evidence.claim,
+      relationship: (["DIRECT", "RELATED", "TRANSFERABLE"] as const)[
+        index % 3
+      ]!,
+    }));
+    const richUserProfile = {
+      id: "00000000-0000-4000-8000-000000000001",
+      version: 1,
+      data: {
+        label: "Accepted production-shaped profile",
+        careerGoals: null,
+        experience: profileStatements,
+        skills: null,
+        transferableSkills: null,
+        locationPreferences: null,
+        compensationPreferences: null,
+        workPreferences: null,
+        companyPreferences: null,
+        domainPreferences: {},
+      },
+      evidence: profileEvidence,
+    };
+    const semanticContext = {
+      responsibilityMap: { areas: {}, other: [] },
+      ownershipMap: { functions: {} },
+      roleMetadata: { actualRoleClassification: "CORE_CS" },
+      jobEvaluation: { evaluated: true, classification: "CORE_CS" },
+      companyAlignment: { evaluated: true },
+      organizationalMaturity: { evaluated: true },
+      alexFit: { evaluated: true, classification: "GOOD" },
+      burnoutRisk: { evaluated: true, score: 62 },
+    };
+    const preferences = { fitPreferences: {}, careerStrategy: {} };
+    let captured: Parameters<SemanticExecutor["execute"]>[0] | undefined;
+    const operations = createProductionCustomerSuccessSemanticOperations({
+      async execute(value) {
+        captured = value;
+        throw new Error("capture-only");
+      },
+      usage() {
+        return { callsUsed: 0, callBudget: 0 };
+      },
+    } as SemanticExecutor);
+
+    await operations.evaluateResumeMatch({
+      ...semanticContext,
+      requirementMap: requirements,
+      userProfile: richUserProfile,
+      preferences,
+      availableEvidence,
+    } as never).catch(() => undefined);
+
+    expect(captured).toBeDefined();
+    const providerContext = captured!.trustedContext as Record<string, unknown>;
+    expect(providerContext).not.toHaveProperty("userProfile");
+    expect(providerContext).not.toHaveProperty("availableEvidence");
+    expect(providerContext).not.toHaveProperty("jobEvidenceCatalog");
+    expect(providerContext.profileEvidenceCatalog).toHaveLength(29);
+    expect(providerContext.jdEvidenceCatalog).toHaveLength(20);
+    const serializedProviderContext = JSON.stringify(providerContext);
+    for (const evidence of availableEvidence) {
+      expect(serializedProviderContext.split(evidence.claim).length - 1).toBe(1);
+      expect(serializedProviderContext).not.toContain(evidence.referenceId);
+    }
+
+    const projection = createResumeMatchProviderInputProjection(availableEvidence);
+    expect(projection.profileEvidenceCatalog.map((item) => item.evidenceIndex)).toEqual(
+      Array.from({ length: 29 }, (_, index) => index),
+    );
+    expect(projection.jdEvidenceCatalog.map((item) => item.evidenceIndex)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index),
+    );
+    for (const evidence of availableEvidence) {
+      const providerReference =
+        projection.providerReferenceByCoreReference.get(evidence.referenceId)!;
+      expect(
+        projection.coreReferenceByProviderReference.get(providerReference),
+      ).toBe(evidence.referenceId);
+    }
+
+    const legacyContext = {
+      ...semanticContext,
+      userProfile: richUserProfile,
+      availableEvidence,
+      jobEvidenceCatalog: semanticResumeMatchJobEvidenceCatalog(availableEvidence),
+      requirementMap: semanticResumeMatchRequirementsForProvider(requirements),
+    };
+    const promptEnvelope = (trustedStructuredContext: unknown) =>
+      JSON.stringify({
+        userConfiguration: preferences,
+        trustedStructuredContext,
+        untrustedSourceContent: null,
+      });
+    const legacyInputBytes = Buffer.byteLength(promptEnvelope(legacyContext));
+    const optimizedInputBytes = Buffer.byteLength(
+      promptEnvelope(providerContext),
+    );
+    const legacySchemaBytes = Buffer.byteLength(
+      JSON.stringify(
+        z.toJSONSchema(
+          createSemanticResumeMatchTransportSchema(
+            availableEvidence,
+            requirements,
+          ),
+          { unrepresentable: "any" },
+        ),
+      ),
+    );
+    const optimizedSchemaBytes = Buffer.byteLength(
+      JSON.stringify(
+        z.toJSONSchema(captured!.schema, { unrepresentable: "any" }),
+      ),
+    );
+    const instructionsBytes = Buffer.byteLength(
+      [captured!.systemRules, captured!.domainInstructions].join("\n\n"),
+    );
+    const legacyRequestBytes =
+      legacyInputBytes + legacySchemaBytes + instructionsBytes;
+    const optimizedRequestBytes =
+      optimizedInputBytes + optimizedSchemaBytes + instructionsBytes;
+    expect(optimizedInputBytes).toBeLessThan(legacyInputBytes * 0.7);
+    expect(optimizedRequestBytes).toBeLessThan(legacyRequestBytes * 0.85);
+    expect(legacyInputBytes - optimizedInputBytes).toBeGreaterThan(100_000);
+    expect(legacyRequestBytes - optimizedRequestBytes).toBeGreaterThan(100_000);
+  });
+
   it("binds the complete positive classification/specificity/basis/type matrix", () => {
     const types = ["DIRECT_EXPERIENCE", "RELATED_EXPERIENCE", "TRANSFERABLE_EXPERIENCE", "TRANSFERABLE_SKILL", "SKILL"];
     const evidence = resumeMatchAvailableEvidence(types.map((evidenceType) => ({
@@ -1933,6 +2152,133 @@ describe("production semantic execution", () => {
     ).not.toThrow();
   });
 
+  it("keeps startup specialization Unknown without startup-specific work evidence", () => {
+    const requirement = [{
+      ...authoritativeResumeMatchRequirements()[0]!,
+      requirement: "Experience in an early-stage startup environment.",
+      category: "EXPERIENCE" as const,
+      strength: "NICE_TO_HAVE" as const,
+      experienceSpecificity: "Early-stage startup experience",
+    }];
+    const completeEvidence = resumeMatchAvailableEvidence().map((evidence) => ({
+      ...evidence,
+      criterionId: "resume-match",
+      claim: evidence.sourceType === "USER_PROFILE"
+        ? "Built an independent tutoring practice with autonomous, self-directed work and multiple responsibilities."
+        : "The role prefers early-stage startup experience.",
+      sourceRecordId: null,
+      provenanceId: null,
+      sourceField: evidence.sourceType === "USER_PROFILE" ? "experience" : "jobDescription",
+      sourceReference: "resume-match:test",
+      sourceText: evidence.sourceType === "USER_PROFILE"
+        ? "Self-employed independent tutor."
+        : "Experience in an early-stage startup environment.",
+      origin: "EXPLICIT" as const,
+      evidenceLevel: "CONFIRMED" as const,
+      collectedAt: null,
+    }));
+    const projection = createResumeMatchProviderInputProjection(completeEvidence);
+    const providerValue = withResumeMatchProviderReferences(
+      validProviderResumeMatchTransport(),
+      resumeMatchAvailableEvidence(),
+    ) as ReturnType<typeof validProviderResumeMatchTransport>;
+    const positive = structuredClone(providerValue);
+    Object.assign(positive.requirementAssessments[0]!, {
+      classification: "PARTIAL_MATCH",
+      matchedExperienceSpecificity: "TRANSFERABLE",
+      experienceEvidenceBasis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      supportedPortion: "Autonomous work is transferable.",
+      unsupportedPortion: "Startup specialization is not established.",
+    });
+    const schema = createSemanticResumeMatchTransportSchema(
+      projection.schemaEvidence,
+      requirement,
+    );
+    expect(schema.safeParse(positive).success).toBe(false);
+    expect(() => semanticResumeMatchFromTransport(
+      positive,
+      requirement,
+      completeEvidence,
+      semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+      projection,
+    )).toThrowError(expect.objectContaining({
+      code: "RESUME_MATCH_EVIDENCE_INVALID",
+      retryable: false,
+    }));
+
+    const unknown = structuredClone(providerValue);
+    Object.assign(unknown.requirementAssessments[0]!, {
+      classification: "UNKNOWN",
+      matchedExperienceSpecificity: "UNKNOWN",
+      experienceEvidenceBasis: "UNKNOWN",
+      supportedPortion: null,
+      unsupportedPortion: null,
+      profileEvidence: {
+        decisionImpactReferences: [],
+        assessmentOnlyReferences: [],
+      },
+    });
+    expect(schema.safeParse(unknown).success).toBe(true);
+    const domain = semanticResumeMatchFromTransport(
+      unknown,
+      requirement,
+      completeEvidence,
+      semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+      projection,
+    );
+    expect(domain.requirementAssessments[0]).toMatchObject({
+      classification: "UNKNOWN",
+      matchedExperienceSpecificity: "UNKNOWN",
+    });
+    expect(domain.requirementAssessments[0]?.classification).not.toBe(
+      "GENUINE_GAP",
+    );
+    expect(domain.strongStrengths[0]?.finding).toContain("Transferable");
+  });
+
+  it("allows genuine startup-specific professional evidence to be assessed", () => {
+    const requirement = [{
+      ...authoritativeResumeMatchRequirements()[0]!,
+      requirement: "Experience in an early-stage startup environment.",
+      category: "EXPERIENCE" as const,
+      strength: "NICE_TO_HAVE" as const,
+      experienceSpecificity: "Early-stage startup experience",
+    }];
+    const completeEvidence = resumeMatchAvailableEvidence().map((evidence) => ({
+      ...evidence,
+      criterionId: "resume-match",
+      claim: evidence.sourceType === "USER_PROFILE"
+        ? "Worked professionally for an early-stage startup serving customers."
+        : "The role prefers early-stage startup experience.",
+      sourceRecordId: null,
+      provenanceId: null,
+      sourceField: evidence.sourceType === "USER_PROFILE" ? "experience" : "jobDescription",
+      sourceReference: "resume-match:test",
+      sourceText: evidence.sourceType === "USER_PROFILE"
+        ? "Early-stage startup role."
+        : "Experience in an early-stage startup environment.",
+      origin: "EXPLICIT" as const,
+      evidenceLevel: "CONFIRMED" as const,
+      collectedAt: null,
+    }));
+    const projection = createResumeMatchProviderInputProjection(completeEvidence);
+    const providerValue = withResumeMatchProviderReferences(
+      validProviderResumeMatchTransport(),
+      completeEvidence,
+    ) as ReturnType<typeof validProviderResumeMatchTransport>;
+    expect(createSemanticResumeMatchTransportSchema(
+      projection.schemaEvidence,
+      requirement,
+    ).safeParse(providerValue).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(
+      providerValue,
+      requirement,
+      completeEvidence,
+      semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+      projection,
+    )).not.toThrow();
+  });
+
   it("does not let certification readiness erase a direct SaaS gap and derives Genuine Gaps", () => {
     const industryRequirement = [{
       ...authoritativeResumeMatchRequirements()[0]!,
@@ -2332,6 +2678,138 @@ describe("production semantic execution", () => {
     });
     expect(() => semanticResumeMatchSchema.parse(domain)).not.toThrow();
     expect(domain.effectiveSeniority.effectiveLevelFit).toBe("TARGET_LEVEL");
+  });
+
+  it("restores compact Resume Match provider references to Core evidence identities", () => {
+    const completeEvidence = resumeMatchAvailableEvidence().map((evidence) => ({
+      ...evidence,
+      criterionId: "resume-match",
+      claim: `${evidence.referenceId} semantic statement`,
+      sourceRecordId: null,
+      provenanceId: null,
+      sourceField:
+        evidence.sourceType === "USER_PROFILE" ? "experience" : "jobDescription",
+      sourceReference:
+        evidence.sourceType === "USER_PROFILE"
+          ? "user-profile:test:v1"
+          : "job-description:test",
+      sourceText: `${evidence.referenceId} semantic statement`,
+      origin: "EXPLICIT" as const,
+      evidenceLevel: "CONFIRMED" as const,
+      collectedAt: null,
+    }));
+    const projection = createResumeMatchProviderInputProjection(completeEvidence);
+    const providerTransport = withResumeMatchProviderReferences(
+      validProviderResumeMatchTransport(),
+      completeEvidence,
+    );
+    const domain = semanticResumeMatchFromTransport(
+      providerTransport,
+      authoritativeResumeMatchRequirements(),
+      completeEvidence,
+      semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+      projection,
+    );
+
+    expect(domain.scoreEvidenceReferences).toEqual(["jd-1", "profile-1"]);
+    expect(domain.requirementAssessments[0]).toMatchObject({
+      jdEvidenceReferences: ["jd-1"],
+      profileEvidenceReferences: ["profile-1"],
+    });
+    expect(domain.effectiveSeniority.evidenceReferences).toEqual([
+      "jd-1",
+      "profile-1",
+    ]);
+    expect(domain.positioningRecommendations[0]?.evidenceReferences).toEqual([
+      "jd-1",
+      "profile-1",
+    ]);
+
+    const invalid = structuredClone(providerTransport) as ReturnType<
+      typeof validProviderResumeMatchTransport
+    >;
+    invalid.evidenceReferences = ["jd-0", "profile-999"];
+    expect(() =>
+      semanticResumeMatchFromTransport(
+        invalid,
+        authoritativeResumeMatchRequirements(),
+        completeEvidence,
+        semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+        projection,
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        retryable: false,
+      }),
+    );
+  });
+
+  it("restores provider-local citations in narratives without changing ordinary text", () => {
+    const completeEvidence = resumeMatchAvailableEvidence().map((evidence, index) => ({
+      ...evidence,
+      referenceId: evidence.sourceType === "USER_PROFILE"
+        ? `core-profile-evidence-${index}`
+        : `core-jd-evidence-${index}`,
+      criterionId: "resume-match",
+      claim: "Canonical evidence statement.",
+      sourceRecordId: null,
+      provenanceId: null,
+      sourceField: evidence.sourceType === "USER_PROFILE" ? "experience" : "jobDescription",
+      sourceReference: "resume-match:test",
+      sourceText: "Canonical evidence statement.",
+      origin: "EXPLICIT" as const,
+      evidenceLevel: "CONFIRMED" as const,
+      collectedAt: null,
+    }));
+    const projection = createResumeMatchProviderInputProjection(completeEvidence);
+    const providerValue = withResumeMatchProviderReferences(
+      validProviderResumeMatchTransport(),
+      resumeMatchAvailableEvidence(),
+    ) as ReturnType<typeof validProviderResumeMatchTransport>;
+    providerValue.scoreExplanation =
+      "Supported by [jd-0], profile-0, and their combined evidence.";
+    providerValue.summary =
+      "An ordinary profile-based summary and JD-ready note remain unchanged.";
+    const requirements = authoritativeResumeMatchRequirements().map(
+      (requirement) => ({
+        ...requirement,
+        evidenceReferences: ["core-jd-evidence-0"],
+      }),
+    );
+    const domain = semanticResumeMatchFromTransport(
+      providerValue,
+      requirements,
+      completeEvidence,
+      semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+      projection,
+    );
+    expect(domain.scoreExplanation).toBe(
+      "Supported by [core-jd-evidence-0], core-profile-evidence-1, and their combined evidence.",
+    );
+    expect(domain.summary).toBe(
+      "An ordinary profile-based summary and JD-ready note remain unchanged.",
+    );
+    expect(JSON.stringify(domain)).not.toMatch(/(?:jd|profile)-\d+/);
+    expect(domain.scoreEvidenceReferences).toEqual([
+      "core-jd-evidence-0",
+      "core-profile-evidence-1",
+    ]);
+
+    for (const invalidCitation of ["[jd-x]", "[jd-999]", "profile-999"]) {
+      const invalid = structuredClone(providerValue);
+      invalid.summary = `Invalid citation ${invalidCitation}.`;
+      expect(() => semanticResumeMatchFromTransport(
+        invalid,
+        requirements,
+        completeEvidence,
+        semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+        projection,
+      )).toThrowError(expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        retryable: false,
+      }));
+    }
   });
 
   it("constructs ambiguous requirements deterministically and sends only eligible requirements to Terra", async () => {
@@ -3374,6 +3852,7 @@ describe("production semantic execution", () => {
 
   it("maps every Customer Success semantic operation to its narrow prompt and schema", async () => {
     const captured: Array<Parameters<SemanticExecutor["execute"]>[0]> = [];
+    const resumeEvidence = resumeMatchAvailableEvidence();
     const executor = {
       async execute(value: Parameters<SemanticExecutor["execute"]>[0]) {
         captured.push(value);
@@ -3381,7 +3860,10 @@ describe("production semantic execution", () => {
           return validJdReconstructionTransport();
         }
         if (value.operationId === "customer-success.resume-match") {
-          return validResumeMatchTransport();
+          return withResumeMatchProviderReferences(
+            validProviderResumeMatchTransport(),
+            resumeEvidence,
+          );
         }
         return {};
       },
@@ -3412,7 +3894,7 @@ describe("production semantic execution", () => {
     await captureInvocation(operations.evaluateBurnoutRisk({ availableEvidence: maturityReconstruction.evidence } as never));
     await operations.evaluateResumeMatch({
       requirementMap: authoritativeResumeMatchRequirements(),
-      availableEvidence: resumeMatchAvailableEvidence(),
+      availableEvidence: resumeEvidence,
     } as never);
     await captureInvocation(
       operations.evaluateOpportunityPriority({
@@ -3444,7 +3926,16 @@ describe("production semantic execution", () => {
       ),
       createSemanticAlexFitTransportSchema([{ referenceId: "jd-evidence", sourceType: "MANUAL" }]),
       createSemanticBurnoutRiskTransportSchema(maturityReconstruction.evidence),
-      createSemanticResumeMatchTransportSchema(resumeMatchAvailableEvidence(), authoritativeResumeMatchRequirements()),
+      createSemanticResumeMatchTransportSchema(
+        resumeEvidence.map((evidence, index) => ({
+          ...evidence,
+          referenceId:
+            evidence.sourceType === "USER_PROFILE"
+              ? `profile-${index - resumeEvidence.filter((item) => item.sourceType !== "USER_PROFILE").length}`
+              : `jd-${resumeEvidence.slice(0, index).filter((item) => item.sourceType !== "USER_PROFILE").length}`,
+        })),
+        authoritativeResumeMatchRequirements(),
+      ),
       semanticOpportunityPriorityTransportSchema,
       semanticGhostJobRiskTransportSchema,
     ].map((schema) => z.toJSONSchema(schema, { unrepresentable: "any" })));

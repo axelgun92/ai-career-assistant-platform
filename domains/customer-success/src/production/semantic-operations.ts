@@ -40,8 +40,10 @@ import {
   semanticOrganizationalMaturityFromTransport,
 } from "../schemas/organizational-maturity";
 import {
+  createResumeMatchProviderInputProjection,
   createSemanticResumeMatchTransportSchema,
   customerSuccessResumeMatchPromptVersion,
+  projectResumeMatchContextForProvider,
   semanticResumeMatchFromTransport,
   semanticResumeMatchJobEvidenceCatalog,
   semanticResumeMatchRequirementsForProvider,
@@ -196,29 +198,47 @@ export function createProductionCustomerSuccessSemanticOperations(
       );
     },
     async evaluateResumeMatch(input) {
-      const { preferences, requirementMap, availableEvidence, ...trustedContext } =
-        input;
+      const {
+        preferences,
+        requirementMap,
+        availableEvidence,
+        userProfile: _userProfile,
+        ...trustedContext
+      } = input;
+      const providerInput = createResumeMatchProviderInputProjection(
+        availableEvidence,
+      );
       const jobEvidenceCatalog =
         semanticResumeMatchJobEvidenceCatalog(availableEvidence);
       return semanticResumeMatchFromTransport(
         await operation(executor, {
           operationId: "customer-success.resume-match",
           promptVersion: customerSuccessResumeMatchPromptVersion,
-          schema: createSemanticResumeMatchTransportSchema(availableEvidence, requirementMap),
+          schema: createSemanticResumeMatchTransportSchema(
+            providerInput.schemaEvidence,
+            requirementMap,
+          ),
           instructions:
-            "Compare every supplied Requirement Map entry to separately identified JD and candidate-profile evidence. Preserve requirement metadata and order. Actual Responsibility Seniority answers only what level of responsibility the job carries: use the supplied jobEvidenceCatalog indexes and never candidate/profile evidence for its classification or signals. Distinguish direct, partial, transferable, and genuine gaps. For a specialized industry or direct-work-experience requirement, generic customer-facing work, certifications, coursework, tools, self-study, or readiness do not establish the specialization or direct employment experience; they may be positioning context only. Declare the experienceEvidenceBasis truthfully. A required gap is decisive only with JD and profile evidence proving it is a true must-have disqualifier; preferred, ideal, and nice-to-have gaps remain non-decisive unless the authoritative contract says otherwise. Missing evidence remains Unknown unless the supplied profile explicitly establishes the gap.",
+            "Compare every supplied Requirement Map entry to the separately identified jdEvidenceCatalog and profileEvidenceCatalog. Use their provider-local evidenceReference values for evidence-reference fields. Preserve requirement metadata and order. Actual Responsibility Seniority answers only what level of responsibility the job carries: use the zero-based evidenceIndex values in jdEvidenceCatalog and never candidate/profile evidence for its classification or signals. Distinguish direct, partial, transferable, and genuine gaps. For a specialized industry or direct-work-experience requirement, generic customer-facing work, certifications, coursework, tools, self-study, or readiness do not establish the specialization or direct employment experience; they may be positioning context only. Declare the experienceEvidenceBasis truthfully. A required gap is decisive only with JD and profile evidence proving it is a true must-have disqualifier; preferred, ideal, and nice-to-have gaps remain non-decisive unless the authoritative contract says otherwise. Missing evidence remains Unknown unless the supplied profile explicitly establishes the gap.",
           userConfiguration: preferences,
           trustedContext: {
-            ...trustedContext,
-            availableEvidence,
-            jobEvidenceCatalog,
+            ...(projectResumeMatchContextForProvider(
+              trustedContext,
+              providerInput.providerReferenceByCoreReference,
+            ) as typeof trustedContext),
+            profileEvidenceCatalog: providerInput.profileEvidenceCatalog,
+            jdEvidenceCatalog: providerInput.jdEvidenceCatalog,
             requirementMap:
-              semanticResumeMatchRequirementsForProvider(requirementMap),
+              semanticResumeMatchRequirementsForProvider(
+                requirementMap,
+                providerInput.providerReferenceByCoreReference,
+              ),
           },
         }),
         requirementMap,
         availableEvidence,
         jobEvidenceCatalog,
+        providerInput,
       );
     },
     async evaluateOpportunityPriority(input) {

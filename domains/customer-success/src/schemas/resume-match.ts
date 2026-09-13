@@ -509,6 +509,29 @@ function requiresDirectWork(requirement?: ResumeMatchRequirement) {
   );
 }
 
+const startupSpecializationPattern = /\b(?:startup|start-up|startups|start-ups)\b/i;
+
+function requiresStartupSpecialization(requirement?: ResumeMatchRequirement) {
+  return requirement?.category === "EXPERIENCE" && startupSpecializationPattern.test(
+    [requirement.requirement, requirement.experienceSpecificity]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function supportsStartupSpecialization(evidence: AvailableResumeMatchEvidence) {
+  if (evidence.sourceType !== "USER_PROFILE") return false;
+  if (evidence.startupSpecialization !== undefined) {
+    return evidence.startupSpecialization;
+  }
+  if (!broaderOrTransferableWorkEvidenceTypes.has(evidence.evidenceType)) {
+    return false;
+  }
+  return startupSpecializationPattern.test(
+    [evidence.claim, evidence.sourceText].filter(Boolean).join(" "),
+  );
+}
+
 // One relational model for provider variants and pre-domain conversion checks.
 // These are the existing evidence rules, not a new interpretation of match quality.
 function positiveRequirementCompatibility(
@@ -679,6 +702,13 @@ function providerRequirementAssessmentSchema(
   const referenceCatalogs = new Map<string, z.ZodType<string>>();
   const semanticRequirements = requirementMap?.map((requirement, index) => ({ requirement, index }))
     .filter(({ requirement }) => !requirement.ambiguity.isAmbiguous);
+  const hasStartupEvidence = availableEvidence.some(supportsStartupSpecialization);
+  const predeterminedStartupUnknownIndexes = new Set(
+    semanticRequirements
+      ?.filter(({ requirement }) =>
+        requiresStartupSpecialization(requirement) && !hasStartupEvidence)
+      .map(({ index }) => index) ?? [],
+  );
   const constrainIndexes = (schema: z.ZodObject, indexes?: number[]) =>
     indexes === undefined ? schema : schema.extend({
       requirementIndex: indexes.length === 1
@@ -694,7 +724,14 @@ function providerRequirementAssessmentSchema(
   const groups = new Map<string, { requirement?: ResumeMatchRequirement; indexes?: number[] }>();
   if (semanticRequirements === undefined) groups.set("unspecified", {});
   for (const { requirement, index } of semanticRequirements ?? []) {
-    const key = requiresDirectWork(requirement) ? "direct" : requirement.category === "EXPERIENCE" ? "experience" : "ordinary";
+    if (predeterminedStartupUnknownIndexes.has(index)) continue;
+    const key = requiresStartupSpecialization(requirement)
+      ? "startup"
+      : requiresDirectWork(requirement)
+        ? "direct"
+        : requirement.category === "EXPERIENCE"
+          ? "experience"
+          : "ordinary";
     const group = groups.get(key) ?? { requirement, indexes: [] };
     group.indexes!.push(index);
     groups.set(key, group);
@@ -707,7 +744,10 @@ function providerRequirementAssessmentSchema(
         for (const specificity of positiveSpecificities[classification]) {
           const types = positiveRequirementCompatibility(classification, specificity, evidenceBasis, group.requirement);
           const profileReferenceIds = availableEvidence.filter((evidence) =>
-            evidence.sourceType === "USER_PROFILE" && types.has(evidence.evidenceType),
+            evidence.sourceType === "USER_PROFILE" &&
+            types.has(evidence.evidenceType) &&
+            (!requiresStartupSpecialization(group.requirement) ||
+              supportsStartupSpecialization(evidence)),
           ).map((evidence) => evidence.referenceId);
           if (profileReferenceIds.length === 0) continue;
           const key = JSON.stringify(profileReferenceIds);
@@ -731,8 +771,10 @@ function providerRequirementAssessmentSchema(
     .map((evidence) => evidence.referenceId), referenceCatalogs);
   for (const schema of providerGapRequirementSchema.options) {
     const indexes = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER"
-      ? semanticRequirements?.filter(({ requirement }) => requirement.strength === "REQUIRED").map(({ index }) => index)
-      : allIndexes;
+      ? semanticRequirements?.filter(({ requirement, index }) =>
+          requirement.strength === "REQUIRED" &&
+          !predeterminedStartupUnknownIndexes.has(index)).map(({ index }) => index)
+      : allIndexes?.filter((index) => !predeterminedStartupUnknownIndexes.has(index));
     if (profileReferences && (indexes === undefined || indexes.length > 0)) {
       schemas.push(constrainIndexes(schema.extend({ profileEvidenceReferences: profileReferences }), indexes));
     }
@@ -891,14 +933,139 @@ export function createSemanticResumeMatchTransportSchema(
 
 export function semanticResumeMatchRequirementsForProvider(
   authoritativeRequirementMap: z.input<typeof requirementMapSchema>,
+  providerReferenceByCoreReference?: ReadonlyMap<string, string>,
 ) {
   return requirementMapSchema
     .parse(authoritativeRequirementMap)
     .map((requirement, requirementIndex) => ({
       requirementIndex,
       ...requirement,
+      evidenceReferences: providerReferenceByCoreReference
+        ? requirement.evidenceReferences.map((reference) => {
+            const providerReference =
+              providerReferenceByCoreReference.get(reference);
+            if (!providerReference) {
+              evidenceResultViolation(
+                `Resume Match requirement ${requirementIndex} references evidence outside the provider catalog`,
+              );
+            }
+            return providerReference;
+          })
+        : requirement.evidenceReferences,
     }))
     .filter((requirement) => !requirement.ambiguity.isAmbiguous);
+}
+
+type ResumeMatchProviderInputEvidence = Pick<
+  EvidenceRecordDraft,
+  | "referenceId"
+  | "claim"
+  | "sourceType"
+  | "sourceField"
+  | "sourceText"
+  | "evidenceType"
+  | "origin"
+  | "evidenceLevel"
+>;
+
+export interface ResumeMatchProviderEvidenceCatalogEntry {
+  evidenceIndex: number;
+  evidenceReference: string;
+  evidenceType: string;
+  statement: string;
+  sourceExcerpt: string | null;
+  sourceField: string | null;
+  origin: EvidenceRecordDraft["origin"];
+  evidenceLevel: EvidenceRecordDraft["evidenceLevel"];
+}
+
+export interface ResumeMatchProviderJdEvidenceCatalogEntry
+  extends ResumeMatchProviderEvidenceCatalogEntry {
+  sourceType: string;
+}
+
+export interface ResumeMatchProviderInputProjection {
+  profileEvidenceCatalog: ResumeMatchProviderEvidenceCatalogEntry[];
+  jdEvidenceCatalog: ResumeMatchProviderJdEvidenceCatalogEntry[];
+  schemaEvidence: AvailableResumeMatchEvidence[];
+  providerReferenceByCoreReference: ReadonlyMap<string, string>;
+  coreReferenceByProviderReference: ReadonlyMap<string, string>;
+}
+
+function compactEvidenceContent(evidence: ResumeMatchProviderInputEvidence) {
+  return {
+    evidenceType: evidence.evidenceType,
+    statement: evidence.claim,
+    sourceExcerpt:
+      evidence.sourceText === evidence.claim ? null : evidence.sourceText,
+    sourceField: evidence.sourceField,
+    origin: evidence.origin,
+    evidenceLevel: evidence.evidenceLevel,
+  };
+}
+
+/**
+ * Builds the only model-visible Resume Match evidence inventories. Core IDs and
+ * full provenance records remain application-side in the returned lookup maps.
+ */
+export function createResumeMatchProviderInputProjection(
+  availableEvidence: ResumeMatchProviderInputEvidence[],
+): ResumeMatchProviderInputProjection {
+  const providerReferenceByCoreReference = new Map<string, string>();
+  const coreReferenceByProviderReference = new Map<string, string>();
+  const schemaEvidence: AvailableResumeMatchEvidence[] = [];
+  const profileEvidenceCatalog: ResumeMatchProviderEvidenceCatalogEntry[] = [];
+  const jdEvidenceCatalog: ResumeMatchProviderJdEvidenceCatalogEntry[] = [];
+
+  for (const evidence of availableEvidence) {
+    if (providerReferenceByCoreReference.has(evidence.referenceId)) {
+      evidenceResultViolation(
+        "Available Resume Match evidence contains duplicate reference identifiers",
+      );
+    }
+    const isProfile = evidence.sourceType === "USER_PROFILE";
+    const evidenceIndex = isProfile
+      ? profileEvidenceCatalog.length
+      : jdEvidenceCatalog.length;
+    const evidenceReference = `${isProfile ? "profile" : "jd"}-${evidenceIndex}`;
+    providerReferenceByCoreReference.set(
+      evidence.referenceId,
+      evidenceReference,
+    );
+    coreReferenceByProviderReference.set(
+      evidenceReference,
+      evidence.referenceId,
+    );
+    schemaEvidence.push({
+      referenceId: evidenceReference,
+      sourceType: evidence.sourceType,
+      evidenceType: evidence.evidenceType,
+      startupSpecialization:
+        evidence.sourceType === "USER_PROFILE" &&
+        broaderOrTransferableWorkEvidenceTypes.has(evidence.evidenceType) &&
+        startupSpecializationPattern.test(
+          [evidence.claim, evidence.sourceText].filter(Boolean).join(" "),
+        ),
+    });
+    const entry = {
+      evidenceIndex,
+      evidenceReference,
+      ...compactEvidenceContent(evidence),
+    };
+    if (isProfile) {
+      profileEvidenceCatalog.push(entry);
+    } else {
+      jdEvidenceCatalog.push({ ...entry, sourceType: evidence.sourceType });
+    }
+  }
+
+  return {
+    profileEvidenceCatalog,
+    jdEvidenceCatalog,
+    schemaEvidence,
+    providerReferenceByCoreReference,
+    coreReferenceByProviderReference,
+  };
 }
 
 export function semanticResumeMatchJobEvidenceCatalog<
@@ -946,7 +1113,10 @@ function assertUniqueRequirementProfileEvidenceReferences(
 type AvailableResumeMatchEvidence = Pick<
   EvidenceRecordDraft,
   "referenceId" | "sourceType" | "evidenceType"
->;
+> &
+  Partial<Pick<EvidenceRecordDraft, "claim" | "sourceText">> & {
+    startupSpecialization?: boolean;
+  };
 
 type ResumeMatchJobEvidenceCatalog = ReturnType<
   typeof semanticResumeMatchJobEvidenceCatalog
@@ -1035,6 +1205,151 @@ function restoreAssessmentEvidence(input: unknown) {
       },
     ),
   };
+}
+
+const providerEvidenceReferenceKeys = new Set([
+  "evidenceReferences",
+  "jdEvidenceReferences",
+  "profileEvidenceReferences",
+  "decisionImpactReferences",
+  "assessmentOnlyReferences",
+  "evidenceReferencesA",
+  "evidenceReferencesB",
+]);
+
+function mapResumeMatchEvidenceReferences(
+  value: unknown,
+  resolveReference: (reference: string, key: string) => string,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      mapResumeMatchEvidenceReferences(item, resolveReference),
+    );
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => {
+      if (providerEvidenceReferenceKeys.has(key)) {
+        if (
+          !Array.isArray(child) ||
+          child.some((reference) => typeof reference !== "string")
+        ) {
+          evidenceResultViolation(
+            `Resume Match provider field ${key} contains malformed evidence references`,
+          );
+        }
+        return [
+          key,
+          child.map((reference) => resolveReference(reference, key)),
+        ];
+      }
+      return [
+        key,
+        mapResumeMatchEvidenceReferences(child, resolveReference),
+      ];
+    }),
+  );
+}
+
+export function projectResumeMatchContextForProvider(
+  value: unknown,
+  providerReferenceByCoreReference: ReadonlyMap<string, string>,
+) {
+  return mapResumeMatchEvidenceReferences(value, (coreReference, key) => {
+    const providerReference =
+      providerReferenceByCoreReference.get(coreReference);
+    if (!providerReference) {
+      evidenceResultViolation(
+        `Resume Match provider context field ${key} references evidence outside the provider catalog`,
+      );
+    }
+    return providerReference;
+  });
+}
+
+function restoreProviderEvidenceReferences(
+  value: unknown,
+  coreReferenceByProviderReference: ReadonlyMap<string, string>,
+) {
+  return mapResumeMatchEvidenceReferences(value, (providerReference, key) => {
+    const coreReference =
+      coreReferenceByProviderReference.get(providerReference);
+    if (!coreReference) {
+      evidenceResultViolation(
+        `Resume Match provider field ${key} references unknown provider evidence`,
+      );
+    }
+    return coreReference;
+  });
+}
+
+const bracketedProviderCitationPattern = /\[((?:jd|profile)-\d+)\]/g;
+const malformedBracketedProviderCitationPattern =
+  /\[(?:jd|profile)-[^\]]*\]/i;
+const unbracketedProviderCitationPattern =
+  /(^|[^A-Za-z0-9_-])((?:jd|profile)-\d+)(?=$|[^A-Za-z0-9_-])/g;
+
+function restoreProviderNarrativeCitations(
+  value: unknown,
+  coreReferenceByProviderReference: ReadonlyMap<string, string>,
+  parentKey?: string,
+): unknown {
+  if (typeof value === "string") {
+    if (parentKey && providerEvidenceReferenceKeys.has(parentKey)) return value;
+    const bracketRestored = value.replace(
+      bracketedProviderCitationPattern,
+      (_citation, providerReference: string) => {
+        const coreReference =
+          coreReferenceByProviderReference.get(providerReference);
+        if (!coreReference) {
+          evidenceResultViolation(
+            "Resume Match narrative references unknown provider evidence",
+          );
+        }
+        return `[${coreReference}]`;
+      },
+    );
+    if (malformedBracketedProviderCitationPattern.test(bracketRestored)) {
+      evidenceResultViolation(
+        "Resume Match narrative contains malformed or ambiguous provider evidence",
+      );
+    }
+    return bracketRestored.replace(
+      unbracketedProviderCitationPattern,
+      (citation, prefix: string, providerReference: string) => {
+        const coreReference =
+          coreReferenceByProviderReference.get(providerReference);
+        if (!coreReference) {
+          evidenceResultViolation(
+            "Resume Match narrative references unknown provider evidence",
+          );
+        }
+        return `${prefix}${coreReference}`;
+      },
+    );
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      restoreProviderNarrativeCitations(
+        item,
+        coreReferenceByProviderReference,
+        parentKey,
+      ),
+    );
+  }
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [
+      key,
+      restoreProviderNarrativeCitations(
+        child,
+        coreReferenceByProviderReference,
+        key,
+      ),
+    ]),
+  );
 }
 
 function mergeBothSourceEvidence(input: {
@@ -1384,6 +1699,7 @@ export function semanticResumeMatchFromTransport(
   availableEvidence: AvailableResumeMatchEvidence[],
   jobEvidenceCatalog: ResumeMatchJobEvidenceCatalog =
     semanticResumeMatchJobEvidenceCatalog(availableEvidence),
+  providerInputProjection?: ResumeMatchProviderInputProjection,
 ): SemanticResumeMatch {
   // A duplicated inventory ID could otherwise denote both JD and profile
   // evidence. Reject it before source catalogs or partitions can restore IDs.
@@ -1391,7 +1707,7 @@ export function semanticResumeMatchFromTransport(
     evidenceResultViolation("Available Resume Match evidence contains duplicate reference identifiers");
   }
   const providerResult = createSemanticResumeMatchTransportSchema(
-    availableEvidence,
+    providerInputProjection?.schemaEvidence ?? availableEvidence,
     authoritativeRequirementMap,
   ).safeParse(value);
   const assessments = value !== null && typeof value === "object" && "requirementAssessments" in value
@@ -1405,9 +1721,20 @@ export function semanticResumeMatchFromTransport(
     // must not fall through to that reader and become retryable Zod failures.
     evidenceResultViolation("Resume Match grouped assessment evidence or compatibility is invalid");
   }
+  const restoredProviderResult = providerResult.success
+    ? providerInputProjection
+      ? restoreProviderEvidenceReferences(
+          restoreProviderNarrativeCitations(
+            providerResult.data,
+            providerInputProjection.coreReferenceByProviderReference,
+          ),
+          providerInputProjection.coreReferenceByProviderReference,
+        )
+      : providerResult.data
+    : value;
   const transport = semanticResumeMatchTransportSchema.parse(
     providerResult.success
-      ? restoreAssessmentEvidence(providerResult.data)
+      ? restoreAssessmentEvidence(restoredProviderResult)
       : value,
   );
   assertUniqueRequirementProfileEvidenceReferences(transport);
@@ -1450,6 +1777,33 @@ export function semanticResumeMatchFromTransport(
       );
     }
     const authoritative = requirements[assessment.requirementIndex]!;
+    const startupSpecializationRequired =
+      requiresStartupSpecialization(authoritative);
+    const startupSpecializationAvailable = availableEvidence.some(
+      supportsStartupSpecialization,
+    );
+    if (
+      startupSpecializationRequired &&
+      !startupSpecializationAvailable &&
+      assessment.classification !== "UNKNOWN"
+    ) {
+      evidenceResultViolation(
+        `Requirement ${assessment.requirementIndex} must remain Unknown without startup-specific experience evidence`,
+      );
+    }
+    if (
+      startupSpecializationRequired &&
+      ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(
+        assessment.classification,
+      ) &&
+      !assessment.profileEvidenceReferences.some((reference) =>
+        supportsStartupSpecialization(knownEvidence.get(reference)!),
+      )
+    ) {
+      evidenceResultViolation(
+        `Requirement ${assessment.requirementIndex} treats generic experience as startup specialization`,
+      );
+    }
     if (
       authoritative.category === "INDUSTRY" &&
       ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(assessment.classification) &&
