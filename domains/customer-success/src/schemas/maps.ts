@@ -262,7 +262,6 @@ const knownResponsibilityProminences = [
   "SUBSTANTIAL",
   "SECONDARY",
   "OCCASIONAL",
-  "ABSENT",
 ] as const;
 
 const transportResponsibilityAreaEntrySchema = z.union([
@@ -271,6 +270,15 @@ const transportResponsibilityAreaEntrySchema = z.union([
       area: responsibilityAreaSchema,
       prominence: z.enum(knownResponsibilityProminences),
       ownership: responsibilityOwnershipSchema,
+      evidenceReferences: evidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      area: responsibilityAreaSchema,
+      prominence: z.literal("ABSENT"),
+      ownership: responsibilityOwnershipSchema,
+      absenceBasis: z.literal("EXPLICIT_EXCLUSION"),
       evidenceReferences: evidenceReferences.min(1),
     })
     .strict(),
@@ -300,43 +308,66 @@ const transportOwnershipFunctionsSchema = z
   )
   .max(ownershipFunctions.length);
 
-const transportRequirementSchema = z
-  .object({ ...requirementSchema.shape })
-  .strict();
-
-const transportEvidenceRecordBaseShape = {
-  ...evidenceRecordDraftSchema.shape,
-  referenceId: requiredText,
-  criterionId: optionalText,
-  claim: requiredText,
-  sourceType: requiredText,
-  sourceField: optionalText,
-  sourceReference: optionalText,
-  sourceText: optionalText,
-  evidenceType: requiredText,
-  collectedAt: z.iso.datetime({ offset: true }).nullable(),
+const transportRequirementBaseShape = {
+  ...requirementSchema.shape,
+  evidenceReferences: evidenceReferences.length(1),
 };
 
-const transportEvidenceRecordDraftSchema = z.union([
+const transportRequirementSchema = z.union([
   z
     .object({
-      ...transportEvidenceRecordBaseShape,
-      sourceRecordId: z.uuid(),
+      ...transportRequirementBaseShape,
+      assessmentUnit: z.literal("INDEPENDENT_QUALIFICATION"),
+      compoundExplanation: z.null(),
     })
     .strict(),
   z
     .object({
-      ...transportEvidenceRecordBaseShape,
-      provenanceId: z.uuid(),
-    })
-    .strict(),
-  z
-    .object({
-      ...transportEvidenceRecordBaseShape,
-      sourceReference: requiredText,
+      ...transportRequirementBaseShape,
+      assessmentUnit: z.literal("SINGLE_COMPOUND_CONCEPT"),
+      compoundExplanation: requiredText,
     })
     .strict(),
 ]);
+
+const transportEvidenceRecordDraftSchema = z
+  .object({
+    sourceIndex: z.literal(0),
+    referenceId: requiredText,
+    claim: requiredText,
+    sourceField: optionalText,
+    sourceText: optionalText,
+    evidenceType: requiredText,
+    origin: evidenceRecordDraftSchema.shape.origin,
+    evidenceLevel: evidenceRecordDraftSchema.shape.evidenceLevel,
+  })
+  .strict();
+
+export const semanticReconstructionEvidenceSourceSchema = z
+  .object({
+    sourceIndex: z.literal(0),
+    sourceType: requiredText,
+    sourceRecordId: z.uuid().nullable(),
+    provenanceId: z.uuid().nullable(),
+    sourceReference: optionalText,
+    collectedAt: z.coerce.date().nullable(),
+    sourceContent: requiredText,
+  })
+  .strict()
+  .superRefine((source, context) => {
+    if (
+      source.sourceRecordId === null &&
+      source.provenanceId === null &&
+      source.sourceReference === null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceReference"],
+        message:
+          "JD Reconstruction evidence source requires a canonical source locator",
+      });
+    }
+  });
 
 const transportContradictionDraftSchema = z
   .object({
@@ -374,14 +405,101 @@ export const semanticReconstructionTransportSchema = z
 export type SemanticReconstructionTransport = z.infer<
   typeof semanticReconstructionTransportSchema
 >;
+export type SemanticReconstructionEvidenceSource = z.infer<
+  typeof semanticReconstructionEvidenceSourceSchema
+>;
 export type SemanticReconstruction = z.infer<
   typeof semanticReconstructionSchema
 >;
 
 export function semanticReconstructionFromTransport(
   input: unknown,
+  evidenceSourceInput: unknown,
 ): SemanticReconstruction {
   const transport = semanticReconstructionTransportSchema.parse(input);
+  const evidenceSource = parseSemanticDomainResult({
+    schema: semanticReconstructionEvidenceSourceSchema,
+    value: evidenceSourceInput,
+    code: "JD_RECONSTRUCTION_SOURCE_INVALID",
+    message: "JD Reconstruction evidence source could not be restored",
+  });
+  const evidenceReferenceIds = transport.evidence.map(
+    (evidence) => evidence.referenceId,
+  );
+  if (new Set(evidenceReferenceIds).size !== evidenceReferenceIds.length) {
+    semanticContractViolation(
+      "JD_RECONSTRUCTION_IDENTITY_INVALID",
+      "JD Reconstruction contains a repeated evidence identity",
+    );
+  }
+  const evidenceByReference = new Map(
+    transport.evidence.map((evidence) => [evidence.referenceId, evidence]),
+  );
+  const normalizedSourceContent = evidenceSource.sourceContent
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const explicitAbsencePattern =
+    /\b(?:does not|do not|will not|not responsible|not own|no responsibility|excluded|excluding|handled by|owned by|outside (?:the )?role|not part of)\b/i;
+  for (const assessment of transport.responsibilityMap.areas) {
+    if (assessment.prominence !== "ABSENT") continue;
+    const validAbsenceEvidence = assessment.evidenceReferences.every(
+      (reference) => {
+        const evidenceRecord = evidenceByReference.get(reference);
+        if (
+          !evidenceRecord ||
+          evidenceRecord.evidenceType !== "responsibilityAbsence" ||
+          evidenceRecord.origin !== "EXPLICIT" ||
+          evidenceRecord.evidenceLevel !== "CONFIRMED" ||
+          evidenceRecord.sourceText === null
+        ) {
+          return false;
+        }
+        const normalizedQuote = evidenceRecord.sourceText
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+        return (
+          explicitAbsencePattern.test(normalizedQuote) &&
+          normalizedSourceContent.includes(normalizedQuote)
+        );
+      },
+    );
+    if (!validAbsenceEvidence) {
+      semanticContractViolation(
+        "JD_RECONSTRUCTION_ABSENCE_INVALID",
+        "JD Reconstruction requires explicit source-grounded evidence for an absent responsibility",
+      );
+    }
+  }
+  const normalizedRequirements = transport.requirements.map((requirement) =>
+    requirement.requirement.replace(/\s+/g, " ").trim().toLowerCase(),
+  );
+  if (new Set(normalizedRequirements).size !== normalizedRequirements.length) {
+    semanticContractViolation(
+      "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID",
+      "JD Reconstruction contains a repeated requirement identity",
+    );
+  }
+  const evidence = transport.evidence.map(
+    ({ sourceIndex, ...semanticEvidence }) => {
+      if (sourceIndex !== evidenceSource.sourceIndex) {
+        semanticContractViolation(
+          "JD_RECONSTRUCTION_SOURCE_INVALID",
+          "JD Reconstruction evidence references an unavailable source",
+        );
+      }
+      return {
+        ...semanticEvidence,
+        criterionId: "jd-reconstruction",
+        sourceType: evidenceSource.sourceType,
+        sourceRecordId: evidenceSource.sourceRecordId,
+        provenanceId: evidenceSource.provenanceId,
+        sourceReference: evidenceSource.sourceReference,
+        collectedAt: evidenceSource.collectedAt,
+      };
+    },
+  );
   const uniqueAreas = new Set(
     transport.responsibilityMap.areas.map((entry) => entry.area),
   );
@@ -401,10 +519,18 @@ export function semanticReconstructionFromTransport(
     );
   }
   const areas = Object.fromEntries(
-    transport.responsibilityMap.areas.map(({ area, ...assessment }) => [
-      area,
-      assessment,
-    ]),
+    transport.responsibilityMap.areas.map(
+      ({ area, ...assessment }) => [
+        area,
+        assessment.prominence === "ABSENT"
+          ? {
+              prominence: assessment.prominence,
+              ownership: assessment.ownership,
+              evidenceReferences: assessment.evidenceReferences,
+            }
+          : assessment,
+      ],
+    ),
   );
   const functions = Object.fromEntries(
     transport.ownershipMap.functions.map(
@@ -415,12 +541,20 @@ export function semanticReconstructionFromTransport(
   const result = parseSemanticDomainResult({
     schema: semanticReconstructionSchema,
     value: {
-    ...transport,
-    responsibilityMap: {
-      areas,
-      other: transport.responsibilityMap.other,
-    },
-    ownershipMap: { functions },
+      ...transport,
+      responsibilityMap: {
+        areas,
+        other: transport.responsibilityMap.other,
+      },
+      ownershipMap: { functions },
+      requirements: transport.requirements.map(
+        ({
+          assessmentUnit: _assessmentUnit,
+          compoundExplanation: _compoundExplanation,
+          ...requirement
+        }) => requirement,
+      ),
+      evidence,
     },
     code: "JD_RECONSTRUCTION_DOMAIN_INVALID",
     message: "JD Reconstruction violated the domain contract",

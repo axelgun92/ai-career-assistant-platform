@@ -134,10 +134,30 @@ function deterministicTransport(input: {
             ...reconstruction,
             responsibilityMap: {
               areas: Object.entries(reconstruction.responsibilityMap.areas).map(
-                ([area, assessment]) => ({ area, ...assessment }),
+                ([area, assessment]) =>
+                  assessment.prominence === "ABSENT"
+                    ? {
+                        area,
+                        ...assessment,
+                        absenceBasis: "EXPLICIT_EXCLUSION" as const,
+                      }
+                    : { area, ...assessment },
               ),
               other: reconstruction.responsibilityMap.other,
             },
+            requirements: reconstruction.requirements.map((requirement) => {
+              if (requirement.evidenceReferences.length !== 1) {
+                throw new Error(
+                  "JD reconstruction fixture requirements must have one atomic evidence reference",
+                );
+              }
+              return {
+                ...requirement,
+                evidenceReferences: [requirement.evidenceReferences[0]!],
+                assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+                compoundExplanation: null,
+              };
+            }),
             ownershipMap: {
               functions: Object.entries(
                 reconstruction.ownershipMap.functions,
@@ -147,8 +167,14 @@ function deterministicTransport(input: {
               })),
             },
             evidence: reconstruction.evidence.map((evidence) => ({
-              ...evidence,
-              collectedAt: evidence.collectedAt?.toISOString() ?? null,
+              sourceIndex: 0,
+              referenceId: evidence.referenceId,
+              claim: evidence.claim,
+              sourceField: evidence.sourceField,
+              sourceText: evidence.sourceText,
+              evidenceType: evidence.evidenceType,
+              origin: evidence.origin,
+              evidenceLevel: evidence.evidenceLevel,
             })),
           };
           break;

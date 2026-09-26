@@ -27,6 +27,8 @@ export interface CustomerSuccessSemanticOperations {
     companyName: string | null;
     sourceRecordId: string | null;
     provenanceId: string | null;
+    sourceType: string;
+    sourceReference: string | null;
   }): Promise<unknown>;
   evaluateJob(input: {
     responsibilityMap: CustomerSuccessJdReconstruction["responsibilityMap"];
@@ -167,6 +169,12 @@ export async function reconstructCustomerSuccessJob(
       companyName: context.opportunity.companyName,
       sourceRecordId: source?.id ?? null,
       provenanceId: provenance?.id ?? null,
+      sourceType:
+        source?.sourceType ?? context.opportunity.sourceType ?? "MANUAL",
+      sourceReference:
+        provenance?.sourceReference ??
+        source?.sourceUrl ??
+        `opportunity:${context.opportunity.id}`,
     }),
   );
   const explicit = extractExplicitCustomerSuccessFacts(

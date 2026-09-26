@@ -445,12 +445,31 @@ function toJdReconstructionProviderTransport(
   return {
     ...reconstruction,
     responsibilityMap: {
-      areas: responsibilityAreas.map((area) => ({
-        area,
-        ...reconstruction.responsibilityMap.areas[area],
-      })),
+      areas: responsibilityAreas.map((area) => {
+        const assessment = reconstruction.responsibilityMap.areas[area];
+        return assessment.prominence === "ABSENT"
+          ? {
+              area,
+              ...assessment,
+              absenceBasis: "EXPLICIT_EXCLUSION" as const,
+            }
+          : { area, ...assessment };
+      }),
       other: reconstruction.responsibilityMap.other,
     },
+    requirements: reconstruction.requirements.map((requirement) => {
+      if (requirement.evidenceReferences.length !== 1) {
+        throw new Error(
+          "JD reconstruction fixture requirements must have one atomic evidence reference",
+        );
+      }
+      return {
+        ...requirement,
+        evidenceReferences: [requirement.evidenceReferences[0]!],
+        assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+        compoundExplanation: null,
+      };
+    }),
     ownershipMap: {
       functions: ownershipFunctions.flatMap((functionName) => {
         const assessment =
@@ -461,8 +480,14 @@ function toJdReconstructionProviderTransport(
       }),
     },
     evidence: reconstruction.evidence.map((item) => ({
-      ...item,
-      collectedAt: item.collectedAt?.toISOString() ?? null,
+      sourceIndex: 0,
+      referenceId: item.referenceId,
+      claim: item.claim,
+      sourceField: item.sourceField,
+      sourceText: item.sourceText,
+      evidenceType: item.evidenceType,
+      origin: item.origin,
+      evidenceLevel: item.evidenceLevel,
     })),
   };
 }

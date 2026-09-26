@@ -54,6 +54,10 @@ import {
 } from "../schemas/results";
 
 export const customerSuccessProductionPromptVersion = "cs-m9-prompts-v1";
+export const customerSuccessJdReconstructionPromptVersion =
+  "cs-jd-reconstruction-v3";
+export const customerSuccessJdReconstructionInstructions =
+  "Reconstruct actual Customer Success work into the Responsibility, Requirement, Ownership, and role-metadata maps. Do not treat isolated titles or buzzwords as proof. Missing responsibility information must remain UNKNOWN: omission, unrelated positive work, and general role framing do not establish ABSENT. Use ABSENT only when the source explicitly excludes the responsibility; cite source-grounded EXPLICIT/CONFIRMED evidence with evidenceType responsibilityAbsence and absenceBasis EXPLICIT_EXCLUSION. Keep independently assessable candidate qualifications as separate INDEPENDENT_QUALIFICATION requirements even when listed in one bullet. Use SINGLE_COMPOUND_CONCEPT only when the elements form one concept that cannot be assessed meaningfully on their own, and explain why. Each requirement must cite exactly one atomic requirement evidence record. Create semantic evidence only from the supplied job description. Every evidence item must use sourceIndex 0; the application restores canonical source and provenance metadata. Preserve semantic claims, source quotations, section-level source fields, evidence types, origin, and evidence level.";
 
 export const customerSuccessSemanticOperationIds = [
   "customer-success.jd-reconstruction",
@@ -107,16 +111,30 @@ export function createProductionCustomerSuccessSemanticOperations(
 ): CustomerSuccessSemanticOperations {
   return {
     async reconstructJobDescription(input) {
-      const { untrustedJobDescription, ...trustedContext } = input;
+      const {
+        untrustedJobDescription,
+        sourceType,
+        sourceReference,
+        ...trustedContext
+      } = input;
       return semanticReconstructionFromTransport(
         await operation(executor, {
           operationId: "customer-success.jd-reconstruction",
+          promptVersion: customerSuccessJdReconstructionPromptVersion,
           schema: semanticReconstructionTransportSchema,
-          instructions:
-            "Reconstruct actual Customer Success work into the Responsibility, Requirement, Ownership, and role-metadata maps. Do not treat isolated titles or buzzwords as proof. Create evidence records only from the supplied job description and retain source/provenance identifiers.",
+          instructions: customerSuccessJdReconstructionInstructions,
           trustedContext,
           untrustedSourceContent: untrustedJobDescription,
         }),
+        {
+          sourceIndex: 0,
+          sourceType,
+          sourceRecordId: input.sourceRecordId,
+          provenanceId: input.provenanceId,
+          sourceReference,
+          collectedAt: null,
+          sourceContent: untrustedJobDescription,
+        },
       );
     },
     async evaluateJob(input) {

@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import {
   customerSuccessOrganizationalMaturityPromptVersion,
   createSemanticOrganizationalMaturityTransportSchema,
   customerSuccessOpportunityPriorityPromptVersion,
   customerSuccessProductionPromptVersion,
+  customerSuccessJdReconstructionPromptVersion,
+  customerSuccessJdReconstructionInstructions,
   customerSuccessResumeMatchPromptVersion,
   customerSuccessJdReconstructionSchema,
   createResumeMatchProviderInputProjection,
@@ -27,7 +30,7 @@ import {
   semanticOpportunityPriorityTransportSchema,
   semanticOrganizationalMaturitySchema,
   semanticOrganizationalMaturityTransportSchema,
-  semanticReconstructionFromTransport,
+  semanticReconstructionFromTransport as restoreSemanticReconstructionFromTransport,
   semanticReconstructionTransportSchema,
   semanticResumeMatchFromTransport,
   createSemanticResumeMatchTransportSchema,
@@ -37,6 +40,7 @@ import {
   semanticResumeMatchSchema,
   semanticResumeMatchTransportSchema,
   responsibilityAreas,
+  type SemanticReconstructionEvidenceSource,
   type SemanticReconstructionTransport,
 } from "@ai-career/customer-success";
 import {
@@ -64,12 +68,11 @@ const config = {
   pricing: testSemanticPricing,
 };
 
-const knownResponsibilityProminences = [
+const presentResponsibilityProminences = [
   "PRIMARY",
   "SUBSTANTIAL",
   "SECONDARY",
   "OCCASIONAL",
-  "ABSENT",
 ] as const;
 
 const unsupportedOpenAiCompositionKeywords = [
@@ -90,6 +93,12 @@ const openAiStructuredOutputLimits = {
   enumValues: 1_000,
   largeEnumThreshold: 250,
   largeEnumStringCharacters: 15_000,
+} as const;
+
+const state2JdReconstructionControl = {
+  schemaBytes: 8_705,
+  instructionBytes: 1_147,
+  representativeResponseBytes: 18_278,
 } as const;
 
 function auditOpenAiProviderSchema(schema: z.ZodType) {
@@ -304,6 +313,8 @@ function validJdReconstructionTransport(): SemanticReconstructionTransport {
         experienceSpecificity: "Customer onboarding",
         evidenceReferences: ["jd-1"],
         ambiguity: { isAmbiguous: false, explanation: null },
+        assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+        compoundExplanation: null,
       },
     ],
     ownershipMap: {
@@ -321,23 +332,40 @@ function validJdReconstructionTransport(): SemanticReconstructionTransport {
     },
     evidence: [
       {
+        sourceIndex: 0,
         referenceId: "jd-1",
-        criterionId: "jd-reconstruction",
         claim: "The posting describes customer onboarding work.",
-        sourceType: "JOB_DESCRIPTION",
-        sourceRecordId: null,
-        provenanceId: null,
         sourceField: "jobDescription",
-        sourceReference: "job-description",
         sourceText: "Own customer onboarding.",
         evidenceType: "JD_RECONSTRUCTION",
         origin: "EXPLICIT" as const,
         evidenceLevel: "CONFIRMED" as const,
-        collectedAt: "2026-08-23T12:00:00.000Z",
       },
     ],
     contradictions: [],
   };
+}
+
+function validJdReconstructionEvidenceSource(
+  overrides: Partial<SemanticReconstructionEvidenceSource> = {},
+): SemanticReconstructionEvidenceSource {
+  return {
+    sourceIndex: 0,
+    sourceType: "JOB_DESCRIPTION",
+    sourceRecordId: null,
+    provenanceId: null,
+    sourceReference: "job-description",
+    collectedAt: new Date("2026-08-23T12:00:00.000Z"),
+    sourceContent: "Own customer onboarding.",
+    ...overrides,
+  };
+}
+
+function semanticReconstructionFromTransport(
+  input: unknown,
+  evidenceSource = validJdReconstructionEvidenceSource(),
+) {
+  return restoreSemanticReconstructionFromTransport(input, evidenceSource);
 }
 
 function validResumeMatchTransport() {
@@ -1108,7 +1136,7 @@ describe("production semantic execution", () => {
   });
 
   it("generates an OpenAI-compatible strict JD reconstruction schema", () => {
-    const { jsonSchema, violations } = auditOpenAiProviderSchema(
+    const { jsonSchema, violations, metrics } = auditOpenAiProviderSchema(
       semanticReconstructionTransportSchema,
     );
 
@@ -1175,18 +1203,223 @@ describe("production semantic execution", () => {
     });
 
     const evidenceSchema = properties.evidence!;
+    const evidenceItem = evidenceSchema.items as Record<string, unknown>;
+    const evidenceProperties = evidenceItem.properties as Record<
+      string,
+      unknown
+    >;
+    expect(evidenceItem.type).toBe("object");
+    expect(Object.keys(evidenceProperties)).toEqual([
+      "sourceIndex",
+      "referenceId",
+      "claim",
+      "sourceField",
+      "sourceText",
+      "evidenceType",
+      "origin",
+      "evidenceLevel",
+    ]);
+    expect(evidenceProperties.sourceIndex).toEqual({ type: "number", const: 0 });
+    for (const deterministicField of [
+      "criterionId",
+      "sourceType",
+      "sourceRecordId",
+      "provenanceId",
+      "sourceReference",
+      "collectedAt",
+    ]) {
+      expect(evidenceProperties).not.toHaveProperty(deterministicField);
+    }
+    const serializedSchema = JSON.stringify(jsonSchema);
+    const requirementItem = (
+      properties.requirements as Record<string, unknown>
+    ).items as Record<string, unknown>;
+    const requirementOptions = requirementItem.anyOf as Array<
+      Record<string, unknown>
+    >;
+    expect(requirementOptions).toHaveLength(2);
     expect(
-      (evidenceSchema.items as Record<string, unknown>).anyOf,
-    ).toHaveLength(3);
-    expect(JSON.stringify(evidenceSchema)).toContain('"format":"date-time"');
-    expect(JSON.stringify(jsonSchema)).toContain('"pattern":"\\\\S"');
+      requirementOptions.map((option) => {
+        const optionProperties = option.properties as Record<
+          string,
+          Record<string, unknown>
+        >;
+        return {
+          assessmentUnit: optionProperties.assessmentUnit.const,
+          compoundExplanation: optionProperties.compoundExplanation,
+        };
+      }),
+    ).toEqual([
+      {
+        assessmentUnit: "INDEPENDENT_QUALIFICATION",
+        compoundExplanation: { type: "null" },
+      },
+      {
+        assessmentUnit: "SINGLE_COMPOUND_CONCEPT",
+        compoundExplanation: {
+          type: "string",
+          minLength: 1,
+          pattern: "\\S",
+        },
+      },
+    ]);
+    expect(serializedSchema).toContain('"absenceBasis"');
+    expect(serializedSchema).toContain('"EXPLICIT_EXCLUSION"');
+    expect(serializedSchema).toContain('"assessmentUnit"');
+    expect(serializedSchema).toContain('"INDEPENDENT_QUALIFICATION"');
+    expect(serializedSchema).toContain('"SINGLE_COMPOUND_CONCEPT"');
+    expect(serializedSchema).toContain('"compoundExplanation"');
+    expect(metrics.bytes).toBe(state2JdReconstructionControl.schemaBytes);
+    expect(createHash("sha256").update(serializedSchema).digest("hex")).toBe(
+      "4d2b3831bc1d67bc7562b4184fb33ee5fe3c4789ee477da1aa8d78cf0fb066ee",
+    );
+    expect(Buffer.byteLength(customerSuccessJdReconstructionInstructions)).toBe(
+      state2JdReconstructionControl.instructionBytes,
+    );
+    expect(
+      createHash("sha256")
+        .update(customerSuccessJdReconstructionInstructions)
+        .digest("hex"),
+    ).toBe(
+      "286b6a646eda7dd969186a5f50ea0dac8f2ee5cc3d201af4c52efedd2b834466",
+    );
+    expect(customerSuccessJdReconstructionInstructions).toContain(
+      "absenceBasis EXPLICIT_EXCLUSION",
+    );
+    expect(customerSuccessJdReconstructionInstructions).toContain(
+      "Keep independently assessable candidate qualifications as separate",
+    );
+    expect(customerSuccessJdReconstructionInstructions).toContain(
+      "Use SINGLE_COMPOUND_CONCEPT only when the elements form one concept",
+    );
+    expect(customerSuccessJdReconstructionInstructions).toContain(
+      "and explain why",
+    );
+    expect(serializedSchema).toContain('"pattern":"\\\\S"');
+  });
+
+  it("restores deterministic JD evidence metadata without weakening semantic evidence", () => {
+    const sourceRecordId = "18b20e13-5b40-4c5f-93e8-7c9e0dd7fa13";
+    const provenanceId = "1e58132e-adfe-43ed-ab8e-fddb42ad38c9";
+    const result = semanticReconstructionFromTransport(
+      validJdReconstructionTransport(),
+      validJdReconstructionEvidenceSource({
+        sourceType: "MANUAL",
+        sourceRecordId,
+        provenanceId,
+        sourceReference: "https://example.test/jobs/123",
+        collectedAt: null,
+      }),
+    );
+
+    expect(result.evidence[0]).toEqual({
+      referenceId: "jd-1",
+      criterionId: "jd-reconstruction",
+      claim: "The posting describes customer onboarding work.",
+      sourceType: "MANUAL",
+      sourceRecordId,
+      provenanceId,
+      sourceField: "jobDescription",
+      sourceReference: "https://example.test/jobs/123",
+      sourceText: "Own customer onboarding.",
+      evidenceType: "JD_RECONSTRUCTION",
+      origin: "EXPLICIT",
+      evidenceLevel: "CONFIRMED",
+      collectedAt: null,
+    });
+  });
+
+  it("reduces a production-shaped 14-record JD evidence contract while retaining semantic fields", () => {
+    const transport = validJdReconstructionTransport();
+    transport.evidence = Array.from({ length: 14 }, (_, index) => ({
+      ...transport.evidence[0]!,
+      referenceId: `jd-${index + 1}`,
+      claim: `Semantic claim ${index + 1}`,
+      sourceField: index % 2 === 0 ? "Responsibilities" : "Requirements",
+      sourceText: `Source quotation ${index + 1}`,
+      evidenceType: index % 2 === 0 ? "responsibility" : "requirement",
+    }));
+    const sourceRecordId = "18b20e13-5b40-4c5f-93e8-7c9e0dd7fa13";
+    const provenanceId = "1e58132e-adfe-43ed-ab8e-fddb42ad38c9";
+    const legacyEvidence = transport.evidence.map(
+      ({ sourceIndex: _sourceIndex, ...semanticEvidence }) => ({
+        ...semanticEvidence,
+        criterionId: "jd-reconstruction",
+        sourceType: "MANUAL",
+        sourceRecordId,
+        provenanceId,
+        sourceReference: "https://example.test/jobs/123",
+        collectedAt: null,
+      }),
+    );
+    const deltaBytes = Buffer.byteLength(
+      JSON.stringify(transport.evidence),
+      "utf8",
+    );
+    const legacyBytes = Buffer.byteLength(JSON.stringify(legacyEvidence), "utf8");
+    const restored = semanticReconstructionFromTransport(
+      transport,
+      validJdReconstructionEvidenceSource({
+        sourceType: "MANUAL",
+        sourceRecordId,
+        provenanceId,
+        sourceReference: "https://example.test/jobs/123",
+        collectedAt: null,
+      }),
+    );
+
+    expect(deltaBytes).toBeLessThan(legacyBytes);
+    expect(
+      restored.evidence.map(
+        ({
+          referenceId,
+          claim,
+          sourceField,
+          sourceText,
+          evidenceType,
+          origin,
+          evidenceLevel,
+        }) => ({
+          referenceId,
+          claim,
+          sourceField,
+          sourceText,
+          evidenceType,
+          origin,
+          evidenceLevel,
+        }),
+      ),
+    ).toEqual(
+      transport.evidence.map(
+        ({ sourceIndex: _sourceIndex, ...semanticEvidence }) => semanticEvidence,
+      ),
+    );
+  });
+
+  it("rejects unmappable and duplicate JD evidence identities before domain construction", () => {
+    const unknownSource = validJdReconstructionTransport() as unknown as {
+      evidence: Array<Record<string, unknown>>;
+    };
+    unknownSource.evidence[0]!.sourceIndex = 1;
+    expect(
+      semanticReconstructionTransportSchema.safeParse(unknownSource).success,
+    ).toBe(false);
+
+    const duplicate = validJdReconstructionTransport();
+    duplicate.evidence.push({ ...duplicate.evidence[0]! });
+    expect(() => semanticReconstructionFromTransport(duplicate)).toThrowError(
+      expect.objectContaining({
+        code: "JD_RECONSTRUCTION_IDENTITY_INVALID",
+        retryable: false,
+      }),
+    );
   });
 
   it("enforces responsibility evidence structurally for every known prominence", () => {
     const unknown = validJdReconstructionTransport();
     expect(() => semanticReconstructionFromTransport(unknown)).not.toThrow();
 
-    for (const prominence of knownResponsibilityProminences) {
+    for (const prominence of presentResponsibilityProminences) {
       const invalid = validJdReconstructionTransport();
       invalid.responsibilityMap.areas[0] = {
         ...invalid.responsibilityMap.areas[0]!,
@@ -1211,6 +1444,470 @@ describe("production semantic execution", () => {
         evidenceReferences: ["jd-1"],
       });
     }
+  });
+
+  it("preserves UNKNOWN when responsibility evidence is missing and rejects unsupported ABSENT conclusions", () => {
+    const unknown = validJdReconstructionTransport();
+    for (const area of [
+      "renewals",
+      "implementation",
+      "projectManagement",
+      "technicalTroubleshooting",
+      "executiveEngagement",
+    ] as const) {
+      expect(
+        semanticReconstructionFromTransport(unknown).responsibilityMap.areas[
+          area
+        ],
+      ).toEqual({
+        prominence: "UNKNOWN",
+        ownership: "UNKNOWN",
+        evidenceReferences: [],
+      });
+    }
+
+    const omissionOnly = validJdReconstructionTransport();
+    omissionOnly.responsibilityMap.areas[4] = {
+      area: "renewals",
+      prominence: "ABSENT",
+      ownership: "UNKNOWN",
+      absenceBasis: "EXPLICIT_EXCLUSION",
+      evidenceReferences: [],
+    };
+    expect(
+      semanticReconstructionTransportSchema.safeParse(omissionOnly).success,
+    ).toBe(false);
+
+    for (const area of [
+      "renewals",
+      "implementation",
+      "projectManagement",
+      "technicalTroubleshooting",
+      "executiveEngagement",
+    ] as const) {
+      const unrelated = validJdReconstructionTransport();
+      const areaIndex = unrelated.responsibilityMap.areas.findIndex(
+        (entry) => entry.area === area,
+      );
+      unrelated.responsibilityMap.areas[areaIndex] = {
+        area,
+        prominence: "ABSENT",
+        ownership: "UNKNOWN",
+        absenceBasis: "EXPLICIT_EXCLUSION",
+        evidenceReferences: ["jd-1"],
+      };
+      expect(() => semanticReconstructionFromTransport(unrelated)).toThrowError(
+        expect.objectContaining({
+          code: "JD_RECONSTRUCTION_ABSENCE_INVALID",
+          retryable: false,
+        }),
+      );
+    }
+  });
+
+  it("accepts ABSENT only with explicit source-grounded exclusion evidence", () => {
+    const transport = validJdReconstructionTransport();
+    transport.evidence[0] = {
+      ...transport.evidence[0]!,
+      claim: "The posting explicitly excludes renewals from this role.",
+      sourceText: "This role does not own renewals.",
+      evidenceType: "responsibilityAbsence",
+      origin: "EXPLICIT",
+      evidenceLevel: "CONFIRMED",
+    };
+    const areaIndex = transport.responsibilityMap.areas.findIndex(
+      (entry) => entry.area === "renewals",
+    );
+    transport.responsibilityMap.areas[areaIndex] = {
+      area: "renewals",
+      prominence: "ABSENT",
+      ownership: "UNKNOWN",
+      absenceBasis: "EXPLICIT_EXCLUSION",
+      evidenceReferences: ["jd-1"],
+    };
+
+    expect(
+      semanticReconstructionFromTransport(
+        transport,
+        validJdReconstructionEvidenceSource({
+          sourceContent: "This role does not own renewals.",
+        }),
+      ).responsibilityMap.areas.renewals,
+    ).toEqual({
+      prominence: "ABSENT",
+      ownership: "UNKNOWN",
+      evidenceReferences: ["jd-1"],
+    });
+
+    expect(() =>
+      semanticReconstructionFromTransport(
+        transport,
+        validJdReconstructionEvidenceSource({
+          sourceContent: "The role owns onboarding.",
+        }),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "JD_RECONSTRUCTION_ABSENCE_INVALID",
+        retryable: false,
+      }),
+    );
+  });
+
+  it("keeps independently assessable qualifications separate while retaining true compound concepts", () => {
+    const separate = validJdReconstructionTransport();
+    separate.evidence = [
+      {
+        ...separate.evidence[0]!,
+        referenceId: "jd-relationship",
+        claim: "Build collaborative and empathetic relationships.",
+        sourceText: "Build collaborative and empathetic relationships.",
+        evidenceType: "requirement",
+      },
+      {
+        ...separate.evidence[0]!,
+        referenceId: "jd-adaptability",
+        claim: "Adapt to ambiguity and change.",
+        sourceText: "Adapt to ambiguity and change.",
+        evidenceType: "requirement",
+      },
+      {
+        ...separate.evidence[0]!,
+        referenceId: "jd-improvement",
+        claim: "Improve processes proactively.",
+        sourceText: "Improve processes proactively.",
+        evidenceType: "requirement",
+      },
+      {
+        ...separate.evidence[0]!,
+        referenceId: "jd-growth-mindset",
+        claim: "Demonstrate a growth mindset.",
+        sourceText: "Demonstrate a growth mindset.",
+        evidenceType: "requirement",
+      },
+    ];
+    separate.requirements = separate.evidence.map((evidenceRecord) => ({
+      requirement: evidenceRecord.claim,
+      category: "CAPABILITY" as const,
+      strength: "REQUIRED" as const,
+      statedYears: null,
+      statedYearsMaximum: null,
+      statedYearsOpenEnded: false,
+      experienceSpecificity: null,
+      evidenceReferences: [evidenceRecord.referenceId],
+      ambiguity: { isAmbiguous: false, explanation: null },
+      assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+      compoundExplanation: null,
+    }));
+    separate.roleMetadata.evidenceReferences = ["jd-relationship"];
+    separate.ownershipMap.functions[0]!.evidenceReferences = [
+      "jd-relationship",
+    ];
+
+    const separatedDomain = semanticReconstructionFromTransport(
+      separate,
+      validJdReconstructionEvidenceSource({
+        sourceContent:
+          "Build collaborative and empathetic relationships. Adapt to ambiguity and change. Improve processes proactively. Demonstrate a growth mindset.",
+      }),
+    );
+    expect(separatedDomain.requirements).toHaveLength(4);
+    expect(
+      separatedDomain.requirements.map((item) => item.requirement),
+    ).toEqual([
+      "Build collaborative and empathetic relationships.",
+      "Adapt to ambiguity and change.",
+      "Improve processes proactively.",
+      "Demonstrate a growth mindset.",
+    ]);
+    expect(separatedDomain.requirements.map((item) => item.strength)).toEqual([
+      "REQUIRED",
+      "REQUIRED",
+      "REQUIRED",
+      "REQUIRED",
+    ]);
+    expect(
+      separatedDomain.requirements.every(
+        (item) =>
+          item.evidenceReferences.length === 1 &&
+          separatedDomain.evidence.some(
+            (evidenceRecord) =>
+              evidenceRecord.referenceId === item.evidenceReferences[0] &&
+              evidenceRecord.evidenceType === "requirement",
+          ),
+      ),
+    ).toBe(true);
+    const providerInput = createResumeMatchProviderInputProjection(
+      separatedDomain.evidence,
+    );
+    expect(
+      semanticResumeMatchRequirementsForProvider(
+        separatedDomain.requirements,
+        providerInput.providerReferenceByCoreReference,
+      ),
+    ).toHaveLength(4);
+
+    const compound = validJdReconstructionTransport();
+    compound.requirements[0] = {
+      ...compound.requirements[0]!,
+      requirement:
+        "Communicate complex customer topics clearly by video and in writing.",
+      assessmentUnit: "SINGLE_COMPOUND_CONCEPT",
+      compoundExplanation:
+        "Video and writing are communication modes within one competency.",
+    };
+    const compoundDomain = semanticReconstructionFromTransport(compound);
+    expect(compoundDomain.requirements).toHaveLength(1);
+    expect(compoundDomain.requirements[0]).not.toHaveProperty("assessmentUnit");
+  });
+
+  it("preserves the Instrumentl mixed-strength qualification as REQUIRED tenure plus IDEAL CS/SaaS experience", () => {
+    const sourceText =
+      "2+ years of customer-facing work experience, ideally in a Customer Success, Onboarding, or Training role in a SaaS environment";
+    const transport = validJdReconstructionTransport();
+    transport.evidence.push({
+      ...transport.evidence[0]!,
+      referenceId: "jd-mixed-strength",
+      claim:
+        "Two years of customer-facing work is required; CS, onboarding, or training work in SaaS is ideal.",
+      sourceField: "Required — What we're looking for",
+      sourceText,
+      evidenceType: "requirement",
+    });
+    transport.requirements = [
+      {
+        requirement: "2+ years of customer-facing work experience",
+        category: "EXPERIENCE",
+        strength: "REQUIRED",
+        statedYears: 2,
+        statedYearsMaximum: null,
+        statedYearsOpenEnded: true,
+        experienceSpecificity: "Customer-facing work experience",
+        evidenceReferences: ["jd-mixed-strength"],
+        ambiguity: { isAmbiguous: false, explanation: null },
+        assessmentUnit: "INDEPENDENT_QUALIFICATION",
+        compoundExplanation: null,
+      },
+      {
+        requirement:
+          "Customer Success, Onboarding, or Training experience in a SaaS environment",
+        category: "EXPERIENCE",
+        strength: "IDEAL",
+        statedYears: null,
+        statedYearsMaximum: null,
+        statedYearsOpenEnded: false,
+        experienceSpecificity:
+          "Customer Success, Onboarding, or Training experience in SaaS",
+        evidenceReferences: ["jd-mixed-strength"],
+        ambiguity: { isAmbiguous: false, explanation: null },
+        assessmentUnit: "INDEPENDENT_QUALIFICATION",
+        compoundExplanation: null,
+      },
+    ];
+
+    expect(
+      semanticReconstructionTransportSchema.safeParse(transport).success,
+    ).toBe(true);
+    const domain = semanticReconstructionFromTransport(
+      transport,
+      validJdReconstructionEvidenceSource({
+        sourceContent: `Own customer onboarding. Required What we're looking for: ${sourceText}`,
+      }),
+    );
+    expect(
+      domain.requirements.map(({ requirement, strength }) => ({
+        requirement,
+        strength,
+      })),
+    ).toEqual([
+      {
+        requirement: "2+ years of customer-facing work experience",
+        strength: "REQUIRED",
+      },
+      {
+        requirement:
+          "Customer Success, Onboarding, or Training experience in a SaaS environment",
+        strength: "IDEAL",
+      },
+    ]);
+    expect(
+      domain.requirements.every(
+        (requirement) =>
+          requirement.evidenceReferences[0] === "jd-mixed-strength",
+      ),
+    ).toBe(true);
+    expect(domain.evidence.filter((item) => item.referenceId === "jd-mixed-strength"))
+      .toHaveLength(1);
+
+    const providerInput = createResumeMatchProviderInputProjection(
+      domain.evidence,
+    );
+    const projectedRequirements = semanticResumeMatchRequirementsForProvider(
+      domain.requirements,
+      providerInput.providerReferenceByCoreReference,
+    );
+    expect(projectedRequirements).toHaveLength(2);
+    expect(projectedRequirements.map((requirement) => requirement.strength)).toEqual([
+      "REQUIRED",
+      "IDEAL",
+    ]);
+    expect(
+      projectedRequirements.every(
+        (requirement) => requirement.evidenceReferences[0] === "jd-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("enforces the State 2 requirement-grouping transport contract", () => {
+    const transport = validJdReconstructionTransport();
+    const requirements = Array.from({ length: 14 }, (_, index) => ({
+      ...transport.requirements[0]!,
+      requirement: `Requirement ${index + 1}`,
+      assessmentUnit:
+        index % 2 === 0
+          ? ("SINGLE_COMPOUND_CONCEPT" as const)
+          : ("INDEPENDENT_QUALIFICATION" as const),
+      compoundExplanation:
+        index % 2 === 0 ? "The elements form one assessable concept." : null,
+    }));
+
+    expect(
+      semanticReconstructionTransportSchema.safeParse({
+        ...transport,
+        requirements,
+      }).success,
+    ).toBe(true);
+
+    for (const invalid of [
+      {
+        ...requirements[0]!,
+        assessmentUnit: "UNSUPPORTED_GROUPING",
+      },
+    ]) {
+      expect(
+        semanticReconstructionTransportSchema.safeParse({
+          ...transport,
+          requirements: [invalid],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps comparable lists grouped while preserving distinct capabilities and evidence reuse", () => {
+    const transport = validJdReconstructionTransport();
+    const requirement = (
+      text: string,
+      strength: "REQUIRED" | "NICE_TO_HAVE",
+      assessmentUnit:
+        | "INDEPENDENT_QUALIFICATION"
+        | "SINGLE_COMPOUND_CONCEPT",
+    ): SemanticReconstructionTransport["requirements"][number] => {
+      const base = {
+        ...transport.requirements[0]!,
+        requirement: text,
+        category: "CAPABILITY" as const,
+        strength,
+        statedYears: null,
+        statedYearsMaximum: null,
+        statedYearsOpenEnded: false,
+        experienceSpecificity: null,
+        evidenceReferences: ["jd-1"],
+      };
+      return assessmentUnit === "INDEPENDENT_QUALIFICATION"
+        ? { ...base, assessmentUnit, compoundExplanation: null }
+        : {
+            ...base,
+            assessmentUnit,
+            compoundExplanation:
+              "The listed elements form one jointly assessed qualification.",
+          };
+    };
+
+    transport.requirements = [
+      requirement(
+        "Familiarity with G Suite, Zoom, Slack, Intercom, and Canva",
+        "REQUIRED",
+        "SINGLE_COMPOUND_CONCEPT",
+      ),
+      requirement(
+        "Communicate complex topics clearly over video and in writing",
+        "REQUIRED",
+        "SINGLE_COMPOUND_CONCEPT",
+      ),
+      requirement(
+        "Experience working with nonprofit or SMB customers",
+        "NICE_TO_HAVE",
+        "SINGLE_COMPOUND_CONCEPT",
+      ),
+      requirement(
+        "Empathy and collaborative relationship skills",
+        "REQUIRED",
+        "INDEPENDENT_QUALIFICATION",
+      ),
+      requirement(
+        "Adaptability in ambiguity and change",
+        "REQUIRED",
+        "INDEPENDENT_QUALIFICATION",
+      ),
+      requirement(
+        "Proactive process improvement",
+        "REQUIRED",
+        "INDEPENDENT_QUALIFICATION",
+      ),
+      requirement(
+        "Growth mindset and receptiveness to feedback",
+        "REQUIRED",
+        "INDEPENDENT_QUALIFICATION",
+      ),
+    ];
+
+    const domain = semanticReconstructionFromTransport(transport);
+    expect(domain.requirements).toHaveLength(7);
+    expect(domain.requirements.slice(0, 3).map((item) => item.requirement)).toEqual([
+      "Familiarity with G Suite, Zoom, Slack, Intercom, and Canva",
+      "Communicate complex topics clearly over video and in writing",
+      "Experience working with nonprofit or SMB customers",
+    ]);
+    expect(domain.requirements.slice(3).map((item) => item.requirement)).toEqual([
+      "Empathy and collaborative relationship skills",
+      "Adaptability in ambiguity and change",
+      "Proactive process improvement",
+      "Growth mindset and receptiveness to feedback",
+    ]);
+    expect(domain.requirements.map((item) => item.strength)).toEqual([
+      "REQUIRED",
+      "REQUIRED",
+      "NICE_TO_HAVE",
+      "REQUIRED",
+      "REQUIRED",
+      "REQUIRED",
+      "REQUIRED",
+    ]);
+    expect(
+      domain.requirements.every(
+        (item) => item.evidenceReferences[0] === "jd-1",
+      ),
+    ).toBe(true);
+    expect(domain.evidence).toHaveLength(1);
+  });
+
+  it("rejects merged or duplicate provider requirements before domain construction", () => {
+    const merged = validJdReconstructionTransport() as unknown as {
+      requirements: Array<Record<string, unknown>>;
+    };
+    merged.requirements[0]!.evidenceReferences = ["jd-1", "jd-2"];
+    expect(
+      semanticReconstructionTransportSchema.safeParse(merged).success,
+    ).toBe(false);
+
+    const duplicate = validJdReconstructionTransport();
+    duplicate.requirements.push({ ...duplicate.requirements[0]! });
+    expect(() => semanticReconstructionFromTransport(duplicate)).toThrowError(
+      expect.objectContaining({
+        code: "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID",
+        retryable: false,
+      }),
+    );
   });
 
   it("enforces every remaining JD reconstruction cross-field safeguard", () => {
@@ -1262,14 +1959,21 @@ describe("production semantic execution", () => {
       }),
     );
 
-    const unlinkedEvidence = validJdReconstructionTransport();
-    unlinkedEvidence.evidence[0] = {
-      ...unlinkedEvidence.evidence[0]!,
-      sourceReference: null,
-    };
-    expect(
-      semanticReconstructionTransportSchema.safeParse(unlinkedEvidence).success,
-    ).toBe(false);
+    expect(() =>
+      semanticReconstructionFromTransport(
+        validJdReconstructionTransport(),
+        validJdReconstructionEvidenceSource({
+          sourceRecordId: null,
+          provenanceId: null,
+          sourceReference: null,
+        }),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "JD_RECONSTRUCTION_SOURCE_INVALID",
+        retryable: false,
+      }),
+    );
 
     const whitespaceOnlyText = validJdReconstructionTransport();
     whitespaceOnlyText.evidence[0] = {
@@ -1331,14 +2035,29 @@ describe("production semantic execution", () => {
       ownership: "UNKNOWN",
       evidenceReferences: [],
     });
-    expect(result.requirements).toEqual(transport.requirements);
+    expect(result.requirements).toEqual(
+      transport.requirements.map(
+        ({
+          assessmentUnit: _assessmentUnit,
+          compoundExplanation: _compoundExplanation,
+          ...requirement
+        }) => requirement,
+      ),
+    );
     expect(result.ownershipMap.functions.customerSuccess).toEqual({
       relationship: "OWNS",
       evidenceReferences: ["jd-1"],
     });
     expect(result.evidence[0]).toMatchObject({
       referenceId: "jd-1",
+      criterionId: "jd-reconstruction",
+      sourceType: "JOB_DESCRIPTION",
+      sourceRecordId: null,
+      provenanceId: null,
       sourceReference: "job-description",
+      sourceField: "jobDescription",
+      sourceText: "Own customer onboarding.",
+      evidenceType: "JD_RECONSTRUCTION",
       origin: "EXPLICIT",
       evidenceLevel: "CONFIRMED",
     });
@@ -1350,34 +2069,24 @@ describe("production semantic execution", () => {
   it("converts strict transport entries back to the existing domain maps", () => {
     const evidence = [
       {
+        sourceIndex: 0 as const,
         referenceId: "jd-work",
-        criterionId: "jd-reconstruction",
         claim: "The role owns onboarding and collaborates with Product.",
-        sourceType: "JOB_DESCRIPTION",
-        sourceRecordId: null,
-        provenanceId: null,
         sourceField: "jobDescription",
-        sourceReference: "job-description",
         sourceText: "Own onboarding and collaborate with Product.",
         evidenceType: "JD_RECONSTRUCTION",
         origin: "EXPLICIT",
         evidenceLevel: "CONFIRMED",
-        collectedAt: "2026-08-23T12:00:00.000Z",
       },
       {
+        sourceIndex: 0 as const,
         referenceId: "jd-conflict",
-        criterionId: "jd-reconstruction",
         claim: "A separate statement assigns onboarding to another team.",
-        sourceType: "JOB_DESCRIPTION",
-        sourceRecordId: null,
-        provenanceId: null,
         sourceField: "jobDescription",
-        sourceReference: "job-description",
         sourceText: "Onboarding is handled by another team.",
         evidenceType: "JD_RECONSTRUCTION",
         origin: "EXPLICIT",
         evidenceLevel: "CONFLICTING",
-        collectedAt: null,
       },
     ] as const;
     const transport = {
@@ -1410,6 +2119,8 @@ describe("production semantic execution", () => {
           experienceSpecificity: "Customer onboarding",
           evidenceReferences: ["jd-work"],
           ambiguity: { isAmbiguous: false, explanation: null },
+          assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+          compoundExplanation: null,
         },
       ],
       ownershipMap: {
@@ -1465,7 +2176,15 @@ describe("production semantic execution", () => {
         evidenceReferences: ["jd-work"],
       },
     });
-    expect(domain.requirements).toEqual(transport.requirements);
+    expect(domain.requirements).toEqual(
+      transport.requirements.map(
+        ({
+          assessmentUnit: _assessmentUnit,
+          compoundExplanation: _compoundExplanation,
+          ...requirement
+        }) => requirement,
+      ),
+    );
     expect(domain.evidence.map((item) => item.referenceId)).toEqual([
       "jd-work",
       "jd-conflict",
@@ -1473,7 +2192,9 @@ describe("production semantic execution", () => {
     expect(domain.evidence[0]?.collectedAt).toEqual(
       new Date("2026-08-23T12:00:00.000Z"),
     );
-    expect(domain.evidence[1]?.collectedAt).toBeNull();
+    expect(domain.evidence[1]?.collectedAt).toEqual(
+      new Date("2026-08-23T12:00:00.000Z"),
+    );
     expect(domain.contradictions).toEqual(transport.contradictions);
   });
 
@@ -3873,13 +4594,45 @@ describe("production semantic execution", () => {
     const captureInvocation = async (promise: Promise<unknown>) => {
       await promise.catch(() => undefined);
     };
-    await operations.reconstructJobDescription({
+    const reconstructed = await operations.reconstructJobDescription({
       untrustedJobDescription: "UNTRUSTED-JD-INSTRUCTION",
       normalizedTitle: "CSM",
       companyName: "Example",
       sourceRecordId: null,
       provenanceId: null,
+      sourceType: "MANUAL",
+      sourceReference: "job-description",
     });
+    expect(reconstructed).toMatchObject({
+      evidence: [
+        {
+          referenceId: "jd-1",
+          criterionId: "jd-reconstruction",
+          sourceType: "MANUAL",
+          sourceRecordId: null,
+          provenanceId: null,
+          sourceReference: "job-description",
+          collectedAt: null,
+        },
+      ],
+    });
+    const reconstructedDomain = reconstructed as ReturnType<
+      typeof semanticReconstructionFromTransport
+    >;
+    const resumeProviderInput = createResumeMatchProviderInputProjection([
+      ...reconstructedDomain.evidence,
+      ...resumeEvidence.filter(
+        (evidence) => evidence.sourceType === "USER_PROFILE",
+      ),
+    ]);
+    const resumeRequirements = semanticResumeMatchRequirementsForProvider(
+      reconstructedDomain.requirements,
+      resumeProviderInput.providerReferenceByCoreReference,
+    );
+    expect(resumeProviderInput.coreReferenceByProviderReference.get("jd-0")).toBe(
+      "jd-1",
+    );
+    expect(resumeRequirements[0]?.evidenceReferences).toEqual(["jd-0"]);
     await captureInvocation(operations.evaluateJob({} as never));
     await captureInvocation(operations.evaluateCompanyAlignment({} as never));
     const maturityReconstruction = semanticReconstructionFromTransport(validJdReconstructionTransport());
@@ -3943,6 +4696,8 @@ describe("production semantic execution", () => {
     expect(JSON.stringify(captured[0]?.trustedContext)).not.toContain(
       "UNTRUSTED-JD-INSTRUCTION",
     );
+    expect(captured[0]?.trustedContext).not.toHaveProperty("sourceType");
+    expect(captured[0]?.trustedContext).not.toHaveProperty("sourceReference");
     expect(captured.slice(1).every((item) => !item.untrustedSourceContent)).toBe(
       true,
     );
@@ -3951,7 +4706,7 @@ describe("production semantic execution", () => {
     ).toEqual([
       [
         "customer-success.jd-reconstruction",
-        customerSuccessProductionPromptVersion,
+        customerSuccessJdReconstructionPromptVersion,
       ],
       [
         "customer-success.job-evaluation",
