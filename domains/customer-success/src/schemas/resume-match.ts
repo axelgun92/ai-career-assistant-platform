@@ -500,6 +500,76 @@ const positiveSpecificities = {
   PARTIAL_MATCH: matchedExperienceSpecificitySchema.options,
 } satisfies Record<PositiveRequirementClassification, string[]>;
 
+function createPositiveRequirementSchema(input: {
+  classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
+  evidenceBasis: PositiveExperienceEvidenceBasis;
+  profileReferenceIds: string[];
+  specificities: string[];
+  referenceCatalogs: Map<string, z.ZodType<string>>;
+}) {
+  const profileEvidenceReferences = providerProfileReferenceSchema(
+    input.profileReferenceIds,
+    input.referenceCatalogs,
+  );
+  if (!profileEvidenceReferences) return null;
+  return z.object({
+    ...providerNonGapFields,
+    classification: z.literal(input.classification),
+    matchedExperienceSpecificity: z.enum(
+      input.specificities as [string, ...string[]],
+    ),
+    experienceEvidenceBasis: z.literal(input.evidenceBasis),
+    supportedPortion:
+      input.classification === "PARTIAL_MATCH"
+        ? transportRequiredText
+        : transportOptionalText,
+    unsupportedPortion:
+      input.classification === "PARTIAL_MATCH"
+        ? transportRequiredText
+        : transportOptionalText,
+    profileEvidenceReferences,
+  }).strict();
+}
+
+const providerGapFields = {
+  ...transportRequirementFields,
+  classification: z.literal("GENUINE_GAP"),
+  matchedExperienceSpecificity: z.literal("UNSUPPORTED"),
+  experienceEvidenceBasis: z.literal("NO_SUPPORTING_EXPERIENCE"),
+  supportedPortion: transportOptionalText,
+  unsupportedPortion: transportOptionalText,
+  profileEvidenceReferences: transportEvidenceReferences.min(1),
+};
+
+const providerGapRequirementSchema = z.union([
+  z.object({
+    ...providerGapFields,
+    decisionImpact: z.literal("DECISIVE_DISQUALIFIER"),
+    decisionImpactExplanation: transportRequiredText,
+  }).strict(),
+  z.object({
+    ...providerGapFields,
+    decisionImpact: z.literal("MATERIAL_UNCERTAINTY"),
+    decisionImpactExplanation: transportRequiredText,
+  }).strict(),
+  z.object({
+    ...providerGapFields,
+    decisionImpact: z.literal("NON_DECISIVE"),
+    decisionImpactExplanation: transportRequiredText,
+  }).strict(),
+]);
+
+const providerUnknownRequirementSchema = z.object({
+  ...transportRequirementFields,
+  classification: z.literal("UNKNOWN"),
+  matchedExperienceSpecificity: z.literal("UNKNOWN"),
+  experienceEvidenceBasis: z.literal("UNKNOWN"),
+  decisionImpact: z.literal("NON_DECISIVE"),
+  supportedPortion: transportOptionalText,
+  unsupportedPortion: transportOptionalText,
+  profileEvidenceReferences: transportEvidenceReferences,
+}).strict();
+
 function requiresDirectWork(requirement?: ResumeMatchRequirement) {
   return requirement?.category === "INDUSTRY" || (
     requirement?.category === "EXPERIENCE" &&
@@ -583,116 +653,27 @@ function providerProfileReferenceSchema(
   return z.array(element).min(1);
 }
 
-function createPositiveRequirementSchema(input: {
-  classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
-  evidenceBasis: PositiveExperienceEvidenceBasis;
-  profileReferenceIds: string[];
-  specificities: string[];
-  referenceCatalogs: Map<string, z.ZodType<string>>;
-}) {
-  const profileEvidenceReferences = providerProfileReferenceSchema(
-    input.profileReferenceIds,
-    input.referenceCatalogs,
-  );
-  if (!profileEvidenceReferences) {
-    return null;
-  }
-  const matchedExperienceSpecificity = z.enum(input.specificities as [string, ...string[]]);
-  return z
-    .object({
-      ...providerNonGapFields,
-      classification: z.literal(input.classification),
-      matchedExperienceSpecificity,
-      experienceEvidenceBasis: z.literal(input.evidenceBasis),
-      supportedPortion:
-        input.classification === "PARTIAL_MATCH"
-          ? transportRequiredText
-          : transportOptionalText,
-      unsupportedPortion:
-        input.classification === "PARTIAL_MATCH"
-          ? transportRequiredText
-          : transportOptionalText,
-      profileEvidenceReferences,
-    })
-    .strict();
-}
-
-const providerGapFields = {
-  ...transportRequirementFields,
-  classification: z.literal("GENUINE_GAP"),
-  matchedExperienceSpecificity: z.literal("UNSUPPORTED"),
-  experienceEvidenceBasis: z.literal("NO_SUPPORTING_EXPERIENCE"),
-  supportedPortion: transportOptionalText,
-  unsupportedPortion: transportOptionalText,
-  profileEvidenceReferences: transportEvidenceReferences.min(1),
-};
-
-const providerGapRequirementSchema = z.union([
-  z
-    .object({
-      ...providerGapFields,
-      decisionImpact: z.literal("DECISIVE_DISQUALIFIER"),
-      decisionImpactExplanation: transportRequiredText,
-    })
-    .strict(),
-  z
-    .object({
-      ...providerGapFields,
-      decisionImpact: z.literal("MATERIAL_UNCERTAINTY"),
-      decisionImpactExplanation: transportRequiredText,
-    })
-    .strict(),
-  z
-    .object({
-      ...providerGapFields,
-      decisionImpact: z.literal("NON_DECISIVE"),
-      decisionImpactExplanation: transportRequiredText,
-    })
-    .strict(),
-]);
-
-const providerUnknownRequirementSchema = z
-  .object({
-    ...transportRequirementFields,
-    classification: z.literal("UNKNOWN"),
-    matchedExperienceSpecificity: z.literal("UNKNOWN"),
-    experienceEvidenceBasis: z.literal("UNKNOWN"),
-    decisionImpact: z.literal("NON_DECISIVE"),
-    supportedPortion: transportOptionalText,
-    unsupportedPortion: transportOptionalText,
-    profileEvidenceReferences: transportEvidenceReferences,
-  })
-  .strict();
-
 // Each reference is authored once, in the part of the assessment it supports.
-// Decisive gaps need decision-impact evidence from both sources. Other known
-// assessments need evidence in at least one partition; Unknown profile context
-// may be empty. No pointer targets another model-generated collection.
+// Cross-field compatibility and required evidence cardinality remain enforced
+// by the unchanged transport/domain validators after provider-local references
+// are restored. Factoring those deterministic relationships out of the JSON
+// Schema avoids expanding the same assessment object into runtime-specific
+// branches while retaining the source-separated evidence catalogs.
 function providerAssessmentEvidenceSchema(
-  references: z.ZodArray,
-  required: boolean,
-  decisive: boolean,
-  emptyCatalog = false,
+  references: z.ZodArray | null,
+  id: string,
 ) {
-  // Reuse the element catalog, not the original array's minimum-length checks.
-  const choices = emptyCatalog ? z.array(references.element).max(0) : z.array(references.element);
-  const object = z.object({
+  const choices = references
+    ? z.array(references.element)
+    : z.array(z.literal("NO_REFERENCES_AVAILABLE")).max(0);
+  return z.object({
     decisionImpactReferences: choices.describe(
       "Unique references supporting this assessment's decision impact. A reference selected here MUST NOT appear in assessmentOnlyReferences. Each reference belongs to exactly one partition within this source and requirement.",
     ),
     assessmentOnlyReferences: choices.describe(
       "Unique references supporting only the assessment, excluding EVERY reference selected in decisionImpactReferences. These references do not become decision-impact evidence. Never repeat a reference within or across the two partitions.",
     ),
-  }).strict();
-  const partition = decisive ? object.extend({ decisionImpactReferences: object.shape.decisionImpactReferences.min(1) })
-    : !required ? object : z.union([
-    object.extend({ decisionImpactReferences: object.shape.decisionImpactReferences.min(1) }),
-    object.extend({
-      decisionImpactReferences: object.shape.decisionImpactReferences.max(0),
-      assessmentOnlyReferences: object.shape.assessmentOnlyReferences.min(1),
-    }),
-  ]);
-  return partition.describe("Disjoint evidence partitions for one source and one requirement. Select each reference at most once across BOTH arrays. Assessment-only evidence is excluded from decision impact; do not copy decision-impact references into it.");
+  }).strict().meta({ id });
 }
 
 function providerRequirementAssessmentSchema(
@@ -713,15 +694,21 @@ function providerRequirementAssessmentSchema(
     indexes === undefined ? schema : schema.extend({
       requirementIndex: indexes.length === 1
         ? z.literal(indexes[0]!)
-        : z.union(indexes.map((index) => z.literal(index)) as [z.ZodLiteral<number>, z.ZodLiteral<number>, ...z.ZodLiteral<number>[]]),
+        : z.union(indexes.map((index) => z.literal(index)) as [
+            z.ZodLiteral<number>,
+            z.ZodLiteral<number>,
+            ...z.ZodLiteral<number>[],
+          ]),
     });
   const bases: PositiveExperienceEvidenceBasis[] = [
     "DIRECT_OR_RELATED_WORK_EXPERIENCE",
     "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
     "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
   ];
-  // Group equal eligibility rules, avoiding a repeated schema for every JD row.
-  const groups = new Map<string, { requirement?: ResumeMatchRequirement; indexes?: number[] }>();
+  const groups = new Map<
+    string,
+    { requirement?: ResumeMatchRequirement; indexes?: number[] }
+  >();
   if (semanticRequirements === undefined) groups.set("unspecified", {});
   for (const { requirement, index } of semanticRequirements ?? []) {
     if (predeterminedStartupUnknownIndexes.has(index)) continue;
@@ -739,24 +726,46 @@ function providerRequirementAssessmentSchema(
   const schemas: z.ZodObject[] = [];
   for (const group of groups.values()) {
     for (const evidenceBasis of bases) {
-      for (const classification of Object.keys(positiveSpecificities) as PositiveRequirementClassification[]) {
-        const catalogs = new Map<string, { specificities: string[]; profileReferenceIds: string[] }>();
+      for (
+        const classification of Object.keys(
+          positiveSpecificities,
+        ) as PositiveRequirementClassification[]
+      ) {
+        const catalogs = new Map<
+          string,
+          { specificities: string[]; profileReferenceIds: string[] }
+        >();
         for (const specificity of positiveSpecificities[classification]) {
-          const types = positiveRequirementCompatibility(classification, specificity, evidenceBasis, group.requirement);
-          const profileReferenceIds = availableEvidence.filter((evidence) =>
-            evidence.sourceType === "USER_PROFILE" &&
-            types.has(evidence.evidenceType) &&
-            (!requiresStartupSpecialization(group.requirement) ||
-              supportsStartupSpecialization(evidence)),
-          ).map((evidence) => evidence.referenceId);
+          const types = positiveRequirementCompatibility(
+            classification,
+            specificity,
+            evidenceBasis,
+            group.requirement,
+          );
+          const profileReferenceIds = availableEvidence
+            .filter((evidence) =>
+              evidence.sourceType === "USER_PROFILE" &&
+              types.has(evidence.evidenceType) &&
+              (!requiresStartupSpecialization(group.requirement) ||
+                supportsStartupSpecialization(evidence)),
+            )
+            .map((evidence) => evidence.referenceId);
           if (profileReferenceIds.length === 0) continue;
           const key = JSON.stringify(profileReferenceIds);
-          const catalog = catalogs.get(key) ?? { specificities: [], profileReferenceIds };
+          const catalog = catalogs.get(key) ?? {
+            specificities: [],
+            profileReferenceIds,
+          };
           catalog.specificities.push(specificity);
           catalogs.set(key, catalog);
         }
         for (const catalog of catalogs.values()) {
-          const schema = createPositiveRequirementSchema({ classification, evidenceBasis, ...catalog, referenceCatalogs });
+          const schema = createPositiveRequirementSchema({
+            classification,
+            evidenceBasis,
+            ...catalog,
+            referenceCatalogs,
+          });
           if (schema) schemas.push(constrainIndexes(schema, group.indexes));
         }
       }
@@ -770,37 +779,74 @@ function providerRequirementAssessmentSchema(
     .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
     .map((evidence) => evidence.referenceId), referenceCatalogs);
   for (const schema of providerGapRequirementSchema.options) {
-    const indexes = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER"
-      ? semanticRequirements?.filter(({ requirement, index }) =>
+    const indexes = schema.shape.decisionImpact.value ===
+      "DECISIVE_DISQUALIFIER"
+      ? semanticRequirements
+        ?.filter(({ requirement, index }) =>
           requirement.strength === "REQUIRED" &&
-          !predeterminedStartupUnknownIndexes.has(index)).map(({ index }) => index)
-      : allIndexes?.filter((index) => !predeterminedStartupUnknownIndexes.has(index));
+          !predeterminedStartupUnknownIndexes.has(index))
+        .map(({ index }) => index)
+      : allIndexes?.filter(
+        (index) => !predeterminedStartupUnknownIndexes.has(index),
+      );
     if (profileReferences && (indexes === undefined || indexes.length > 0)) {
-      schemas.push(constrainIndexes(schema.extend({ profileEvidenceReferences: profileReferences }), indexes));
+      schemas.push(
+        constrainIndexes(
+          schema.extend({ profileEvidenceReferences: profileReferences }),
+          indexes,
+        ),
+      );
     }
   }
   if (allIndexes === undefined || allIndexes.length > 0) {
-    schemas.push(constrainIndexes(providerUnknownRequirementSchema.extend({
-      profileEvidenceReferences: profileReferences ? z.array(profileReferences.element) : transportEvidenceReferences.max(0),
-    }), allIndexes));
+    schemas.push(constrainIndexes(
+      providerUnknownRequirementSchema.extend({
+        profileEvidenceReferences: profileReferences
+          ? z.array(profileReferences.element)
+          : transportEvidenceReferences.max(0),
+      }),
+      allIndexes,
+    ));
   }
-  const bindEvidence = (schema: z.ZodObject) => {
-    const decisive = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER";
-    return schema.omit({ jdEvidenceReferences: true, profileEvidenceReferences: true }).extend({
-      jdEvidence: providerAssessmentEvidenceSchema(
-        jdReferences ?? transportEvidenceReferences.min(1), true, decisive,
-      ),
-      profileEvidence: providerAssessmentEvidenceSchema(
-        schema.shape.profileEvidenceReferences, schema.shape.classification.value !== "UNKNOWN", decisive,
-        !profileReferences,
-      ),
-    });
+
+  const groupedEvidenceByElement = new Map<unknown, z.ZodType>();
+  const groupedEvidence = (
+    references: z.ZodArray | null,
+  ): z.ZodType => {
+    if (!references) {
+      return providerAssessmentEvidenceSchema(
+        null,
+        "resumeMatchEmptyAssessmentEvidence",
+      );
+    }
+    const cached = groupedEvidenceByElement.get(references.element);
+    if (cached) return cached;
+    const created = providerAssessmentEvidenceSchema(
+      references,
+      "resumeMatchAssessmentEvidence" + groupedEvidenceByElement.size,
+    );
+    groupedEvidenceByElement.set(references.element, created);
+    return created;
   };
+  const bindEvidence = (schema: z.ZodObject) =>
+    schema
+      .omit({ jdEvidenceReferences: true, profileEvidenceReferences: true })
+      .extend({
+        jdEvidence: groupedEvidence(jdReferences),
+        profileEvidence: groupedEvidence(
+          schema.shape.profileEvidenceReferences as z.ZodArray,
+        ),
+      });
   const sourcedSchemas = schemas.map(bindEvidence);
-  // The containing array is bounded to zero for an entirely ambiguous/empty map.
-  return sourcedSchemas.length === 0 ? bindEvidence(providerUnknownRequirementSchema)
-    : sourcedSchemas.length === 1 ? sourcedSchemas[0]!
-      : z.union([sourcedSchemas[0]!, sourcedSchemas[1]!, ...sourcedSchemas.slice(2)]);
+  return sourcedSchemas.length === 0
+    ? bindEvidence(providerUnknownRequirementSchema)
+    : sourcedSchemas.length === 1
+      ? sourcedSchemas[0]!
+      : z.union([
+          sourcedSchemas[0]!,
+          sourcedSchemas[1]!,
+          ...sourcedSchemas.slice(2),
+        ]);
 }
 
 const transportSeniorityDimensionSchema = z
@@ -1732,11 +1778,20 @@ export function semanticResumeMatchFromTransport(
         )
       : providerResult.data
     : value;
-  const transport = semanticResumeMatchTransportSchema.parse(
+  const transportParse = semanticResumeMatchTransportSchema.safeParse(
     providerResult.success
       ? restoreAssessmentEvidence(restoredProviderResult)
       : value,
   );
+  if (!transportParse.success) {
+    // The compact provider schema deliberately avoids expanding deterministic
+    // compatibility relationships into runtime-specific branches. Preserve the
+    // same fail-closed, nonretryable boundary before any domain result exists.
+    evidenceResultViolation(
+      "Resume Match requirement assessment compatibility is invalid",
+    );
+  }
+  const transport = transportParse.data;
   assertUniqueRequirementProfileEvidenceReferences(transport);
   // JSON Schema cannot compare sibling arrays. Reject before constructing any
   // domain result; never repair the model's evidence selection by substitution.

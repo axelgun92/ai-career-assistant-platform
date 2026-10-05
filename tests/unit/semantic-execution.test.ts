@@ -830,17 +830,113 @@ describe("production semantic execution", () => {
         }] };
         const expected = classificationAllows && typeAllows;
         expect(schema.safeParse(value).success, `${classification}/${specificity}/${basis}/${type}`).toBe(expected);
-        if (expected) expect(() => semanticResumeMatchFromTransport(value, requirements, evidence)).not.toThrow();
-        // The same catalog constraints apply when evidence supports impact.
+        const conversion = () => semanticResumeMatchFromTransport(value, requirements, evidence);
+        if (expected) expect(conversion).not.toThrow();
+        // The same compatibility constraints apply when evidence supports impact.
         const impactValue = { ...value, requirementAssessments: [{ ...value.requirementAssessments[0]!,
           profileEvidence: { decisionImpactReferences: [`profile-${type}`], assessmentOnlyReferences: [] },
         }] };
         expect(schema.safeParse(impactValue).success, `impact: ${classification}/${specificity}/${basis}/${type}`).toBe(expected);
-        if (expected) expect(() => semanticResumeMatchFromTransport(impactValue, requirements, evidence)).not.toThrow();
+        const impactConversion = () =>
+          semanticResumeMatchFromTransport(impactValue, requirements, evidence);
+        if (expected) expect(impactConversion).not.toThrow();
       }
     }
     expect(combinations).toBe(315);
   }, 20_000);
+
+  it("rejects the exact repaired-live compatibility failures at the provider boundary", () => {
+    const base = authoritativeResumeMatchRequirements()[0]!;
+    const requirements = [
+      { ...base, category: "CAPABILITY" as const },
+      {
+        ...base,
+        requirement: "Nonprofit specialization",
+        category: "INDUSTRY" as const,
+        strength: "NICE_TO_HAVE" as const,
+      },
+    ];
+    const evidence = resumeMatchAvailableEvidence([
+      {
+        referenceId: "profile-direct",
+        sourceType: "USER_PROFILE",
+        evidenceType: "DIRECT_EXPERIENCE",
+      },
+      {
+        referenceId: "profile-related",
+        sourceType: "USER_PROFILE",
+        evidenceType: "RELATED_EXPERIENCE",
+      },
+    ]);
+    const schema = createSemanticResumeMatchTransportSchema(
+      evidence,
+      requirements,
+    );
+    const value = validProviderResumeMatchTransport();
+    const assessment = value.requirementAssessments[0]!;
+    const candidate = (fields: Record<string, unknown>) => ({
+      ...value,
+      requirementAssessments: [{ ...assessment, ...fields }],
+    });
+
+    for (const fields of [
+      {
+        classification: "PARTIAL_MATCH",
+        matchedExperienceSpecificity: "TRANSFERABLE",
+        experienceEvidenceBasis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+        decisionImpact: "MATERIAL_UNCERTAINTY",
+        supportedPortion: "Supported portion.",
+        unsupportedPortion: "Unsupported portion.",
+      },
+      {
+        classification: "UNKNOWN",
+        matchedExperienceSpecificity: "UNKNOWN",
+        experienceEvidenceBasis: "UNKNOWN",
+        decisionImpact: "MATERIAL_UNCERTAINTY",
+      },
+      {
+        classification: "UNKNOWN",
+        matchedExperienceSpecificity: "UNKNOWN",
+        experienceEvidenceBasis: "NO_SUPPORTING_EXPERIENCE",
+        decisionImpact: "NON_DECISIVE",
+      },
+      {
+        classification: "TRANSFERABLE_MATCH",
+        matchedExperienceSpecificity: "RELATED_CUSTOMER_RELATIONSHIP",
+        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      },
+      {
+        classification: "TRANSFERABLE_MATCH",
+        matchedExperienceSpecificity: "BROADER_CUSTOMER_FACING",
+        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
+      },
+      {
+        requirementIndex: 1,
+        classification: "TRANSFERABLE_MATCH",
+        matchedExperienceSpecificity: "TRANSFERABLE",
+        experienceEvidenceBasis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      },
+    ]) {
+      expect(schema.safeParse(candidate(fields)).success).toBe(false);
+    }
+
+    expect(schema.safeParse(candidate({
+      classification: "TRANSFERABLE_MATCH",
+      matchedExperienceSpecificity: "TRANSFERABLE",
+      experienceEvidenceBasis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      decisionImpact: "NON_DECISIVE",
+    })).success).toBe(true);
+    expect(schema.safeParse(candidate({
+      classification: "UNKNOWN",
+      matchedExperienceSpecificity: "UNKNOWN",
+      experienceEvidenceBasis: "UNKNOWN",
+      decisionImpact: "NON_DECISIVE",
+      profileEvidence: {
+        decisionImpactReferences: [],
+        assessmentOnlyReferences: [],
+      },
+    })).success).toBe(true);
+  });
 
   it("factors production-sized catalogs without dropping evidence or leaking catalogs between schemas", () => {
     const types = ["DIRECT_EXPERIENCE", "RELATED_EXPERIENCE", "TRANSFERABLE_EXPERIENCE", "TRANSFERABLE_SKILL", "SKILL"];
@@ -857,8 +953,16 @@ describe("production semantic execution", () => {
     expect(first.violations).toEqual([]);
     expect(first.metrics.enumValueCount).toBeLessThan(1000);
     const definitions = first.jsonSchema.$defs as Record<string, { enum?: string[]; const?: string }>;
-    const catalogIds = new Set(Object.values(definitions).flatMap((definition) => definition.enum ?? [definition.const!]));
+    const catalogIds = new Set(Object.values(definitions).flatMap((definition) =>
+      definition.enum ?? (definition.const === undefined ? [] : [definition.const])));
     expect([...catalogIds].sort()).toEqual(evidence.map((item) => item.referenceId).sort());
+    const fullSchemaBytes = Buffer.byteLength(JSON.stringify(first.jsonSchema));
+    const assessmentSchema = (
+      (first.jsonSchema.properties as Record<string, Record<string, unknown>>)
+        .requirementAssessments!.items
+    );
+    expect(fullSchemaBytes).toBeLessThan(60_000);
+    expect(Buffer.byteLength(JSON.stringify(assessmentSchema))).toBeLessThan(50_000);
     const other = createSemanticResumeMatchTransportSchema(resumeMatchAvailableEvidence(), authoritativeResumeMatchRequirements());
     expect(auditOpenAiProviderSchema(other).violations).toEqual([]);
     expect(auditOpenAiProviderSchema(schema).jsonSchema).toEqual(first.jsonSchema);
@@ -906,28 +1010,77 @@ describe("production semantic execution", () => {
     expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
     const value = validProviderResumeMatchTransport();
     const assessment = value.requirementAssessments[0]!;
-    const accepts = (fields: Record<string, unknown>) => schema.safeParse({ ...value, requirementAssessments: [{ ...assessment, ...fields }] }).success;
+    const candidate = (fields: Record<string, unknown>) => {
+      const target = { ...assessment, ...fields };
+      const targetIndex = target.requirementIndex;
+      const indexes = [0, 1, 2, 3];
+      if (!indexes.includes(targetIndex)) indexes.push(targetIndex);
+      return {
+        ...value,
+        requirementAssessments: indexes.map((requirementIndex) =>
+          requirementIndex === targetIndex ? target : {
+            ...assessment,
+            requirementIndex,
+            classification: "UNKNOWN",
+            matchedExperienceSpecificity: "UNKNOWN",
+            experienceEvidenceBasis: "UNKNOWN",
+            decisionImpact: "NON_DECISIVE",
+            supportedPortion: null,
+            unsupportedPortion: null,
+            profileEvidence: {
+              decisionImpactReferences: [],
+              assessmentOnlyReferences: [],
+            },
+          }),
+      };
+    };
+    const accepts = (fields: Record<string, unknown>) =>
+      schema.safeParse(candidate(fields)).success;
+    const converts = (fields: Record<string, unknown>) =>
+      semanticResumeMatchFromTransport(candidate(fields), requirements, evidence);
     for (const index of [0, 1, 2]) {
-      expect(accepts({ requirementIndex: index, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
-        experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["skill"] }, supportedPortion: "Knowledge", unsupportedPortion: "Employment" })).toBe(false);
+      const fields = { requirementIndex: index, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
+        experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["skill"] }, supportedPortion: "Knowledge", unsupportedPortion: "Employment" };
+      expect(accepts(fields)).toBe(false);
     }
-    expect(accepts({ requirementIndex: 3, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
-      experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["skill"] }, supportedPortion: "Knowledge", unsupportedPortion: "Unverified use" })).toBe(true);
+    const toolKnowledge = { requirementIndex: 3, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
+      experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["skill"] }, supportedPortion: "Knowledge", unsupportedPortion: "Unverified use" };
+    expect(accepts(toolKnowledge)).toBe(true);
+    expect(() => converts(toolKnowledge)).not.toThrow();
     for (const index of [1, 2]) {
       expect(accepts({ requirementIndex: index })).toBe(false);
-      expect(accepts({ requirementIndex: index, classification: "STRONG_MATCH", matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
-        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["direct"] } })).toBe(true);
+      const direct = { requirementIndex: index, classification: "STRONG_MATCH", matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["direct"] } };
+      expect(accepts(direct)).toBe(true);
+      expect(() => converts(direct)).not.toThrow();
     }
     for (const index of [0, 1, 2, 3, 4, 5]) {
       const gap = decisiveProviderResumeMatchTransport();
       gap.requirementAssessments[0]!.requirementIndex = index;
       expect(schema.safeParse(gap).success).toBe(index === 0);
+      if (index === 0) {
+        expect(() => semanticResumeMatchFromTransport(
+          candidate(gap.requirementAssessments[0]!),
+          requirements,
+          evidence,
+        )).not.toThrow();
+      }
       const fields = gap.requirementAssessments[0]!;
       for (const decisionImpact of ["NON_DECISIVE", "MATERIAL_UNCERTAINTY"]) {
-        expect(schema.safeParse({ ...gap, requirementAssessments: [{ ...fields, decisionImpact }] }).success).toBe(index < 4);
+        const nonDecisive = { ...gap, requirementAssessments: [{ ...fields, decisionImpact }] };
+        expect(schema.safeParse(nonDecisive).success).toBe(index < 4);
+        if (index < 4) {
+          expect(() => semanticResumeMatchFromTransport(
+            candidate(nonDecisive.requirementAssessments[0]!),
+            requirements,
+            evidence,
+          )).not.toThrow();
+        }
       }
-      expect(accepts({ requirementIndex: index, classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
-        experienceEvidenceBasis: "UNKNOWN", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: [] } })).toBe(index < 4);
+      const unknown = { requirementIndex: index, classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
+        experienceEvidenceBasis: "UNKNOWN", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: [] } };
+      expect(accepts(unknown)).toBe(index < 4);
+      if (index < 4) expect(() => converts(unknown)).not.toThrow();
     }
     const allAmbiguous = [requirements[4]!];
     const emptySchema = createSemanticResumeMatchTransportSchema(evidence, allAmbiguous);
@@ -2272,7 +2425,7 @@ describe("production semantic execution", () => {
     ).not.toContain('"evidenceReferences"');
   });
 
-  it("structurally limits each Resume Match evidence basis to compatible profile evidence", () => {
+  it("keeps source catalogs provider-visible and enforces each evidence basis before domain construction", () => {
     const evidence = resumeMatchAvailableEvidence([
       { referenceId: "profile-direct", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
       { referenceId: "profile-related", sourceType: "USER_PROFILE", evidenceType: "RELATED_EXPERIENCE" },
@@ -2283,7 +2436,11 @@ describe("production semantic execution", () => {
       { referenceId: "profile-tool", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_SKILL" },
       { referenceId: "profile-preference", sourceType: "USER_PROFILE", evidenceType: "WORK_PREFERENCE" },
     ]);
-    const schema = createSemanticResumeMatchTransportSchema(evidence);
+    const requirements = [{
+      ...authoritativeResumeMatchRequirements()[0]!,
+      category: "CAPABILITY" as const,
+    }];
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
     const withAssessment = (input: {
       classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
       basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE" | "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE" | "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE";
@@ -2307,37 +2464,47 @@ describe("production semantic execution", () => {
       return value;
     };
 
-    expect(schema.safeParse(withAssessment({
+    const strongDirect = withAssessment({
       classification: "STRONG_MATCH",
       basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
       reference: "profile-direct",
-    })).success).toBe(true);
-    expect(schema.safeParse(withAssessment({
+    });
+    expect(schema.safeParse(strongDirect).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(strongDirect, requirements, evidence)).not.toThrow();
+    const partialRelated = withAssessment({
       classification: "PARTIAL_MATCH",
       basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
       reference: "profile-related",
-    })).success).toBe(true);
-    expect(schema.safeParse(withAssessment({
+    });
+    expect(schema.safeParse(partialRelated).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(partialRelated, requirements, evidence)).not.toThrow();
+    const transferable = withAssessment({
       classification: "TRANSFERABLE_MATCH",
       basis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
       reference: "profile-1",
-    })).success).toBe(true);
-    expect(schema.safeParse(withAssessment({
+    });
+    expect(schema.safeParse(transferable).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(transferable, requirements, evidence)).not.toThrow();
+    const skill = withAssessment({
       classification: "PARTIAL_MATCH",
       basis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
       reference: "profile-skill",
-    })).success).toBe(true);
+    });
+    expect(schema.safeParse(skill).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(skill, requirements, evidence)).not.toThrow();
     for (const readinessReference of [
       "profile-certification",
       "profile-coursework",
       "profile-self-study",
       "profile-tool",
     ]) {
-      expect(schema.safeParse(withAssessment({
+      const readiness = withAssessment({
         classification: "PARTIAL_MATCH",
         basis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
         reference: readinessReference,
-      })).success).toBe(true);
+      });
+      expect(schema.safeParse(readiness).success).toBe(true);
+      expect(() => semanticResumeMatchFromTransport(readiness, requirements, evidence)).not.toThrow();
     }
 
     for (const incompatibleReference of [
@@ -2349,17 +2516,19 @@ describe("production semantic execution", () => {
       "profile-tool",
       "profile-preference",
     ]) {
-      expect(schema.safeParse(withAssessment({
+      const incompatible = withAssessment({
         classification: "STRONG_MATCH",
         basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
         reference: incompatibleReference,
-      })).success).toBe(false);
+      });
+      expect(schema.safeParse(incompatible).success).toBe(false);
     }
-    expect(schema.safeParse(withAssessment({
+    const wrongBasis = withAssessment({
       classification: "STRONG_MATCH",
       basis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE",
       reference: "profile-direct",
-    })).success).toBe(false);
+    });
+    expect(schema.safeParse(wrongBasis).success).toBe(false);
     expect(schema.safeParse(withAssessment({
       classification: "STRONG_MATCH",
       basis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
@@ -2367,10 +2536,10 @@ describe("production semantic execution", () => {
     })).success).toBe(false);
   });
 
-  it("removes positive Resume Match basis variants whose compatible profile catalog is empty", () => {
-    const schema = createSemanticResumeMatchTransportSchema(
-      resumeMatchAvailableEvidence(),
-    );
+  it("rejects positive Resume Match basis combinations whose compatible profile catalog is empty", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    const requirements = authoritativeResumeMatchRequirements();
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
     const value = structuredClone(validProviderResumeMatchTransport());
     value.requirementAssessments = [{
       ...value.requirementAssessments[0]!,
@@ -2469,10 +2638,34 @@ describe("production semantic execution", () => {
           .requirementAssessments!.items as Record<string, unknown>
       ),
     );
+    const generatedSchema = JSON.stringify(jsonSchema);
+    const references: Array<{ path: string; siblings: string[] }> = [];
+    const inspectReferences = (value: unknown, path = "$") => {
+      if (Array.isArray(value)) {
+        value.forEach((item, index) =>
+          inspectReferences(item, `${path}[${index}]`));
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      const node = value as Record<string, unknown>;
+      if (typeof node.$ref === "string") {
+        references.push({
+          path,
+          siblings: Object.keys(node).filter((key) => key !== "$ref"),
+        });
+      }
+      for (const [key, child] of Object.entries(node)) {
+        inspectReferences(child, `${path}.${key}`);
+      }
+    };
+    inspectReferences(jsonSchema);
 
     expect(violations).toEqual([]);
-    expect(assessmentSchema).toContain('"decisionImpactReferences"');
-    expect(assessmentSchema).toContain('"assessmentOnlyReferences"');
+    expect(references.length).toBeGreaterThan(6);
+    expect(references.filter((reference) => reference.siblings.length > 0))
+      .toEqual([]);
+    expect(generatedSchema).toContain('"decisionImpactReferences"');
+    expect(generatedSchema).toContain('"assessmentOnlyReferences"');
     expect(assessmentSchema).not.toContain('"decisionImpactEvidenceIndexes"');
     expect(assessmentSchema).not.toContain('"jdEvidenceIndexes"');
     expect(assessmentSchema).not.toContain('"profileEvidenceIndexes"');
@@ -2580,8 +2773,15 @@ describe("production semantic execution", () => {
       const missing = structuredClone(transport);
       missing.requirementAssessments[0]![source].assessmentOnlyReferences = missing.requirementAssessments[0]![source].decisionImpactReferences;
       missing.requirementAssessments[0]![source].decisionImpactReferences = [];
-      expect(schema.safeParse(missing).success).toBe(false);
-      expect(() => semanticResumeMatchFromTransport(missing, authoritativeResumeMatchRequirements(), evidence)).toThrow();
+      expect(schema.safeParse(missing).success).toBe(true);
+      expect(() => semanticResumeMatchFromTransport(
+        missing,
+        authoritativeResumeMatchRequirements(),
+        evidence,
+      )).toThrowError(expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        retryable: false,
+      }));
     }
   });
 
@@ -2636,7 +2836,11 @@ describe("production semantic execution", () => {
         expect(JSON.stringify(value)).toBe(original);
       }
     }
-    expect(JSON.stringify(auditOpenAiProviderSchema(schema).jsonSchema)).toContain("Disjoint evidence partitions");
+    const auditedSchema = JSON.stringify(auditOpenAiProviderSchema(schema).jsonSchema);
+    expect(auditedSchema).toContain(
+      "Unique references supporting this assessment's decision impact",
+    );
+    expect(auditedSchema).toContain("Unique references supporting only the assessment");
   });
 
   it("reports all invalid partitions without leaking references or repairing input", () => {
@@ -2737,15 +2941,43 @@ describe("production semantic execution", () => {
         supportedPortion: "Some relevant work is supported.",
         unsupportedPortion: "The remaining scope is unsupported.",
       };
+      const complete = (target: typeof partial) => ({
+        ...value,
+        requirementAssessments: [
+          target,
+          {
+            ...value.requirementAssessments[0]!,
+            requirementIndex: target.requirementIndex === 0 ? 1 : 0,
+            classification: "UNKNOWN" as const,
+            matchedExperienceSpecificity: "UNKNOWN" as const,
+            experienceEvidenceBasis: "UNKNOWN" as const,
+            decisionImpact: "NON_DECISIVE" as const,
+            supportedPortion: null,
+            unsupportedPortion: null,
+            profileEvidence: {
+              decisionImpactReferences: [],
+              assessmentOnlyReferences: [],
+            },
+          },
+        ],
+      });
       value.requirementAssessments = [partial];
       expect(schema.safeParse(value).success).toBe(false);
-      value.requirementAssessments = [{ ...partial, requirementIndex: 0 }];
+      expect(() => semanticResumeMatchFromTransport(complete(partial), requirements, evidence)).toThrowError(
+        expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }),
+      );
+      const ordinary = { ...partial, requirementIndex: 0 };
+      value.requirementAssessments = [ordinary];
       expect(schema.safeParse(value).success).toBe(true);
-      value.requirementAssessments = [{ ...partial,
+      expect(() => semanticResumeMatchFromTransport(complete(ordinary), requirements, evidence)).not.toThrow();
+      const specialized = { ...partial,
+        requirementIndex: 1,
         experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
         profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["specialized-direct"] },
-      }];
+      };
+      value.requirementAssessments = [specialized];
       expect(schema.safeParse(value).success).toBe(true);
+      expect(() => semanticResumeMatchFromTransport(complete(specialized), requirements, evidence)).not.toThrow();
       const emptyDirectCatalog = createSemanticResumeMatchTransportSchema(
         resumeMatchAvailableEvidence(), requirements,
       );
