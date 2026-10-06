@@ -117,9 +117,12 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 
 #### Known issues found during main-product work
 
-- **Pre-existing evaluator test-harness drift (Codex area, not fixed here).** These fail on `main` (`ebd5911`) before any main-product change. Unit tests (603) pass.
-  - **Integration:** 11 tests in `tests/integration/production-evaluation-flow.test.ts` fail. The test's own fake provider returns raw Burnout Risk domain output (the `customer-success.burnout-risk` case, around line 206). It does not apply `toBurnoutRiskProviderTransport`, so the stage fails with `STRUCTURED_OUTPUT_INVALID`.
-  - **E2E:** the Apply/Review flows in `tests/e2e/evaluation-results.spec.ts` fail with `SEMANTIC_EXECUTION_POLICY_MISMATCH`. The web server queues the mixed Terra/Luna execution policy (`semantic-execution-config.ts`), but the worker in `tests/support/e2e-evaluation-helper.ts` is built without that policy.
+- **Resolved (test-only): evaluator test-harness drift.** On `main` (`ebd5911`), 11 integration tests and both E2E evaluation flows failed because test harnesses lagged accepted evaluator contract changes:
+  - the Burnout Risk transport (`65dcaab`);
+  - the Resume Match compatibility model (`fe8b0d2`);
+  - the mixed-routing execution policy (`a307631`).
+
+  The harnesses are repaired without production changes. Integration is now 25/25 and E2E 4/4. See `HANDOFFS.md` ("Evaluator Test-Harness Drift Repaired").
 - **Playwright Chromium mismatch.** In environments with a different preinstalled Chromium build, Playwright 1.62.1 needs a matching browser or a `launchOptions.executablePath` override.
 
 ## Planned Next

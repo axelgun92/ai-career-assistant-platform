@@ -156,6 +156,48 @@ Claude should not modify the following merely to complete product UI or workflow
 
 If a true integration defect is found in one of those areas, stop and document it before changing evaluator internals.
 
+### Handoff: Evaluator Test-Harness Drift Repaired (Test-Only)
+
+**Date:** 2026-10-06  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+On `main` (`ebd5911`), 11 integration tests and both E2E evaluation flows failed before any main-product change. The cause was test harnesses that had not followed accepted evaluator contract changes. No production evaluator defect was found, and no production code changed.
+
+1. **Burnout Risk transport (`65dcaab`).** `tests/integration/production-evaluation-flow.test.ts` had a private fake provider that still returned raw Burnout Risk domain output. It now applies `toBurnoutRiskProviderTransport`, as the shared fixture transport already did.
+2. **Resume Match compatibility model (`fe8b0d2`).** Four parameterized "required gap" cases in the same file marked requirement 1 as `STRONG_MATCH` / `DIRECT_CUSTOMER_SUCCESS`. In that JD, requirement 1 is a preferred TOOL requirement, and the compatibility model correctly rejects a direct Customer Success work match for a tool. Requirement 1 is now a valid `TRANSFERABLE_MATCH` / `TRANSFERABLE` counterweight. Every assertion is unchanged: the expected Apply/Review/Skip decision and requirement 0's decision impact.
+3. **Mixed-routing execution policy (`a307631`).** The E2E worker helper (`tests/support/e2e-evaluation-helper.ts`) ran without an execution policy. The processor therefore rejected the web-queued task with `SEMANTIC_EXECUTION_POLICY_MISMATCH`, which is correct production behavior.
+   - The helper now builds its config with the production `semanticExecutorConfigFromEnvironment()`.
+   - The Playwright web server and the helper now share one set of deterministic E2E env defaults (`tests/support/e2e-environment.ts`).
+   - The fixture transport still replaces the provider, so no provider call is possible.
+
+#### Files Changed
+
+- `tests/integration/production-evaluation-flow.test.ts`
+- `tests/support/e2e-evaluation-helper.ts`
+- `tests/support/e2e-environment.ts` (new)
+- `playwright.config.ts` (env defaults moved to the shared module; values unchanged)
+
+#### Verification Completed
+
+- Integration: 25/25 pass (was 14/25).
+- Unit: 603/603 pass.
+- E2E: 4/4 pass (both evaluation flows were failing).
+- Typecheck and lint pass.
+- Deterministic/fake providers only; no paid calls.
+
+#### Known Issues / Blockers
+
+- The shared `createCustomerSuccessFixtureOperations` Resume Match fixture cannot currently emit a valid `STRONG_MATCH` for a TOOL requirement. Strong matches always cite the DIRECT_EXPERIENCE profile reference, while a TOOL strong match needs SKILL or TRANSFERABLE_SKILL evidence. Codex may want to extend the fixture if tool strong matches need integration coverage.
+- When evaluator contracts change, also run `pnpm test:integration` and `pnpm test:e2e`. These harnesses have their own fake-provider wiring that unit tests do not exercise.
+
+#### Do Not Change Without Coordination
+
+- Unchanged from the previous handoff. No evaluator internals, schemas, routing, prompts, or validators were modified.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

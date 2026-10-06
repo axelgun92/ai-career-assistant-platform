@@ -3,6 +3,7 @@ import {
   customerSuccessTestPreferences,
   toOrganizationalMaturityProviderTransport,
   toAlexFitProviderTransport,
+  toBurnoutRiskProviderTransport,
   toOpportunityPriorityProviderTransport,
   toResumeMatchProviderTransport,
   type ResumeMatchFixtureOptions,
@@ -10,6 +11,7 @@ import {
 import type {
   SemanticReconstruction,
   SemanticAlexFit,
+  SemanticBurnoutRisk,
   SemanticOrganizationalMaturity,
   SemanticResumeMatch,
   SemanticOpportunityPriority,
@@ -204,10 +206,13 @@ function deterministicTransport(input: {
           } as never) as SemanticAlexFit, trusted.availableEvidenceCatalog as Parameters<typeof toAlexFitProviderTransport>[1]);
           break;
         case "customer-success.burnout-risk":
-          output = await fixture.semanticOperations.evaluateBurnoutRisk({
-            ...trusted,
-            preferences: payload.userConfiguration,
-          } as never);
+          output = toBurnoutRiskProviderTransport(
+            (await fixture.semanticOperations.evaluateBurnoutRisk({
+              ...trusted,
+              preferences: payload.userConfiguration,
+            } as never)) as SemanticBurnoutRisk,
+            trusted.availableEvidence as Parameters<typeof toBurnoutRiskProviderTransport>[1],
+          );
           break;
         case "customer-success.resume-match":
           {
@@ -1026,12 +1031,15 @@ describe("production evaluation vertical slice", () => {
     expect(result.recommendation.recommendation).toMatch(/APPLY|REVIEW|SKIP/);
   });
 
+  // Requirement 1 in this JD is a preferred TOOL requirement. The Resume Match
+  // compatibility model (fe8b0d2) rejects a DIRECT_CUSTOMER_SUCCESS work match
+  // for a tool, so the non-decisive counterweight is a valid transferable match.
   it.each([
     {
       name: "materially ambiguous required gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
       } satisfies ResumeMatchFixtureOptions,
       impact: "MATERIAL_UNCERTAINTY",
@@ -1040,8 +1048,8 @@ describe("production evaluation vertical slice", () => {
     {
       name: "decisive required gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["DECISIVE_DISQUALIFIER", "NON_DECISIVE"],
       } satisfies ResumeMatchFixtureOptions,
       impact: "DECISIVE_DISQUALIFIER",
@@ -1050,8 +1058,8 @@ describe("production evaluation vertical slice", () => {
     {
       name: "non-decisive required gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["NON_DECISIVE", "NON_DECISIVE"],
       } satisfies ResumeMatchFixtureOptions,
       impact: "NON_DECISIVE",
@@ -1060,8 +1068,8 @@ describe("production evaluation vertical slice", () => {
     {
       name: "contradicted would-be decisive gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["DECISIVE_DISQUALIFIER", "NON_DECISIVE"],
         contradiction: "INFLATED_YEARS",
       } satisfies ResumeMatchFixtureOptions,

@@ -10,7 +10,9 @@ import {
   createCustomerSuccessFixtureTransport,
   customerSuccessTestPreferences,
 } from "../fixtures/customer-success";
-import { testSemanticPricing } from "../fixtures/semantic-pricing";
+import { readSemanticEnvironment } from "../../packages/shared/src/index";
+import { semanticExecutorConfigFromEnvironment } from "../../apps/web/src/server/semantic-execution-config";
+import { e2eEnvironment } from "./e2e-environment";
 
 const database = getDatabaseClient();
 const command = process.argv[2];
@@ -39,14 +41,14 @@ try {
       processor: createCustomerSuccessEvaluationProcessor({
         evaluations: new PrismaEvaluationRepository(),
         tasks,
+        // Use the same policy the web server queues (accepted production
+        // routing). The fixture transport below replaces the provider, so the
+        // API key is never used and no provider call is possible.
         semanticConfig: {
+          ...semanticExecutorConfigFromEnvironment(
+            readSemanticEnvironment({ ...process.env, ...e2eEnvironment() }),
+          ),
           apiKey: "deterministic-e2e-key",
-          model: "gpt-5.6-terra",
-          maxOutputTokens: 12_000,
-          retryLimit: 1,
-          callBudget: 16,
-          timeoutMs: 30_000,
-          pricing: testSemanticPricing,
         },
         transport: createCustomerSuccessFixtureTransport({
           resumeMatch: review ? {
