@@ -10,16 +10,41 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD
-2. Core Platform TDD
-3. Customer Success AI Assistant PRD
-4. Customer Success Assistant TDD
-5. AI Career Assistant Semantic Evaluation Implementation Playbook
-6. `docs/PRODUCT_STATUS.md`
-7. `docs/CURRENT_PROGRESS.md`
-8. `docs/AGENT_WORKSTREAMS.md`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.3.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.4.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.2.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.2.docx`
+5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md`
+6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
+7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
+8. `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md`
 
 Do not treat this file as a replacement for the PRDs/TDDs.
+
+## Documentation Locations
+
+Project documentation lives in the folders below. There is no `docs/` folder; use these paths exactly.
+
+| Document | Path |
+| --- | --- |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.3.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.2.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.4.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.2.docx` |
+| Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md` |
+| `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
+| `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
+| `CURRENT_PROGRESS.md` | `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` |
+| `AGENT_WORKSTREAMS.md` | `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md` |
+| `HANDOFFS.md` | `HANDOFFS.md` (repository root) |
+| `MILESTONES_1_10.md` | `AI Job Assistant Project/Md and README Docs/MILESTONES_1_10.md` |
+| `EVALUATOR_STATUS.md` | `AI Job Assistant Project/Md and README Docs/EVALUATOR_STATUS.md` |
+| `CHANGELOG.md` | `AI Job Assistant Project/Md and README Docs/CHANGELOG.md` |
+| AI Career Platform README | `AI Job Assistant Project/Md and README Docs/AI_Career_Platform_README.md` |
+| AI Architecture README | `AI Job Assistant Project/Md and README Docs/AI_Architecture_README.md` |
+| Repository README | `README.md` (repository root) |
+
+Freelance Writing PRD/TDD documents also live in the PRD and TDD folders above; they are not current implementation targets.
 
 ## Core Rules
 
@@ -94,13 +119,13 @@ Do not let retrieval work delay the first usable product.
 
 ## Agent Coordination
 
-Check `docs/AGENT_WORKSTREAMS.md` before beginning substantial work.
+Check `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md` before beginning substantial work.
 
 Do not edit the same high-risk area concurrently with another agent.
 
-Use `docs/HANDOFFS.md` when work is actively transferred.
+Use `HANDOFFS.md` (repository root) when work is actively transferred.
 
-After meaningful completed work, update `docs/CURRENT_PROGRESS.md` with:
+After meaningful completed work, update `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` with:
 
 - what was completed;
 - what is next;
@@ -140,4 +165,9 @@ Use:
 - `CURRENT_PROGRESS.md` for active development state;
 - `DEVELOPMENT_PLAN.md` for sequencing;
 - `AGENT_WORKSTREAMS.md` for ownership;
-- `HANDOFFS.md` for active work transfer.
+- `HANDOFFS.md` for active work transfer;
+- `MILESTONES_1_10.md` for Milestone 1–10 implementation history;
+- `EVALUATOR_STATUS.md` for evaluator routing, optimization, and completion state;
+- `CHANGELOG.md` for notable project changes.
+
+See **Documentation Locations** above for the path of each document.
