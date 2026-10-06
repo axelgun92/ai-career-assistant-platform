@@ -85,9 +85,42 @@ JD Reconstruction optimization #2
 
 ### Main Product
 
-Remaining non-evaluator product work is to be completed in parallel.
+Remaining non-evaluator product work is being completed in parallel by Claude.
 
-The exact outstanding task list should be pulled from the current repository / Codex architecture history before being expanded here.
+#### Completed — Opportunity dashboard and Domain default (October 6, 2026)
+
+- `GET /api/opportunities`: read-only, newest-first list of persisted opportunities with their latest evaluation (task status and persisted decision). Bounded by `limit` (default 100, max 200); an invalid query returns 400.
+- `/` is now a dashboard of opportunities with an empty state. Manual entry moved to `/opportunities/new`. The detail page links back to the dashboard.
+- The manual-entry Domain field is now a select defaulting to `customer-success`. Previously a blank domain made the opportunity impossible to evaluate.
+- The dashboard uses its own domain-neutral display helpers (`apps/web/src/components/dashboard/`). It does not import the evaluation/Customer Success result UI and does not recalculate or restyle recommendations.
+- No changes to evaluator internals, schemas, routing, worker/queue behavior, or recommendation logic.
+- Tests added:
+  - `tests/unit/opportunity-dashboard.test.tsx`
+  - `tests/integration/opportunity-list.test.ts`
+  - `tests/e2e/opportunity-dashboard.spec.ts`
+  - `tests/e2e/app-shell.spec.ts` updated.
+
+#### Remaining main-product order
+
+1. Evaluation-experience correctness:
+   - show the last completed result when the latest evaluation failed;
+   - show safe failure details;
+   - show per-field form errors;
+   - add a continue-checking control after the polling cap;
+   - add a stalled-queue notice;
+   - make source and application URLs clickable.
+2. Lifecycle and user actions: Save, Applied, Dismiss, Archive, plus `EVALUATED`/`RECOMMENDED`. Needs Codex coordination: shared persistence and worker path, and the `NORMALIZED`-only evaluation guard.
+3. Usage/cost display. The data is already returned by the evaluation API.
+4. Profile/preferences management. Needs Codex coordination: domain profile contract.
+5. Budget ledger and deferral, if in V1 scope.
+6. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
+
+#### Known issues found during main-product work
+
+- **Pre-existing evaluator test-harness drift (Codex area, not fixed here).** These fail on `main` (`ebd5911`) before any main-product change. Unit tests (603) pass.
+  - **Integration:** 11 tests in `tests/integration/production-evaluation-flow.test.ts` fail. The test's own fake provider returns raw Burnout Risk domain output (the `customer-success.burnout-risk` case, around line 206). It does not apply `toBurnoutRiskProviderTransport`, so the stage fails with `STRUCTURED_OUTPUT_INVALID`.
+  - **E2E:** the Apply/Review flows in `tests/e2e/evaluation-results.spec.ts` fail with `SEMANTIC_EXECUTION_POLICY_MISMATCH`. The web server queues the mixed Terra/Luna execution policy (`semantic-execution-config.ts`), but the worker in `tests/support/e2e-evaluation-helper.ts` is built without that policy.
+- **Playwright Chromium mismatch.** In environments with a different preinstalled Chromium build, Playwright 1.62.1 needs a matching browser or a `launchOptions.executablePath` override.
 
 ## Planned Next
 

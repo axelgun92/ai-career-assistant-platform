@@ -1,5 +1,13 @@
 import { ZodError } from "zod";
 import { getManualOpportunityService } from "@/server/manual-opportunity-service";
+import {
+  createOpportunityListHandler,
+  getOpportunityListReader,
+} from "@/server/opportunity-list-service";
+
+export async function GET(request: Request) {
+  return createOpportunityListHandler(getOpportunityListReader())(request);
+}
 
 export async function POST(request: Request) {
   let requestBody: unknown;

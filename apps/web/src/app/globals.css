@@ -31,12 +31,14 @@ label {
 }
 
 input,
+select,
 textarea,
 button {
   font: inherit;
 }
 
 input,
+select,
 textarea {
   width: 100%;
   padding: 0.65rem;
@@ -423,6 +425,96 @@ blockquote {
   border-top: 1px solid #cbd5e1;
   color: #475569;
   font-size: 0.85rem;
+}
+
+.dashboard {
+  max-width: 64rem;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.button-link {
+  display: inline-block;
+  padding: 0.7rem 1rem;
+  border-radius: 0.25rem;
+  color: #ffffff;
+  background: #111827;
+  text-decoration: none;
+}
+
+.opportunity-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.opportunity-row {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.opportunity-row-main {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.opportunity-row-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.opportunity-row-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.opportunity-row-facts > div {
+  display: block;
+  padding: 0;
+  border: 0;
+}
+
+.opportunity-row-facts dt {
+  color: #4b5563;
+  font-size: 0.8rem;
+}
+
+.opportunity-row-facts dd {
+  overflow-wrap: anywhere;
+}
+
+.opportunity-row-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.status-label {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid #64748b;
+  border-radius: 999px;
+  color: #0f172a;
+  background: #f1f5f9;
+  font-size: 0.82rem;
+}
+
+.status-label-decision {
+  font-weight: 800;
 }
 
 @media (max-width: 42rem) {

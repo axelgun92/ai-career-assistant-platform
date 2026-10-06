@@ -47,7 +47,7 @@ export default async function OpportunityPage({
 
   return (
     <main className="opportunity-page">
-      <Link href="/">← Enter another opportunity</Link>
+      <Link href="/">← All opportunities</Link>
 
       <EvaluationExperience
         opportunity={{

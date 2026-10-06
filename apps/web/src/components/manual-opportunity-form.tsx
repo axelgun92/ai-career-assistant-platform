@@ -3,6 +3,13 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+// Domains the platform can currently evaluate. A blank domain cannot be
+// evaluated, so the form always submits one of these slugs.
+const domainOptions = [
+  { value: "customer-success", label: "Customer Success" },
+] as const;
+const defaultDomain = domainOptions[0].value;
+
 function optionalFormValue(formData: FormData, name: string) {
   const value = formData.get(name);
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -84,8 +91,14 @@ export function ManualOpportunityForm() {
           <input name="postingDate" type="date" />
         </label>
         <label>
-          Domain slug (optional)
-          <input name="domain" placeholder="customer-success" />
+          Domain
+          <select name="domain" defaultValue={defaultDomain}>
+            {domainOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label>
           Source URL (optional)
