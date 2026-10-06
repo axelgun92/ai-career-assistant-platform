@@ -248,6 +248,39 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Unchanged from previous handoffs.
 
+### Handoff: Foundation Pass — Provenance and Duplicate-Evaluation Guard (Awareness)
+
+**Date:** 2026-10-06  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+- `SourceRecord.applicationUrl` was added: additive migration `20261006232000_source_record_application_url` with a null-safe backfill.
+  - The pre-existing `Recommendation.evidenceReferences` default drift was again excluded from the migration.
+  - Manual capture can now record a source job ID and a reported source.
+- **Manual-source identity rule:** manually captured jobs always have `source = "manual-input"` and `sourceType = MANUAL`. The user's "where you found it" lives only in `sourceMetadata.reportedSource` and is informational. Future deduplication, source analytics and source adapters must key on `source`/`sourceType` (and `externalId` for real adapters), never on `reportedSource`.
+- **Product-layer guard:** `evaluation-service.requestEvaluation` returns 409 `EVALUATION_ALREADY_ACTIVE` when the opportunity's latest evaluation task is PENDING or RUNNING.
+
+#### Files Changed (Codex-relevant)
+
+- `tests/integration/production-evaluation-flow.test.ts`, test "creates a new historical evaluation instead of overwriting a completed run".
+  - It previously enqueued two evaluations back to back while the first was still PENDING, which is exactly the duplicate the new guard refuses.
+  - It now asserts the refusal, completes the first task through `tasks.claimNext`/`tasks.complete`, then requests the second.
+  - All original history assertions are unchanged.
+- No evaluator, queue, worker or evaluator-persistence code changed.
+
+#### Known Issues / Blockers
+
+- **Open boundary item (residual race).** The duplicate-evaluation guard is a check-then-enqueue in the product layer. Two truly concurrent requests for the same opportunity can both pass before either enqueues.
+  - A strict fix would belong in the queue/persistence layer: an active-task uniqueness check inside the `PrismaEvaluationTaskRepository.enqueue` transaction, or a partial unique constraint.
+  - Not changed here. Low risk for single-user use; the UI also prevents duplicate submits.
+
+#### Do Not Change Without Coordination
+
+- Unchanged from previous handoffs.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

@@ -107,5 +107,36 @@ test("source and application URLs are clickable on the opportunity page", async 
     .toHaveAttribute("href", "https://example.com/jobs/123");
 
   await page.getByText("Normalized opportunity and source details").click();
-  await expect(page.getByRole("link", { name: "https://example.com/jobs/123/apply" })).toBeVisible();
+  await expect(
+    page.locator("details.source-details").getByRole("link", { name: "https://example.com/jobs/123/apply" }),
+  ).toBeVisible();
+});
+
+test("manual entry preserves and shows source provenance", async ({ page }) => {
+  const title = `Provenance E2E Customer Success Manager ${Date.now()}`;
+  await page.goto("/opportunities/new");
+  await page.getByLabel("Raw opportunity or job-description text").fill("Customer Success Manager. Remote.");
+  await page.getByLabel("Title (optional)").fill(title);
+  await page.getByLabel("Source URL (optional)").fill("https://www.linkedin.com/jobs/view/777");
+  await page.getByLabel("Application URL (optional)").fill("https://jobs.example.com/apply/777");
+  await page.getByLabel("Source job ID (optional)").fill("REQ-777");
+  await page.getByLabel(/Where you found it/).fill("LinkedIn");
+  await page.getByRole("button", { name: "Save and normalize" }).click();
+
+  await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]{36}$/);
+  const opportunityId = page.url().split("/").pop() ?? "";
+  opportunityIds.push(opportunityId);
+
+  const provenance = page.locator("section.provenance");
+  await expect(provenance.getByRole("heading", { name: "Source and provenance" })).toBeVisible();
+  await expect(provenance).toContainText("Manual entry");
+  await expect(provenance).toContainText("manual-input");
+  await expect(provenance).toContainText("Reported by you: found on LinkedIn");
+  await expect(provenance).toContainText("REQ-777");
+  await expect(provenance.getByRole("link", { name: "https://jobs.example.com/apply/777" }))
+    .toHaveAttribute("rel", "noopener noreferrer");
+  await expect(provenance.getByRole("link", { name: "https://www.linkedin.com/jobs/view/777" })).toBeVisible();
+
+  await page.goto("/");
+  await expect(page.locator(`li:has(a[href="/opportunities/${opportunityId}"])`)).toContainText("Manual entry");
 });

@@ -172,6 +172,18 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         }
       }
 
+      if (rawOpportunity.externalId !== null) {
+        provenance.push(
+          provenanceFor({
+            fieldName: "externalListingId",
+            sourceField: "sourceJobId",
+            sourceValue: rawOpportunity.externalId,
+            normalizedValue: rawOpportunity.externalId,
+            collectedAt: rawOpportunity.discoveredAt,
+          }),
+        );
+      }
+
       if (rawOpportunity.postingDate !== null && postingDate !== null) {
         provenance.push({
           fieldName: "postingDate",

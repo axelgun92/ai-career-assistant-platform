@@ -151,11 +151,44 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - `tests/integration/usage-summary.test.ts` (attempts seeded through the existing recorder);
   - E2E usage assertions in the Apply and lifecycle flows.
 
+#### Completed — Pre-Task-5 foundation pass: provenance and multi-source readiness (October 6, 2026)
+
+- **Audit result.** Most provenance was already correct:
+  - raw-first `SourceRecord` capture;
+  - Opportunity identity, URL and timestamp fields;
+  - field-level `FieldProvenance`;
+  - many `SourceRecord`s per Opportunity;
+  - `DuplicateReference`.
+
+  Evaluation, reevaluation and lifecycle actions never write provenance.
+- **Fixed — per-source application URL.** `SourceRecord.applicationUrl` is now a first-class column (it was previously only in JSON). Migration `20261006232000_source_record_application_url` backfills it null-safely, copying only well-formed http(s) values and leaving everything else NULL.
+- **Fixed — manual capture.** It can now record an optional source job ID (`externalId`, with field provenance) and "where you found it" (`sourceMetadata.reportedSource`, informational only). Manual jobs always keep `source = "manual-input"` / `sourceType = MANUAL`.
+- **Fixed — provenance in the UI.**
+  - The detail page has a "Source and provenance" section: entry method, source, reported source, every source record with its URLs (safe links), source job/requisition IDs, and discovered/last-observed/normalized timestamps.
+  - Opportunity-level first/last seen is also shown.
+  - Dashboard rows show the source; list items carry `source`/`sourceType`.
+- **Fixed — duplicate paid evaluations.** A server-side guard returns 409 `EVALUATION_ALREADY_ACTIVE` while the opportunity's latest evaluation is queued or running. The residual true-concurrency race is documented in `HANDOFFS.md`.
+- **Tests:**
+  - `tests/unit/foundation-provenance.test.tsx`;
+  - guard cases in `evaluation-api-worker.test.ts`;
+  - `tests/integration/foundation-provenance.test.ts`: full provenance snapshot unchanged across evaluation, reevaluation and all user actions; backfill edge cases; the guard;
+  - a provenance E2E flow.
+- **Deferred (all additive later):**
+  - `SourceRecord.retrievalType`/`sourceCategory` (with the first collector);
+  - posting-history observations;
+  - the dedup engine and canonical-source selection;
+  - submit-URL-only capture.
+
 #### Remaining main-product order
 
-1. Profile/preferences management. Needs Codex coordination: domain profile contract.
-2. Budget ledger and deferral, if in V1 scope.
-3. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
+Revised roadmap:
+
+- Task 5 — Profile + Preferences (plan approved: key form + full JSON editor, explicit active profile).
+- Task 6 — Budget Ledger + Deferral.
+- Task 7 — Product UI: dashboard, search, sort, filters, analytics polish.
+- Task 8 — Application Tracker: notes, follow-ups, contacts, outcomes.
+- Task 9 — Final setup, operations, integration, E2E.
+- Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 
 #### Known issues found during main-product work
 

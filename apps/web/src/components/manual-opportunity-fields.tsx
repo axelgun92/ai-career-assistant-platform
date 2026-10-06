@@ -18,6 +18,8 @@ export const manualOpportunityFieldNames = [
   "domain",
   "sourceUrl",
   "applicationUrl",
+  "sourceJobId",
+  "foundOn",
 ] as const;
 
 export type ManualOpportunityFieldName = (typeof manualOpportunityFieldNames)[number];
@@ -75,6 +77,13 @@ const urlFields = [
   ["applicationUrl", "Application URL (optional)"],
 ] as const;
 
+// Provenance details. "Where you found it" is informational only; manual
+// entries always remain identified as manual input.
+const provenanceFields = [
+  ["sourceJobId", "Source job ID (optional)"],
+  ["foundOn", "Where you found it (optional, e.g. LinkedIn)"],
+] as const;
+
 export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErrors }) {
   return (
     <>
@@ -107,6 +116,13 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
           <label key={name}>
             {label}
             <input name={name} type="url" {...errorProps(name, fieldErrors)} />
+            <FieldError name={name} fieldErrors={fieldErrors} />
+          </label>
+        ))}
+        {provenanceFields.map(([name, label]) => (
+          <label key={name}>
+            {label}
+            <input name={name} {...errorProps(name, fieldErrors)} />
             <FieldError name={name} fieldErrors={fieldErrors} />
           </label>
         ))}

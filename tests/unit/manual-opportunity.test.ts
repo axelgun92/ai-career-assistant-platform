@@ -58,6 +58,7 @@ function createRepository(calls: string[]): ManualOpportunityRepository {
             source: rawOpportunity.source,
             sourceType: rawOpportunity.sourceType,
             sourceUrl: rawOpportunity.sourceUrl,
+            applicationUrl: rawOpportunity.applicationUrl,
             externalId: rawOpportunity.externalId,
             requisitionId: rawOpportunity.requisitionId,
             rawTitle: rawOpportunity.title,

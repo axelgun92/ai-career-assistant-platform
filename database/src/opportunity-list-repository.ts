@@ -8,6 +8,8 @@ export interface OpportunityListItem {
   id: string;
   domain: string | null;
   status: string;
+  source: string | null;
+  sourceType: string | null;
   title: string | null;
   companyName: string | null;
   location: string | null;
@@ -41,6 +43,8 @@ export class PrismaOpportunityListRepository {
         id: true,
         domain: true,
         status: true,
+        source: true,
+        sourceType: true,
         title: true,
         location: true,
         salaryText: true,
@@ -68,6 +72,8 @@ export class PrismaOpportunityListRepository {
         id: record.id,
         domain: record.domain,
         status: record.status,
+        source: record.source,
+        sourceType: record.sourceType,
         title: record.title,
         companyName: record.company?.name ?? null,
         location: record.location,

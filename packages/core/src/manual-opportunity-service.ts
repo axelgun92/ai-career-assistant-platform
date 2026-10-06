@@ -39,6 +39,7 @@ export interface ManualOpportunityDetail {
     source: string;
     sourceType: string;
     sourceUrl: string | null;
+    applicationUrl: string | null;
     externalId: string | null;
     requisitionId: string | null;
     rawTitle: string | null;
@@ -109,7 +110,7 @@ export function createManualOpportunityService(input: {
         sourceUrl: submission.sourceUrl ?? null,
         applicationUrl: submission.applicationUrl ?? null,
         domain: submission.domain ?? null,
-        externalId: null,
+        externalId: submission.sourceJobId?.trim() ?? null,
         requisitionId: null,
         title: submission.title ?? null,
         company: submission.company ?? null,
@@ -121,6 +122,8 @@ export function createManualOpportunityService(input: {
         sourceMetadata: {
           applicationUrl: submission.applicationUrl ?? null,
           domain: submission.domain ?? null,
+          // Informational only; never used as the source identity.
+          reportedSource: submission.foundOn?.trim() ?? null,
         },
         rawPayload: {
           rawText: submission.rawText,
@@ -132,6 +135,8 @@ export function createManualOpportunityService(input: {
           sourceUrl: submission.sourceUrl ?? null,
           applicationUrl: submission.applicationUrl ?? null,
           domain: submission.domain ?? null,
+          sourceJobId: submission.sourceJobId ?? null,
+          foundOn: submission.foundOn ?? null,
         },
         discoveredAt,
       });

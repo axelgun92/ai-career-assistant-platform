@@ -172,6 +172,9 @@ model SourceRecord {
   source             String
   sourceType         SourceType
   sourceUrl          String?                    @db.Text
+  // This source's own application link; Opportunity.applicationUrl is the
+  // canonical choice across sources.
+  applicationUrl     String?                    @db.Text
   externalId         String?
   requisitionId      String?
   rawTitle           String?

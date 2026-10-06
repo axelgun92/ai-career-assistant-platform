@@ -156,6 +156,18 @@ export function createEvaluationService(
         );
       }
 
+      // Server-side duplicate guard: never enqueue a second paid evaluation
+      // while one is still queued or running for this opportunity.
+      const [latest] = await dependencies.queries.listEvaluationHistory({ opportunityId });
+      const latestTaskStatus = latest?.task?.status ?? latest?.status;
+      if (latestTaskStatus === "PENDING" || latestTaskStatus === "RUNNING") {
+        throw new EvaluationApiError(
+          "EVALUATION_ALREADY_ACTIVE",
+          "An evaluation is already queued or running for this opportunity",
+          409,
+        );
+      }
+
       const profile = await dependencies.queries.resolveUserProfile(
         request.userProfileId ?? null,
       );

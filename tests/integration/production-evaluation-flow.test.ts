@@ -1206,6 +1206,14 @@ describe("production evaluation vertical slice", () => {
       jobMaxAttempts: 2,
     });
     const first = await service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id });
+    // A second request while the first is still queued is refused (no
+    // duplicate paid evaluation); finish the first task through the queue API.
+    await expect(
+      service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id }),
+    ).rejects.toMatchObject({ code: "EVALUATION_ALREADY_ACTIVE" });
+    const claimed = await tasks.claimNext({ leaseSeconds: 60 });
+    expect(claimed?.evaluationId).toBe(first.evaluationId);
+    await tasks.complete(claimed!.id);
     const second = await service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id });
     expect(second.evaluationId).not.toBe(first.evaluationId);
     expect(await database.evaluation.count({ where: { opportunityId: opportunity.opportunity.id } })).toBe(2);

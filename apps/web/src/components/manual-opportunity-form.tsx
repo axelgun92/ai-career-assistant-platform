@@ -36,6 +36,8 @@ export function ManualOpportunityForm() {
       sourceUrl: optionalFormValue(formData, "sourceUrl"),
       applicationUrl: optionalFormValue(formData, "applicationUrl"),
       domain: optionalFormValue(formData, "domain"),
+      sourceJobId: optionalFormValue(formData, "sourceJobId"),
+      foundOn: optionalFormValue(formData, "foundOn"),
     };
 
     try {

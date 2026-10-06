@@ -4,6 +4,7 @@ import { getManualOpportunityService } from "@/server/manual-opportunity-service
 import { EvaluationExperience } from "@/components/evaluation/evaluation-experience";
 import { ExternalLink, safeExternalUrl } from "@/components/external-link";
 import { OpportunityActions } from "@/components/opportunity-actions";
+import { OpportunityProvenance } from "@/components/opportunity-provenance";
 import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 
@@ -97,6 +98,11 @@ export default async function OpportunityPage({
         }}
       />
 
+      <OpportunityProvenance
+        opportunity={detail.opportunity}
+        sourceRecords={detail.sourceRecords}
+      />
+
       <details className="source-details">
         <summary>Normalized opportunity and source details</summary>
       <section>
@@ -120,11 +126,15 @@ export default async function OpportunityPage({
       </section>
 
       <section>
-        <h2>Preserved SourceRecord</h2>
-        <p>
-          SourceRecord ID: <code>{detail.sourceRecords[0]?.id}</code>
-        </p>
-        <pre>{detail.sourceRecords[0]?.rawDescription ?? "Unknown"}</pre>
+        <h2>Preserved source text</h2>
+        {detail.sourceRecords.map((record) => (
+          <div key={record.id}>
+            <p>
+              SourceRecord ID: <code>{record.id}</code>
+            </p>
+            <pre>{record.rawDescription ?? "Unknown"}</pre>
+          </div>
+        ))}
       </section>
 
       <section>
