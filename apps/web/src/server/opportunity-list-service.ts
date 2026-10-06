@@ -3,15 +3,40 @@ import {
   PrismaOpportunityListRepository,
   type OpportunityListItem,
 } from "@ai-career/database";
+import type { OpportunityLifecycleState } from "@ai-career/core";
 import { z } from "zod";
 
 export interface OpportunityListReader {
-  listOpportunities(input?: { limit?: number }): Promise<OpportunityListItem[]>;
+  listOpportunities(input?: {
+    limit?: number;
+    statuses?: readonly OpportunityLifecycleState[];
+  }): Promise<OpportunityListItem[]>;
 }
+
+// Dashboard views over the lifecycle. "active" is the default working list;
+// dismissed and archived opportunities stay available in their own views.
+export const opportunityListViews = {
+  active: { label: "Active", statuses: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"] },
+  saved: { label: "Saved", statuses: ["SAVED"] },
+  applied: { label: "Applied", statuses: ["APPLIED"] },
+  dismissed: { label: "Dismissed", statuses: ["REJECTED_BY_USER"] },
+  archived: { label: "Archived", statuses: ["ARCHIVED", "CLOSED"] },
+  all: { label: "All", statuses: undefined },
+} as const satisfies Record<
+  string,
+  { label: string; statuses: readonly OpportunityLifecycleState[] | undefined }
+>;
+
+export type OpportunityListView = keyof typeof opportunityListViews;
+export const opportunityListViewSchema = z.enum(
+  Object.keys(opportunityListViews) as [OpportunityListView, ...OpportunityListView[]],
+);
+export const defaultOpportunityListView: OpportunityListView = "active";
 
 const listQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(opportunityListMaximumLimit).optional(),
+    view: opportunityListViewSchema.optional(),
   })
   .strict();
 
@@ -41,7 +66,11 @@ export function createOpportunityListHandler(reader: OpportunityListReader) {
     }
 
     try {
-      const opportunities = await reader.listOpportunities(parsed.data);
+      const { view, limit } = parsed.data;
+      const opportunities = await reader.listOpportunities({
+        limit,
+        statuses: view ? opportunityListViews[view].statuses : undefined,
+      });
       return Response.json({ opportunities });
     } catch (error) {
       console.error("Opportunity list request failed", {

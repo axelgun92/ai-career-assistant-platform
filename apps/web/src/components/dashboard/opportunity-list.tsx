@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { OpportunityListItem } from "@ai-career/database";
-import { formatDate, formatLabel, formatText } from "./format";
+import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
 
 function LatestEvaluation({ evaluation }: { evaluation: OpportunityListItem["latestEvaluation"] }) {
   if (!evaluation) return <span className="status-label">Not evaluated</span>;
@@ -53,6 +53,9 @@ export function OpportunityList({ opportunities }: { opportunities: OpportunityL
             </div>
           </dl>
           <div className="opportunity-row-status">
+            <span className="status-label status-label-lifecycle">
+              {formatLifecycle(opportunity.status)}
+            </span>
             <LatestEvaluation evaluation={opportunity.latestEvaluation} />
           </div>
         </li>

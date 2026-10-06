@@ -2,10 +2,12 @@ import "dotenv/config";
 import {
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
+  PrismaOpportunityLifecycleRepository,
   getDatabaseClient,
 } from "../../database/src/index";
 import { createEvaluationWorker } from "../../packages/evaluation/src/index";
 import { createCustomerSuccessEvaluationProcessor } from "../../apps/web/src/server/customer-success-evaluation-processor";
+import { withOpportunityLifecycleSync } from "../../apps/web/src/server/opportunity-lifecycle-sync";
 import {
   createCustomerSuccessFixtureTransport,
   customerSuccessTestPreferences,
@@ -38,7 +40,8 @@ try {
     const worker = createEvaluationWorker({
       tasks,
       leaseSeconds: 60,
-      processor: createCustomerSuccessEvaluationProcessor({
+      // Same lifecycle-syncing composition as the production worker.
+      processor: withOpportunityLifecycleSync(createCustomerSuccessEvaluationProcessor({
         evaluations: new PrismaEvaluationRepository(),
         tasks,
         // Use the same policy the web server queues (accepted production
@@ -57,7 +60,7 @@ try {
             decisionImpacts: ["MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
           } : undefined,
         }),
-      }),
+      }), new PrismaOpportunityLifecycleRepository()),
     });
     const task = await worker.runOnce();
     if (task?.status !== "COMPLETED") {

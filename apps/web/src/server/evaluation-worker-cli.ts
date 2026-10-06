@@ -1,10 +1,14 @@
 import "dotenv/config";
+import { PrismaOpportunityLifecycleRepository } from "@ai-career/database";
 import { readEvaluationWorkerEnvironment } from "@ai-career/shared";
 import { createProductionEvaluationWorker } from "./evaluation-worker";
 
 async function main() {
   const settings = readEvaluationWorkerEnvironment();
   const worker = createProductionEvaluationWorker();
+  // Repair any Opportunity whose evaluation completed without a lifecycle sync.
+  const repaired = await new PrismaOpportunityLifecycleRepository().sweepSystemLifecycle();
+  if (repaired > 0) console.info(`Synced lifecycle for ${repaired} evaluated opportunities.`);
   let stopping = false;
   const runOnce = process.argv.includes("--once");
 

@@ -1,4 +1,9 @@
 import {
+  canRequestEvaluation,
+  isNormalizedLifecycleState,
+  opportunityLifecycleStateSchema,
+} from "@ai-career/core";
+import {
   createCustomerSuccessEvaluator,
   createCustomerSuccessProfileContext,
   loadCustomerSuccessPreferencesFromProfile,
@@ -110,10 +115,18 @@ export function createEvaluationService(
           404,
         );
       }
-      if (opportunity.status !== "NORMALIZED") {
+      const lifecycle = opportunityLifecycleStateSchema.safeParse(opportunity.status);
+      if (!lifecycle.success || !isNormalizedLifecycleState(lifecycle.data)) {
         throw new EvaluationApiError(
           "OPPORTUNITY_NOT_NORMALIZED",
           "Only a normalized opportunity can be evaluated",
+          409,
+        );
+      }
+      if (!canRequestEvaluation(lifecycle.data)) {
+        throw new EvaluationApiError(
+          "OPPORTUNITY_NOT_EVALUABLE",
+          "Restore the opportunity before reevaluating it",
           409,
         );
       }

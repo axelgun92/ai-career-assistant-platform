@@ -185,3 +185,56 @@ test("a task left queued points at the worker and polling can be resumed", async
   await expect(page.getByText(/Evaluation is queued/)).toBeVisible();
   await expect(page.getByText(/worker may not be running/)).toBeVisible();
 });
+
+test("lifecycle actions, dashboard views, and reevaluation of a saved opportunity", async ({
+  page,
+  request,
+}) => {
+  await createProfile();
+  const opportunityId = await createOpportunity(request);
+  const statusHeading = (name: string) =>
+    page.getByRole("heading", { name, exact: true }).and(page.locator("#opportunity-status-title"));
+  const dashboardRow = () => page.locator(`li:has(a[href="/opportunities/${opportunityId}"])`);
+
+  await page.goto(`/opportunities/${opportunityId}`);
+  await expect(statusHeading("New")).toBeVisible();
+  await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  await processEvaluation();
+  await expect(page.getByRole("heading", { name: "Apply" })).toBeVisible({ timeout: 15_000 });
+  // The worker's lifecycle sync is reflected without a manual reload.
+  await expect(statusHeading("Recommendation ready")).toBeVisible({ timeout: 15_000 });
+
+  await page.goto("/");
+  await expect(dashboardRow()).toContainText("Recommendation ready");
+  await expect(dashboardRow()).toContainText("Apply");
+
+  await page.goto(`/opportunities/${opportunityId}`);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(statusHeading("Saved")).toBeVisible();
+
+  // Reevaluation keeps the user's Saved state and adds evaluation history.
+  await page.getByRole("button", { name: "Reevaluate opportunity" }).click();
+  await expect(page.getByText(/Evaluation accepted and queued/)).toBeVisible();
+  await processEvaluation();
+  await expect(page.getByText("Evaluation history (2)")).toBeVisible({ timeout: 15_000 });
+  await expect(statusHeading("Saved")).toBeVisible();
+
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect(statusHeading("Dismissed")).toBeVisible();
+  await page.goto("/");
+  await expect(dashboardRow()).toHaveCount(0);
+  await page.goto("/?view=dismissed");
+  await expect(dashboardRow()).toContainText("Dismissed");
+
+  await page.goto(`/opportunities/${opportunityId}`);
+  await page.getByRole("button", { name: "Restore" }).click();
+  await expect(statusHeading("Saved")).toBeVisible();
+
+  await page.getByRole("button", { name: "Archive" }).click();
+  await expect(statusHeading("Archived")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeDisabled();
+  await expect(page.getByText(/archived or closed. Restore it/)).toBeVisible();
+  await page.getByRole("button", { name: "Restore" }).click();
+  await expect(statusHeading("Saved")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeEnabled();
+});

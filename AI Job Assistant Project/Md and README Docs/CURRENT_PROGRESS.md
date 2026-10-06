@@ -116,13 +116,33 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - two E2E flows in `tests/e2e/opportunity-dashboard.spec.ts`: field errors and clickable links.
   - The E2E helper gained deterministic `fail-latest` and `age-latest` commands.
 
+#### Completed — Opportunity lifecycle and user actions (October 6, 2026; Core guard awaiting Codex review)
+
+- **Automatic system lifecycle.** After a completed evaluation, `NORMALIZED`/`EVALUATED` → `RECOMMENDED` (or `NORMALIZED` → `EVALUATED` if there is no recommendation). A failed evaluation changes nothing.
+  - Automatic sync never overwrites a user state and never downgrades.
+  - It runs in a product-level wrapper around the production evaluation processor (`apps/web/src/server/opportunity-lifecycle-sync.ts`). A sync failure is logged and never fails a completed task.
+  - The worker repairs any missed sync with a sweep at startup.
+  - Core still never mutates the lifecycle.
+- **User actions.** `POST /api/opportunities/[id]/action` accepts `SAVE`, `MARK_APPLIED`, `DISMISS`, `ARCHIVE` and `RESTORE`.
+  - Each action is a compare-and-set plus a row in the new additive `OpportunityUserAction` table, in one transaction.
+  - Only explicit user actions write that table; evaluations and the automatic sync never do.
+- **Deterministic RESTORE.** An undo stack over the action history: each non-RESTORE action pushes, each RESTORE pops, and RESTORE targets the newest action not yet undone. Repeated RESTORE walks backward and never bounces. A system-state target is re-derived from persisted evaluations.
+- **Reevaluation.** Allowed in every normalized state except `ARCHIVED`/`CLOSED`, which return 409 `OPPORTUNITY_NOT_EVALUABLE`. A user state is preserved and a new evaluation-history row is added.
+- **Dashboard.** Views for Active (default), Saved, Applied, Dismissed, Archived and All; lifecycle labels on each row; `GET /api/opportunities?view=`.
+- **Detail page.** Status and action buttons. Reevaluate is disabled with an explanation when the opportunity is archived or closed. Status refreshes after an evaluation completes.
+- **Core guard (⚠ awaiting Codex review).** The Core executor's `NORMALIZED`-only guard is widened to `isNormalizedLifecycleState` (any state except `DISCOVERED`) in `execute()` and `executeExisting()`. Automatic lifecycle writes depend on this change and are not integration-ready until Codex reviews it. See `HANDOFFS.md`.
+- **Migration.** `20261006210110_opportunity_user_actions` is additive only.
+- **Tests:**
+  - unit: `opportunity-lifecycle.test.ts`, `opportunity-actions.test.tsx`, executor guard cases, evaluation request guard cases;
+  - integration: `opportunity-lifecycle.test.ts`, which runs real deterministic evaluations through the production wrapper;
+  - E2E: the lifecycle flow.
+
 #### Remaining main-product order
 
-1. Lifecycle and user actions: Save, Applied, Dismiss, Archive, plus `EVALUATED`/`RECOMMENDED`. Needs Codex coordination: shared persistence and worker path, and the `NORMALIZED`-only evaluation guard.
-2. Usage/cost display. The data is already returned by the evaluation API.
-3. Profile/preferences management. Needs Codex coordination: domain profile contract.
-4. Budget ledger and deferral, if in V1 scope.
-5. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
+1. Usage/cost display. The data is already returned by the evaluation API.
+2. Profile/preferences management. Needs Codex coordination: domain profile contract.
+3. Budget ledger and deferral, if in V1 scope.
+4. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
 
 #### Known issues found during main-product work
 

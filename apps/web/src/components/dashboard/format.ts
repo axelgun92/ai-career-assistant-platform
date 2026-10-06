@@ -19,3 +19,19 @@ export function formatDate(value: Date | string | null | undefined): string {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? "Unknown" : date.toISOString().slice(0, 10);
 }
+
+const lifecycleLabels: Record<string, string> = {
+  DISCOVERED: "Discovered",
+  NORMALIZED: "New",
+  EVALUATED: "Evaluated",
+  RECOMMENDED: "Recommendation ready",
+  SAVED: "Saved",
+  APPLIED: "Applied",
+  REJECTED_BY_USER: "Dismissed",
+  CLOSED: "Closed",
+  ARCHIVED: "Archived",
+};
+
+export function formatLifecycle(status: string | null | undefined): string {
+  return (status ? lifecycleLabels[status] : undefined) ?? formatLabel(status);
+}

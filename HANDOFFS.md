@@ -198,6 +198,56 @@ On `main` (`ebd5911`), 11 integration tests and both E2E evaluation flows failed
 
 - Unchanged from the previous handoff. No evaluator internals, schemas, routing, prompts, or validators were modified.
 
+### Handoff: Core Executor Lifecycle Guard — Review Requested
+
+**Date:** 2026-10-06  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Verification Needed (Codex review of one Core change)
+
+#### Completed
+
+Task 3 (opportunity lifecycle and user actions) is implemented on `claude/gallant-pasteur-y1ou3i`.
+
+One change touches Core evaluation orchestration and needs Codex review: the Core executor guard in `packages/evaluation/src/executor.ts` (`execute()` and `executeExisting()`).
+
+- **Before:** `subject.opportunity.status !== "NORMALIZED"` threw.
+- **After:** `!isNormalizedLifecycleState(status)` throws. The new domain-neutral predicate in `packages/core/src/opportunity.ts` means "normalization has happened", i.e. any state except `DISCOVERED`. The error message is now "Only a normalized Opportunity can be evaluated".
+- **Why:** `executeExisting()` runs on every worker pass. With the old guard:
+  - any opportunity past `NORMALIZED` could not be reevaluated (worker fails with `EVALUATION_WORKER_FAILED`);
+  - a user action during an in-flight evaluation would break that run.
+
+  Product rules about which states may *request* evaluation stay in `apps/web/src/server/evaluation-service.ts`: `ARCHIVED`/`CLOSED` → 409.
+- **Unchanged:** Core still never mutates the Opportunity lifecycle, and the existing assertions for that remain. `retryStage()`, stages, routing, prompts, schemas, validators, recommendation logic and evidence/provenance are all unchanged.
+
+#### Files Changed (Core / Codex-relevant)
+
+- `packages/evaluation/src/executor.ts` (two guards)
+- `packages/core/src/opportunity.ts` (`isNormalizedLifecycleState`)
+- `tests/unit/evaluation-executor.test.ts` (accepts post-normalization states, rejects `DISCOVERED`, in-flight run finishes after a user action, Core leaves status untouched)
+
+#### Product-side Changes Codex Should Know About
+
+- `apps/web/src/server/opportunity-lifecycle-sync.ts` wraps the production processor (`evaluation-worker.ts`). After `process()` resolves, it moves the system lifecycle forward. Sync errors are logged and never fail the task. Claim, lease, retry and processing semantics are unchanged.
+- `apps/web/src/server/evaluation-worker-cli.ts` runs `sweepSystemLifecycle()` once at startup.
+- `tests/support/e2e-evaluation-helper.ts` uses the same wrapper.
+- New additive table `OpportunityUserAction`, migration `20261006210110_opportunity_user_actions`. No evaluator tables changed.
+
+#### Verification Completed
+
+- Unit 665/665, integration 38/38, E2E 9/9; typecheck, lint, build and Prisma validate pass.
+- With the original guard restored, 9 new executor unit tests and 4 lifecycle integration tests fail (reevaluation, saved-reevaluation, restore-after-evaluation, in-flight-after-archive). This confirms the dependency.
+- Deterministic/fake providers only; no paid calls.
+
+#### Known Issues / Blockers
+
+- **Automatic lifecycle writes are not integration-ready** until Codex reviews the Core guard change above.
+- **Pre-existing schema drift (not changed).** `prisma migrate dev` detected that `schema.prisma` declares `Recommendation.evidenceReferences` without the `DEFAULT ARRAY[]::TEXT[]` that migration `20260817210000_production_evaluation_workflow` created. It tried to add `ALTER TABLE "Recommendation" ALTER COLUMN "evidenceReferences" DROP DEFAULT`; I removed that line from the Task 3 migration to keep it additive. Codex should decide whether the schema or the database is canonical.
+
+#### Do Not Change Without Coordination
+
+- Unchanged from previous handoffs.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { getManualOpportunityService } from "@/server/manual-opportunity-service";
 import { EvaluationExperience } from "@/components/evaluation/evaluation-experience";
 import { ExternalLink, safeExternalUrl } from "@/components/external-link";
+import { OpportunityActions } from "@/components/opportunity-actions";
+import { formatLifecycle } from "@/components/dashboard/format";
+import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -31,6 +34,14 @@ export default async function OpportunityPage({
   if (!detail) {
     notFound();
   }
+  const lifecycle = await getOpportunityLifecyclePresentation(detail.opportunity.id).catch(
+    (error: unknown) => {
+      console.error("Opportunity lifecycle could not be loaded", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return null;
+    },
+  );
 
   const normalizedFields = [
     ["Lifecycle", detail.opportunity.status],
@@ -65,7 +76,16 @@ export default async function OpportunityPage({
         </nav>
       ) : null}
 
+      {lifecycle ? (
+        <OpportunityActions
+          opportunityId={detail.opportunity.id}
+          statusLabel={formatLifecycle(lifecycle.status)}
+          availableActions={lifecycle.availableActions}
+        />
+      ) : null}
+
       <EvaluationExperience
+        evaluable={lifecycle?.evaluable ?? true}
         opportunity={{
           id: detail.opportunity.id,
           title: detail.opportunity.title ?? "Untitled opportunity",

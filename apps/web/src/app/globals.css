@@ -579,3 +579,30 @@ blockquote {
     gap: 0.25rem;
   }
 }
+
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.view-tabs a[aria-current="page"] {
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.opportunity-actions {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.opportunity-actions h2 {
+  margin: 0 0 0.75rem;
+}
+
+.status-label-lifecycle {
+  border-color: #111827;
+}

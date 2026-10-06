@@ -1,3 +1,4 @@
+import type { OpportunityLifecycleState } from "@ai-career/core";
 import { getDatabaseClient } from "./client";
 
 export const opportunityListDefaultLimit = 100;
@@ -26,13 +27,14 @@ export class PrismaOpportunityListRepository {
   private readonly database = getDatabaseClient();
 
   async listOpportunities(
-    input: { limit?: number } = {},
+    input: { limit?: number; statuses?: readonly OpportunityLifecycleState[] } = {},
   ): Promise<OpportunityListItem[]> {
     const limit = Math.min(
       Math.max(input.limit ?? opportunityListDefaultLimit, 1),
       opportunityListMaximumLimit,
     );
     const records = await this.database.opportunity.findMany({
+      where: input.statuses ? { status: { in: [...input.statuses] } } : undefined,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
       select: {

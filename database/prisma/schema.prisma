@@ -19,6 +19,14 @@ enum OpportunityStatus {
   ARCHIVED
 }
 
+enum OpportunityUserActionType {
+  SAVE
+  MARK_APPLIED
+  DISMISS
+  ARCHIVE
+  RESTORE
+}
+
 enum SourceType {
   MANUAL
   BROWSER_EXTENSION
@@ -143,6 +151,7 @@ model Opportunity {
   evaluations           Evaluation[]
   evidenceRecords       EvidenceRecord[]
   recommendations       Recommendation[]
+  userActions           OpportunityUserAction[]
   semanticOperations    SemanticOperationAttempt[]
   duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
   referencedAsDuplicate DuplicateReference[]       @relation("DuplicateReferenceTarget")
@@ -463,4 +472,18 @@ model SemanticOperationAttempt {
   @@index([domain, createdAt])
   @@index([sourceRecordId])
   @@index([pricingConfigurationId])
+}
+
+// Explicit user lifecycle actions only. Evaluations and automatic system
+// lifecycle sync never write here.
+model OpportunityUserAction {
+  id            String                    @id @default(uuid()) @db.Uuid
+  opportunityId String                    @db.Uuid
+  opportunity   Opportunity               @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  action        OpportunityUserActionType
+  fromStatus    OpportunityStatus
+  toStatus      OpportunityStatus
+  createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
 }

@@ -264,6 +264,52 @@ describe("evaluation API", () => {
     ).toEqual(semanticConfig.executionPolicy?.operations);
   });
 
+  it.each([
+    ["NORMALIZED", 202, null],
+    ["EVALUATED", 202, null],
+    ["RECOMMENDED", 202, null],
+    ["SAVED", 202, null],
+    ["APPLIED", 202, null],
+    ["REJECTED_BY_USER", 202, null],
+    ["DISCOVERED", 409, "OPPORTUNITY_NOT_NORMALIZED"],
+    ["ARCHIVED", 409, "OPPORTUNITY_NOT_EVALUABLE"],
+    ["CLOSED", 409, "OPPORTUNITY_NOT_EVALUABLE"],
+    ["NOT_A_STATE", 409, "OPPORTUNITY_NOT_NORMALIZED"],
+  ] as const)("applies the product evaluation guard to a %s opportunity", async (status, expected, code) => {
+    const subject = validSubject();
+    const tasks = fakeTaskRepository();
+    const service = createEvaluationService({
+      queries: {
+        async findOpportunityForEvaluation() {
+          return {
+            id: subject.opportunity.id,
+            domain: "customer-success",
+            status,
+            jobDescription: subject.opportunity.jobDescription,
+            sourceRecords: [{ id: subject.rawSources[0]!.id }],
+          };
+        },
+        async resolveUserProfile() {
+          return { id: subject.userProfile!.id, version: 4 };
+        },
+        async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() { return []; },
+      },
+      evaluations: {
+        async loadSubject() { return subject; },
+      } as unknown as EvaluationRepository,
+      tasks,
+      semanticConfig: productionSemanticConfig("server-only-secret"),
+      jobMaxAttempts: 3,
+    });
+    const response = await createEvaluationApiHandlers(service).post(
+      new Request("http://localhost/api/opportunities/id/evaluate", { method: "POST", body: "{}" }),
+      subject.opportunity.id,
+    );
+    expect(response.status).toBe(expected);
+    if (code) expect(await response.json()).toMatchObject({ code });
+  });
+
   it("returns safe errors for a missing opportunity, unsupported domain, and missing profile", async () => {
     const subject = validSubject();
     const baseDependencies = {

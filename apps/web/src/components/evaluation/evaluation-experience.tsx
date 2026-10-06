@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CustomerSuccessResults } from "../customer-success/customer-success-results";
 import { createEvaluationPoller } from "./poller";
 import { evaluationFailure, isQueuedTooLong } from "./evaluation-failure";
@@ -49,8 +50,11 @@ function formatTimestamp(value: string | null | undefined) {
 
 export function EvaluationExperience({
   opportunity,
+  evaluable = true,
 }: {
   opportunity: OpportunityPresentation;
+  // False for archived/closed opportunities; the API enforces the same rule.
+  evaluable?: boolean;
 }) {
   // `evaluation` is what is displayed; `latest` is the newest evaluation, which
   // drives status, failure details, and the queued-too-long notice.
@@ -63,6 +67,10 @@ export function EvaluationExperience({
   const [notice, setNotice] = useState<string | null>(null);
   const [pollStopped, setPollStopped] = useState(false);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const router = useRouter();
+  // Set while an evaluation is queued/running, so its completion can refresh
+  // server-rendered lifecycle status on the page.
+  const wasActive = useRef(false);
   const requestInFlight = useRef(false);
   const selectedHistoryId = useRef<string | null>(null);
   const fallbackController = useRef<AbortController | null>(null);
@@ -114,6 +122,12 @@ export function EvaluationExperience({
           return;
         }
         setLatest(value.evaluation);
+        if (activeStatus(value.evaluation.status)) {
+          wasActive.current = true;
+        } else if (wasActive.current) {
+          wasActive.current = false;
+          router.refresh();
+        }
         if (selectedHistoryId.current) {
           setEvaluation((current) =>
             current ? { ...current, history: value.evaluation.history } : value.evaluation,
@@ -140,7 +154,7 @@ export function EvaluationExperience({
       fallbackController.current?.abort();
       poller.current = null;
     };
-  }, [opportunity.id]);
+  }, [opportunity.id, router]);
 
   function keepChecking() {
     setPollStopped(false);
@@ -226,7 +240,7 @@ export function EvaluationExperience({
           <button
             type="button"
             onClick={requestEvaluation}
-            disabled={requesting || active}
+            disabled={requesting || active || !evaluable}
             aria-describedby="evaluation-status-message"
           >
             {requesting ? "Requesting…" : active ? "Evaluation in progress" :
@@ -239,6 +253,9 @@ export function EvaluationExperience({
           ) : null}
         </div>
         <div id="evaluation-status-message" aria-live="polite">
+          {!evaluable && !active ? (
+            <p>This opportunity is archived or closed. Restore it to request another evaluation.</p>
+          ) : null}
           {notice ? <p className="success-message">{notice}</p> : null}
           {error ? <p className="error-message">{error}</p> : null}
           <StatusNotices
