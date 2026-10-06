@@ -87,3 +87,11 @@ export const normalizedOpportunitySchema = z.object({
 export type NormalizedOpportunity = z.infer<typeof normalizedOpportunitySchema>;
 export type OpportunityLifecycleState = z.infer<typeof opportunityLifecycleStateSchema>;
 export type OpportunitySourceType = z.infer<typeof opportunitySourceTypeSchema>;
+
+// True once deterministic normalization has produced the Opportunity record.
+// Every lifecycle state after DISCOVERED (system or user-owned) keeps the
+// normalized data, so evaluation may run on it; product rules about which
+// states may *request* evaluation live outside Core.
+export function isNormalizedLifecycleState(status: OpportunityLifecycleState): boolean {
+  return status !== "DISCOVERED";
+}
