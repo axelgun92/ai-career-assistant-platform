@@ -31,7 +31,7 @@ export function createEvaluationPoller<T>(options: EvaluationPollerOptions<T>) {
     if (!active) return;
     if (polls >= maximumPolls) {
       stop();
-      options.onError("Evaluation is taking longer than expected. Refresh to check again.");
+      options.onError("Evaluation is taking longer than expected. Select Keep checking to continue.");
       return;
     }
     polls += 1;

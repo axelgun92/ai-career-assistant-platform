@@ -2,13 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-
-// Domains the platform can currently evaluate. A blank domain cannot be
-// evaluated, so the form always submits one of these slugs.
-const domainOptions = [
-  { value: "customer-success", label: "Customer Success" },
-] as const;
-const defaultDomain = domainOptions[0].value;
+import {
+  fieldErrorsFromIssues,
+  ManualOpportunityFields,
+  type FieldErrors,
+} from "./manual-opportunity-fields";
 
 function optionalFormValue(formData: FormData, name: string) {
   const value = formData.get(name);
@@ -18,11 +16,13 @@ function optionalFormValue(formData: FormData, name: string) {
 export function ManualOpportunityForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setFieldErrors({});
     setSubmitting(true);
 
     const formData = new FormData(event.currentTarget);
@@ -44,13 +44,18 @@ export function ManualOpportunityForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => ({}))) as {
         error?: string;
+        issues?: unknown;
         opportunity?: { id: string };
       };
 
       if (!response.ok || !result.opportunity) {
-        setError(result.error ?? "The opportunity could not be stored");
+        const { fieldErrors, formErrors } = fieldErrorsFromIssues(result.issues);
+        setFieldErrors(fieldErrors);
+        setError(
+          [result.error ?? "The opportunity could not be stored", ...formErrors].join(" "),
+        );
         return;
       }
 
@@ -64,53 +69,9 @@ export function ManualOpportunityForm() {
 
   return (
     <form onSubmit={submit}>
-      <label>
-        Raw opportunity or job-description text
-        <textarea name="rawText" rows={14} required />
-      </label>
+      <ManualOpportunityFields fieldErrors={fieldErrors} />
 
-      <div className="form-grid">
-        <label>
-          Title (optional)
-          <input name="title" />
-        </label>
-        <label>
-          Company (optional)
-          <input name="company" />
-        </label>
-        <label>
-          Location (optional)
-          <input name="location" />
-        </label>
-        <label>
-          Compensation text (optional)
-          <input name="compensationText" />
-        </label>
-        <label>
-          Posting date (optional)
-          <input name="postingDate" type="date" />
-        </label>
-        <label>
-          Domain
-          <select name="domain" defaultValue={defaultDomain}>
-            {domainOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Source URL (optional)
-          <input name="sourceUrl" type="url" />
-        </label>
-        <label>
-          Application URL (optional)
-          <input name="applicationUrl" type="url" />
-        </label>
-      </div>
-
-      {error ? <p className="error-message">{error}</p> : null}
+      {error ? <p className="error-message" role="alert">{error}</p> : null}
       <button type="submit" disabled={submitting}>
         {submitting ? "Saving…" : "Save and normalize"}
       </button>

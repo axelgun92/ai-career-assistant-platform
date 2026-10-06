@@ -64,6 +64,38 @@ try {
       throw new Error(`Deterministic worker ended in ${task?.status ?? "NO_TASK"}`);
     }
     process.stdout.write(task.evaluationId);
+  } else if (command === "fail-latest" || command === "age-latest") {
+    // Deterministic stand-ins for worker outcomes the UI must present:
+    // a failed latest evaluation, or a task left queued (no worker running).
+    const opportunityId = process.argv[3]!;
+    const latest = await database.evaluation.findFirst({
+      where: { opportunityId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!latest) throw new Error("No evaluation exists for the opportunity");
+    if (command === "fail-latest") {
+      const internalDetail = "E2E-INTERNAL-DETAIL-MUST-NOT-RENDER";
+      await database.evaluation.update({
+        where: { id: latest.id },
+        data: { status: "FAILED", errorMessage: internalDetail, completedAt: new Date() },
+      });
+      await database.evaluationTask.update({
+        where: { evaluationId: latest.id },
+        data: {
+          status: "FAILED",
+          errorCode: "PROVIDER_TIMEOUT",
+          errorMessage: internalDetail,
+          completedAt: new Date(),
+        },
+      });
+    } else {
+      const ageSeconds = Number(process.argv[4] ?? "300");
+      await database.evaluation.update({
+        where: { id: latest.id },
+        data: { createdAt: new Date(Date.now() - ageSeconds * 1000) },
+      });
+    }
   } else if (command === "cleanup") {
     const opportunityId = process.argv[3];
     const profileId = process.argv[4];

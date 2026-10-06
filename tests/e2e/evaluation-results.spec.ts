@@ -123,3 +123,65 @@ test("material ambiguity reaches a persisted Review result", async ({ page, requ
   await page.getByText("Resume Match", { exact: true }).click();
   await expect(page.getByText("Material Uncertainty").first()).toBeVisible();
 });
+
+test("a failed reevaluation keeps the last completed result visible with a safe failure code", async ({
+  page,
+  request,
+}) => {
+  await createProfile();
+  const opportunityId = await createOpportunity(request);
+  await page.goto(`/opportunities/${opportunityId}`);
+  await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  await processEvaluation();
+  await expect(page.getByRole("heading", { name: "Apply" })).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "Reevaluate opportunity" }).click();
+  await expect(page.getByText(/Evaluation accepted and queued/)).toBeVisible();
+  await runHelper("fail-latest", opportunityId);
+
+  const assertFailedWithFallback = async () => {
+    const alert = page.getByRole("alert").filter({ hasText: "could not complete safely" });
+    await expect(alert).toBeVisible({ timeout: 15_000 });
+    await expect(alert).toContainText("PROVIDER_TIMEOUT");
+    await expect(alert).toContainText("The AI provider did not respond in time.");
+    await expect(alert).toContainText("most recent completed evaluation");
+    await expect(page.getByRole("heading", { name: "Apply" })).toBeVisible();
+    await expect(page.getByText("E2E-INTERNAL-DETAIL-MUST-NOT-RENDER")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeEnabled();
+  };
+  await assertFailedWithFallback();
+  // The same presentation is restored on a fresh page load.
+  await page.reload();
+  await assertFailedWithFallback();
+});
+
+test("a task left queued points at the worker and polling can be resumed", async ({
+  page,
+  request,
+}) => {
+  await createProfile();
+  const opportunityId = await createOpportunity(request);
+  await page.goto(`/opportunities/${opportunityId}`);
+  await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  await expect(page.getByText(/Evaluation is queued/)).toBeVisible();
+
+  // No worker runs in this test; age the queued evaluation past the threshold.
+  await runHelper("age-latest", opportunityId, "300");
+  await expect(page.getByText(/worker may not be running/)).toBeVisible({ timeout: 15_000 });
+
+  // A failed status refresh stops polling and offers to keep checking.
+  const statusRequests = /\/api\/opportunities\/[^/]+\/evaluation(\?|$)/;
+  await page.route(statusRequests, (route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"unavailable"}' }),
+  );
+  const keepChecking = page.getByRole("button", { name: "Keep checking" });
+  await expect(keepChecking).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/could not be refreshed/)).toBeVisible();
+
+  await page.unroute(statusRequests);
+  await keepChecking.click();
+  await expect(keepChecking).toBeHidden();
+  await expect(page.getByText(/could not be refreshed/)).toHaveCount(0);
+  await expect(page.getByText(/Evaluation is queued/)).toBeVisible();
+  await expect(page.getByText(/worker may not be running/)).toBeVisible();
+});

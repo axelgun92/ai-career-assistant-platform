@@ -136,6 +136,7 @@ pre {
 
 .evaluation-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
@@ -515,6 +516,34 @@ blockquote {
 
 .status-label-decision {
   font-weight: 800;
+}
+
+.evaluation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.secondary-button {
+  border: 1px solid #111827;
+  color: #111827;
+  background: #ffffff;
+}
+
+.field-error {
+  color: #b91c1c;
+  font-weight: 400;
+}
+
+[aria-invalid="true"] {
+  border-color: #b91c1c;
+}
+
+.opportunity-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 42rem) {

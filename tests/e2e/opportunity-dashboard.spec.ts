@@ -67,3 +67,45 @@ test("dashboard lists a manually entered opportunity with the domain preset", as
   await row.getByRole("link", { name: title }).click();
   await expect(page).toHaveURL(new RegExp(`/opportunities/${opportunityIds[0]}$`));
 });
+
+test("manual entry shows server validation errors next to the field", async ({ page }) => {
+  await page.goto("/opportunities/new");
+  const rawText = page.getByLabel("Raw opportunity or job-description text");
+  // Whitespace satisfies the browser's required check but not server validation.
+  await rawText.fill("   ");
+  await page.getByRole("button", { name: "Save and normalize" }).click();
+
+  // Next.js also renders a route announcer with role="alert"; match ours by text.
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Manual opportunity submission is invalid" }),
+  ).toBeVisible();
+  await expect(rawText).toHaveAttribute("aria-invalid", "true");
+  await expect(rawText).toHaveAccessibleDescription(/visible text/);
+  await expect(page).toHaveURL(/\/opportunities\/new$/);
+});
+
+test("source and application URLs are clickable on the opportunity page", async ({ page, request }) => {
+  const response = await request.post("/api/opportunities", {
+    data: {
+      rawText: "Customer Success Manager. Remote.",
+      title: "Link E2E Customer Success Manager",
+      domain: "customer-success",
+      sourceUrl: "https://example.com/jobs/123",
+      applicationUrl: "https://example.com/jobs/123/apply",
+    },
+  });
+  expect(response.status()).toBe(201);
+  const { opportunity } = await response.json() as { opportunity: { id: string } };
+  opportunityIds.push(opportunity.id);
+
+  await page.goto(`/opportunities/${opportunity.id}`);
+  const apply = page.getByRole("link", { name: "Open application page" });
+  await expect(apply).toHaveAttribute("href", "https://example.com/jobs/123/apply");
+  await expect(apply).toHaveAttribute("target", "_blank");
+  await expect(apply).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(page.getByRole("link", { name: "Open source posting" }))
+    .toHaveAttribute("href", "https://example.com/jobs/123");
+
+  await page.getByText("Normalized opportunity and source details").click();
+  await expect(page.getByRole("link", { name: "https://example.com/jobs/123/apply" })).toBeVisible();
+});

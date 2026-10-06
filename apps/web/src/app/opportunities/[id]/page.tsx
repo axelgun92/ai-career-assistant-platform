@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getManualOpportunityService } from "@/server/manual-opportunity-service";
 import { EvaluationExperience } from "@/components/evaluation/evaluation-experience";
+import { ExternalLink, safeExternalUrl } from "@/components/external-link";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -39,15 +40,30 @@ export default async function OpportunityPage({
     ["Location", detail.opportunity.location],
     ["Compensation", detail.opportunity.salaryText],
     ["Posting date", detail.opportunity.postingDate],
-    ["Source URL", detail.opportunity.canonicalUrl],
-    ["Application URL", detail.opportunity.applicationUrl],
     ["Remote status", detail.opportunity.remoteStatus],
     ["Time-zone requirements", detail.opportunity.timeZoneRequirements],
   ] as const;
+  const urlFields = [
+    ["Source URL", detail.opportunity.canonicalUrl],
+    ["Application URL", detail.opportunity.applicationUrl],
+  ] as const;
+  const applicationUrl = safeExternalUrl(detail.opportunity.applicationUrl);
+  const sourceUrl = safeExternalUrl(detail.opportunity.canonicalUrl);
 
   return (
     <main className="opportunity-page">
       <Link href="/">← All opportunities</Link>
+
+      {applicationUrl || sourceUrl ? (
+        <nav className="opportunity-links" aria-label="Opportunity links">
+          {applicationUrl ? (
+            <ExternalLink href={applicationUrl}>Open application page</ExternalLink>
+          ) : null}
+          {sourceUrl ? (
+            <ExternalLink href={sourceUrl}>Open source posting</ExternalLink>
+          ) : null}
+        </nav>
+      ) : null}
 
       <EvaluationExperience
         opportunity={{
@@ -70,6 +86,14 @@ export default async function OpportunityPage({
             <div key={label}>
               <dt>{label}</dt>
               <dd>{display(value)}</dd>
+            </div>
+          ))}
+          {urlFields.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>
+                <ExternalLink href={value} />
+              </dd>
             </div>
           ))}
         </dl>

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CustomerSuccessResults } from "../customer-success/customer-success-results";
 import { createEvaluationPoller } from "./poller";
+import { evaluationFailure, isQueuedTooLong } from "./evaluation-failure";
+import { StatusNotices } from "./status-notices";
 import { ClassificationBadge, humanize } from "./shared-results";
 import type {
   EvaluationPresentation,
@@ -41,21 +43,63 @@ function activeStatus(status: string | undefined) {
   return status === "PENDING" || status === "RUNNING";
 }
 
+function formatTimestamp(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : null;
+}
+
 export function EvaluationExperience({
   opportunity,
 }: {
   opportunity: OpportunityPresentation;
 }) {
+  // `evaluation` is what is displayed; `latest` is the newest evaluation, which
+  // drives status, failure details, and the queued-too-long notice.
   const [evaluation, setEvaluation] = useState<EvaluationPresentation | null>(null);
+  const [latest, setLatest] = useState<EvaluationPresentation | null>(null);
+  const [fallbackEvaluationId, setFallbackEvaluationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pollStopped, setPollStopped] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const requestInFlight = useRef(false);
   const selectedHistoryId = useRef<string | null>(null);
+  const fallbackController = useRef<AbortController | null>(null);
   const poller = useRef<ReturnType<typeof createEvaluationPoller<StatusResult>> | null>(null);
 
   useEffect(() => {
+    // When the latest evaluation failed, show the newest completed evaluation
+    // from history rather than an empty result area.
+    async function showLastCompleted(failed: EvaluationPresentation) {
+      const completed = failed.history.find(
+        (item) => !item.isLatest && item.status === "COMPLETED",
+      );
+      if (!completed) {
+        setFallbackEvaluationId(null);
+        setEvaluation(failed);
+        return;
+      }
+      fallbackController.current?.abort();
+      const controller = new AbortController();
+      fallbackController.current = controller;
+      try {
+        const value = await fetchEvaluation(opportunity.id, controller.signal, completed.evaluationId);
+        if (controller.signal.aborted || selectedHistoryId.current) return;
+        if (value.found && value.evaluation.status === "COMPLETED") {
+          setFallbackEvaluationId(value.evaluation.evaluationId);
+          setEvaluation(value.evaluation);
+        } else {
+          setFallbackEvaluationId(null);
+          setEvaluation(failed);
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+        setFallbackEvaluationId(null);
+        setEvaluation(failed);
+      }
+    }
+
     const controller = createEvaluationPoller<StatusResult>({
       fetchStatus: (signal) => fetchEvaluation(opportunity.id, signal),
       shouldContinue: (value) =>
@@ -63,26 +107,47 @@ export function EvaluationExperience({
       onUpdate: (value) => {
         setLoading(false);
         setError(null);
-        setEvaluation((current) => {
-          if (!value.found) return null;
-          if (selectedHistoryId.current && current) {
-            return { ...current, history: value.evaluation.history };
-          }
-          return value.evaluation;
-        });
+        setCheckedAt(Date.now());
+        if (!value.found) {
+          setLatest(null);
+          setEvaluation(null);
+          return;
+        }
+        setLatest(value.evaluation);
+        if (selectedHistoryId.current) {
+          setEvaluation((current) =>
+            current ? { ...current, history: value.evaluation.history } : value.evaluation,
+          );
+          return;
+        }
+        if (value.evaluation.status === "FAILED") {
+          void showLastCompleted(value.evaluation);
+          return;
+        }
+        setFallbackEvaluationId(null);
+        setEvaluation(value.evaluation);
       },
       onError: (message) => {
         setLoading(false);
         setError(message);
+        setPollStopped(true);
       },
     });
     poller.current = controller;
     controller.start();
     return () => {
       controller.stop();
+      fallbackController.current?.abort();
       poller.current = null;
     };
   }, [opportunity.id]);
+
+  function keepChecking() {
+    setPollStopped(false);
+    setError(null);
+    poller.current?.stop();
+    poller.current?.start();
+  }
 
   async function requestEvaluation() {
     if (requestInFlight.current || activeStatus(evaluation?.history[0]?.status)) return;
@@ -105,6 +170,7 @@ export function EvaluationExperience({
       }
       setNotice("Evaluation accepted and queued. This page will update automatically.");
       selectedHistoryId.current = null;
+      setPollStopped(false);
       poller.current?.stop();
       poller.current?.start();
     } catch {
@@ -118,11 +184,13 @@ export function EvaluationExperience({
   async function showHistory(evaluationId: string, isLatest: boolean) {
     setLoading(true);
     setError(null);
+    fallbackController.current?.abort();
     const controller = new AbortController();
     try {
       const value = await fetchEvaluation(opportunity.id, controller.signal, evaluationId);
       if (value.found) {
         selectedHistoryId.current = isLatest ? null : evaluationId;
+        setFallbackEvaluationId(null);
         setEvaluation(value.evaluation);
       }
       else setError("That historical evaluation is no longer available.");
@@ -133,10 +201,16 @@ export function EvaluationExperience({
     }
   }
 
-  const latestStatus = evaluation?.history[0]?.status ?? evaluation?.status;
+  const history = latest?.history ?? evaluation?.history ?? [];
+  const latestStatus = history[0]?.status ?? latest?.status ?? evaluation?.status;
   const active = activeStatus(latestStatus);
   const isolatedFailure = evaluation?.evaluationStatus === "COMPLETED" &&
     evaluation.stages.some((stage) => stage.status === "FAILED");
+  const failure = latestStatus === "FAILED" && latest
+    ? evaluationFailure(latest.task.errorCode)
+    : null;
+  const fallbackShown = fallbackEvaluationId !== null &&
+    evaluation?.evaluationId === fallbackEvaluationId;
 
   return (
     <div className="evaluation-shell">
@@ -148,39 +222,47 @@ export function EvaluationExperience({
               evaluation ? humanize(latestStatus) : "Not evaluated"}
           </h2>
         </div>
-        <button
-          type="button"
-          onClick={requestEvaluation}
-          disabled={requesting || active}
-          aria-describedby="evaluation-status-message"
-        >
-          {requesting ? "Requesting…" : active ? "Evaluation in progress" :
-            evaluation ? "Reevaluate opportunity" : "Evaluate Customer Success fit"}
-        </button>
+        <div className="evaluation-actions">
+          <button
+            type="button"
+            onClick={requestEvaluation}
+            disabled={requesting || active}
+            aria-describedby="evaluation-status-message"
+          >
+            {requesting ? "Requesting…" : active ? "Evaluation in progress" :
+              evaluation ? "Reevaluate opportunity" : "Evaluate Customer Success fit"}
+          </button>
+          {pollStopped ? (
+            <button type="button" className="secondary-button" onClick={keepChecking}>
+              Keep checking
+            </button>
+          ) : null}
+        </div>
         <div id="evaluation-status-message" aria-live="polite">
-          {active ? <p>Evaluation is {latestStatus === "PENDING" ? "queued" : "running"}. Results will appear here when complete.</p> : null}
           {notice ? <p className="success-message">{notice}</p> : null}
           {error ? <p className="error-message">{error}</p> : null}
-          {latestStatus === "FAILED" ? (
-            <p className="error-message">Evaluation could not complete safely. You may request another evaluation; earlier completed results remain available below.</p>
-          ) : null}
-          {isolatedFailure ? (
-            <p className="warning-message">Evaluation completed with an isolated stage issue. Available validated results are shown below.</p>
-          ) : null}
+          <StatusNotices
+            latestStatus={latestStatus}
+            failure={failure}
+            fallbackCompletedAt={fallbackShown ? formatTimestamp(evaluation?.completedAt) : null}
+            hasEarlierCompleted={history.some((item) => !item.isLatest && item.status === "COMPLETED")}
+            queuedTooLong={isQueuedTooLong(latestStatus, history[0]?.createdAt, checkedAt)}
+            isolatedFailure={isolatedFailure}
+          />
         </div>
       </section>
 
-      {evaluation?.history.length ? (
+      {history.length ? (
         <details className="history-panel">
-          <summary>Evaluation history ({evaluation.history.length})</summary>
+          <summary>Evaluation history ({history.length})</summary>
           <ul>
-            {evaluation.history.map((item) => (
+            {history.map((item) => (
               <li key={item.evaluationId}>
                 <button
                   className="history-button"
                   type="button"
                   onClick={() => showHistory(item.evaluationId, item.isLatest)}
-                  aria-current={evaluation.evaluationId === item.evaluationId ? "true" : undefined}
+                  aria-current={evaluation?.evaluationId === item.evaluationId ? "true" : undefined}
                 >
                   {item.isLatest ? "Latest · " : ""}
                   {item.decision ? <><ClassificationBadge value={item.decision} /> · </> : null}

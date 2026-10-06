@@ -100,20 +100,29 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - `tests/e2e/opportunity-dashboard.spec.ts`
   - `tests/e2e/app-shell.spec.ts` updated.
 
+#### Completed — Evaluation-experience correctness (October 6, 2026)
+
+- **Failed latest evaluation.** When the latest evaluation failed, the page shows the most recent completed evaluation from history, labeled as such. Otherwise it accurately says whether earlier results exist. The latest status still drives the controls.
+- **Safe failure details.** The persisted failure code is shown (only if it is a well-formed identifier) with a mapped user-facing message. The stored error message is never rendered, because it can contain internal validation/provider detail.
+- **Per-field validation errors.** Manual entry shows server validation errors next to each field (`aria-invalid` + `aria-describedby`). Unmatched issues stay form-level.
+- **Keep checking.** A "Keep checking" control appears whenever status polling stops, whether at the polling cap or after a failed refresh, and restarts bounded polling.
+- **Stalled-queue notice.** If an evaluation stays queued for more than 60 seconds, a notice says the worker may not be running (`pnpm worker:evaluations`).
+- **Clickable URLs.** Source and application URLs are links that open in a new tab (`noopener noreferrer`). Only http(s) URLs become links; anything else stays plain text.
+- UI and product-service code only. No evaluator, schema, routing, worker, or recommendation changes. Nothing is recalculated in the browser.
+- Tests:
+  - `tests/unit/evaluation-experience-correctness.test.tsx` (new);
+  - poller cap/restart case in `tests/unit/evaluation-poller.test.ts`;
+  - two E2E flows in `tests/e2e/evaluation-results.spec.ts`: failed-reevaluation fallback, and queued-too-long plus keep checking;
+  - two E2E flows in `tests/e2e/opportunity-dashboard.spec.ts`: field errors and clickable links.
+  - The E2E helper gained deterministic `fail-latest` and `age-latest` commands.
+
 #### Remaining main-product order
 
-1. Evaluation-experience correctness:
-   - show the last completed result when the latest evaluation failed;
-   - show safe failure details;
-   - show per-field form errors;
-   - add a continue-checking control after the polling cap;
-   - add a stalled-queue notice;
-   - make source and application URLs clickable.
-2. Lifecycle and user actions: Save, Applied, Dismiss, Archive, plus `EVALUATED`/`RECOMMENDED`. Needs Codex coordination: shared persistence and worker path, and the `NORMALIZED`-only evaluation guard.
-3. Usage/cost display. The data is already returned by the evaluation API.
-4. Profile/preferences management. Needs Codex coordination: domain profile contract.
-5. Budget ledger and deferral, if in V1 scope.
-6. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
+1. Lifecycle and user actions: Save, Applied, Dismiss, Archive, plus `EVALUATED`/`RECOMMENDED`. Needs Codex coordination: shared persistence and worker path, and the `NORMALIZED`-only evaluation guard.
+2. Usage/cost display. The data is already returned by the evaluation API.
+3. Profile/preferences management. Needs Codex coordination: domain profile contract.
+4. Budget ledger and deferral, if in V1 scope.
+5. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
 
 #### Known issues found during main-product work
 
