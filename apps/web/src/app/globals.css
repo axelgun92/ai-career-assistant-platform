@@ -606,3 +606,47 @@ blockquote {
 .status-label-lifecycle {
   border-color: #111827;
 }
+
+.usage-summary,
+.usage-totals {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.usage-note {
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.usage-totals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.usage-totals-grid > div {
+  display: block;
+  padding: 0;
+  border: 0;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table-scroll th,
+.table-scroll td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  white-space: nowrap;
+}

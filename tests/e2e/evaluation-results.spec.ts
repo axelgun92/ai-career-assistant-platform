@@ -109,6 +109,16 @@ test("manual opportunity reaches a persisted Apply result with evidence", async 
   await expect(page.getByText("Job-description evidence").first()).toBeVisible();
   await expect(page.getByText("Candidate profile evidence").first()).toBeVisible();
   await expect(page.getByText(/Overall Match|overallScore/)).toHaveCount(0);
+
+  // Persisted AI usage and estimated cost for this evaluation.
+  const usage = page.locator("details.usage-summary");
+  await expect(usage).toContainText(/\d+ provider attempts · \$\d/);
+  await usage.locator("summary").first().click();
+  await expect(usage.getByText("Total tokens")).toBeVisible();
+  await expect(usage.locator("dt", { hasText: /^Estimated cost$/ })).toBeVisible();
+  await usage.getByText(/Per-operation breakdown/).click();
+  await expect(usage.getByRole("cell", { name: "customer-success.jd-reconstruction" }).first()).toBeVisible();
+  await expect(usage.getByText(/fixture-customer-success/)).toHaveCount(0); // provider request IDs never shown
 });
 
 test("material ambiguity reaches a persisted Review result", async ({ page, request }) => {
@@ -206,6 +216,8 @@ test("lifecycle actions, dashboard views, and reevaluation of a saved opportunit
 
   await page.goto("/");
   await expect(dashboardRow()).toContainText("Recommendation ready");
+  await expect(page.getByRole("heading", { name: "AI usage" })).toBeVisible();
+  await expect(page.locator(".usage-totals")).toContainText("Provider attempts");
   await expect(dashboardRow()).toContainText("Apply");
 
   await page.goto(`/opportunities/${opportunityId}`);

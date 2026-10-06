@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { platformMetadata } from "@ai-career/core";
-import type { OpportunityListItem } from "@ai-career/database";
+import {
+  PrismaUsageSummaryRepository,
+  type OpportunityListItem,
+  type UsageTotals as UsageTotalsData,
+} from "@ai-career/database";
 import { OpportunityList } from "@/components/dashboard/opportunity-list";
+import { UsageTotals } from "@/components/dashboard/usage-totals";
 import {
   defaultOpportunityListView,
   getOpportunityListReader,
@@ -32,6 +37,14 @@ export default async function HomePage({
     });
   } catch (error) {
     console.error("Opportunity dashboard could not load opportunities", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+  let usageTotals: UsageTotalsData | null = null;
+  try {
+    usageTotals = await new PrismaUsageSummaryRepository().summarizeAllUsage();
+  } catch (error) {
+    console.error("Opportunity dashboard could not load AI usage totals", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
   }
@@ -71,6 +84,8 @@ export default async function HomePage({
           <OpportunityList opportunities={opportunities} />
         )}
       </section>
+
+      {usageTotals ? <UsageTotals totals={usageTotals} /> : null}
     </main>
   );
 }

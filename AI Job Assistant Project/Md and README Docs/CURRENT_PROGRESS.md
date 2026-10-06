@@ -137,12 +137,25 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - integration: `opportunity-lifecycle.test.ts`, which runs real deterministic evaluations through the production wrapper;
   - E2E: the lifecycle flow.
 
+#### Completed — AI usage and cost display (October 6, 2026)
+
+- **Results page.** A collapsed "AI usage and estimated cost" section for the displayed evaluation. It shows provider attempts, all five token categories, estimated cost with its currency, and the pricing configuration version(s).
+  - A collapsed per-operation breakdown lists operation, model, attempt, status, tokens and cost.
+  - Values are rendered from the existing API `usage` (built by `summarizeSemanticUsage()`) and `operations`.
+  - Unreported values show "Unknown", never 0.
+  - Provider request IDs and raw error messages are never rendered; operation error codes are sanitized.
+- **Dashboard.** "AI usage" totals across all evaluations: evaluations, attempts, total tokens, estimated cost and pricing basis. The totals come from a read-only product repository (`database/src/usage-summary-repository.ts`) that reuses `summarizeSemanticUsage()` as-is. When the total cost is Unknown, the page says why: attempts without a recorded cost, or mixed currencies.
+- **Not changed.** No changes to the evaluator, pricing/cost calculation, usage recording, or schema, and no budget limits, deferral or ledger.
+- **Tests:**
+  - `tests/unit/usage-display.test.tsx`;
+  - `tests/integration/usage-summary.test.ts` (attempts seeded through the existing recorder);
+  - E2E usage assertions in the Apply and lifecycle flows.
+
 #### Remaining main-product order
 
-1. Usage/cost display. The data is already returned by the evaluation API.
-2. Profile/preferences management. Needs Codex coordination: domain profile contract.
-3. Budget ledger and deferral, if in V1 scope.
-4. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
+1. Profile/preferences management. Needs Codex coordination: domain profile contract.
+2. Budget ledger and deferral, if in V1 scope.
+3. Setup docs and a migrate script, then final E2E acceptance after the evaluator freeze.
 
 #### Known issues found during main-product work
 

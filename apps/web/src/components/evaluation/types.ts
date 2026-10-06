@@ -51,6 +51,41 @@ export interface EvaluationHistoryPresentation {
   completedAt: string | null;
 }
 
+// Persisted semantic-operation attempt as returned by the evaluation API.
+// errorMessage and providerRequestId are intentionally not part of the
+// presentation contract and are never rendered.
+export interface SemanticOperationPresentation {
+  id: string;
+  operationId: string;
+  attempt: number;
+  provider: string;
+  model: string;
+  status: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedInputTokens: number | null;
+  reasoningTokens: number | null;
+  totalTokens: number | null;
+  estimatedCost: number | null;
+  pricingConfigurationVersion: string | null;
+  pricingCurrency: string | null;
+  durationMs: number | null;
+  errorCode: string | null;
+}
+
+// Output of the existing summarizeSemanticUsage(); null means Unknown.
+export interface SemanticUsagePresentation {
+  attemptCount: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedInputTokens: number | null;
+  reasoningTokens: number | null;
+  totalTokens: number | null;
+  estimatedCost: number | null;
+  currency: string | null;
+  pricingConfigurationVersions: string[];
+}
+
 export interface EvaluationPresentation {
   opportunityId: string;
   evaluationId: string;
@@ -95,5 +130,7 @@ export interface EvaluationPresentation {
     evidenceReferences: string[];
   } | null;
   error: string | null;
+  operations?: SemanticOperationPresentation[];
+  usage?: SemanticUsagePresentation;
   history: EvaluationHistoryPresentation[];
 }

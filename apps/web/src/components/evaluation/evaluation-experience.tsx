@@ -6,6 +6,7 @@ import { CustomerSuccessResults } from "../customer-success/customer-success-res
 import { createEvaluationPoller } from "./poller";
 import { evaluationFailure, isQueuedTooLong } from "./evaluation-failure";
 import { StatusNotices } from "./status-notices";
+import { UsageSummary } from "./usage-summary";
 import { ClassificationBadge, humanize } from "./shared-results";
 import type {
   EvaluationPresentation,
@@ -293,6 +294,10 @@ export function EvaluationExperience({
 
       {evaluation?.status === "COMPLETED" && evaluation.result ? (
         <CustomerSuccessResults opportunity={opportunity} evaluation={evaluation} />
+      ) : null}
+
+      {evaluation ? (
+        <UsageSummary usage={evaluation.usage} operations={evaluation.operations} />
       ) : null}
     </div>
   );
