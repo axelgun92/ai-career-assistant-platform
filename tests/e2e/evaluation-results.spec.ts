@@ -9,6 +9,7 @@ test.describe.configure({ mode: "serial" });
 
 const opportunityIds: string[] = [];
 const profileIds: string[] = [];
+const previousActiveIds: string[] = [];
 const execFileAsync = promisify(execFile);
 const helper = path.resolve("tests/support/e2e-evaluation-helper.ts");
 const compiledHelper = path.resolve("database/.e2e-evaluation-helper.mjs");
@@ -43,12 +44,14 @@ async function runHelper(...args: string[]) {
 test.afterEach(async () => {
   const opportunityId = opportunityIds.shift() ?? "";
   const profileId = profileIds.shift() ?? "";
-  await runHelper("cleanup", opportunityId, profileId);
+  const previousActiveId = previousActiveIds.shift() ?? "";
+  await runHelper("cleanup", opportunityId, profileId, previousActiveId);
 });
 
 async function createProfile() {
-  const profileId = await runHelper("create-profile");
+  const [profileId = "", previousActiveId = ""] = (await runHelper("create-profile")).split(" ");
   profileIds.push(profileId);
+  previousActiveIds.push(previousActiveId);
 }
 
 async function createOpportunity(request: APIRequestContext) {

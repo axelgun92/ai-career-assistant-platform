@@ -3,7 +3,9 @@ import {
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
   PrismaOpportunityLifecycleRepository,
+  PrismaUserProfileRepository,
   getDatabaseClient,
+  type VersionedUserProfileData,
 } from "../../database/src/index";
 import { createEvaluationWorker } from "../../packages/evaluation/src/index";
 import { createCustomerSuccessEvaluationProcessor } from "../../apps/web/src/server/customer-success-evaluation-processor";
@@ -33,7 +35,54 @@ try {
         domainPreferences: { customerSuccess: customerSuccessTestPreferences },
       },
     });
-    process.stdout.write(profile.id);
+    // Make it the active profile so UI-requested evaluations use it even if
+    // a developer database has another version active; print the previous
+    // active version so cleanup can restore it.
+    const previous = await database.activeUserProfile.findUnique({ where: { domain: "customer-success" } });
+    await database.activeUserProfile.upsert({
+      where: { domain: "customer-success" },
+      create: { domain: "customer-success", userProfileId: profile.id },
+      update: { userProfileId: profile.id },
+    });
+    process.stdout.write(`${profile.id} ${previous?.userProfileId ?? ""}`.trim());
+  } else if (command === "create-profile-version") {
+    // A fresh, active v1 in its own label lineage for profile-management specs.
+    const label = process.argv[3]!;
+    const result = await new PrismaUserProfileRepository().saveVersion(
+      "customer-success",
+      {
+        label,
+        careerGoals: [{ id: "goal-e2e", statement: "Build a strategic SaaS career." }],
+        experience: [{ id: "experience-e2e", statement: "Led customer onboarding, adoption, and education.", relationship: "DIRECT" }],
+        skills: [{ id: "skill-e2e", statement: "Customer enablement" }],
+        transferableSkills: [{ id: "transfer-e2e", statement: "Teaching and facilitation" }],
+        locationPreferences: null,
+        compensationPreferences: null,
+        workPreferences: [{ id: "work-e2e", statement: "Prefers strategic documented work." }],
+        companyPreferences: null,
+        domainPreferences: { customerSuccess: customerSuccessTestPreferences },
+      } as unknown as VersionedUserProfileData,
+      { activate: true },
+    );
+    process.stdout.write(result.id);
+  } else if (command === "active-profile") {
+    const active = await database.activeUserProfile.findUnique({ where: { domain: "customer-success" } });
+    process.stdout.write(active?.userProfileId ?? "");
+  } else if (command === "count-profile-versions") {
+    process.stdout.write(String(await database.userProfile.count({ where: { label: process.argv[3]! } })));
+  } else if (command === "cleanup-profiles") {
+    // Deletes a label lineage (its active pointer cascades) and restores the
+    // previously active version, if any.
+    const label = process.argv[3]!;
+    const previous = process.argv[4];
+    await database.userProfile.deleteMany({ where: { label } });
+    if (previous && (await database.userProfile.findUnique({ where: { id: previous } }))) {
+      await database.activeUserProfile.upsert({
+        where: { domain: "customer-success" },
+        create: { domain: "customer-success", userProfileId: previous },
+        update: { userProfileId: previous },
+      });
+    }
   } else if (command === "run-worker") {
     const review = process.argv[3] === "review";
     const tasks = new PrismaEvaluationTaskRepository();
@@ -102,8 +151,16 @@ try {
   } else if (command === "cleanup") {
     const opportunityId = process.argv[3];
     const profileId = process.argv[4];
+    const previousActiveId = process.argv[5];
     if (opportunityId) await database.opportunity.deleteMany({ where: { id: opportunityId } });
     if (profileId) await database.userProfile.deleteMany({ where: { id: profileId } });
+    if (previousActiveId && (await database.userProfile.findUnique({ where: { id: previousActiveId } }))) {
+      await database.activeUserProfile.upsert({
+        where: { domain: "customer-success" },
+        create: { domain: "customer-success", userProfileId: previousActiveId },
+        update: { userProfileId: previousActiveId },
+      });
+    }
   } else {
     throw new Error("Unknown deterministic E2E helper command");
   }

@@ -56,9 +56,14 @@ export default async function HomePage({
           <h1>{platformMetadata.name}</h1>
           <p>Opportunities you have added, newest first, with their latest persisted evaluation.</p>
         </div>
-        <Link href="/opportunities/new" className="button-link">
-          New opportunity
-        </Link>
+        <div className="dashboard-header-actions">
+          <Link href="/profile" className="button-link button-link-secondary">
+            Profile &amp; preferences
+          </Link>
+          <Link href="/opportunities/new" className="button-link">
+            New opportunity
+          </Link>
+        </div>
       </div>
 
       <section aria-labelledby="opportunities-title">

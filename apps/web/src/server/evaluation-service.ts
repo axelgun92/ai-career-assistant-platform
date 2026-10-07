@@ -43,6 +43,7 @@ interface EvaluationQueryRepository {
   } | null>;
   resolveUserProfile(
     userProfileId: string | null,
+    domain?: string | null,
   ): Promise<{ id: string; version: number } | null>;
   findLatestEvaluationId(input: {
     opportunityId: string;
@@ -170,6 +171,7 @@ export function createEvaluationService(
 
       const profile = await dependencies.queries.resolveUserProfile(
         request.userProfileId ?? null,
+        domain,
       );
       if (!profile) {
         throw new EvaluationApiError(

@@ -281,6 +281,47 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Unchanged from previous handoffs.
 
+### Handoff: Task 5 — Explicit Active Profile Version (Awareness)
+
+**Date:** 2026-10-07  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+- Profile and preferences management, with append-only versions and an explicit active version per domain:
+  - the `/profile` page;
+  - the `/api/profile`, `/api/profile/structured`, `/api/profile/active` and `/api/profile/versions/[id]` routes;
+  - the CLI `--activate` flag.
+- New additive table `ActiveUserProfile { domain @id, userProfileId → UserProfile (cascade), activatedAt }`, from migration `20261007120000_active_user_profile`. The `Recommendation.evidenceReferences` default drift was again excluded.
+
+#### Files Changed (shared-path awareness)
+
+- `database/src/evaluation-query-repository.ts`: `resolveUserProfile(userProfileId, domain?)`. Resolution is now:
+  1. an explicit ID;
+  2. `ActiveUserProfile` for the domain;
+  3. the previous newest-`updatedAt` fallback, unchanged and used only when nothing was ever activated.
+
+  Called with no domain, it behaves exactly as before.
+- `apps/web/src/server/evaluation-service.ts` passes the evaluation domain. Nothing else changed: the resolved version is pinned on the Evaluation at enqueue exactly as before.
+- `tests/support/e2e-evaluation-helper.ts`: `create-profile` now also makes its profile active, and `cleanup` restores the previously active version.
+
+#### Current Contract / Assumptions
+
+- `UserProfile` rows are never updated by product code. Saving always appends through `PrismaUserProfileImportRepository.import()`, unchanged.
+- The worker, executor, evidence (`user-profile:{id}:v{version}`), domain profile contract and validators are untouched. Validation reuses `validateCustomerSuccessUserProfileData()`.
+- The product additionally rejects unknown keys inside nested preference objects (salary, location, travel, workArrangement, roleFamilies), which the domain schema strips rather than rejects. This rejection happens in the product layer only; the domain schema is unchanged.
+
+#### Verification Completed
+
+- typecheck, lint, Prisma validate and build pass.
+- Unit 722/722, integration 54/54, E2E 14/14 (deterministic fixtures only, no paid calls).
+
+#### Do Not Change Without Coordination
+
+- Code that pins `userProfileId`/`userProfileVersion` on an Evaluation must keep pinning at enqueue. Historical evaluations must never be rebound to a newer active version.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

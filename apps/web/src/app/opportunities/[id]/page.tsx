@@ -7,6 +7,8 @@ import { OpportunityActions } from "@/components/opportunity-actions";
 import { OpportunityProvenance } from "@/components/opportunity-provenance";
 import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
+import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
+import { getProfileService } from "@/server/profile-service";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -43,6 +45,15 @@ export default async function OpportunityPage({
       return null;
     },
   );
+
+  const profileHint = await getProfileService()
+    .profileVersionHint(detail.opportunity.id)
+    .catch((error: unknown) => {
+      console.error("Profile version hint could not be loaded", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return null;
+    });
 
   const normalizedFields = [
     ["Lifecycle", detail.opportunity.status],
@@ -84,6 +95,8 @@ export default async function OpportunityPage({
           availableActions={lifecycle.availableActions}
         />
       ) : null}
+
+      <ProfileVersionHint hint={profileHint} />
 
       <EvaluationExperience
         evaluable={lifecycle?.evaluable ?? true}

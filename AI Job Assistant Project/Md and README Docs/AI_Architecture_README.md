@@ -319,9 +319,15 @@ The import is repeatable:
 - The first import creates profile version 1.
 - Importing identical content does not create a duplicate.
 - A future changed profile creates a new version rather than overwriting history.
-- Evaluation automatically resolves the latest profile when no explicit profile is selected.
+- Importing does not change which version new evaluations use. Pass `--activate` to make the imported version active:
 
-> Known limitation: this is currently a local, Customer Success-specific import command—not a general profile-management UI.
+```bash
+pnpm profile:import:customer-success --activate
+```
+
+- New evaluations use, in order: an explicitly requested profile, the active version, or (only when no version was ever activated) the newest profile. Each evaluation stays linked to the exact version it used.
+
+Profiles can also be viewed, edited (structured form or full JSON), versioned, and activated in the app at `/profile` ("Profile & preferences" on the dashboard). Every save creates a new version; existing versions are never changed.
 
 ### Start the application
 

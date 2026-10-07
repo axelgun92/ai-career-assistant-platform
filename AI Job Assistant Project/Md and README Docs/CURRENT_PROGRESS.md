@@ -179,11 +179,62 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - the dedup engine and canonical-source selection;
   - submit-URL-only capture.
 
+#### Completed — Task 5: Profile and preferences management (October 7, 2026)
+
+- **`/profile` ("Profile & preferences", linked from the dashboard).** Shows which version new evaluations use, a displayed-version selector, the editor, and the version history.
+  - The history shows each version's saved date, how many evaluations used it, Active / In use / Viewing badges, and View and Make active (with confirmation).
+- **Structured form.** Edits the evaluation-relevant fields of the existing Customer Success contract:
+  - salary (currency, pass and review thresholds, lower-cost countries);
+  - work arrangement and the unknown-arrangement result;
+  - allowed and disallowed countries, US-only roles;
+  - travel allowances (recurring onsite and field travel are fixed FAIL and shown read-only);
+  - role families;
+  - fit areas, lower-alignment patterns and work styles;
+  - business models, product types, customer types and segments;
+  - career-strategy goals;
+  - career goals, experience (Direct/Related/Transferable), skills, transferable skills and work preferences.
+
+  Unset fields show their effective default with a "Default" tag and stay unset unless edited. Nothing outside the contract was added; seniority and relocation are not in the contract and are not exposed.
+- **Advanced JSON editor.** The full stored document.
+  - Parse errors are shown with line and column, and validation errors by path.
+  - Unknown keys are rejected, including inside nested preference objects that the domain schema would otherwise silently strip.
+  - The label is locked.
+- **One draft, two editors.** The form and the JSON editor share one base version, and at most one of them can hold unsaved changes.
+  - Form → JSON always carries the changes over.
+  - JSON → form carries the changes over only when that is lossless. Otherwise it asks; "Keep editing JSON" keeps the draft byte-for-byte, and "Discard JSON changes" returns to the base.
+  - Changing the displayed version while there are unsaved changes asks first, and a `beforeunload` warning covers leaving the page.
+  - Each save submits only the open editor's draft, as one request that creates at most one version.
+- **Append-only versions and an explicit active version.**
+  - Saving always appends through the existing `PrismaUserProfileImportRepository.import()` (with hash dedupe).
+  - "Save as new version" never changes what evaluations use; "Save and make active" does.
+  - The new additive `ActiveUserProfile` table (one row per domain) is a pointer only. Activation never updates a `UserProfile` row.
+  - Before the first save, the version currently in use is pinned, so a new version can never take over implicitly.
+- **Profile resolution for new evaluations:**
+  1. an explicit `userProfileId`;
+  2. the active version;
+  3. the previous newest-profile fallback, used only when nothing was ever activated.
+
+  The resolved version is pinned at enqueue as before, and historical evaluations are never rebound.
+- **Opportunity detail hint.** When the latest evaluation used a different version than new evaluations would, the page says so and suggests reevaluating. Nothing is reevaluated automatically.
+- **CLI.** `pnpm profile:import:customer-success` keeps appending versions. `--activate` makes the imported version active; without it, the version in use is unchanged.
+- **Not changed.** Evaluator, domain profile contract, prompts, stages, routing and recommendation logic are unchanged. Migration `20261007120000_active_user_profile` is additive only (the known `Recommendation.evidenceReferences` drift line was excluded again).
+- **Tests:**
+  - `tests/unit/profile-management.test.ts`: option lists equal the domain schema; changes apply only to changed paths; JSON → form diff; validation paths; label lock; handlers.
+  - `tests/unit/profile-editor.test.tsx`: draft reducer, including a 5,000-step invariant check, plus jsdom component tests for both switch directions, confirm and cancel discard, and exactly one save request from either editor.
+  - `tests/integration/profile-versioning.test.ts`:
+    - historical linkage (evaluation row, API `versions.userProfile` and profile evidence `sourceReference` unchanged after v2 is saved and activated);
+    - a queued evaluation keeps the pinned v1;
+    - the pin guard, rollback, fallback, dedupe and cascade;
+    - no `UserProfile` row is ever mutated;
+    - exactly one row per save.
+  - `tests/e2e/profile-management.spec.ts`, which runs after the other specs as its own Playwright project, because it changes the active version.
+  - Dev dependency `jsdom` was added for the component tests.
+
 #### Remaining main-product order
 
 Revised roadmap:
 
-- Task 5 — Profile + Preferences (plan approved: key form + full JSON editor, explicit active profile).
+- Task 5 — Profile + Preferences: done (see above).
 - Task 6 — Budget Ledger + Deferral.
 - Task 7 — Product UI: dashboard, search, sort, filters, analytics polish.
 - Task 8 — Application Tracker: notes, follow-ups, contacts, outcomes.

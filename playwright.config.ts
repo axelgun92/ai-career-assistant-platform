@@ -16,6 +16,16 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      testIgnore: /profile-management\.spec\.ts/,
+    },
+    {
+      // Profile specs change which profile version is active, which every
+      // UI-requested evaluation reads, so they run only after the other
+      // specs have finished.
+      name: "profile-management",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /profile-management\.spec\.ts/,
+      dependencies: ["chromium"],
     },
   ],
   webServer: {

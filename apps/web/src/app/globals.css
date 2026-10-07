@@ -650,3 +650,245 @@ blockquote {
   text-align: left;
   white-space: nowrap;
 }
+
+/* Profile & preferences */
+.profile-page {
+  max-width: 56rem;
+}
+
+.dashboard-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.button-link-secondary {
+  border: 1px solid #111827;
+  color: #111827;
+  background: #ffffff;
+}
+
+.profile-header h1 {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.profile-active {
+  margin: 0.25rem 0;
+}
+
+.profile-editor {
+  padding: 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.profile-editor-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.profile-editor-header h2 {
+  margin: 0;
+}
+
+.inline-label {
+  display: inline-grid;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.inline-label select {
+  width: auto;
+}
+
+.editor-tabs {
+  margin: 1rem 0 0.5rem;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.tab-button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: #374151;
+  background: transparent;
+}
+
+.tab-button-current {
+  border-bottom-color: #111827;
+  color: #111827;
+  font-weight: 800;
+}
+
+.draft-status {
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.profile-group {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.profile-group h3 {
+  margin: 0 0 0.25rem;
+}
+
+.profile-field {
+  margin: 1rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.profile-field legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.field-help {
+  margin: 0.25rem 0 0.5rem;
+  color: #4b5563;
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
+.default-tag,
+.viewing-label {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px dashed #64748b;
+  border-radius: 999px;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.35rem 1rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
+.list-editor,
+.statement-editor {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.list-editor li {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.statement-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.json-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.json-errors,
+.issue-list {
+  margin-top: 0.5rem;
+}
+
+.issue-list {
+  padding-left: 1.25rem;
+  color: #b91c1c;
+}
+
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.version-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.confirm-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.profile-versions tr[aria-current="true"] td {
+  background: #f8fafc;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 45%);
+  z-index: 10;
+}
+
+.dialog {
+  max-width: 32rem;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 25%);
+}
+
+.dialog h2 {
+  margin-top: 0;
+}
+
+.danger-button {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.profile-hint {
+  margin-top: 1.5rem;
+}

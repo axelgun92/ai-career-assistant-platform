@@ -237,9 +237,9 @@ model DuplicateReference {
 }
 
 model UserProfile {
-  id                      String       @id @default(uuid()) @db.Uuid
+  id                      String              @id @default(uuid()) @db.Uuid
   label                   String
-  version                 Int          @default(1)
+  version                 Int                 @default(1)
   contentHash             String?
   careerGoals             Json?
   experience              Json?
@@ -251,11 +251,23 @@ model UserProfile {
   companyPreferences      Json?
   domainPreferences       Json?
   evaluations             Evaluation[]
-  createdAt               DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt               DateTime     @updatedAt @db.Timestamptz(3)
+  activeFor               ActiveUserProfile[]
+  createdAt               DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
 
   @@unique([label, version])
   @@unique([label, contentHash])
+}
+
+// The profile version the user explicitly chose for new evaluations in a
+// domain. Activation only moves this pointer; UserProfile rows stay immutable.
+model ActiveUserProfile {
+  domain        String      @id
+  userProfileId String      @db.Uuid
+  userProfile   UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+  activatedAt   DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([userProfileId])
 }
 
 model Evaluation {
