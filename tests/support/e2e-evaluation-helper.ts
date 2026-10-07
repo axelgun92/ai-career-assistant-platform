@@ -83,6 +83,17 @@ try {
         update: { userProfileId: previous },
       });
     }
+  } else if (command === "budget-snapshot") {
+    // The budget is global: specs that change it snapshot and restore it.
+    const row = await database.budgetSetting.findUnique({ where: { id: "global" } });
+    process.stdout.write(row ? JSON.stringify(row) : "");
+  } else if (command === "budget-restore") {
+    const snapshot = process.argv[3];
+    await database.budgetSetting.deleteMany({ where: { id: "global" } });
+    if (snapshot) {
+      const row = JSON.parse(snapshot) as Record<string, unknown>;
+      await database.budgetSetting.create({ data: { ...row, updatedAt: new Date(String(row.updatedAt)) } as never });
+    }
   } else if (command === "run-worker") {
     const review = process.argv[3] === "review";
     const tasks = new PrismaEvaluationTaskRepository();

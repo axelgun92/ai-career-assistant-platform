@@ -329,6 +329,10 @@ pnpm profile:import:customer-success --activate
 
 Profiles can also be viewed, edited (structured form or full JSON), versioned, and activated in the app at `/profile` ("Profile & preferences" on the dashboard). Every save creates a new version; existing versions are never changed.
 
+### AI budget (optional)
+
+Set a monthly AI budget at `/budget` ("Budget" on the dashboard). Without a budget, evaluations are not limited. With an enforced budget, an evaluation that does not fit is **deferred** instead of started (no AI call is made) and waits in the backlog on `/budget` until you resume or cancel it. Spend is the recorded cost of AI calls; costs that were not recorded are reported as unknown, never counted as $0.
+
 ### Start the application
 
 Terminal 1 — web application:

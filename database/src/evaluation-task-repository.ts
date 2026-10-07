@@ -29,48 +29,81 @@ function persistenceCategory(error: unknown) {
   return "UNKNOWN_DATABASE_ERROR" as const;
 }
 
+export interface EnqueueEvaluationInput {
+  opportunityId: string;
+  userProfileId: string;
+  userProfileVersion: number;
+  evaluator: DomainEvaluatorDefinition<unknown, unknown>;
+  executionMetadata: Record<string, JsonValue>;
+  maxAttempts: number;
+}
+
+export class AdmissionNotConsumableError extends Error {
+  constructor(readonly admissionId: string) {
+    super("The evaluation admission was already used or abandoned");
+    this.name = "AdmissionNotConsumableError";
+  }
+}
+
+async function createEvaluationAndTask(
+  transaction: Prisma.TransactionClient,
+  input: EnqueueEvaluationInput,
+) {
+  const evaluation = await transaction.evaluation.create({
+    data: {
+      opportunityId: input.opportunityId,
+      userProfileId: input.userProfileId,
+      domain: input.evaluator.domain,
+      evaluationVersion: input.evaluator.evaluationVersion,
+      domainVersion: input.evaluator.domainVersion,
+      ruleVersion: input.evaluator.ruleVersion,
+      promptVersion: input.evaluator.promptVersion,
+      userProfileVersion: input.userProfileVersion,
+      executionMetadata: asInputJson(input.executionMetadata),
+      stageResults: {
+        create: input.evaluator.stages.map((stage, position) => ({
+          stageId: stage.id,
+          position,
+          stageVersion: stage.version,
+          ruleVersion: stage.ruleVersion,
+          promptVersion: stage.promptVersion,
+        })),
+      },
+    },
+    select: { id: true },
+  });
+  return transaction.evaluationTask.create({
+    data: {
+      evaluationId: evaluation.id,
+      maxAttempts: input.maxAttempts,
+      availableAt: new Date(),
+    },
+  });
+}
+
 export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository {
   private readonly database = getDatabaseClient();
 
-  async enqueue(input: {
-    opportunityId: string;
-    userProfileId: string;
-    userProfileVersion: number;
-    evaluator: DomainEvaluatorDefinition<unknown, unknown>;
-    executionMetadata: Record<string, JsonValue>;
-    maxAttempts: number;
-  }) {
+  async enqueue(input: EnqueueEvaluationInput) {
+    const task = await this.database.$transaction((transaction) =>
+      createEvaluationAndTask(transaction, input),
+    );
+    return evaluationTaskSchema.parse(task);
+  }
+
+  // Product request path only. Creates exactly what enqueue() creates and, in
+  // the same transaction, consumes one live EvaluationAdmission. If the
+  // admission was already consumed or abandoned, the transaction rolls back,
+  // so an abandoned admission can never produce an Evaluation.
+  async enqueueAdmitted(input: EnqueueEvaluationInput & { admissionId: string }) {
     const task = await this.database.$transaction(async (transaction) => {
-      const evaluation = await transaction.evaluation.create({
-        data: {
-          opportunityId: input.opportunityId,
-          userProfileId: input.userProfileId,
-          domain: input.evaluator.domain,
-          evaluationVersion: input.evaluator.evaluationVersion,
-          domainVersion: input.evaluator.domainVersion,
-          ruleVersion: input.evaluator.ruleVersion,
-          promptVersion: input.evaluator.promptVersion,
-          userProfileVersion: input.userProfileVersion,
-          executionMetadata: asInputJson(input.executionMetadata),
-          stageResults: {
-            create: input.evaluator.stages.map((stage, position) => ({
-              stageId: stage.id,
-              position,
-              stageVersion: stage.version,
-              ruleVersion: stage.ruleVersion,
-              promptVersion: stage.promptVersion,
-            })),
-          },
-        },
-        select: { id: true },
+      const created = await createEvaluationAndTask(transaction, input);
+      const consumed = await transaction.evaluationAdmission.updateMany({
+        where: { id: input.admissionId, evaluationId: null, abandonedAt: null },
+        data: { evaluationId: created.evaluationId, attachedAt: new Date() },
       });
-      return transaction.evaluationTask.create({
-        data: {
-          evaluationId: evaluation.id,
-          maxAttempts: input.maxAttempts,
-          availableAt: new Date(),
-        },
-      });
+      if (consumed.count !== 1) throw new AdmissionNotConsumableError(input.admissionId);
+      return created;
     });
     return evaluationTaskSchema.parse(task);
   }

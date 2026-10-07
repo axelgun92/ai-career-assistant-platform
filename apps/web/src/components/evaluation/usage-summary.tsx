@@ -10,9 +10,11 @@ import { evaluationFailure } from "./evaluation-failure";
 export function UsageSummary({
   usage,
   operations,
+  reservation,
 }: {
   usage: SemanticUsagePresentation | undefined;
   operations: SemanticOperationPresentation[] | undefined;
+  reservation?: { amount: number; currency: string } | null;
 }) {
   if (!usage) return null;
   const cost = formatCost(usage.estimatedCost, usage.currency);
@@ -33,6 +35,9 @@ export function UsageSummary({
           <div><dt>Reasoning tokens</dt><dd>{formatTokens(usage.reasoningTokens)}</dd></div>
           <div><dt>Total tokens</dt><dd>{formatTokens(usage.totalTokens)}</dd></div>
           <div><dt>Estimated cost</dt><dd>{cost}</dd></div>
+          {reservation ? (
+            <div><dt>Reserved before run</dt><dd>{formatCost(reservation.amount, reservation.currency)}</dd></div>
+          ) : null}
           <div><dt>Pricing configuration</dt><dd>{formatPricingVersions(usage.pricingConfigurationVersions)}</dd></div>
         </dl>
         <p className="usage-note">

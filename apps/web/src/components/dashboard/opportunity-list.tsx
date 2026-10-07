@@ -3,14 +3,24 @@ import type { OpportunityListItem } from "@ai-career/database";
 import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
 import { sourceTypeLabel } from "../opportunity-provenance";
 
-function LatestEvaluation({ evaluation }: { evaluation: OpportunityListItem["latestEvaluation"] }) {
-  if (!evaluation) return <span className="status-label">Not evaluated</span>;
+function LatestEvaluation({
+  evaluation,
+  deferred,
+}: {
+  evaluation: OpportunityListItem["latestEvaluation"];
+  deferred?: boolean;
+}) {
+  const deferredBadge = deferred ? (
+    <span className="status-label status-label-deferred">Evaluation deferred</span>
+  ) : null;
+  if (!evaluation) return deferredBadge ?? <span className="status-label">Not evaluated</span>;
   return (
     <>
       {evaluation.decision ? (
         <span className="status-label status-label-decision">{formatLabel(evaluation.decision)}</span>
       ) : null}
       <span className="status-label">Evaluation {formatLabel(evaluation.status).toLowerCase()}</span>
+      {deferredBadge}
     </>
   );
 }
@@ -61,7 +71,7 @@ export function OpportunityList({ opportunities }: { opportunities: OpportunityL
             <span className="status-label status-label-lifecycle">
               {formatLifecycle(opportunity.status)}
             </span>
-            <LatestEvaluation evaluation={opportunity.latestEvaluation} />
+            <LatestEvaluation evaluation={opportunity.latestEvaluation} deferred={opportunity.deferred} />
           </div>
         </li>
       ))}

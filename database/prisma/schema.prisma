@@ -151,6 +151,8 @@ model Opportunity {
   evaluations           Evaluation[]
   evidenceRecords       EvidenceRecord[]
   recommendations       Recommendation[]
+  evaluationAdmissions  EvaluationAdmission[]
+  deferredEvaluations   DeferredEvaluation[]
   userActions           OpportunityUserAction[]
   semanticOperations    SemanticOperationAttempt[]
   duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
@@ -237,9 +239,9 @@ model DuplicateReference {
 }
 
 model UserProfile {
-  id                      String              @id @default(uuid()) @db.Uuid
+  id                      String               @id @default(uuid()) @db.Uuid
   label                   String
-  version                 Int                 @default(1)
+  version                 Int                  @default(1)
   contentHash             String?
   careerGoals             Json?
   experience              Json?
@@ -252,8 +254,9 @@ model UserProfile {
   domainPreferences       Json?
   evaluations             Evaluation[]
   activeFor               ActiveUserProfile[]
-  createdAt               DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
+  deferredEvaluations     DeferredEvaluation[]
+  createdAt               DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime             @updatedAt @db.Timestamptz(3)
 
   @@unique([label, version])
   @@unique([label, contentHash])
@@ -291,6 +294,7 @@ model Evaluation {
   recommendation     Recommendation?
   task               EvaluationTask?
   semanticOperations SemanticOperationAttempt[]
+  admission          EvaluationAdmission?
   errorMessage       String?                    @db.Text
   startedAt          DateTime?                  @db.Timestamptz(3)
   completedAt        DateTime?                  @db.Timestamptz(3)
@@ -501,4 +505,89 @@ model OpportunityUserAction {
   createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
 
   @@index([opportunityId, createdAt])
+}
+
+enum BudgetPeriodType {
+  CALENDAR_MONTH
+}
+
+enum DeferredEvaluationStatus {
+  DEFERRED
+  RESUMED
+  CANCELLED
+}
+
+// Request integrity (no money involved): one row per evaluation request the
+// product admitted to the queue. A live admission is consumed only inside the
+// transaction that creates its Evaluation (enqueueAdmitted), or abandoned;
+// the two are mutually exclusive, so an abandoned admission can never produce
+// an Evaluation.
+model EvaluationAdmission {
+  id              String                       @id @default(uuid()) @db.Uuid
+  opportunityId   String                       @db.Uuid
+  opportunity     Opportunity                  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  evaluationId    String?                      @unique @db.Uuid
+  evaluation      Evaluation?                  @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  reservation     EvaluationBudgetReservation?
+  resumedDeferral DeferredEvaluation?
+  createdAt       DateTime                     @default(now()) @db.Timestamptz(3)
+  attachedAt      DateTime?                    @db.Timestamptz(3)
+  abandonedAt     DateTime?                    @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
+  @@index([evaluationId, abandonedAt])
+}
+
+// The user's budget (a single row, id "global"). Editing it never touches
+// usage or cost records.
+model BudgetSetting {
+  id                   String           @id
+  amount               Decimal          @db.Decimal(18, 6)
+  currency             String
+  periodType           BudgetPeriodType @default(CALENDAR_MONTH)
+  timeZone             String           @default("UTC")
+  enforced             Boolean          @default(true)
+  reservePerEvaluation Decimal          @db.Decimal(18, 6)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+}
+
+// The budget held for an admitted evaluation before its actual cost is
+// known. Written only when a budget is configured; never updated. The hold
+// is derived from persisted attempt costs, so reconciliation rewrites nothing.
+model EvaluationBudgetReservation {
+  id          String              @id @default(uuid()) @db.Uuid
+  admissionId String              @unique @db.Uuid
+  admission   EvaluationAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  amount      Decimal             @db.Decimal(18, 12)
+  currency    String
+  enforced    Boolean
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+}
+
+// An evaluation request that was not started because budget was unavailable.
+// It never reached the queue; the opportunity lifecycle is untouched. The
+// profile version resolved at request time is pinned and used on resume.
+model DeferredEvaluation {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  opportunityId      String                   @db.Uuid
+  opportunity        Opportunity              @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  domain             String
+  userProfileId      String?                  @db.Uuid
+  userProfile        UserProfile?             @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  userProfileVersion Int?
+  status             DeferredEvaluationStatus @default(DEFERRED)
+  reasonCode         String
+  reasonSnapshot     Json
+  lastCheckedAt      DateTime                 @db.Timestamptz(3)
+  // The admission that resumed this request. Its evaluation is attached
+  // atomically by enqueueAdmitted(); if the admission is abandoned instead,
+  // the request returns to DEFERRED.
+  resumedAdmissionId String?                  @unique @db.Uuid
+  resumedAdmission   EvaluationAdmission?     @relation(fields: [resumedAdmissionId], references: [id], onDelete: SetNull)
+  resumedAt          DateTime?                @db.Timestamptz(3)
+  cancelledAt        DateTime?                @db.Timestamptz(3)
+  createdAt          DateTime                 @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([opportunityId, status])
 }

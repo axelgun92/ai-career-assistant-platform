@@ -132,5 +132,7 @@ export interface EvaluationPresentation {
   error: string | null;
   operations?: SemanticOperationPresentation[];
   usage?: SemanticUsagePresentation;
+  // Budget held before the run, when a budget was configured.
+  reservation?: { amount: number; currency: string } | null;
   history: EvaluationHistoryPresentation[];
 }

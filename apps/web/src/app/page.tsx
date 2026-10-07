@@ -8,6 +8,9 @@ import {
 } from "@ai-career/database";
 import { OpportunityList } from "@/components/dashboard/opportunity-list";
 import { UsageTotals } from "@/components/dashboard/usage-totals";
+import { BudgetCard } from "@/components/budget/budget-card";
+import type { BudgetStatusView } from "@/components/budget/types";
+import { getBudgetService } from "@/server/budget-service";
 import {
   defaultOpportunityListView,
   getOpportunityListReader,
@@ -49,6 +52,15 @@ export default async function HomePage({
     });
   }
 
+  let budgetStatus: BudgetStatusView | null = null;
+  try {
+    budgetStatus = await getBudgetService().status();
+  } catch (error) {
+    console.error("Opportunity dashboard could not load the AI budget", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+
   return (
     <main className="dashboard">
       <div className="dashboard-header">
@@ -59,6 +71,9 @@ export default async function HomePage({
         <div className="dashboard-header-actions">
           <Link href="/profile" className="button-link button-link-secondary">
             Profile &amp; preferences
+          </Link>
+          <Link href="/budget" className="button-link button-link-secondary">
+            Budget
           </Link>
           <Link href="/opportunities/new" className="button-link">
             New opportunity
@@ -90,6 +105,7 @@ export default async function HomePage({
         )}
       </section>
 
+      {budgetStatus ? <BudgetCard status={budgetStatus} /> : null}
       {usageTotals ? <UsageTotals totals={usageTotals} /> : null}
     </main>
   );

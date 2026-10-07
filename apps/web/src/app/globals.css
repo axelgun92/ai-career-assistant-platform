@@ -892,3 +892,66 @@ blockquote {
 .profile-hint {
   margin-top: 1.5rem;
 }
+
+/* Budget & deferred evaluations */
+.budget-page {
+  max-width: 64rem;
+}
+
+.budget-card,
+.budget-form,
+.deferred-backlog {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.budget-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.budget-card-header h2,
+.budget-form h2,
+.deferred-backlog h2 {
+  margin: 0 0 0.75rem;
+}
+
+.status-label-muted {
+  border-style: dashed;
+  color: #475569;
+}
+
+.status-label-deferred {
+  border-color: #a16207;
+  color: #713f12;
+  background: #fefce8;
+}
+
+.deferred-notice {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-left: 4px solid #a16207;
+  background: #fefce8;
+}
+
+.deferred-notice h3 {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  color: #1d4ed8;
+  background: none;
+  text-decoration: underline;
+}
+
+.table-scroll td.wrap-cell {
+  white-space: normal;
+  min-width: 12rem;
+}

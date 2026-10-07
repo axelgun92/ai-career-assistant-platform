@@ -16,6 +16,8 @@ export interface OpportunityListItem {
   salaryText: string | null;
   postingDate: Date | null;
   createdAt: Date;
+  // An evaluation request is waiting in the deferred backlog.
+  deferred: boolean;
   latestEvaluation: {
     id: string;
     status: string;
@@ -63,6 +65,7 @@ export class PrismaOpportunityListRepository {
             recommendation: { select: { decision: true } },
           },
         },
+        deferredEvaluations: { where: { status: "DEFERRED" }, select: { id: true }, take: 1 },
       },
     });
 
@@ -80,6 +83,7 @@ export class PrismaOpportunityListRepository {
         salaryText: record.salaryText,
         postingDate: record.postingDate,
         createdAt: record.createdAt,
+        deferred: record.deferredEvaluations.length > 0,
         latestEvaluation: evaluation
           ? {
               id: evaluation.id,

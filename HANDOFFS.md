@@ -322,6 +322,59 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Code that pins `userProfileId`/`userProfileVersion` on an Evaluation must keep pinning at enqueue. Historical evaluations must never be rebound to a newer active version.
 
+### Handoff: Task 6 — Budget Ledger, Deferral, and `enqueueAdmitted()` (Review Requested)
+
+**Date:** 2026-10-07  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (review requested during integration)  
+**Status:** Verification Needed (one narrow shared-persistence change)
+
+#### Completed
+
+- A product-level budget ledger, a pre-run budget gate, and a persistent deferred-evaluation backlog with resume and cancel.
+- Request-integrity admissions, which close the duplicate-active race recorded in the Foundation Pass handoff.
+- Migration `20261007200000_budget_ledger` is additive:
+  - tables `EvaluationAdmission`, `BudgetSetting`, `EvaluationBudgetReservation`, `DeferredEvaluation`;
+  - enums `BudgetPeriodType`, `DeferredEvaluationStatus`;
+  - a check constraint so an admission is never both consumed and abandoned.
+
+  The `Recommendation.evidenceReferences` default drift is again excluded.
+
+#### Files Changed (Codex-relevant)
+
+- **⚠ Shared queue persistence (review requested):** `database/src/evaluation-task-repository.ts`.
+  - `enqueue()` was refactored only to share a private `createEvaluationAndTask(tx, input)` helper. Its behaviour is identical: same rows, same `executionMetadata`, same `maxAttempts`/`availableAt`.
+  - New `enqueueAdmitted(input & { admissionId })`, used only by the product request path. It creates exactly what `enqueue()` creates and, in the same transaction, conditionally consumes one `EvaluationAdmission`: `UPDATE … SET evaluationId WHERE id = ? AND evaluationId IS NULL AND abandonedAt IS NULL`. If no row matches, it throws `AdmissionNotConsumableError`, so the whole transaction (Evaluation and Task) rolls back.
+  - Abandonment is the mirror conditional update. Postgres row locking makes "consumed" and "abandoned" mutually exclusive, so an abandoned admission can never produce an Evaluation.
+  - The shared `EvaluationTaskRepository` interface (`packages/evaluation`), `claimNext`, `complete`, `fail`, leases, retries, the worker and the executor are **unchanged**.
+- **Product layer:**
+  - `apps/web/src/server/evaluation-service.ts` runs the gate (optional `admissionGate` dependency) before enqueue; without a gate (evaluator-level tests) it behaves exactly as before;
+  - `apps/web/src/server/budget-service.ts`;
+  - `database/src/{evaluation-admission,budget,deferred-evaluation}-repository.ts`.
+- **Reads only:** the ledger reads `SemanticOperationAttempt`, `AiModelPricingConfiguration`, `Evaluation` and `EvaluationTask` read-only. Pricing, cost calculation, usage recording and `summarizeSemanticUsage()` are untouched.
+
+#### Current Contract / Assumptions
+
+- Spend is the direct sum of persisted attempt costs in the budget currency. Unknown and other-currency attempts are never treated as $0.
+- `executionMetadata` is unchanged; no new keys.
+- Deferred requests pin the profile version resolved at request time.
+
+#### Verification Completed
+
+- typecheck, lint, Prisma validate and build pass.
+- Unit 754/754, integration 79/79 (run twice), E2E 17/17 (deterministic fixtures, no paid calls).
+- The concurrency regression test fails 3 times in 4 with the old check order and passes 30 of 30 with the fix.
+
+#### Known Issues / Boundary Items
+
+- Already-queued tasks are not stopped when the budget is lowered or removed. That would need a pre-claim check in the shared worker; it is deliberately not done.
+- Evaluations created outside the product request path (direct `tasks.enqueue`, or the Core executor's `execute()`) have no admission or reservation. Their actual cost is still counted, and the duplicate guard still sees them.
+- The reserve is a user-set estimate; actual cost can exceed it (visible in the UI).
+
+#### Do Not Change Without Coordination
+
+- Keep `enqueueAdmitted()`'s consumption in the same transaction as Evaluation/Task creation, and keep the conditional `WHERE` clauses; the no-duplicate guarantee depends on both.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

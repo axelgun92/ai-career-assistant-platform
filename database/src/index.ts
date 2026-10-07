@@ -8,3 +8,6 @@ export * from "./user-profile-repository";
 export * from "./opportunity-list-repository";
 export * from "./opportunity-lifecycle-repository";
 export * from "./usage-summary-repository";
+export * from "./evaluation-admission-repository";
+export * from "./budget-repository";
+export * from "./deferred-evaluation-repository";

@@ -16,7 +16,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: /profile-management\.spec\.ts/,
+      testIgnore: /(profile-management|budget)\.spec\.ts/,
     },
     {
       // Profile specs change which profile version is active, which every
@@ -26,6 +26,14 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       testMatch: /profile-management\.spec\.ts/,
       dependencies: ["chromium"],
+    },
+    {
+      // The budget is global and gates every UI-requested evaluation, so the
+      // budget spec runs last, after every other spec has finished.
+      name: "budget",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /budget\.spec\.ts/,
+      dependencies: ["profile-management"],
     },
   ],
   webServer: {

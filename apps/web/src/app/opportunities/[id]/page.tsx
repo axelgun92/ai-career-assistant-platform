@@ -9,6 +9,8 @@ import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
 import { getProfileService } from "@/server/profile-service";
+import { getBudgetService } from "@/server/budget-service";
+import { toDeferralView } from "@/components/budget/deferral-view";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -55,6 +57,22 @@ export default async function OpportunityPage({
       return null;
     });
 
+  const deferral = await getBudgetService()
+    .gate.findOpenDeferral(detail.opportunity.id)
+    .then((record) => (record ? toDeferralView(record) : null))
+    .catch((error: unknown) => {
+      console.error("Deferred evaluation could not be loaded", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return null;
+    });
+  const activeProfile = deferral
+    ? await getProfileService()
+        .overview()
+        .then(({ active }) => (active ? { id: active.userProfileId, version: active.version } : null))
+        .catch(() => null)
+    : null;
+
   const normalizedFields = [
     ["Lifecycle", detail.opportunity.status],
     ["Domain", detail.opportunity.domain],
@@ -100,6 +118,8 @@ export default async function OpportunityPage({
 
       <EvaluationExperience
         evaluable={lifecycle?.evaluable ?? true}
+        deferral={deferral}
+        activeProfile={activeProfile}
         opportunity={{
           id: detail.opportunity.id,
           title: detail.opportunity.title ?? "Untitled opportunity",

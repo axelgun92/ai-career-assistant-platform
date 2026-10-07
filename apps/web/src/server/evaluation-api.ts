@@ -47,12 +47,29 @@ export function createEvaluationApiHandlers(service: EvaluationService) {
       }
       try {
         const result = await service.requestEvaluation(opportunityId, body);
+        // A deferred request is accepted and persisted but not queued.
+        if (result.outcome === "DEFERRED") return Response.json(result, { status: 200 });
         return Response.json(result, {
           status: 202,
           headers: {
             Location: `/api/opportunities/${opportunityId}/evaluation`,
           },
         });
+      } catch (error) {
+        return safeError(error);
+      }
+    },
+    async resume(deferredId: string) {
+      try {
+        const result = await service.resumeDeferred(deferredId);
+        return Response.json(result, { status: result.outcome === "DEFERRED" ? 200 : 202 });
+      } catch (error) {
+        return safeError(error);
+      }
+    },
+    async cancel(deferredId: string) {
+      try {
+        return Response.json(await service.cancelDeferred(deferredId));
       } catch (error) {
         return safeError(error);
       }
@@ -93,6 +110,15 @@ export async function handleProductionEvaluationGet(
       opportunityId,
       evaluationId,
     );
+  } catch (error) {
+    return safeError(error);
+  }
+}
+
+export async function handleDeferredEvaluationAction(action: "resume" | "cancel", deferredId: string) {
+  try {
+    const handlers = createEvaluationApiHandlers(getEvaluationService());
+    return await (action === "resume" ? handlers.resume(deferredId) : handlers.cancel(deferredId));
   } catch (error) {
     return safeError(error);
   }

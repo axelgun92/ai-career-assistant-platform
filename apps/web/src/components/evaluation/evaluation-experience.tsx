@@ -12,6 +12,8 @@ import type {
   EvaluationPresentation,
   OpportunityPresentation,
 } from "./types";
+import { DeferredNotice } from "../budget/deferred-notice";
+import type { DeferralView } from "../budget/types";
 
 type StatusResult =
   | { found: true; evaluation: EvaluationPresentation }
@@ -52,10 +54,15 @@ function formatTimestamp(value: string | null | undefined) {
 export function EvaluationExperience({
   opportunity,
   evaluable = true,
+  deferral = null,
+  activeProfile = null,
 }: {
   opportunity: OpportunityPresentation;
   // False for archived/closed opportunities; the API enforces the same rule.
   evaluable?: boolean;
+  // An open request waiting for budget; evaluating again resumes it.
+  deferral?: DeferralView | null;
+  activeProfile?: { id: string; version: number } | null;
 }) {
   // `evaluation` is what is displayed; `latest` is the newest evaluation, which
   // drives status, failure details, and the queued-too-long notice.
@@ -179,10 +186,24 @@ export function EvaluationExperience({
           body: "{}",
         },
       );
+      if (response.status === 200) {
+        const body = (await response.json().catch(() => ({}))) as { outcome?: string; resumed?: boolean };
+        if (body.outcome === "DEFERRED") {
+          // Accepted but not started: the budget has no room right now.
+          setNotice(
+            body.resumed
+              ? "Checked again: the budget still does not have room, so the evaluation remains deferred."
+              : "Evaluation deferred: the budget does not have room right now. Nothing was spent.",
+          );
+          router.refresh();
+          return;
+        }
+      }
       if (response.status !== 202) {
         setError(await responseMessage(response, "Evaluation could not be requested"));
         return;
       }
+      if (deferral) router.refresh();
       setNotice("Evaluation accepted and queued. This page will update automatically.");
       selectedHistoryId.current = null;
       setPollStopped(false);
@@ -233,8 +254,9 @@ export function EvaluationExperience({
         <div>
           <p className="eyebrow">Evaluation status</p>
           <h2 id="evaluation-status-title">
-            {loading && !evaluation ? "Checking evaluation…" :
-              evaluation ? humanize(latestStatus) : "Not evaluated"}
+            {loading && !evaluation && !deferral ? "Checking evaluation…" :
+              evaluation && !(deferral && !active) ? humanize(latestStatus) :
+              deferral ? "Deferred — waiting for budget" : "Not evaluated"}
           </h2>
         </div>
         <div className="evaluation-actions">
@@ -245,6 +267,7 @@ export function EvaluationExperience({
             aria-describedby="evaluation-status-message"
           >
             {requesting ? "Requesting…" : active ? "Evaluation in progress" :
+              deferral ? "Resume deferred evaluation" :
               evaluation ? "Reevaluate opportunity" : "Evaluate Customer Success fit"}
           </button>
           {pollStopped ? (
@@ -268,6 +291,9 @@ export function EvaluationExperience({
             isolatedFailure={isolatedFailure}
           />
         </div>
+        {deferral && !active ? (
+          <DeferredNotice deferral={deferral} activeProfile={activeProfile} onChanged={() => router.refresh()} />
+        ) : null}
       </section>
 
       {history.length ? (
@@ -297,7 +323,7 @@ export function EvaluationExperience({
       ) : null}
 
       {evaluation ? (
-        <UsageSummary usage={evaluation.usage} operations={evaluation.operations} />
+        <UsageSummary usage={evaluation.usage} operations={evaluation.operations} reservation={evaluation.reservation} />
       ) : null}
     </div>
   );

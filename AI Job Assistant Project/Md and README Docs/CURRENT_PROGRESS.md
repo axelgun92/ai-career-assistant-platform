@@ -230,12 +230,56 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - `tests/e2e/profile-management.spec.ts`, which runs after the other specs as its own Playwright project, because it changes the active version.
   - Dev dependency `jsdom` was added for the component tests.
 
+#### Completed — Task 6: Budget ledger and deferral (October 7, 2026)
+
+- **Budget** (`/budget`, plus a "Budget" link and an "AI budget" card on the dashboard):
+  - a monthly calendar budget in a chosen IANA time zone (default UTC), with amount, currency (must match the AI pricing currency), reserve per evaluation, and an enforcement toggle;
+  - "Remove budget" makes evaluations unlimited again;
+  - the period resets implicitly, because spend is always computed over the current window, so no job is needed.
+- **Spend accounting.**
+  - Known spend is the direct sum of persisted `SemanticOperationAttempt.estimatedCost` in the budget currency within the period.
+  - Null-cost attempts are counted separately as unknown, and other-currency attempts separately; neither is ever counted as $0.
+  - An evaluation with $0.07 known plus one unknown attempt contributes $0.07 and raises the unknown warning.
+  - `summarizeSemanticUsage()` and the existing usage displays are unchanged.
+- **Reservations and holds.**
+  - With a budget configured, each admitted evaluation gets a reservation (`EvaluationBudgetReservation`).
+  - Its remaining hold (reserve − known cost so far) counts while the work is unresolved:
+    - live or queued/running work holds in whichever period is current, including across a month boundary;
+    - a finished run with unknown cost holds only in the period of its unknown attempt;
+    - a finished run with all costs known holds nothing.
+  - Actual cost replaces the hold automatically, and nothing is rewritten.
+- **Gate and deferral.** Each request runs under one Postgres advisory lock.
+  - With no budget, it is unrestricted: no reservation, no deferral, behaviour as before.
+  - With enforcement on and no room, the request is recorded as a `DeferredEvaluation` (BUDGET_UNAVAILABLE, with a budget snapshot). It creates no Evaluation, Task or provider call, and the lifecycle is untouched.
+  - The evaluate API returns 200 `outcome: "DEFERRED"` instead of 202.
+- **Resume and cancel.**
+  - From the backlog on `/budget`, or the opportunity page ("Resume deferred evaluation" / "Cancel request").
+  - Resume re-checks the budget, the active-evaluation guard and the lifecycle.
+  - It uses the **profile version pinned at deferral time**; a deleted pinned version is refused with a clear reason.
+  - A request whose resume admission is abandoned returns to the backlog.
+  - Automated draining is additive later; there is no scheduler.
+- **Request integrity** (always on, separate from money).
+  - Every product request creates an `EvaluationAdmission`, which the new `PrismaEvaluationTaskRepository.enqueueAdmitted()` consumes atomically in the transaction that creates the Evaluation and Task.
+  - An abandoned admission (timeout after a crash before enqueue) can therefore never produce an Evaluation.
+  - This closes the duplicate-active race previously documented in HANDOFFS.
+  - A check-ordering race found during testing (two queued under concurrency) was fixed: the live admission is read before the active evaluation. It is covered by a repeated concurrency regression test.
+- **UI:**
+  - the dashboard budget card (known spend, reserved, remaining known, unknown/other-currency warnings, enforcement, reset date, deferred count);
+  - rows show "Evaluation deferred";
+  - the opportunity page explains the deferral from the snapshot (pinned profile, active-profile difference);
+  - the results page shows "Reserved before run" next to the actual cost.
+- **Migration.** `20261007200000_budget_ledger` is additive (four tables, two enums, plus a check that an admission is never both consumed and abandoned); the known `Recommendation` drift line is excluded.
+- **Tests:**
+  - unit: `budget.test.ts` (period/DST/time zones, holds, decision, validation) and `budget-ui.test.tsx` (card, reason, backlog, handlers, 200/202 outcomes);
+  - integration: `evaluation-admission.test.ts` (recovery, durable association, delayed enqueue after abandonment, consume/abandon race ×20, failed enqueue, unchanged `enqueue()`, concurrent requests with and without budget, no-budget integrity) and `budget-deferral.test.ts` (gate, deferral with zero rows created, restart persistence, resume re-check, reconciliation, unknown cost, both concurrency cases, pinned profile, archived/cancel, abandoned resume, settings never rewrite usage, currency, period boundaries);
+  - E2E: `budget.spec.ts`, its own Playwright project, run last.
+
 #### Remaining main-product order
 
 Revised roadmap:
 
 - Task 5 — Profile + Preferences: done (see above).
-- Task 6 — Budget Ledger + Deferral.
+- Task 6 — Budget Ledger + Deferral: done (see above).
 - Task 7 — Product UI: dashboard, search, sort, filters, analytics polish.
 - Task 8 — Application Tracker: notes, follow-ups, contacts, outcomes.
 - Task 9 — Final setup, operations, integration, E2E.
