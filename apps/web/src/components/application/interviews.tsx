@@ -184,7 +184,7 @@ export function Interviews({ application, readOnly }: { application: Application
         <ul className="interview-list" aria-label="Interviews">
           {application.interviews.map((interview) => (
             <InterviewItem
-              key={`${interview.id}-${interview.version}`}
+              key={interview.id}
               application={application}
               interview={interview}
               readOnly={readOnly}

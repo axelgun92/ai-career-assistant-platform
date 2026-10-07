@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { evaluationFailure } from "../../apps/web/src/components/evaluation/evaluation-failure";
 import {
-  evaluationFailure,
-  isQueuedTooLong,
+  evaluationQueueState,
   queuedTooLongMs,
-} from "../../apps/web/src/components/evaluation/evaluation-failure";
+} from "../../apps/web/src/server/evaluation-queue-state";
 import {
   StatusNotices,
   type StatusNoticesProps,
@@ -35,21 +35,24 @@ describe("evaluation failure presentation", () => {
   });
 });
 
-describe("queued-too-long detection", () => {
-  const queuedAt = "2026-10-06T12:00:00.000Z";
-  const queued = Date.parse(queuedAt);
+describe("server-computed queue state", () => {
+  const createdAt = new Date("2026-10-06T12:00:00.000Z");
+  const at = (ms: number) => new Date(createdAt.getTime() + ms);
 
-  it("flags a pending task past the threshold only", () => {
-    expect(isQueuedTooLong("PENDING", queuedAt, queued + queuedTooLongMs + 1)).toBe(true);
-    expect(isQueuedTooLong("PENDING", queuedAt, queued + queuedTooLongMs)).toBe(false);
-    expect(isQueuedTooLong("RUNNING", queuedAt, queued + 10 * queuedTooLongMs)).toBe(false);
-    expect(isQueuedTooLong("COMPLETED", queuedAt, queued + 10 * queuedTooLongMs)).toBe(false);
+  it("flags a pending task only past the threshold", () => {
+    const pending = { status: "PENDING", leaseExpiresAt: null, createdAt };
+    expect(evaluationQueueState(pending, at(queuedTooLongMs))).toBe("QUEUED");
+    expect(evaluationQueueState(pending, at(queuedTooLongMs + 1))).toBe("QUEUED_LONG");
+    expect(evaluationQueueState({ ...pending, createdAt: "not a date" }, at(10 * queuedTooLongMs))).toBe("QUEUED");
   });
 
-  it("does not guess without a valid queue time or check time", () => {
-    expect(isQueuedTooLong("PENDING", undefined, Date.now())).toBe(false);
-    expect(isQueuedTooLong("PENDING", "not a date", Date.now())).toBe(false);
-    expect(isQueuedTooLong("PENDING", queuedAt, null)).toBe(false);
+  it("reports an expired lease as stale, never as a stopped worker", () => {
+    const running = { status: "RUNNING", leaseExpiresAt: at(300_000), createdAt };
+    expect(evaluationQueueState(running, at(300_000))).toBe("RUNNING");
+    expect(evaluationQueueState(running, at(300_001))).toBe("RUNNING_STALE");
+    expect(evaluationQueueState({ ...running, leaseExpiresAt: null }, at(10_000_000))).toBe("RUNNING");
+    expect(evaluationQueueState({ ...running, status: "FAILED" }, at(0))).toBe("FAILED");
+    expect(evaluationQueueState({ ...running, status: "COMPLETED" }, at(0))).toBe("COMPLETED");
   });
 });
 
@@ -59,7 +62,6 @@ describe("evaluation status notices", () => {
     failure: null,
     fallbackCompletedAt: null,
     hasEarlierCompleted: false,
-    queuedTooLong: false,
     isolatedFailure: false,
   };
   const render = (props: Partial<StatusNoticesProps>) =>
@@ -87,11 +89,42 @@ describe("evaluation status notices", () => {
   });
 
   it("points at the worker when a task has been queued too long", () => {
-    const html = render({ latestStatus: "PENDING", queuedTooLong: true });
+    const html = render({ latestStatus: "PENDING", queueState: "QUEUED_LONG" });
     expect(html).toContain("Evaluation is queued");
-    expect(html).toContain("worker may not be running");
+    expect(html).toContain("If the evaluation worker isn&#x27;t running");
     expect(html).toContain("pnpm worker:evaluations");
-    expect(render({ latestStatus: "PENDING" })).not.toContain("worker may not be running");
+    expect(render({ latestStatus: "PENDING", queueState: "QUEUED" })).not.toContain("worker isn");
+  });
+
+  it("describes a stale lease honestly, without claiming the worker stopped", () => {
+    const html = render({ latestStatus: "RUNNING", queueState: "RUNNING_STALE" });
+    expect(html).toContain("run longer than its worker lease");
+    expect(html).toContain("may still be in progress, or the worker may have stopped");
+    expect(html).not.toContain("Evaluation is running.");
+    expect(html).not.toMatch(/worker (has )?stopped\./);
+    expect(render({ latestStatus: "RUNNING", queueState: "RUNNING" })).toContain("Evaluation is running.");
+  });
+
+  it("offers another evaluation only when the opportunity is evaluable", () => {
+    const failure = evaluationFailure("PROVIDER_TIMEOUT");
+    expect(render({ latestStatus: "FAILED", failure })).toContain("You may request another evaluation.");
+    expect(render({ latestStatus: "FAILED", failure, evaluable: false })).not.toContain("request another evaluation");
+  });
+
+  it("maps every produced failure-code family to a safe message", () => {
+    expect(evaluationFailure("PROVIDER_HTTP_401").message).toContain("rejected the API key");
+    expect(evaluationFailure("PROVIDER_HTTP_429").message).toContain("rate-limited");
+    expect(evaluationFailure("PROVIDER_HTTP_503").message).toContain("server error");
+    expect(evaluationFailure("PROVIDER_HTTP_400").message).toBe("The AI provider rejected the request.");
+    expect(evaluationFailure("OPERATION_METADATA_PERSISTENCE_DATABASE_UNAVAILABLE").message).toContain("database was unavailable");
+    expect(evaluationFailure("OPERATION_METADATA_PERSISTENCE_UNKNOWN_DATABASE_ERROR").message).toContain("usage could not be recorded");
+    for (const code of [
+      "EVALUATION_LEASE_EXPIRED", "WORKER_INTERRUPTED", "STAGE_EXECUTION_FAILED", "EVALUATION_STAGE_FAILED",
+      "EVALUATION_FAILED", "EVALUATION_WORKER_FAILED", "EVALUATION_NOT_FOUND", "SEMANTIC_EXECUTION_FAILED",
+      "SEMANTIC_EXECUTION_POLICY_INVALID",
+    ]) {
+      expect(evaluationFailure(code).message, code).not.toBe("The evaluation stopped before it could produce a validated result.");
+    }
   });
 });
 

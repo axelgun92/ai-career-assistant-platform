@@ -171,6 +171,64 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
     });
   }
 
+  // Worker-owned recovery for tasks orphaned on their final attempt: RUNNING,
+  // lease expired, and no attempts left, so claimNext can never pick them up
+  // again. They become FAILED (EVALUATION_LEASE_EXPIRED) with their running
+  // stages and evaluation. Only the evaluation worker that holds the
+  // single-worker lock calls this, and only while it has no task in flight,
+  // so it can never fail a run that is still executing. claimNext, complete
+  // and fail are unchanged.
+  async failExpiredExhaustedTasks(now: Date = new Date()): Promise<string[]> {
+    return this.database.$transaction(async (transaction) => {
+      const orphaned = await transaction.$queryRaw<Array<{ id: string; evaluationId: string }>>(
+        Prisma.sql`
+          SELECT "id", "evaluationId"
+          FROM "EvaluationTask"
+          WHERE "status" = 'RUNNING'
+            AND "leaseExpiresAt" < ${now}
+            AND "attempt" >= "maxAttempts"
+          FOR UPDATE SKIP LOCKED
+        `,
+      );
+      for (const task of orphaned) {
+        await transaction.stageResult.updateMany({
+          where: { evaluationId: task.evaluationId, status: "RUNNING" },
+          data: {
+            status: "FAILED",
+            retryable: false,
+            failureCode: "WORKER_INTERRUPTED",
+            errorMessage: "Worker execution ended before the stage completed",
+            completedAt: now,
+          },
+        });
+        await transaction.evaluation.updateMany({
+          where: { id: task.evaluationId, status: { in: ["PENDING", "RUNNING"] } },
+          data: {
+            status: "FAILED",
+            errorMessage: "The evaluation worker lease expired after the final attempt",
+            completedAt: now,
+          },
+        });
+        await transaction.evaluationTask.updateMany({
+          where: { id: task.id, status: "RUNNING", leaseExpiresAt: { lt: now } },
+          data: {
+            status: "FAILED",
+            completedAt: now,
+            leaseExpiresAt: null,
+            errorCode: "EVALUATION_LEASE_EXPIRED",
+            errorMessage: "The evaluation worker lease expired after the final attempt",
+          },
+        });
+      }
+      return orphaned.map((task) => task.evaluationId);
+    });
+  }
+
+  // Read-only queue figures for operational checks (pnpm doctor).
+  async queueSnapshot(now: Date = new Date()) {
+    return readQueueSnapshot(this.database, now);
+  }
+
   async complete(taskId: string) {
     const task = await this.database.evaluationTask.update({
       where: { id: taskId },
@@ -389,4 +447,37 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
       }),
     );
   }
+}
+
+export interface QueueSnapshot {
+  pending: number;
+  oldestPendingAt: Date | null;
+  running: number;
+  // RUNNING with an expired lease and attempts left: claimNext reclaims them.
+  expiredReclaimable: number;
+  // RUNNING with an expired lease and no attempts left: worker recovery fails them.
+  expiredExhausted: number;
+}
+
+// One read-only SELECT; usable with any client that supports $queryRaw.
+export async function readQueueSnapshot(
+  client: { $queryRaw: ReturnType<typeof getDatabaseClient>["$queryRaw"] },
+  now: Date = new Date(),
+): Promise<QueueSnapshot> {
+  const [row] = await client.$queryRaw<QueueSnapshot[]>(Prisma.sql`
+    SELECT
+      COUNT(*) FILTER (WHERE "status" = 'PENDING')::int AS "pending",
+      MIN("createdAt") FILTER (WHERE "status" = 'PENDING') AS "oldestPendingAt",
+      COUNT(*) FILTER (WHERE "status" = 'RUNNING')::int AS "running",
+      COUNT(*) FILTER (WHERE "status" = 'RUNNING' AND "leaseExpiresAt" < ${now} AND "attempt" < "maxAttempts")::int AS "expiredReclaimable",
+      COUNT(*) FILTER (WHERE "status" = 'RUNNING' AND "leaseExpiresAt" < ${now} AND "attempt" >= "maxAttempts")::int AS "expiredExhausted"
+    FROM "EvaluationTask"
+  `);
+  return {
+    pending: row?.pending ?? 0,
+    oldestPendingAt: row?.oldestPendingAt ?? null,
+    running: row?.running ?? 0,
+    expiredReclaimable: row?.expiredReclaimable ?? 0,
+    expiredExhausted: row?.expiredExhausted ?? 0,
+  };
 }

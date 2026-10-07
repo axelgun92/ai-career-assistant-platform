@@ -29,8 +29,8 @@ export function StartTracking({
   if (modes.length === 0) {
     return (
       <p className="status-note">
-        Applications can be tracked for opportunities you have not dismissed or archived. Restore this opportunity to
-        start tracking.
+        Applications can be tracked only for opportunities that are active, saved, or applied. Restore this
+        opportunity to start tracking.
       </p>
     );
   }

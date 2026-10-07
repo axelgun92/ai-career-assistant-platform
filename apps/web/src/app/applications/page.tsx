@@ -24,6 +24,8 @@ import {
 } from "@/server/application-query";
 import type { SearchParamsInput } from "@/server/opportunity-query";
 
+export const metadata = { title: "Applications" };
+
 function logFailure(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : "UnknownError" });
 }
@@ -64,7 +66,6 @@ export default async function ApplicationsPage({
 
   return (
     <main className="dashboard applications-page">
-      <Link href="/">← All opportunities</Link>
       <div className="dashboard-header">
         <div>
           <h1>Applications</h1>

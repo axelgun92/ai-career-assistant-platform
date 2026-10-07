@@ -1,28 +1,41 @@
 import type { EvaluationFailurePresentation } from "./evaluation-failure";
+import type { EvaluationQueueState } from "./types";
 
 export interface StatusNoticesProps {
   latestStatus: string | undefined;
+  // Server-computed queue state of the latest evaluation, when known.
+  queueState?: EvaluationQueueState;
   failure: EvaluationFailurePresentation | null;
   fallbackCompletedAt: string | null;
   hasEarlierCompleted: boolean;
-  queuedTooLong: boolean;
+  // Whether another evaluation may be requested (not archived).
+  evaluable?: boolean;
   isolatedFailure: boolean;
 }
 
 export function StatusNotices(props: StatusNoticesProps) {
+  const queued = props.latestStatus === "PENDING";
+  const running = props.latestStatus === "RUNNING";
+  const again = props.evaluable === false ? "" : " You may request another evaluation.";
   return (
     <>
-      {props.latestStatus === "PENDING" || props.latestStatus === "RUNNING" ? (
-        <p>
-          Evaluation is {props.latestStatus === "PENDING" ? "queued" : "running"}.
-          Results will appear here when complete.
+      {queued ? (
+        <p>Evaluation is queued, waiting for the evaluation worker. Results will appear here when complete.</p>
+      ) : null}
+      {running && props.queueState !== "RUNNING_STALE" ? (
+        <p>Evaluation is running. Results will appear here when complete.</p>
+      ) : null}
+      {queued && props.queueState === "QUEUED_LONG" ? (
+        <p className="warning-message">
+          This evaluation has been queued for over a minute without starting. If the evaluation worker
+          isn&apos;t running, start it (see Setup: <code>pnpm worker:evaluations</code>). This page keeps checking.
         </p>
       ) : null}
-      {props.queuedTooLong ? (
+      {running && props.queueState === "RUNNING_STALE" ? (
         <p className="warning-message">
-          This evaluation has been queued for over a minute without starting. The
-          evaluation worker may not be running; start it with{" "}
-          <code>pnpm worker:evaluations</code> and keep checking.
+          This evaluation has run longer than its worker lease. It may still be in progress, or the worker may
+          have stopped. If the worker isn&apos;t running, start it (<code>pnpm worker:evaluations</code>); it will
+          recover this evaluation.
         </p>
       ) : null}
       {props.failure ? (
@@ -35,10 +48,10 @@ export function StatusNotices(props: StatusNoticesProps) {
           </p>
           <p>
             {props.fallbackCompletedAt
-              ? `The most recent completed evaluation (completed ${props.fallbackCompletedAt}) is shown below. You may request another evaluation.`
+              ? `The most recent completed evaluation (completed ${props.fallbackCompletedAt}) is shown below.${again}`
               : props.hasEarlierCompleted
-                ? "Earlier completed results remain available in the evaluation history. You may request another evaluation."
-                : "No completed evaluation is available yet. You may request another evaluation."}
+                ? `Earlier completed results remain available in the evaluation history.${again}`
+                : `No completed evaluation is available yet.${again}`}
           </p>
         </div>
       ) : null}

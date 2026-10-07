@@ -13,8 +13,10 @@ test("serves the application shell and health endpoint", async ({ page, request 
 
   const response = await request.get("/api/health");
   expect(response.ok()).toBe(true);
-  await expect(response.json()).resolves.toEqual({
+  await expect(response.json()).resolves.toMatchObject({
     status: "ok",
     service: "ai-career-platform",
+    database: "ok",
+    aiConfigured: true,
   });
 });

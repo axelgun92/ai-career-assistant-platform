@@ -40,6 +40,14 @@ export function reportedSource(sourceMetadata: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+// Readable names for known source slugs; the slug is still shown.
+const sourceNames: Record<string, string> = { "manual-input": "Manual entry" };
+
+function sourceDisplay(source: string | null | undefined) {
+  if (!source) return "Unknown";
+  return sourceNames[source] ? `${sourceNames[source]} (${source})` : source;
+}
+
 export function OpportunityProvenance({
   opportunity,
   sourceRecords,
@@ -55,7 +63,8 @@ export function OpportunityProvenance({
       <h2 id="provenance-title">Source and provenance</h2>
       <dl>
         <div><dt>Entry method</dt><dd>{sourceTypeLabel(opportunity.sourceType)}</dd></div>
-        <div><dt>Source</dt><dd>{text(opportunity.source)}</dd></div>
+        <div><dt>Source</dt><dd>{sourceDisplay(opportunity.source)}</dd></div>
+        <div><dt>Found via</dt><dd>{text(reportedSource(sourceRecords[0]?.sourceMetadata))}</dd></div>
         <div><dt>First seen</dt><dd>{timestamp(opportunity.firstSeenAt)}</dd></div>
         <div><dt>Last seen</dt><dd>{timestamp(opportunity.lastSeenAt)}</dd></div>
         <div><dt>Source last updated</dt><dd>{timestamp(opportunity.sourceUpdatedAt)}</dd></div>

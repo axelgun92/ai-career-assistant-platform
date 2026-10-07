@@ -1,4 +1,7 @@
+import type { EvaluationQueueState } from "../../server/evaluation-queue-state";
+
 export type EvaluationTaskStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+export type { EvaluationQueueState };
 
 export interface OpportunityPresentation {
   id: string;
@@ -93,13 +96,16 @@ export interface EvaluationPresentation {
   domain: string;
   status: EvaluationTaskStatus;
   evaluationStatus: EvaluationTaskStatus;
+  // Server-computed; RUNNING_STALE means the lease expired, not that the
+  // worker is known to have stopped.
+  queueState?: EvaluationQueueState;
+  // Stored error messages are not part of the API; only codes are.
   task: {
     id: string;
     status: EvaluationTaskStatus;
     attempt: number;
     maxAttempts: number;
     errorCode: string | null;
-    errorMessage: string | null;
   };
   versions: {
     evaluation: string;
@@ -114,7 +120,6 @@ export interface EvaluationPresentation {
     stageId: string;
     status: EvaluationTaskStatus;
     failureCode: string | null;
-    errorMessage: string | null;
   }>;
   evidence: EvidencePresentation[];
   contradictions: ContradictionPresentation[];
@@ -129,7 +134,6 @@ export interface EvaluationPresentation {
     contradictions: unknown;
     evidenceReferences: string[];
   } | null;
-  error: string | null;
   operations?: SemanticOperationPresentation[];
   usage?: SemanticUsagePresentation;
   // Budget held before the run, when a budget was configured.

@@ -1,5 +1,7 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { z } from "zod";
 import { getManualOpportunityService } from "@/server/manual-opportunity-service";
 import { EvaluationExperience } from "@/components/evaluation/evaluation-experience";
 import { ExternalLink, safeExternalUrl } from "@/components/external-link";
@@ -37,13 +39,26 @@ function display(value: unknown): string {
   return String(value);
 }
 
+// Not found (bad id or missing opportunity) is a 404; a failure to load is
+// an error page, so a database problem is never reported as "not found".
+async function loadOpportunity(id: string) {
+  if (!z.uuid().safeParse(id).success) return null;
+  return getManualOpportunityService().getById(id);
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const detail = await loadOpportunity(id).catch(() => null);
+  return { title: detail?.opportunity.title ?? "Opportunity" };
+}
+
 export default async function OpportunityPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const detail = await getManualOpportunityService().getById(id).catch(() => null);
+  const detail = await loadOpportunity(id);
 
   if (!detail) {
     notFound();
@@ -101,7 +116,7 @@ export default async function OpportunityPage({
       : null;
 
   const normalizedFields = [
-    ["Lifecycle", detail.opportunity.status],
+    ["Lifecycle", formatLifecycle(detail.opportunity.status)],
     ["Domain", detail.opportunity.domain],
     ["Title", detail.opportunity.title],
     ["Company", detail.opportunity.companyName],
@@ -120,7 +135,14 @@ export default async function OpportunityPage({
 
   return (
     <main className="opportunity-page">
-      <Link href="/">← All opportunities</Link>
+      <Link href="/">← Back to dashboard</Link>
+      <header className="opportunity-title">
+        <h1>{detail.opportunity.title ?? "Untitled opportunity"}</h1>
+        <p>
+          {detail.opportunity.companyName ?? "Unknown company"}
+          {detail.opportunity.location ? ` · ${detail.opportunity.location}` : ""}
+        </p>
+      </header>
 
       {applicationUrl || sourceUrl ? (
         <nav className="opportunity-links" aria-label="Opportunity links">

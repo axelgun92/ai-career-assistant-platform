@@ -183,7 +183,7 @@ test("a task left queued points at the worker and polling can be resumed", async
 
   // No worker runs in this test; age the queued evaluation past the threshold.
   await runHelper("age-latest", opportunityId, "300");
-  await expect(page.getByText(/worker may not be running/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/If the evaluation worker isn't running/)).toBeVisible({ timeout: 15_000 });
 
   // A failed status refresh stops polling and offers to keep checking.
   const statusRequests = /\/api\/opportunities\/[^/]+\/evaluation(\?|$)/;
@@ -199,7 +199,7 @@ test("a task left queued points at the worker and polling can be resumed", async
   await expect(keepChecking).toBeHidden();
   await expect(page.getByText(/could not be refreshed/)).toHaveCount(0);
   await expect(page.getByText(/Evaluation is queued/)).toBeVisible();
-  await expect(page.getByText(/worker may not be running/)).toBeVisible();
+  await expect(page.getByText(/If the evaluation worker isn't running/)).toBeVisible();
 });
 
 test("lifecycle actions, dashboard views, and reevaluation of a saved opportunity", async ({
@@ -253,7 +253,7 @@ test("lifecycle actions, dashboard views, and reevaluation of a saved opportunit
   await page.getByRole("button", { name: "Archive" }).click();
   await expect(statusHeading("Archived")).toBeVisible();
   await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeDisabled();
-  await expect(page.getByText(/archived or closed. Restore it/)).toBeVisible();
+  await expect(page.getByText(/This opportunity is archived. Restore it/)).toBeVisible();
   await page.getByRole("button", { name: "Restore" }).click();
   await expect(statusHeading("Saved")).toBeVisible();
   await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeEnabled();

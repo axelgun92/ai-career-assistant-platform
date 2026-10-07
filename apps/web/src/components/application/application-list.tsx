@@ -7,7 +7,7 @@ import { applicationStatusLabel, followUpStateLabels, outcomeLabels } from "./la
 export const trackerLinks = {
   active: "/applications",
   overdue: "/applications?followUp=overdue",
-  due: "/applications?followUp=due",
+  today: "/applications?followUp=today",
   offers: "/applications?stage=offer",
   closed: "/applications?view=closed",
 } as const;
@@ -16,7 +16,7 @@ export function TrackerSummary({ summary }: { summary: ApplicationTrackerSummary
   const items = [
     { label: "Active", count: summary.active, href: trackerLinks.active },
     { label: "Follow-ups overdue", count: summary.followUpsOverdue, href: trackerLinks.overdue },
-    { label: "Due today", count: summary.followUpsDueToday, href: trackerLinks.due },
+    { label: "Due today", count: summary.followUpsDueToday, href: trackerLinks.today },
     { label: "Interviews scheduled", count: summary.interviewsScheduled, href: null },
     { label: "Offers", count: summary.offers, href: trackerLinks.offers },
     { label: "Closed", count: summary.closed, href: trackerLinks.closed },

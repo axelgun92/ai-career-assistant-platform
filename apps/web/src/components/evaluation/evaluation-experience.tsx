@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CustomerSuccessResults } from "../customer-success/customer-success-results";
 import { createEvaluationPoller } from "./poller";
-import { evaluationFailure, isQueuedTooLong } from "./evaluation-failure";
+import { evaluationFailure } from "./evaluation-failure";
 import { StatusNotices } from "./status-notices";
 import { UsageSummary } from "./usage-summary";
 import { ClassificationBadge, humanize } from "./shared-results";
@@ -74,7 +74,6 @@ export function EvaluationExperience({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pollStopped, setPollStopped] = useState(false);
-  const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const router = useRouter();
   // Set while an evaluation is queued/running, so its completion can refresh
   // server-rendered lifecycle status on the page.
@@ -123,7 +122,6 @@ export function EvaluationExperience({
       onUpdate: (value) => {
         setLoading(false);
         setError(null);
-        setCheckedAt(Date.now());
         if (!value.found) {
           setLatest(null);
           setEvaluation(null);
@@ -278,7 +276,7 @@ export function EvaluationExperience({
         </div>
         <div id="evaluation-status-message" aria-live="polite">
           {!evaluable && !active ? (
-            <p>This opportunity is archived or closed. Restore it to request another evaluation.</p>
+            <p>This opportunity is archived. Restore it to request another evaluation.</p>
           ) : null}
           {notice ? <p className="success-message">{notice}</p> : null}
           {error ? <p className="error-message">{error}</p> : null}
@@ -287,7 +285,8 @@ export function EvaluationExperience({
             failure={failure}
             fallbackCompletedAt={fallbackShown ? formatTimestamp(evaluation?.completedAt) : null}
             hasEarlierCompleted={history.some((item) => !item.isLatest && item.status === "COMPLETED")}
-            queuedTooLong={isQueuedTooLong(latestStatus, history[0]?.createdAt, checkedAt)}
+            queueState={latest?.queueState}
+            evaluable={evaluable}
             isolatedFailure={isolatedFailure}
           />
         </div>

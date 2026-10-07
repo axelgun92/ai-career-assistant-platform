@@ -1,4 +1,7 @@
 import "dotenv/config";
+
+// Opt-in: run integration tests against a separate database.
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 

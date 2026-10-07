@@ -144,7 +144,7 @@ pre {
 }
 
 .evaluation-controls h2,
-.opportunity-hero h1,
+.opportunity-hero .opportunity-hero-title,
 .recommendation-panel h2 {
   margin: 0;
 }
@@ -179,7 +179,7 @@ pre {
   background: #f8fafc;
 }
 
-.opportunity-hero h1 {
+.opportunity-hero .opportunity-hero-title {
   font-size: clamp(2rem, 5vw, 3.5rem);
   line-height: 1.05;
 }

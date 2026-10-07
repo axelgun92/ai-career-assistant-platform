@@ -32,6 +32,8 @@ import {
   type SearchParamsInput,
 } from "@/server/opportunity-query";
 
+export const metadata = { title: "Dashboard" };
+
 function logFailure(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : "UnknownError" });
 }
@@ -93,17 +95,8 @@ export default async function HomePage({
           <p>Search, filter, and prioritize the opportunities you are tracking.</p>
         </div>
         <div className="dashboard-header-actions">
-          <Link href="/applications" className="button-link button-link-secondary">
-            Applications
-          </Link>
-          <Link href="/profile" className="button-link button-link-secondary">
-            Profile &amp; preferences
-          </Link>
-          <Link href="/budget" className="button-link button-link-secondary">
-            Budget
-          </Link>
           <Link href="/opportunities/new" className="button-link">
-            New opportunity
+            Add an opportunity
           </Link>
         </div>
       </div>

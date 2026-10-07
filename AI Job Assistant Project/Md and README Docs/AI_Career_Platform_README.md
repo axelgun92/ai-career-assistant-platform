@@ -224,7 +224,7 @@ The retrieval layer should feed the existing evaluator rather than redesign it.
 
 ## Local Development
 
-Local setup and run instructions will be documented from the current repository state so that commands, environment requirements, migrations, and worker startup steps match the actual implementation.
+Setup, startup, worker operations, deterministic testing and troubleshooting are documented in the repository root `README.md` ("Local Development"), which is kept in sync with the code.
 
 ## Project Status
 

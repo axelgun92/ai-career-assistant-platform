@@ -37,6 +37,7 @@ export const applicationOutcomeOptions = {
 export const followUpFilterOptions = {
   overdue: "Overdue",
   due: "Due now (overdue or today)",
+  today: "Due today",
   upcoming: "Due in the next 7 days",
   none: "No open follow-up",
 } as const;

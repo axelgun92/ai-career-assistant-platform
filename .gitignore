@@ -12,3 +12,6 @@ test-results/
 !.env.example
 
 database/generated/
+
+# Bundled E2E helpers (created and removed by specs)
+database/.e2e-*.mjs

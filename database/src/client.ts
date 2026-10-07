@@ -14,12 +14,10 @@ function createDatabaseClient(): DatabaseClient {
   return new PrismaClient({ adapter });
 }
 
+// One client (and connection pool) per process, in every environment.
+// Repositories call this in their constructors, so creating a client per
+// call would open a pool per repository under `next start`.
 export function getDatabaseClient(): DatabaseClient {
-  const client = globalDatabase.aiCareerDatabaseClient ?? createDatabaseClient();
-
-  if (process.env.NODE_ENV !== "production") {
-    globalDatabase.aiCareerDatabaseClient = client;
-  }
-
-  return client;
+  globalDatabase.aiCareerDatabaseClient ??= createDatabaseClient();
+  return globalDatabase.aiCareerDatabaseClient;
 }

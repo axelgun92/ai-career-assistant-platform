@@ -26,8 +26,10 @@ import {
   readEvaluationWorkerEnvironment,
 } from "@ai-career/shared";
 import { z } from "zod";
+import { aiConfigurationStatus } from "./ai-configuration";
 import { getBudgetService, type EvaluationAdmissionGate } from "./budget-service";
 import { EvaluationApiError } from "./evaluation-errors";
+import { evaluationQueueState } from "./evaluation-queue-state";
 import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-config";
 
 const evaluationRequestSchema = z
@@ -84,8 +86,27 @@ export interface EvaluationServiceDependencies {
   // Product admission gate: request integrity and the budget decision.
   // Optional so evaluator-level tests can run without a database.
   admissionGate?: EvaluationAdmissionGate;
-  semanticConfig: SemanticExecutorConfig;
-  jobMaxAttempts: number;
+  // Execution settings are needed only to queue work. Either give them
+  // directly, or give a resolver that is called only when requesting or
+  // resuming, so reading results never requires AI configuration.
+  semanticConfig?: SemanticExecutorConfig;
+  jobMaxAttempts?: number;
+  resolveExecution?: () => { semanticConfig: SemanticExecutorConfig; jobMaxAttempts: number };
+  now?: () => Date;
+}
+
+// The public evaluation JSON omits stored error messages and provider request
+// IDs; they can hold internal or provider detail. Codes remain.
+function publicStage<Stage extends { errorMessage?: unknown }>(stage: Stage) {
+  const { errorMessage: _errorMessage, ...rest } = stage;
+  return rest;
+}
+
+function publicOperation<Operation extends { errorMessage?: unknown; providerRequestId?: unknown }>(
+  operation: Operation,
+) {
+  const { errorMessage: _errorMessage, providerRequestId: _providerRequestId, ...rest } = operation;
+  return rest;
 }
 
 function validateCustomerSuccessProfile(
@@ -117,6 +138,15 @@ export function createEvaluationService(
   dependencies: EvaluationServiceDependencies,
 ) {
   const gate = dependencies.admissionGate;
+  const now = dependencies.now ?? (() => new Date());
+
+  function execution() {
+    if (dependencies.resolveExecution) return dependencies.resolveExecution();
+    if (!dependencies.semanticConfig || dependencies.jobMaxAttempts === undefined) {
+      throw new Error("Evaluation execution settings are not configured");
+    }
+    return { semanticConfig: dependencies.semanticConfig, jobMaxAttempts: dependencies.jobMaxAttempts };
+  }
 
   async function loadEvaluableOpportunity(opportunityId: string) {
     const opportunity =
@@ -184,6 +214,7 @@ export function createEvaluationService(
     profile: { id: string; version: number };
     resumeDeferralId?: string;
   }) {
+    const { semanticConfig, jobMaxAttempts } = execution();
     const evaluator = createCustomerSuccessEvaluator();
     const enqueueInput = {
       opportunityId: input.opportunityId,
@@ -192,17 +223,17 @@ export function createEvaluationService(
       evaluator,
       executionMetadata: {
         provider: "openai",
-        model: dependencies.semanticConfig.model,
-        maxOutputTokens: dependencies.semanticConfig.maxOutputTokens,
-        semanticCallBudget: dependencies.semanticConfig.callBudget,
+        model: semanticConfig.model,
+        maxOutputTokens: semanticConfig.maxOutputTokens,
+        semanticCallBudget: semanticConfig.callBudget,
         pricingConfigurationVersion:
-          dependencies.semanticConfig.pricing.version,
+          semanticConfig.pricing.version,
         semanticExecutionPolicyVersion:
-          dependencies.semanticConfig.executionPolicy?.version ?? null,
+          semanticConfig.executionPolicy?.version ?? null,
         semanticOperationExecutionPolicy:
-          dependencies.semanticConfig.executionPolicy?.operations ?? null,
+          semanticConfig.executionPolicy?.operations ?? null,
       },
-      maxAttempts: dependencies.jobMaxAttempts,
+      maxAttempts: jobMaxAttempts,
     };
     const queued = (task: { id: string; evaluationId: string; status: string }) => ({
       outcome: "QUEUED" as const,
@@ -308,6 +339,9 @@ export function createEvaluationService(
     async requestEvaluation(opportunityIdValue: string, body: unknown) {
       const opportunityId = z.uuid().parse(opportunityIdValue);
       const request = evaluationRequestSchema.parse(body ?? {});
+      // Fail before any write (including a deferral) when AI evaluation is
+      // not configured.
+      execution();
       const opportunity = await loadEvaluableOpportunity(opportunityId);
 
       const domain = request.domain ?? opportunity.domain;
@@ -367,6 +401,7 @@ export function createEvaluationService(
     async resumeDeferred(deferredIdValue: string) {
       const deferral = await findDeferral(deferredIdValue);
       if (deferral.status !== "DEFERRED") throw deferralNotOpen();
+      execution();
       return resumeDeferredRequest(deferral);
     },
 
@@ -435,13 +470,13 @@ export function createEvaluationService(
         domain: evaluation.domain,
         status: task.status,
         evaluationStatus: evaluation.status,
+        queueState: evaluationQueueState(task, now()),
         task: {
           id: task.id,
           status: task.status,
           attempt: task.attempt,
           maxAttempts: task.maxAttempts,
           errorCode: task.errorCode,
-          errorMessage: task.errorMessage,
         },
         versions: {
           evaluation: evaluation.evaluationVersion,
@@ -452,17 +487,16 @@ export function createEvaluationService(
         },
         startedAt: evaluation.startedAt,
         completedAt: evaluation.completedAt,
-        stages: evaluation.stageResults,
+        stages: evaluation.stageResults.map(publicStage),
         evidence: evaluation.evidenceRecords,
         contradictions: evaluation.contradictions,
         result: evaluation.domainResult,
         recommendation: evaluation.recommendation,
-        operations,
+        operations: operations.map(publicOperation),
         usage: summarizeSemanticUsage(operations),
         // The budget held before the run (when a budget was configured), for
         // showing reserved vs actual cost. Usage and cost are unaffected.
         reservation: gate ? await gate.reservationForEvaluation(evaluationId) : null,
-        error: evaluation.errorMessage,
         history: history.map((item, index) => ({
           evaluationId: item.id,
           isLatest: index === 0,
@@ -483,29 +517,38 @@ export function createEvaluationService(
 export type EvaluationService = ReturnType<typeof createEvaluationService>;
 
 let evaluationService: EvaluationService | undefined;
+let executionSettings: { semanticConfig: SemanticExecutorConfig; jobMaxAttempts: number } | undefined;
+
+// Resolved on first request/resume and cached for the process. Reading
+// results never needs it. A missing or placeholder key is reported as
+// PRODUCTION_CONFIGURATION_MISSING before anything is written.
+function resolveProductionExecution() {
+  if (executionSettings) return executionSettings;
+  const notConfigured = () =>
+    new EvaluationApiError(
+      "PRODUCTION_CONFIGURATION_MISSING",
+      "AI evaluation is not configured. Set OPENAI_API_KEY and the AI settings, then restart the app.",
+      503,
+    );
+  if (aiConfigurationStatus().state !== "configured") throw notConfigured();
+  try {
+    executionSettings = {
+      semanticConfig: semanticExecutorConfigFromEnvironment(),
+      jobMaxAttempts: readEvaluationWorkerEnvironment().EVALUATION_JOB_MAX_ATTEMPTS,
+    };
+  } catch {
+    throw notConfigured();
+  }
+  return executionSettings;
+}
 
 export function getEvaluationService(): EvaluationService {
-  if (!evaluationService) {
-    let semanticConfig;
-    let worker;
-    try {
-      semanticConfig = semanticExecutorConfigFromEnvironment();
-      worker = readEvaluationWorkerEnvironment();
-    } catch {
-      throw new EvaluationApiError(
-        "PRODUCTION_CONFIGURATION_MISSING",
-        "Production semantic execution is not configured",
-        503,
-      );
-    }
-    evaluationService = createEvaluationService({
-      queries: new PrismaEvaluationQueryRepository(),
-      evaluations: new PrismaEvaluationRepository(),
-      tasks: new PrismaEvaluationTaskRepository(),
-      semanticConfig,
-      jobMaxAttempts: worker.EVALUATION_JOB_MAX_ATTEMPTS,
-      admissionGate: getBudgetService().gate,
-    });
-  }
+  evaluationService ??= createEvaluationService({
+    queries: new PrismaEvaluationQueryRepository(),
+    evaluations: new PrismaEvaluationRepository(),
+    tasks: new PrismaEvaluationTaskRepository(),
+    resolveExecution: resolveProductionExecution,
+    admissionGate: getBudgetService().gate,
+  });
   return evaluationService;
 }

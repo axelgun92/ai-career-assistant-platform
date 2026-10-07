@@ -1,14 +1,14 @@
-import Link from "next/link";
 import { ManualOpportunityForm } from "@/components/manual-opportunity-form";
+
+export const metadata = { title: "New opportunity" };
 
 export default function NewOpportunityPage() {
   return (
     <main>
-      <Link href="/">← All opportunities</Link>
       <h1>New opportunity</h1>
       <p>
-        Enter raw opportunity text. The platform preserves the source before
-        creating a normalized, traceable Opportunity record.
+        Paste the job posting. The original text is kept as the source, and the
+        opportunity appears on your dashboard ready to evaluate.
       </p>
       <ManualOpportunityForm />
     </main>

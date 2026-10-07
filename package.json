@@ -23,7 +23,12 @@
     "profile:import:customer-success": "tsx apps/web/src/server/profile-import/import-customer-success-profile-cli.ts",
     "prisma:format": "prisma format --config database/prisma.config.ts",
     "prisma:validate": "prisma validate --config database/prisma.config.ts",
-    "prisma:generate": "prisma generate --config database/prisma.config.ts"
+    "prisma:generate": "prisma generate --config database/prisma.config.ts",
+    "db:migrate": "prisma migrate deploy --config database/prisma.config.ts",
+    "db:status": "prisma migrate status --config database/prisma.config.ts",
+    "db:verify-migrations": "tsx database/scripts/verify-migrations.ts",
+    "app:setup": "pnpm prisma:generate && pnpm db:migrate",
+    "app:doctor": "tsx apps/web/src/server/doctor-cli.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

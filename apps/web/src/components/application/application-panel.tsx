@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ApplicationCreationMode, OpportunityLifecycleState } from "@ai-career/core";
 import { Contacts } from "./contacts";
 import { FollowUps } from "./follow-ups";
@@ -79,6 +80,9 @@ export function ApplicationPanel(props: ApplicationPanelProps) {
           <Contacts application={application} readOnly={readOnly} />
           <Notes application={application} readOnly={readOnly} />
           <Timeline application={application} />
+          <p>
+            <Link href="/applications">View all applications</Link>
+          </p>
         </>
       )}
     </section>

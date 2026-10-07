@@ -14,7 +14,7 @@ import { escapeLikePattern } from "./opportunity-list-repository";
 export const applicationListMaximumPageSize = 100;
 
 export type ApplicationListView = "active" | "closed" | "all";
-export type ApplicationFollowUpFilter = "overdue" | "due" | "upcoming" | "none";
+export type ApplicationFollowUpFilter = "overdue" | "due" | "today" | "upcoming" | "none";
 export type ApplicationListSort = "next-action" | "applied-newest" | "applied-oldest" | "updated" | "company";
 
 export interface ApplicationListFilters {
@@ -92,6 +92,8 @@ function followUpCondition(filter: ApplicationFollowUpFilter, today: string): Pr
       return Prisma.sql`nf."dueOn" < ${sqlDate(today)}`;
     case "due":
       return Prisma.sql`nf."dueOn" <= ${sqlDate(today)}`;
+    case "today":
+      return Prisma.sql`nf."dueOn" = ${sqlDate(today)}`;
     case "upcoming":
       return Prisma.sql`nf."dueOn" > ${sqlDate(today)} AND nf."dueOn" <= ${sqlDate(addDays(today, 7))}`;
     case "none":
@@ -212,10 +214,10 @@ export class PrismaApplicationListRepository {
       `;
       return row?.total ?? 0;
     };
-    const [active, followUpsOverdue, followUpsDue, offers, closed, interviews] = await Promise.all([
+    const [active, followUpsOverdue, followUpsDueToday, offers, closed, interviews] = await Promise.all([
       count({ view: "active" }),
       count({ view: "active", followUp: "overdue" }),
-      count({ view: "active", followUp: "due" }),
+      count({ view: "active", followUp: "today" }),
       count({ view: "active", stages: ["OFFER"] }),
       count({ view: "closed" }),
       this.database.$queryRaw<Array<{ total: number }>>`
@@ -228,7 +230,7 @@ export class PrismaApplicationListRepository {
     return {
       active,
       followUpsOverdue,
-      followUpsDueToday: followUpsDue - followUpsOverdue,
+      followUpsDueToday,
       interviewsScheduled: interviews[0]?.total ?? 0,
       offers,
       closed,

@@ -75,7 +75,7 @@ export function ManualOpportunityForm() {
 
       {error ? <p className="error-message" role="alert">{error}</p> : null}
       <button type="submit" disabled={submitting}>
-        {submitting ? "Saving…" : "Save and normalize"}
+        {submitting ? "Saving…" : "Save opportunity"}
       </button>
     </form>
   );

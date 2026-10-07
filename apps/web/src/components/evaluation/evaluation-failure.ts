@@ -25,7 +25,36 @@ const messagesByCode: Record<string, string> = {
     "The selected profile does not contain valid evaluation preferences.",
   DOMAIN_UNSUPPORTED: "This opportunity's domain cannot be evaluated by the worker.",
   DATABASE_UNAVAILABLE: "The database was unavailable while the evaluation was running.",
+  EVALUATION_LEASE_EXPIRED:
+    "The evaluation worker stopped before this evaluation finished, and no attempts remained. You may request another evaluation.",
+  WORKER_INTERRUPTED: "The evaluation worker was interrupted before this evaluation finished.",
+  STAGE_EXECUTION_FAILED: "An evaluation stage could not be completed.",
+  EVALUATION_STAGE_FAILED: "An evaluation stage could not be completed.",
+  EVALUATION_FAILED: "The evaluation could not be completed.",
+  EVALUATION_WORKER_FAILED: "The evaluation worker hit an unexpected error.",
+  EVALUATION_NOT_FOUND: "The evaluation worker could not find this evaluation.",
+  SEMANTIC_EXECUTION_FAILED: "An AI step could not be completed.",
+  SEMANTIC_EXECUTION_POLICY_INVALID: "The AI execution configuration is invalid.",
 };
+
+// Code families produced with a variable suffix.
+function familyMessage(code: string): string | null {
+  const http = /^PROVIDER_HTTP_(\d{3})$/.exec(code);
+  if (http) {
+    const status = Number(http[1]);
+    if (status === 401 || status === 403) {
+      return "The AI provider rejected the API key or denied access. Check the OpenAI API key configuration.";
+    }
+    if (status === 429) return "The AI provider rate-limited the request.";
+    if (status >= 500) return "The AI provider had a server error.";
+    return "The AI provider rejected the request.";
+  }
+  if (code === "OPERATION_METADATA_PERSISTENCE_DATABASE_UNAVAILABLE") return messagesByCode.DATABASE_UNAVAILABLE!;
+  if (code.startsWith("OPERATION_METADATA_PERSISTENCE_")) {
+    return "The evaluation's AI usage could not be recorded, so the run was stopped.";
+  }
+  return null;
+}
 
 export interface EvaluationFailurePresentation {
   code: string;
@@ -40,20 +69,7 @@ export function evaluationFailure(
     code,
     message:
       messagesByCode[code] ??
+      familyMessage(code) ??
       "The evaluation stopped before it could produce a validated result.",
   };
-}
-
-// A queued task the worker has not started within this window usually means
-// no evaluation worker is running.
-export const queuedTooLongMs = 60_000;
-
-export function isQueuedTooLong(
-  status: string | undefined,
-  queuedAt: string | undefined,
-  checkedAt: number | null,
-): boolean {
-  if (status !== "PENDING" || !queuedAt || checkedAt === null) return false;
-  const queued = Date.parse(queuedAt);
-  return Number.isFinite(queued) && checkedAt - queued > queuedTooLongMs;
 }

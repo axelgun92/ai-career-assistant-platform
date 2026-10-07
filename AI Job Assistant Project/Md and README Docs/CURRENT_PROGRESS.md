@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 9, 2026
+**Last updated:** October 10, 2026
 
 ## Current Objective
 
@@ -360,6 +360,83 @@ An application-tracking layer beside the opportunity lifecycle. The evaluator, r
   - E2E: `applications.spec.ts`;
   - three racing waits fixed in `evaluation-results.spec.ts` (test-only).
 
+#### Completed — Task 9: Final setup, operations, integration and acceptance (October 10, 2026)
+
+The manual-input product is ready to use as one product. It is ready for the evaluator freeze and the final integration checkpoint; scraper/retrieval work has not started. No evaluator semantics, stages, routing, prompts or recommendation logic changed.
+
+- **Setup and operations** (the root `README.md` "Local Development" section is now the authoritative guide):
+  - new scripts:
+    - `pnpm app:setup` (generate + migrate)
+    - `pnpm db:migrate`
+    - `pnpm db:status`
+    - `pnpm db:verify-migrations`
+    - `pnpm app:doctor`
+  - The `app:` prefix is needed because `pnpm setup` and `pnpm doctor` are built-in pnpm commands.
+  - `pnpm app:doctor` is strictly read-only (SELECTs and environment checks; never prints values; never runs recovery). It reports:
+    - configuration by variable name;
+    - database, migrations and the generated client;
+    - the active profile;
+    - whether a worker is connected;
+    - the queue, including leases that expired, reported without claiming the worker stopped.
+  - `/api/health` now checks the database (503 when unavailable) and reports whether AI is configured.
+  - `.env.example` is grouped (required, real AI, optional, test-only), and its OpenAI key is blank.
+- **AI configuration:**
+  - Reading results and history no longer needs an OpenAI key; only requesting or resuming an evaluation does.
+  - A missing or placeholder key returns 503 `PRODUCTION_CONFIGURATION_MISSING` before anything is written.
+  - The worker refuses to start with a named-variable message.
+- **Worker and queue:**
+  - Single-worker advisory lock: a second worker exits non-zero.
+  - Worker-owned recovery of tasks orphaned on their final attempt (`EVALUATION_LEASE_EXPIRED`). It runs only under the lock and only while idle, so it can never fail a live run.
+  - Error classes:
+    - transient infrastructure errors back off (capped at 30 s) and continue;
+    - configuration errors and unexpected/fatal errors exit non-zero instead of looping;
+    - evaluation failures are persisted as before.
+  - The lifecycle sweep runs every 5 minutes.
+  - Sanitized operational logs.
+  - Graceful stop on the first Ctrl-C; immediate exit on the second.
+- **Honest queue states** (server time): `QUEUED`, `QUEUED_LONG`, `RUNNING`, `RUNNING_STALE`, `FAILED`, `COMPLETED`. `RUNNING_STALE` means the lease expired; the UI says the run may still be in progress or the worker may have stopped.
+- **Safe errors:**
+  - The public evaluation JSON no longer returns stored error messages or provider request IDs.
+  - Every failure code the system produces has a safe message, including `PROVIDER_HTTP_*` and `OPERATION_METADATA_PERSISTENCE_*`.
+  - "Request another evaluation" is offered only when the opportunity is evaluable.
+- **Production start:** one Prisma client per process in every environment (previously one per repository under `next start`).
+- **Navigation and coherence:**
+  - a shared header (Dashboard, Applications, New opportunity, Profile & preferences, Budget) with a skip link and current-section marking;
+  - a not-found page and an error page;
+  - page titles;
+  - a visible opportunity title (h1) on the detail page;
+  - a bad id is a 404, while a load failure is an error page.
+- **Labels and copy:**
+  - "Application: …" badges on dashboard rows;
+  - a "Due today" tracker tile that links to a matching `followUp=today` view;
+  - readable lifecycle and provenance labels ("Found via", "Manual entry (manual-input)");
+  - "Save opportunity" button;
+  - the interview status selection is kept after "Load latest".
+- **Migrations:** `pnpm db:verify-migrations` applies all 11 migrations to a temporary database. It confirms they are recorded in order and that the only schema difference is the known `Recommendation.evidenceReferences` default line, then drops the database.
+- **Test infrastructure:**
+  - opt-in `TEST_DATABASE_URL` (integration and E2E) and `PLAYWRIGHT_CHROMIUM_EXECUTABLE`;
+  - new final Playwright project `acceptance`;
+  - E2E helper commands `expire-lease` and `run-recovery` (the recovery command takes the lock).
+- **Tests added:**
+  - unit: `worker-operations.test.ts` (classifier, loop, AI configuration, doctor) and `navigation.test.tsx`; queue-state and failure-code cases in `evaluation-experience-correctness.test.tsx`;
+  - integration: `worker-recovery.test.ts` (recovery, lock, doctor makes no writes, public JSON shape, reads without AI) and `product-acceptance.test.ts`, one connected scenario:
+    1. capture and provenance;
+    2. profile pinning;
+    3. budget deferral and resume;
+    4. deterministic worker completion: recommendation, evidence, usage and cost;
+    5. dashboard state;
+    6. lifecycle and application tracking;
+    7. reevaluation under a newly active profile;
+    8. history;
+  - E2E: `golden-path.spec.ts` (golden path, plus recovery: polling resumes after a refresh, the stale-lease copy, worker recovery, and the 404 page).
+- **Verification (no paid provider calls):**
+  - typecheck, lint, Prisma validate pass;
+  - `db:verify-migrations` passes;
+  - unit 896/896, integration 138/138;
+  - build and a `next start` health smoke check pass;
+  - E2E 23/23;
+  - `pnpm app:doctor` reports no blocking problems.
+
 #### Remaining main-product order
 
 Revised roadmap:
@@ -368,7 +445,8 @@ Revised roadmap:
 - Task 6 — Budget Ledger + Deferral: done (see above).
 - Task 7 — Product UI: dashboard, search, sort, filters, analytics polish: done (see above).
 - Task 8 — Application Tracker: done (see above).
-- Task 9 — Final setup, operations, integration, E2E.
+- Task 9 — Final setup, operations, integration, E2E: done (see above).
+- Next: freeze the evaluator, then the deliberate final integration checkpoint (see the final integration checklist in `HANDOFFS.md`), then retrieval/scraper work.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 
 #### Known issues found during main-product work

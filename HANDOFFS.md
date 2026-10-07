@@ -442,6 +442,77 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Keep lifecycle user actions on the guarded path (Opportunity row lock, then guard, then `applyUserActionInTransaction`). Bypassing it could leave a planned application under an Applied lifecycle.
 
+### Handoff: Task 9 — Operations Hardening and Final Integration Checklist (Review Requested)
+
+**Date:** 2026-10-10  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (review requested at the final integration checkpoint)  
+**Status:** Verification Needed (narrow shared-persistence additions)
+
+#### Completed
+
+- Setup and operations tooling: `pnpm app:setup`, `pnpm db:migrate`, `pnpm db:status`, `pnpm db:verify-migrations`, and the read-only `pnpm app:doctor`.
+- A database-checking `/api/health`.
+- A worker hardened with a single-worker lock, idle-only recovery, classified errors and graceful shutdown.
+- Honest queue states and safe public error output.
+- Navigation and coherence fixes.
+- Whole-product acceptance tests (integration and E2E).
+- No evaluator semantics, stages, routing, prompts, recommendation logic, evidence/provenance contracts, pricing or usage recording changed.
+
+#### Files Changed (Codex-relevant)
+
+- **⚠ `database/src/evaluation-task-repository.ts` (additive; review requested):**
+  - `failExpiredExhaustedTasks(now)` fails tasks that are `RUNNING`, have `leaseExpiresAt < now`, and have `attempt >= maxAttempts`. These are tasks `claimNext` can never pick up again. It also fails their running stages (`WORKER_INTERRUPTED`) and their evaluation, with code `EVALUATION_LEASE_EXPIRED`. It is called only by the product worker while it holds the single-worker lock and has no task in flight.
+  - `readQueueSnapshot` / `queueSnapshot` are read-only counts.
+  - `claimNext`, `complete`, `fail`, `enqueue` and `enqueueAdmitted` are unchanged.
+- **⚠ `database/src/evaluation-worker-lock.ts` (new):**
+  - a session-level advisory lock (`pg_try_advisory_lock(41220, 1)`) on a dedicated `pg` connection, held for the worker's lifetime;
+  - `isEvaluationWorkerConnected` reads `pg_locks` only.
+- **⚠ `database/src/client.ts`:** one Prisma client per process in every environment. Previously the client was cached only outside production, so `next start` opened a pool per repository.
+- **Product worker:**
+  - `apps/web/src/server/evaluation-worker-cli.ts`, `worker-loop.ts`, `worker-errors.ts`;
+  - `createEvaluationWorker`/`runOnce` (`packages/evaluation`) is unchanged.
+- **Public evaluation API (`evaluation-service.ts`):**
+  - no longer returns `task.errorMessage`, stage `errorMessage`, operation `errorMessage`/`providerRequestId`, or `error`;
+  - adds `queueState`;
+  - resolves AI configuration lazily, only to request or resume.
+  - Persisted data is unchanged.
+
+#### Current Contract / Assumptions
+
+- **Run exactly one worker** (now enforced).
+- Leases are 300 s with no renewal, while a full evaluation can take longer (16 calls × 120 s). An expired lease is shown as `RUNNING_STALE`, "may still be in progress, or the worker may have stopped". It is never reported as a stopped worker.
+- With one worker, `claimNext`'s existing reclaim of expired leases cannot take a live run.
+
+#### Documented, Not Fixed (queue/evaluator design — for Codex)
+
+- Lease renewal (heartbeat) and claim ownership in `complete`/`fail` are missing. Required before running more than one worker.
+- `Evaluation.status` can stay PENDING/RUNNING when a task fails before `finalize` (for example a policy mismatch). Product reads use the task status.
+- Task-level retries are effectively unused: every worker error is non-retryable, and `maxAttempts` only bounds lease reclaims.
+
+#### Final Integration Checklist (all carried forward unchanged)
+
+1. Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change (narrow; `enqueue()` behaviour-identical; no evaluator-semantic change).
+2. Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered (no worker-side cancellation added).
+3. Task 7 dashboard read dependency on `opportunityPriority.band`, `hardFilters.role.classification` and `companyAlignment.alignment.customerSegment.classification` from the persisted Customer Success result.
+4. Task 8 guarded lifecycle path (`applyUserActionInTransaction`, `pendingUserActions`, `applyLifecycleActionGuarded`).
+5. Core executor lifecycle guard review (earlier handoff).
+6. The `Recommendation.evidenceReferences` default drift decision. `pnpm db:verify-migrations` confirms it is the only schema/migration difference.
+7. Task 9 additions above (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
+8. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
+
+#### Before Scraper Work
+
+- See README "Ingestion boundary".
+- Every source must converge on adapter → `RawOpportunity` → `SourceRecord` → per-source normalizer → `Opportunity` + `FieldProvenance`.
+- Manual-only points to generalize:
+  - the normalizer;
+  - company matching;
+  - a unique `(source, externalId)`;
+  - re-observation;
+  - the evaluator reading the oldest `SourceRecord`;
+  - the unused `DuplicateReference`, discovery and deduplication packages.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { connection } from "next/server";
 import { z } from "zod";
 import { ProfileEditor } from "@/components/profile/profile-editor";
@@ -7,6 +6,8 @@ import { StartingProfileButton } from "@/components/profile/starting-profile-but
 import type { ProfileDocument } from "@/components/profile/structured-fields";
 import { alexandraNugentCustomerSuccessProfile } from "@/server/profile-import/alexandra-nugent-customer-success-profile";
 import { getProfileService, structuredFieldDefaults } from "@/server/profile-service";
+
+export const metadata = { title: "Profile & preferences" };
 
 const savedMessages: Record<string, string> = {
   created: "Saved as a new version. It is not active: new evaluations still use the active version.",
@@ -37,7 +38,6 @@ export default async function ProfilePage({
     });
     return (
       <main className="profile-page">
-        <Link href="/">← All opportunities</Link>
         <h1>Profile &amp; preferences</h1>
         <p className="error-message" role="alert">
           Profiles could not be loaded. Check the database connection and try again.
@@ -49,7 +49,6 @@ export default async function ProfilePage({
   if (overview.versions.length === 0) {
     return (
       <main className="profile-page">
-        <Link href="/">← All opportunities</Link>
         <h1>Profile &amp; preferences</h1>
         <p className="empty-state">
           No profile exists yet. Evaluations need a profile with your Customer Success preferences.
@@ -70,7 +69,6 @@ export default async function ProfilePage({
 
   return (
     <main className="profile-page">
-      <Link href="/">← All opportunities</Link>
       <ProfileHeader
         active={
           overview.active

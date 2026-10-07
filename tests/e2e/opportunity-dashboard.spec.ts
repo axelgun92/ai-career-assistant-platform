@@ -52,13 +52,13 @@ test("dashboard lists a manually entered opportunity with the domain preset", as
     .getByLabel("Raw opportunity or job-description text")
     .fill("Customer Success Manager. Remote. Own onboarding and adoption.");
   await page.getByLabel("Title (optional)").fill(title);
-  await page.getByRole("button", { name: "Save and normalize" }).click();
+  await page.getByRole("button", { name: "Save opportunity" }).click();
 
   await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]{36}$/);
   opportunityIds.push(page.url().split("/").pop() ?? "");
   await expect(page.getByRole("button", { name: "Evaluate Customer Success fit" })).toBeVisible();
 
-  await page.getByRole("link", { name: "← All opportunities" }).click();
+  await page.getByRole("link", { name: "← Back to dashboard" }).click();
   await expect(page).toHaveURL(/\/$/);
   const row = page.getByRole("listitem").filter({ hasText: title });
   await expect(row).toContainText("Not evaluated");
@@ -73,7 +73,7 @@ test("manual entry shows server validation errors next to the field", async ({ p
   const rawText = page.getByLabel("Raw opportunity or job-description text");
   // Whitespace satisfies the browser's required check but not server validation.
   await rawText.fill("   ");
-  await page.getByRole("button", { name: "Save and normalize" }).click();
+  await page.getByRole("button", { name: "Save opportunity" }).click();
 
   // Next.js also renders a route announcer with role="alert"; match ours by text.
   await expect(
@@ -121,7 +121,7 @@ test("manual entry preserves and shows source provenance", async ({ page }) => {
   await page.getByLabel("Application URL (optional)").fill("https://jobs.example.com/apply/777");
   await page.getByLabel("Source job ID (optional)").fill("REQ-777");
   await page.getByLabel(/Where you found it/).fill("LinkedIn");
-  await page.getByRole("button", { name: "Save and normalize" }).click();
+  await page.getByRole("button", { name: "Save opportunity" }).click();
 
   await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]{36}$/);
   const opportunityId = page.url().split("/").pop() ?? "";

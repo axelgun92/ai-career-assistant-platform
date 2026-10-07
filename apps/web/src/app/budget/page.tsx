@@ -8,6 +8,8 @@ import { formatDateTime } from "@/components/budget/budget-format";
 import type { BudgetStatusView, DeferralView } from "@/components/budget/types";
 import { getBudgetService } from "@/server/budget-service";
 import { getProfileService } from "@/server/profile-service";
+
+export const metadata = { title: "Budget" };
 import { semanticExecutorConfigFromEnvironment } from "@/server/semantic-execution-config";
 
 function pricingCurrency(): string {
@@ -40,7 +42,6 @@ export default async function BudgetPage() {
     });
     return (
       <main className="budget-page">
-        <Link href="/">← All opportunities</Link>
         <h1>Budget &amp; deferred evaluations</h1>
         <p className="error-message" role="alert">
           The budget could not be loaded. Check the database connection and try again.
@@ -55,7 +56,6 @@ export default async function BudgetPage() {
 
   return (
     <main className="budget-page">
-      <Link href="/">← All opportunities</Link>
       <h1>Budget &amp; deferred evaluations</h1>
       <p>
         Track AI evaluation spend against a monthly budget. When the budget has no room, evaluations are deferred

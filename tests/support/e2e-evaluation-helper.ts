@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {
+  EvaluationWorkerLock,
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
   PrismaOpportunityLifecycleRepository,
@@ -154,10 +155,45 @@ try {
       });
     } else {
       const ageSeconds = Number(process.argv[4] ?? "300");
-      await database.evaluation.update({
-        where: { id: latest.id },
-        data: { createdAt: new Date(Date.now() - ageSeconds * 1000) },
-      });
+      const createdAt = new Date(Date.now() - ageSeconds * 1000);
+      await database.evaluation.update({ where: { id: latest.id }, data: { createdAt } });
+      await database.evaluationTask.update({ where: { evaluationId: latest.id }, data: { createdAt } });
+    }
+  } else if (command === "expire-lease") {
+    // Test data only: the state a worker leaves when it dies during the final
+    // attempt — RUNNING, no attempts left, lease expired, a stage mid-run.
+    const opportunityId = process.argv[3]!;
+    const latest = await database.evaluation.findFirst({
+      where: { opportunityId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, task: { select: { maxAttempts: true } } },
+    });
+    if (!latest?.task) throw new Error("No queued evaluation exists for the opportunity");
+    const past = new Date(Date.now() - 10 * 60_000);
+    await database.evaluationTask.update({
+      where: { evaluationId: latest.id },
+      data: {
+        status: "RUNNING",
+        attempt: latest.task.maxAttempts,
+        claimedAt: past,
+        startedAt: past,
+        leaseExpiresAt: new Date(Date.now() - 60_000),
+      },
+    });
+    await database.evaluation.update({ where: { id: latest.id }, data: { status: "RUNNING", startedAt: past } });
+    await database.stageResult.updateMany({
+      where: { evaluationId: latest.id, position: 0 },
+      data: { status: "RUNNING", startedAt: past },
+    });
+  } else if (command === "run-recovery") {
+    // The worker's own recovery step, under the single-worker lock.
+    const lock = new EvaluationWorkerLock();
+    if (!(await lock.acquire())) throw new Error("Another evaluation worker holds the lock");
+    try {
+      const recovered = await new PrismaEvaluationTaskRepository().failExpiredExhaustedTasks();
+      process.stdout.write(String(recovered.length));
+    } finally {
+      await lock.release();
     }
   } else if (command === "cleanup") {
     const opportunityId = process.argv[3];

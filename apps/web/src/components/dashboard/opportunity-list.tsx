@@ -21,7 +21,7 @@ function ApplicationBadges({ opportunity }: { opportunity: Row }) {
   return (
     <>
       <span className="status-label status-label-application">
-        {applicationStatusLabel(application.stage, application.outcome)}
+        Application: {applicationStatusLabel(application.stage, application.outcome)}
       </span>
       {application.nextFollowUpOn ? (
         <span className={overdue ? "status-label status-label-overdue" : "status-label"}>

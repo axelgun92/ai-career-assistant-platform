@@ -14,3 +14,4 @@ export * from "./deferred-evaluation-repository";
 export * from "./opportunity-dashboard-repository";
 export * from "./application-repository";
 export * from "./application-list-repository";
+export * from "./evaluation-worker-lock";

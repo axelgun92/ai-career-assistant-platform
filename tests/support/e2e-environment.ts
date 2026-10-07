@@ -1,6 +1,7 @@
 // Deterministic E2E environment shared by the Playwright web server and the
 // E2E worker helper, so both build the same semantic execution policy. Values
-// already set in the process environment take precedence, as before.
+// already set in the process environment take precedence, as before; an
+// empty value or the old example placeholder counts as unset.
 export const e2eEnvironmentDefaults = {
   OPENAI_API_KEY: "deterministic-e2e-key",
   AI_MODEL: "gpt-5.6-terra",
@@ -19,7 +20,7 @@ export function e2eEnvironment(
   return Object.fromEntries(
     Object.entries(e2eEnvironmentDefaults).map(([name, value]) => [
       name,
-      environment[name] ?? value,
+      environment[name] && environment[name] !== "YOUR_OPENAI_API_KEY" ? environment[name] : value,
     ]),
   ) as Record<keyof typeof e2eEnvironmentDefaults, string>;
 }
