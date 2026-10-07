@@ -1174,3 +1174,156 @@ blockquote {
 .filter-group-details > legend {
   grid-column: 1 / -1;
 }
+
+/* Application tracker */
+.application-panel {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.application-panel h2 {
+  margin: 0 0 0.75rem;
+}
+
+.application-section {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.application-section h3 {
+  margin: 0 0 0.6rem;
+}
+
+.application-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.application-summary dt {
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.application-summary dd {
+  margin: 0.2rem 0 0;
+}
+
+.status-label-application {
+  border-color: #1d4ed8;
+  color: #1e3a8a;
+  background: #eff6ff;
+}
+
+.status-label-overdue {
+  border-color: #b91c1c;
+  color: #7f1d1d;
+  background: #fef2f2;
+}
+
+.stage-controls,
+.start-tracking {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-top: 0;
+}
+
+.inline-form label {
+  flex: 1 1 12rem;
+}
+
+.close-application,
+.correct-applied-date,
+.add-contact,
+.add-interview {
+  margin-top: 0.5rem;
+}
+
+.close-application form,
+.add-contact form,
+.add-interview form {
+  margin-top: 0.75rem;
+}
+
+.next-action {
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid #1d4ed8;
+  background: #eff6ff;
+}
+
+.next-action-overdue {
+  border-left-color: #b91c1c;
+  background: #fef2f2;
+}
+
+.follow-up-list,
+.note-list,
+.contact-list,
+.interview-list,
+.application-timeline,
+.blocked-actions {
+  display: grid;
+  gap: 0.6rem;
+  padding-left: 0;
+  list-style: none;
+}
+
+.follow-up-list li,
+.contact,
+.interview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.note-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.application-timeline li {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) 1fr;
+  gap: 0.75rem;
+}
+
+.application-timeline time {
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.conflict-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.conflict-notice p {
+  margin: 0;
+}
+
+.application-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.application-table th,
+.application-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+}

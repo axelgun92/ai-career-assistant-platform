@@ -11,6 +11,15 @@ import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
 import { getProfileService } from "@/server/profile-service";
 import { getBudgetService } from "@/server/budget-service";
 import { toDeferralView } from "@/components/budget/deferral-view";
+import { ApplicationPanel } from "@/components/application/application-panel";
+import { toApplicationView } from "@/components/application/types";
+import { getApplicationStore } from "@/server/application-service";
+import {
+  applicationCreationModes,
+  reopenRefusal,
+  reopenTarget,
+  utcToday,
+} from "@ai-career/core";
 
 function display(value: unknown): string {
   if (value === null || value === undefined || value === "") {
@@ -73,6 +82,24 @@ export default async function OpportunityPage({
         .catch(() => null)
     : null;
 
+  const tracking = await Promise.all([
+    getApplicationStore().getByOpportunity(detail.opportunity.id),
+    getApplicationStore().trackingContext(detail.opportunity.id),
+  ]).catch((error: unknown) => {
+    console.error("Application could not be loaded", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return null;
+  });
+  const [application, trackingContext] = tracking ?? [null, null];
+  const reopenTo = application?.stage === "CLOSED" ? reopenTarget(application.events) : null;
+  const reopenRefused = reopenTo && trackingContext ? reopenRefusal(reopenTo, trackingContext.opportunityStatus) : null;
+  const reopenBlockedReason = reopenRefused === "APPLICATION_ALREADY_SUBMITTED"
+    ? "This opportunity is already marked as applied, so this plan cannot be reopened."
+    : reopenRefused
+      ? "Restore the opportunity before reopening this plan."
+      : null;
+
   const normalizedFields = [
     ["Lifecycle", detail.opportunity.status],
     ["Domain", detail.opportunity.domain],
@@ -111,6 +138,19 @@ export default async function OpportunityPage({
           opportunityId={detail.opportunity.id}
           statusLabel={formatLifecycle(lifecycle.status)}
           availableActions={lifecycle.availableActions}
+          blockedActions={lifecycle.blockedActions}
+        />
+      ) : null}
+
+      {trackingContext ? (
+        <ApplicationPanel
+          opportunityId={detail.opportunity.id}
+          opportunityStatus={trackingContext.opportunityStatus}
+          application={application ? toApplicationView(application) : null}
+          modes={applicationCreationModes(trackingContext.opportunityStatus)}
+          effectiveAppliedOn={trackingContext.effectiveAppliedOn}
+          reopenBlockedReason={reopenBlockedReason}
+          today={utcToday()}
         />
       ) : null}
 

@@ -93,6 +93,9 @@ export default async function HomePage({
           <p>Search, filter, and prioritize the opportunities you are tracking.</p>
         </div>
         <div className="dashboard-header-actions">
+          <Link href="/applications" className="button-link button-link-secondary">
+            Applications
+          </Link>
           <Link href="/profile" className="button-link button-link-secondary">
             Profile &amp; preferences
           </Link>

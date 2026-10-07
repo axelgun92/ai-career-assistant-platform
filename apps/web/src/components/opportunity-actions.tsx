@@ -16,10 +16,13 @@ export function OpportunityActions({
   opportunityId,
   statusLabel,
   availableActions,
+  blockedActions = [],
 }: {
   opportunityId: string;
   statusLabel: string;
   availableActions: OpportunityUserAction[];
+  // Allowed by the lifecycle but blocked by the application record.
+  blockedActions?: Array<{ action: OpportunityUserAction; reason: string }>;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<OpportunityUserAction | null>(null);
@@ -68,6 +71,15 @@ export function OpportunityActions({
             </button>
           ))}
         </div>
+      ) : null}
+      {blockedActions.length ? (
+        <ul className="blocked-actions">
+          {blockedActions.map((blocked) => (
+            <li key={blocked.action} className="field-help">
+              {actionLabels[blocked.action]} — {blocked.reason}
+            </li>
+          ))}
+        </ul>
       ) : null}
       {error ? <p className="error-message" role="alert">{error}</p> : null}
     </section>

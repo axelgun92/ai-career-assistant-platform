@@ -41,6 +41,7 @@ function item(overrides: Partial<OpportunityListItem> = {}): OpportunityListItem
     priorityBand: null,
     roleFamily: null,
     customerSegment: null,
+    application: null,
     ...overrides,
   };
 }
@@ -127,6 +128,24 @@ describe("opportunity rows", () => {
     expect(visible).toContain("Acme · Remote");
   });
 
+  it("shows the application stage or outcome and the next follow-up, without cluttering untracked rows", () => {
+    const visible = text(renderToStaticMarkup(
+      <OpportunityList
+        opportunities={[
+          item({ id: "a", status: "APPLIED", application: { stage: "SCREENING", outcome: null, nextFollowUpOn: "2026-10-01", nextFollowUpState: "OVERDUE" } }),
+          item({ id: "b", status: "APPLIED", application: { stage: "CLOSED", outcome: "REJECTED", nextFollowUpOn: "2026-10-20", nextFollowUpState: "LATER" } }),
+          item({ id: "c", status: "APPLIED" }),
+          item({ id: "d", status: "SAVED" }),
+        ]}
+      />,
+    ));
+    expect(visible).toContain("Recruiter screen");
+    expect(visible).toContain("Follow-up overdue · 2026-10-01");
+    expect(visible).toContain("Rejected by employer");
+    expect(visible).toContain("Next follow-up 2026-10-20");
+    expect(visible.match(/Not tracked yet/g)).toHaveLength(1);
+  });
+
   it("never links unsafe application URLs and says when salary is not stated", () => {
     const markup = renderToStaticMarkup(
       <OpportunityList opportunities={[item({ applicationUrl: "javascript:alert(1)" })]} />,
@@ -171,6 +190,7 @@ const summary: DashboardSummary = {
   discoveredLast30Days: 15,
   bySourceType: [{ sourceType: "MANUAL", count: 18 }, { sourceType: null, count: 2 }],
   byPriorityBand: [{ band: "VERY_HIGH", count: 2 }, { band: "LOW", count: 6 }, { band: null, count: 4 }],
+  followUpsDue: 3,
 };
 
 describe("dashboard summary", () => {
@@ -181,12 +201,14 @@ describe("dashboard summary", () => {
     expect(markup).toContain(`aria-label="Deferred for budget: 2" href="${attentionLinks.deferred}"`);
     expect(markup).toContain(`aria-label="Evaluation failed: 1" href="${attentionLinks.failed}"`);
     expect(markup).toContain(`aria-label="In progress: 2" href="${attentionLinks.inProgress}"`);
+    expect(markup).toContain(`aria-label="Follow-ups due: 3" href="${attentionLinks.followUpsDue}"`);
     expect(attentionLinks).toEqual({
       notEvaluated: "/?eval=none",
       deferred: "/?view=all&eval=deferred",
       failed: "/?eval=failed",
       recommendedApply: "/?view=triage&rec=apply",
       inProgress: "/?view=all&eval=queued&eval=running",
+      followUpsDue: "/applications?followUp=due",
     });
   });
 

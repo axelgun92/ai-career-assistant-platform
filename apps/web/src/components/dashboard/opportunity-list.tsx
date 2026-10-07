@@ -4,9 +4,35 @@ import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
 import { evaluationStatusLabel, priorityBandLabel } from "./labels";
 import { sourceTypeLabel } from "../opportunity-provenance";
 import { ExternalLink, safeExternalUrl } from "../external-link";
+import { applicationStatusLabel } from "../application/labels";
 
-type Row = Omit<OpportunityListItem, "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily" | "customerSegment"> &
-  Partial<Pick<OpportunityListItem, "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily" | "customerSegment">>;
+type Optional = "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily" | "customerSegment" | "application";
+type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
+
+// The application tracker's state, kept to one badge plus the next follow-up.
+function ApplicationBadges({ opportunity }: { opportunity: Row }) {
+  const application = opportunity.application ?? null;
+  if (!application) {
+    return opportunity.status === "APPLIED" ? (
+      <span className="status-label status-label-muted">Not tracked yet</span>
+    ) : null;
+  }
+  const overdue = application.nextFollowUpState === "OVERDUE";
+  return (
+    <>
+      <span className="status-label status-label-application">
+        {applicationStatusLabel(application.stage, application.outcome)}
+      </span>
+      {application.nextFollowUpOn ? (
+        <span className={overdue ? "status-label status-label-overdue" : "status-label"}>
+          {overdue
+            ? `Follow-up overdue · ${application.nextFollowUpOn}`
+            : `Next follow-up ${application.nextFollowUpOn}`}
+        </span>
+      ) : null}
+    </>
+  );
+}
 
 function EvaluationBadges({ opportunity }: { opportunity: Row }) {
   const evaluation = opportunity.latestEvaluation;
@@ -84,6 +110,7 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
               <span className="status-label status-label-lifecycle">
                 {formatLifecycle(opportunity.status)}
               </span>
+              <ApplicationBadges opportunity={opportunity} />
               <EvaluationBadges opportunity={opportunity} />
               {applicationUrl ? (
                 <ExternalLink href={applicationUrl}>Application page</ExternalLink>

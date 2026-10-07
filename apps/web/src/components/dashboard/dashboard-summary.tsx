@@ -10,6 +10,7 @@ export const attentionLinks = {
   failed: "/?eval=failed",
   recommendedApply: "/?view=triage&rec=apply",
   inProgress: "/?view=all&eval=queued&eval=running",
+  followUpsDue: "/applications?followUp=due",
 } as const;
 
 function Distribution({
@@ -50,6 +51,7 @@ export function NeedsAttention({ summary }: { summary: Summary }) {
     { label: "Deferred for budget", count: summary.deferred, href: attentionLinks.deferred, help: "Waiting for AI budget" },
     { label: "Evaluation failed", count: summary.activeFailed, href: attentionLinks.failed, help: "Latest evaluation failed" },
     { label: "In progress", count: summary.queued + summary.running, href: attentionLinks.inProgress, help: "Queued or running" },
+    { label: "Follow-ups due", count: summary.followUpsDue, href: attentionLinks.followUpsDue, help: "Applications with a follow-up overdue or due today (UTC)" },
   ];
   return (
     <section className="needs-attention" aria-labelledby="needs-attention-title">

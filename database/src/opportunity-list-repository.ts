@@ -1,4 +1,12 @@
-import type { OpportunityLifecycleState } from "@ai-career/core";
+import {
+  followUpState,
+  toIsoDate,
+  utcToday,
+  type ApplicationOutcome,
+  type ApplicationStage,
+  type FollowUpState,
+  type OpportunityLifecycleState,
+} from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
 
@@ -40,6 +48,13 @@ export interface OpportunityListItem {
   priorityBand: string | null;
   roleFamily: string | null;
   customerSegment: string | null;
+  // The application tracker's state for this opportunity, if tracked.
+  application: {
+    stage: ApplicationStage;
+    outcome: ApplicationOutcome | null;
+    nextFollowUpOn: string | null;
+    nextFollowUpState: FollowUpState | null;
+  } | null;
 }
 
 // Stored filter values (see apps/web/src/server/opportunity-query.ts).
@@ -108,6 +123,11 @@ const joins = Prisma.sql`
   LEFT JOIN latest_eval le ON le."opportunityId" = o."id"
   LEFT JOIN current_rec cr ON cr."opportunityId" = o."id"
   LEFT JOIN open_deferral od ON od."opportunityId" = o."id"
+  LEFT JOIN "Application" app ON app."opportunityId" = o."id"
+  LEFT JOIN LATERAL (
+    SELECT MIN(f."dueOn") AS "dueOn" FROM "ApplicationFollowUp" f
+    WHERE f."applicationId" = app."id" AND f."completedAt" IS NULL
+  ) app_next ON TRUE
 `;
 
 // Contract enum order of the priority band (lowest → highest).
@@ -229,9 +249,13 @@ type Row = {
   priorityBand: string | null;
   roleFamily: string | null;
   customerSegment: string | null;
+  applicationStage: ApplicationStage | null;
+  applicationOutcome: ApplicationOutcome | null;
+  nextFollowUpOn: Date | null;
 };
 
-function toItem(row: Row): OpportunityListItem {
+function toItem(row: Row, today: string): OpportunityListItem {
+  const nextFollowUpOn = row.nextFollowUpOn ? toIsoDate(row.nextFollowUpOn) : null;
   const latestIsRecommended = row.latestId !== null && row.latestId === row.recEvaluationId;
   return {
     id: row.id,
@@ -266,6 +290,14 @@ function toItem(row: Row): OpportunityListItem {
     priorityBand: row.priorityBand,
     roleFamily: row.roleFamily,
     customerSegment: row.customerSegment,
+    application: row.applicationStage
+      ? {
+          stage: row.applicationStage,
+          outcome: row.applicationOutcome,
+          nextFollowUpOn,
+          nextFollowUpState: nextFollowUpOn ? followUpState(nextFollowUpOn, null, today) : null,
+        }
+      : null,
   };
 }
 
@@ -305,12 +337,15 @@ export class PrismaOpportunityListRepository {
             le."id" AS "latestId", le."status" AS "latestStatus",
             le."createdAt" AS "latestCreatedAt", le."completedAt" AS "latestCompletedAt",
             cr."decision" AS "recDecision", cr."evaluationId" AS "recEvaluationId",
-            cr."band" AS "priorityBand", cr."roleFamily" AS "roleFamily", cr."segment" AS "customerSegment"
+            cr."band" AS "priorityBand", cr."roleFamily" AS "roleFamily", cr."segment" AS "customerSegment",
+            app."stage"::text AS "applicationStage", app."outcome"::text AS "applicationOutcome",
+            app_next."dueOn" AS "nextFollowUpOn"
           ${joins} ${predicate}
           ORDER BY ${sortOrders[input.sort] ?? sortOrders.newest}
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
         `;
-        return { items: rows.map(toItem), total, page, requestedPage, pageCount, pageSize };
+        const today = utcToday();
+        return { items: rows.map((row) => toItem(row, today)), total, page, requestedPage, pageCount, pageSize };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );

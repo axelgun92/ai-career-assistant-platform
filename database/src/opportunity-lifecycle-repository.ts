@@ -119,42 +119,56 @@ export class PrismaOpportunityLifecycleRepository {
     opportunityId: string;
     action: OpportunityUserAction;
   }): Promise<UserActionResult> {
-    return this.database.$transaction(async (transaction) => {
-      const opportunity = await transaction.opportunity.findUnique({
-        where: { id: input.opportunityId },
-        select: { status: true },
-      });
-      if (!opportunity) return { status: "NOT_FOUND" as const };
-      const [history, currentSystemState] = await Promise.all([
-        loadHistory(transaction, input.opportunityId),
-        deriveSystemState(transaction, input.opportunityId),
-      ]);
-      const resolution = resolveUserAction({
-        action: input.action,
-        currentStatus: opportunity.status,
-        history,
-        currentSystemState,
-      });
-      if (!resolution.allowed) {
-        return { status: "NOT_ALLOWED" as const, reason: resolution.reason };
-      }
-      const updated = await transaction.opportunity.updateMany({
-        where: { id: input.opportunityId, status: opportunity.status },
-        data: { status: resolution.to },
-      });
-      if (updated.count !== 1) return { status: "CONFLICT" as const };
-      // Keep replay order strictly increasing even within one millisecond.
-      const last = history.at(-1)?.createdAt.getTime() ?? 0;
-      await transaction.opportunityUserAction.create({
-        data: {
-          opportunityId: input.opportunityId,
-          action: input.action,
-          fromStatus: opportunity.status,
-          toStatus: resolution.to,
-          createdAt: new Date(Math.max(Date.now(), last + 1)),
-        },
-      });
-      return { status: "APPLIED" as const, from: opportunity.status, to: resolution.to };
-    });
+    return this.database.$transaction((transaction) => applyUserActionInTransaction(transaction, input));
   }
 }
+
+// The lifecycle action itself, for callers that already hold a transaction
+// (the application tracker records a submission and MARK_APPLIED together).
+// Same rules and same history row as applyUserAction.
+export async function applyUserActionInTransaction(
+  transaction: Transaction,
+  input: { opportunityId: string; action: OpportunityUserAction },
+): Promise<UserActionResult> {
+  const opportunity = await transaction.opportunity.findUnique({
+    where: { id: input.opportunityId },
+    select: { status: true },
+  });
+  if (!opportunity) return { status: "NOT_FOUND" as const };
+  const [history, currentSystemState] = await Promise.all([
+    loadHistory(transaction, input.opportunityId),
+    deriveSystemState(transaction, input.opportunityId),
+  ]);
+  const resolution = resolveUserAction({
+    action: input.action,
+    currentStatus: opportunity.status,
+    history,
+    currentSystemState,
+  });
+  if (!resolution.allowed) {
+    return { status: "NOT_ALLOWED" as const, reason: resolution.reason };
+  }
+  const updated = await transaction.opportunity.updateMany({
+    where: { id: input.opportunityId, status: opportunity.status },
+    data: { status: resolution.to },
+  });
+  if (updated.count !== 1) return { status: "CONFLICT" as const };
+  // Keep replay order strictly increasing even within one millisecond.
+  const last = history.at(-1)?.createdAt.getTime() ?? 0;
+  await transaction.opportunityUserAction.create({
+    data: {
+      opportunityId: input.opportunityId,
+      action: input.action,
+      fromStatus: opportunity.status,
+      toStatus: resolution.to,
+      createdAt: new Date(Math.max(Date.now(), last + 1)),
+    },
+  });
+  return { status: "APPLIED" as const, from: opportunity.status, to: resolution.to };
+}
+
+export async function loadUserActionHistory(client: Client, opportunityId: string) {
+  return loadHistory(client, opportunityId);
+}
+
+export type LifecycleTransaction = Transaction;

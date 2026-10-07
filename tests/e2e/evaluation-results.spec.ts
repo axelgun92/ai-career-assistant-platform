@@ -129,7 +129,8 @@ test("material ambiguity reaches a persisted Review result", async ({ page, requ
   const opportunityId = await createOpportunity(request);
   await page.goto(`/opportunities/${opportunityId}`);
   await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
-
+  // Wait for the request to be queued before the worker looks for it.
+  await expect(page.getByText(/Evaluation accepted and queued/)).toBeVisible();
   await processEvaluation("review");
 
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible({ timeout: 15_000 });
@@ -145,6 +146,8 @@ test("a failed reevaluation keeps the last completed result visible with a safe 
   const opportunityId = await createOpportunity(request);
   await page.goto(`/opportunities/${opportunityId}`);
   await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  // Wait for the request to be queued before the worker looks for it.
+  await expect(page.getByText(/Evaluation accepted and queued/)).toBeVisible();
   await processEvaluation();
   await expect(page.getByRole("heading", { name: "Apply" })).toBeVisible({ timeout: 15_000 });
 
@@ -212,6 +215,8 @@ test("lifecycle actions, dashboard views, and reevaluation of a saved opportunit
   await page.goto(`/opportunities/${opportunityId}`);
   await expect(statusHeading("New")).toBeVisible();
   await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  // Wait for the request to be queued before the worker looks for it.
+  await expect(page.getByText(/Evaluation accepted and queued/)).toBeVisible();
   await processEvaluation();
   await expect(page.getByRole("heading", { name: "Apply" })).toBeVisible({ timeout: 15_000 });
   // The worker's lifecycle sync is reflected without a manual reload.

@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 5, 2026
+**Last updated:** October 9, 2026
 
 ## Current Objective
 
@@ -314,6 +314,52 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - integration: `dashboard-query.test.ts` (every filter and combinations, search, sorts with nulls last, page beyond end, exact final page, zero results, count/items agreement across pages, summary counts equal linked views, read-only);
   - E2E: `dashboard.spec.ts`, its own Playwright project, run last.
 
+#### Completed — Task 8: Application tracker (October 9, 2026)
+
+An application-tracking layer beside the opportunity lifecycle. The evaluator, recommendation semantics, profile, budget, provenance and usage accounting are untouched.
+
+- **Model** (migration `20261009090000_application_tracker`, additive; the known `Recommendation` drift line is excluded):
+  - one `Application` per Opportunity (`opportunityId` unique), with `stage`, `outcome`, `appliedOn`, `closedOn`, a `version` (CAS) and `lastEventSequence`;
+  - an append-only `ApplicationEvent` history with a per-application, gap-free `sequence`;
+  - `ApplicationNote`, `ApplicationContact`, `ApplicationFollowUp` and `ApplicationInterview`, each with its own `version`.
+  - No Opportunity data is snapshotted; title, company, URLs and provenance are read live.
+- **Stages** (fixed for Task 8): Planning to apply → Applied → Recruiter screen → Interviewing → Final interview → Offer → Closed.
+  - Submitted stages move freely in either direction; a submitted application never returns to planning.
+  - Closing needs an outcome: offer accepted/declined (from Offer only); rejected, withdrew or no response (from any submitted stage); decided not to apply (from planning only).
+  - Reopen returns to the stage held before closing.
+- **`appliedOn` invariant**, enforced by a database CHECK and mirrored by `appliedOnRequired()`:
+  - NULL for PLANNED and for CLOSED/NOT_SUBMITTED;
+  - non-null for every submitted stage and submitted outcome.
+  - Closing and reopening never change it. A correction is refused on never-submitted applications.
+- **Lifecycle interaction** (explicit and conservative):
+  - A plan is possible only from a system state or Saved. An opportunity already marked Applied can only be tracked as submitted, prefilled from the MARK_APPLIED behind its current state (the same undo stack as RESTORE) and with no new lifecycle action. A direct plan request returns 409 `APPLICATION_ALREADY_SUBMITTED`.
+  - Submitting applies MARK_APPLIED in the same transaction. Closing (including rejected or withdrew) never changes the lifecycle, and archiving stays separate.
+  - Lifecycle actions run through a guard under the Opportunity row lock:
+    - MARK_APPLIED is refused while the application is unsubmitted (planned, or closed as not submitted);
+    - RESTORE is refused from Applied while a submitted application exists;
+    - DISMISS is refused while the application is active.
+  - Reopening to planning needs a lifecycle that permits a plan. Archived opportunities make the application read-only.
+- **Concurrency:**
+  - every application write and guarded lifecycle action takes the Opportunity row lock;
+  - the 10 commands that update existing state require `expectedVersion` (per entity), and a stale version returns 409 `APPLICATION_CHANGED` with no event, no sequence number and no partial change;
+  - additive commands take no version.
+- **Follow-ups** use UTC calendar dates (stated in the UI). The next action is the earliest open follow-up; states are overdue / due today / upcoming (7 days) / later / done.
+- **UI:**
+  - an Application section on the opportunity page: start tracking by lifecycle mode, stage controls, close and reopen, applied-date correction, follow-ups, interviews (with a "Move to Interviewing?" suggestion), contacts (mailto and safe profile links), editable notes with history, and a readable timeline;
+  - the lifecycle card explains blocked actions;
+  - stale-version conflicts keep typed input and offer "Load latest";
+  - a new `/applications` tracker: summary counts, Active/Closed/All views, stage, outcome, follow-up and applied-date filters, search, sorts and canonical URL state;
+  - dashboard rows show the stage or outcome badge, the next or overdue follow-up, and "Not tracked yet"; a "Follow-ups due" attention item equals `/applications?followUp=due`.
+- **API:**
+  - `POST`/`GET /api/opportunities/[id]/application`;
+  - `GET /api/applications`;
+  - `GET`/`POST /api/applications/[id]` (one validated command endpoint).
+- **Tests:**
+  - unit: `application-rules.test.ts` (rules, invariant, guards, effective date, follow-up states, schemas and version requirements, handler error mapping), `application-query.test.ts` and `application-ui.test.tsx` (jsdom: start tracking by mode, conflict keeps typed input, read-only archived view, timeline sentences);
+  - integration: `application-tracker.test.ts` (34 tests, including the four DB-rejected `appliedOn` shapes, compatibility with existing APPLIED, guards, a 6-round plan/MARK_APPLIED race, stale versions for all 10 commands, concurrent equal-version pairs, independence from reevaluation and budget deferral, and tracker/dashboard counts);
+  - E2E: `applications.spec.ts`;
+  - three racing waits fixed in `evaluation-results.spec.ts` (test-only).
+
 #### Remaining main-product order
 
 Revised roadmap:
@@ -321,7 +367,7 @@ Revised roadmap:
 - Task 5 — Profile + Preferences: done (see above).
 - Task 6 — Budget Ledger + Deferral: done (see above).
 - Task 7 — Product UI: dashboard, search, sort, filters, analytics polish: done (see above).
-- Task 8 — Application Tracker: notes, follow-ups, contacts, outcomes.
+- Task 8 — Application Tracker: done (see above).
 - Task 9 — Final setup, operations, integration, E2E.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 

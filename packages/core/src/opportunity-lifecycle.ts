@@ -86,6 +86,17 @@ export type UserActionResolution =
 // pushes, every RESTORE pops. The entry left on top is the newest action that
 // has not been undone, i.e. the one that put the Opportunity into its current
 // restorable state. RESTORE rows are never targets, so restores cannot bounce.
+export function pendingUserActions<Entry extends UserActionHistoryEntry>(
+  history: readonly Entry[],
+): Entry[] {
+  const stack: Entry[] = [];
+  for (const entry of history) {
+    if (entry.action === "RESTORE") stack.pop();
+    else stack.push(entry);
+  }
+  return stack;
+}
+
 export function restoreTarget(input: {
   history: readonly UserActionHistoryEntry[];
   currentStatus: OpportunityLifecycleState;
@@ -94,12 +105,7 @@ export function restoreTarget(input: {
   if (!restorableStates.includes(input.currentStatus)) {
     return { allowed: false, reason: "Only a saved, applied, dismissed, or archived opportunity can be restored" };
   }
-  const stack: UserActionHistoryEntry[] = [];
-  for (const entry of input.history) {
-    if (entry.action === "RESTORE") stack.pop();
-    else stack.push(entry);
-  }
-  const top = stack.at(-1);
+  const top = pendingUserActions(input.history).at(-1);
   if (!top || top.toStatus !== input.currentStatus) {
     return { allowed: false, reason: "The action history does not identify a state to restore" };
   }

@@ -12,3 +12,5 @@ export * from "./evaluation-admission-repository";
 export * from "./budget-repository";
 export * from "./deferred-evaluation-repository";
 export * from "./opportunity-dashboard-repository";
+export * from "./application-repository";
+export * from "./application-list-repository";

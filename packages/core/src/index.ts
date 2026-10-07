@@ -6,3 +6,4 @@ export * from "./platform";
 export * from "./raw-opportunity";
 export * from "./opportunity-lifecycle";
 export * from "./budget";
+export * from "./application";

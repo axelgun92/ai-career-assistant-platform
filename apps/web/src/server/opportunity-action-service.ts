@@ -1,13 +1,15 @@
 import {
   availableUserActions,
   canRequestEvaluation,
+  lifecycleActionGuard,
   opportunityUserActionSchema,
   type OpportunityLifecycleState,
   type OpportunityUserAction,
 } from "@ai-career/core";
 import {
+  PrismaApplicationRepository,
   PrismaOpportunityLifecycleRepository,
-  type UserActionResult,
+  type GuardedUserActionResult,
 } from "@ai-career/database";
 import { z } from "zod";
 
@@ -15,21 +17,29 @@ export interface OpportunityActionWriter {
   applyUserAction(input: {
     opportunityId: string;
     action: OpportunityUserAction;
-  }): Promise<UserActionResult>;
+  }): Promise<GuardedUserActionResult>;
 }
 
 const actionRequestSchema = z.object({ action: opportunityUserActionSchema }).strict();
 
 let actionWriter: OpportunityActionWriter | undefined;
 
+// Lifecycle actions run through the application guard: an action that would
+// contradict the application record (for example restoring a submitted
+// application's opportunity) is refused in the same locked transaction.
 export function getOpportunityActionWriter(): OpportunityActionWriter {
-  actionWriter ??= new PrismaOpportunityLifecycleRepository();
+  if (!actionWriter) {
+    const applications = new PrismaApplicationRepository();
+    actionWriter = { applyUserAction: (input) => applications.applyLifecycleActionGuarded(input) };
+  }
   return actionWriter;
 }
 
 export interface OpportunityLifecyclePresentation {
   status: OpportunityLifecycleState;
   availableActions: OpportunityUserAction[];
+  // Actions the lifecycle rules allow but the application record blocks.
+  blockedActions: Array<{ action: OpportunityUserAction; reason: string }>;
   evaluable: boolean;
 }
 
@@ -37,17 +47,24 @@ export interface OpportunityLifecyclePresentation {
 export async function getOpportunityLifecyclePresentation(
   opportunityId: string,
 ): Promise<OpportunityLifecyclePresentation | null> {
-  const view = await new PrismaOpportunityLifecycleRepository().getLifecycleView(opportunityId);
+  const [view, application] = await Promise.all([
+    new PrismaOpportunityLifecycleRepository().getLifecycleView(opportunityId),
+    new PrismaApplicationRepository().findStateForOpportunity(opportunityId),
+  ]);
   if (!view) return null;
-  return {
-    status: view.status,
-    availableActions: availableUserActions({
-      currentStatus: view.status,
-      history: view.history,
-      currentSystemState: view.systemState,
-    }),
-    evaluable: canRequestEvaluation(view.status),
-  };
+  const allowedByLifecycle = availableUserActions({
+    currentStatus: view.status,
+    history: view.history,
+    currentSystemState: view.systemState,
+  });
+  const availableActions: OpportunityUserAction[] = [];
+  const blockedActions: OpportunityLifecyclePresentation["blockedActions"] = [];
+  for (const action of allowedByLifecycle) {
+    const guard = lifecycleActionGuard(action, view.status, application);
+    if (guard.allowed) availableActions.push(action);
+    else blockedActions.push({ action, reason: guard.reason });
+  }
+  return { status: view.status, availableActions, blockedActions, evaluable: canRequestEvaluation(view.status) };
 }
 
 // POST /api/opportunities/[id]/action — explicit user lifecycle actions only.
@@ -95,6 +112,8 @@ export function createOpportunityActionHandler(writer: OpportunityActionWriter) 
           return Response.json({ error: "Opportunity not found", code: "OPPORTUNITY_NOT_FOUND" }, { status: 404 });
         case "NOT_ALLOWED":
           return Response.json({ error: result.reason, code: "OPPORTUNITY_ACTION_NOT_ALLOWED" }, { status: 409 });
+        case "BLOCKED_BY_APPLICATION":
+          return Response.json({ error: result.reason, code: "APPLICATION_BLOCKS_ACTION" }, { status: 409 });
         case "CONFLICT":
           return Response.json(
             { error: "The opportunity changed at the same time; reload and try again", code: "OPPORTUNITY_ACTION_CONFLICT" },

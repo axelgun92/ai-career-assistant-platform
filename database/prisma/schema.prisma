@@ -154,6 +154,7 @@ model Opportunity {
   evaluationAdmissions  EvaluationAdmission[]
   deferredEvaluations   DeferredEvaluation[]
   userActions           OpportunityUserAction[]
+  application           Application?
   semanticOperations    SemanticOperationAttempt[]
   duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
   referencedAsDuplicate DuplicateReference[]       @relation("DuplicateReferenceTarget")
@@ -594,4 +595,172 @@ model DeferredEvaluation {
 
   @@index([status, createdAt])
   @@index([opportunityId, status])
+}
+
+enum ApplicationStage {
+  PLANNED
+  APPLIED
+  SCREENING
+  INTERVIEWING
+  FINAL_ROUND
+  OFFER
+  CLOSED
+}
+
+enum ApplicationOutcome {
+  OFFER_ACCEPTED
+  OFFER_DECLINED
+  REJECTED
+  WITHDRAWN
+  NO_RESPONSE
+  NOT_SUBMITTED
+}
+
+enum ApplicationEventType {
+  CREATED
+  SUBMITTED
+  STAGE_CHANGED
+  CLOSED
+  REOPENED
+  NOTE_ADDED
+  NOTE_EDITED
+  CONTACT_ADDED
+  CONTACT_UPDATED
+  FOLLOW_UP_ADDED
+  FOLLOW_UP_COMPLETED
+  FOLLOW_UP_REOPENED
+  INTERVIEW_ADDED
+  INTERVIEW_UPDATED
+  DETAILS_UPDATED
+}
+
+enum ApplicationContactRole {
+  RECRUITER
+  HIRING_MANAGER
+  INTERVIEWER
+  REFERRAL
+  OTHER
+}
+
+enum ApplicationInterviewKind {
+  RECRUITER_SCREEN
+  HIRING_MANAGER
+  TECHNICAL
+  CASE_STUDY
+  PANEL
+  FINAL
+  OTHER
+}
+
+enum ApplicationInterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+// The user's record of pursuing one Opportunity, beside (not inside) its
+// lifecycle. Stage, outcome, closedOn and appliedOn are kept consistent by
+// CHECK constraints in the migration. version guards stage/outcome/date
+// changes; lastEventSequence orders the append-only event history.
+model Application {
+  id                String                 @id @default(uuid()) @db.Uuid
+  opportunityId     String                 @unique @db.Uuid
+  opportunity       Opportunity            @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  stage             ApplicationStage
+  outcome           ApplicationOutcome?
+  appliedOn         DateTime?              @db.Date
+  closedOn          DateTime?              @db.Date
+  version           Int                    @default(1)
+  lastEventSequence Int                    @default(0)
+  events            ApplicationEvent[]
+  notes             ApplicationNote[]
+  contacts          ApplicationContact[]
+  followUps         ApplicationFollowUp[]
+  interviews        ApplicationInterview[]
+  createdAt         DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime               @updatedAt @db.Timestamptz(3)
+
+  @@index([stage])
+  @@index([appliedOn])
+}
+
+// Append-only: rows are never updated or deleted (other than by cascade).
+model ApplicationEvent {
+  id            String               @id @default(uuid()) @db.Uuid
+  applicationId String               @db.Uuid
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  sequence      Int
+  type          ApplicationEventType
+  fromStage     ApplicationStage?
+  toStage       ApplicationStage?
+  outcome       ApplicationOutcome?
+  occurredOn    DateTime?            @db.Date
+  payload       Json?
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@unique([applicationId, sequence])
+}
+
+model ApplicationNote {
+  id            String      @id @default(uuid()) @db.Uuid
+  applicationId String      @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  body          String      @db.Text
+  version       Int         @default(1)
+  editedAt      DateTime?   @db.Timestamptz(3)
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@index([applicationId, createdAt])
+}
+
+model ApplicationContact {
+  id            String                 @id @default(uuid()) @db.Uuid
+  applicationId String                 @db.Uuid
+  application   Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  name          String
+  role          ApplicationContactRole
+  title         String?
+  organization  String?
+  email         String?
+  profileUrl    String?                @db.Text
+  notes         String?                @db.Text
+  version       Int                    @default(1)
+  interviews    ApplicationInterview[]
+  createdAt     DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime               @updatedAt @db.Timestamptz(3)
+
+  @@index([applicationId, createdAt])
+}
+
+model ApplicationFollowUp {
+  id            String      @id @default(uuid()) @db.Uuid
+  applicationId String      @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  description   String
+  dueOn         DateTime    @db.Date
+  completedAt   DateTime?   @db.Timestamptz(3)
+  version       Int         @default(1)
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([applicationId, completedAt, dueOn])
+  @@index([completedAt, dueOn])
+}
+
+model ApplicationInterview {
+  id            String                     @id @default(uuid()) @db.Uuid
+  applicationId String                     @db.Uuid
+  application   Application                @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  kind          ApplicationInterviewKind
+  roundLabel    String?
+  scheduledAt   DateTime?                  @db.Timestamptz(3)
+  status        ApplicationInterviewStatus @default(SCHEDULED)
+  contactId     String?                    @db.Uuid
+  contact       ApplicationContact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  notes         String?                    @db.Text
+  version       Int                        @default(1)
+  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
+
+  @@index([applicationId, scheduledAt])
 }

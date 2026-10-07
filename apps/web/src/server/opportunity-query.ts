@@ -123,13 +123,13 @@ export type SearchParamsInput =
   | URLSearchParams
   | Record<string, string | string[] | undefined>;
 
-function allValues(params: SearchParamsInput, key: string): string[] {
+export function allValues(params: SearchParamsInput, key: string): string[] {
   if (params instanceof URLSearchParams) return params.getAll(key);
   const value = params[key];
   return value === undefined ? [] : Array.isArray(value) ? value : [value];
 }
 
-const firstValue = (params: SearchParamsInput, key: string) => allValues(params, key)[0];
+export const firstValue = (params: SearchParamsInput, key: string) => allValues(params, key)[0];
 
 function multi<T extends Record<string, string>>(params: SearchParamsInput, key: string, options: T): Keys<T> {
   const valid = new Set(
@@ -149,13 +149,13 @@ function text(params: SearchParamsInput, key: string, maxLength = 200): string |
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function isoDate(value: string | undefined): string | null {
+export function isoDate(value: string | undefined): string | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value) ? value : null;
 }
 
-function positiveInteger(value: string | undefined): number | null {
+export function positiveInteger(value: string | undefined): number | null {
   if (!value || !/^\d{1,9}$/.test(value)) return null;
   const parsed = Number(value);
   return parsed >= 1 ? parsed : null;
@@ -317,7 +317,7 @@ export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
   };
 }
 
-function incomingQueryString(params: SearchParamsInput): string {
+export function incomingQueryString(params: SearchParamsInput): string {
   if (params instanceof URLSearchParams) return params.toString();
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

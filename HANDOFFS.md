@@ -402,6 +402,46 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 - Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change.
 - Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered.
 
+### Handoff: Task 8 — Application Tracker and Guarded Lifecycle Actions (Awareness)
+
+**Date:** 2026-10-09  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness; shared lifecycle path changed)  
+**Status:** Ready
+
+#### Completed
+
+- An application tracker beside the opportunity lifecycle: one `Application` per Opportunity, an append-only `ApplicationEvent` history, notes, contacts, follow-ups, interviews and outcomes.
+- Migration `20261009090000_application_tracker` is additive. No Opportunity, `OpportunityUserAction` or evaluator table is altered, and the known `Recommendation` drift is excluded again.
+
+#### Files Changed (shared lifecycle path)
+
+- `packages/core/src/opportunity-lifecycle.ts`: the RESTORE undo-stack replay is exported as `pendingUserActions(history)`. `restoreTarget` uses it with identical behaviour, and the transition table is unchanged.
+- `database/src/opportunity-lifecycle-repository.ts`: `applyUserActionInTransaction(tx, input)` is extracted from `applyUserAction`. The public method delegates with identical rules and the same `OpportunityUserAction` row. Tracker submission uses it to apply MARK_APPLIED in the same transaction as the application change.
+- `apps/web/src/server/opportunity-action-service.ts`: product lifecycle actions now run through `PrismaApplicationRepository.applyLifecycleActionGuarded`. Under an Opportunity row lock it refuses (409 `APPLICATION_BLOCKS_ACTION`):
+  - MARK_APPLIED while the application is unsubmitted;
+  - RESTORE from Applied while a submitted application exists;
+  - DISMISS while an application is active.
+
+  Otherwise it applies the action exactly as before.
+- **Dashboard (additive reads):** `opportunity-list-repository.ts` and `opportunity-dashboard-repository.ts` left-join the application tables. No existing filter changed.
+
+#### Current Contract / Assumptions
+
+- Evaluations, the worker's lifecycle sync, budget deferral and profile hints never read or write application tables, and the reverse holds too. Integration tests prove application rows stay identical across a reevaluation and a budget deferral.
+- The worker's `syncSystemLifecycle` only touches system states, so it cannot conflict with the guard. The guard covers user actions only.
+- The unguarded `PrismaOpportunityLifecycleRepository.applyUserAction` still exists, for tests and internal callers. Product requests use the guarded path.
+
+#### Carried Forward to Final Integration (unchanged)
+
+- Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change.
+- Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered.
+- The Task 7 dashboard reads `opportunityPriority.band`, role classification and customer segment from the persisted Customer Success result. If those field names change, dashboard queries must be updated.
+
+#### Do Not Change Without Coordination
+
+- Keep lifecycle user actions on the guarded path (Opportunity row lock, then guard, then `applyUserActionInTransaction`). Bypassing it could leave a planned application under an Applied lifecycle.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

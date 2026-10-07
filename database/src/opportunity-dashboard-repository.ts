@@ -1,4 +1,6 @@
+import { toIsoDate } from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
+import { PrismaApplicationListRepository } from "./application-list-repository";
 import { getDatabaseClient } from "./client";
 
 export interface DashboardSummary {
@@ -27,6 +29,9 @@ export interface DashboardSummary {
   bySourceType: Array<{ sourceType: string | null; count: number }>;
   // Among opportunities with a completed evaluation.
   byPriorityBand: Array<{ band: string | null; count: number }>;
+  // Active applications whose next follow-up is overdue or due today (UTC);
+  // equal to the /applications?followUp=due view.
+  followUpsDue: number;
 }
 
 export interface DashboardFilterOptions {
@@ -111,6 +116,7 @@ export class PrismaOpportunityDashboardRepository {
       WHERE cr."opportunityId" IS NOT NULL
       GROUP BY cr."band"
     `;
+    const followUpsDue = await new PrismaApplicationListRepository().countFollowUpsDue(toIsoDate(now));
     const c = counts ?? {};
     const n = (key: string) => Number(c[key] ?? 0);
     return {
@@ -134,6 +140,7 @@ export class PrismaOpportunityDashboardRepository {
       discoveredLast30Days: n("last30"),
       bySourceType,
       byPriorityBand,
+      followUpsDue,
     };
   }
 
