@@ -165,6 +165,10 @@ model Opportunity {
   @@index([externalListingId])
   @@index([atsRequisitionId])
   @@index([postingDate])
+  @@index([discoveredAt(sort: Desc), id(sort: Desc)])
+  @@index([status, discoveredAt])
+  @@index([sourceType])
+  @@index([updatedAt])
 }
 
 model SourceRecord {

@@ -123,34 +123,55 @@ describe("opportunity dashboard list", () => {
 });
 
 describe("GET /api/opportunities handler", () => {
-  it("returns persisted opportunities from the reader", async () => {
-    const listOpportunities = vi.fn().mockResolvedValue([item()]);
-    const response = await createOpportunityListHandler({ listOpportunities })(
+  const page = (items: OpportunityListItem[]) => ({ items, total: items.length, page: 1, requestedPage: 1, pageCount: 1, pageSize: 5 });
+
+  it("returns persisted opportunities from the reader with pagination", async () => {
+    const listPage = vi.fn().mockResolvedValue(page([item()]));
+    const response = await createOpportunityListHandler({ listPage })(
       new Request("http://localhost/api/opportunities?limit=5"),
     );
     expect(response.status).toBe(200);
-    expect(listOpportunities).toHaveBeenCalledWith({ limit: 5 });
-    const body = (await response.json()) as { opportunities: Array<{ id: string; createdAt: string }> };
+    expect(listPage).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 5, page: 1, sort: "newest" }));
+    // The API lists every lifecycle state unless a view is requested.
+    expect(listPage.mock.calls[0]![0].filters.statuses).toBeUndefined();
+    const body = (await response.json()) as {
+      opportunities: Array<{ id: string; createdAt: string }>;
+      total: number;
+      pageCount: number;
+    };
     expect(body.opportunities).toHaveLength(1);
     expect(body.opportunities[0]?.createdAt).toBe(createdAt.toISOString());
+    expect(body).toMatchObject({ total: 1, pageCount: 1 });
   });
 
-  it.each(["limit=0", "limit=201", "limit=abc", "unexpected=1"])(
-    "rejects an invalid query (%s)",
+  it.each(["limit=0", "limit=201", "limit=abc", "page=0", "page=abc", "pageSize=500"])(
+    "rejects malformed pagination (%s)",
     async (query) => {
-      const listOpportunities = vi.fn();
-      const response = await createOpportunityListHandler({ listOpportunities })(
+      const listPage = vi.fn();
+      const response = await createOpportunityListHandler({ listPage })(
         new Request(`http://localhost/api/opportunities?${query}`),
       );
       expect(response.status).toBe(400);
-      expect(listOpportunities).not.toHaveBeenCalled();
+      expect(listPage).not.toHaveBeenCalled();
     },
   );
+
+  it("ignores unknown parameters and invalid filter values instead of failing", async () => {
+    const listPage = vi.fn().mockResolvedValue(page([]));
+    const response = await createOpportunityListHandler({ listPage })(
+      new Request("http://localhost/api/opportunities?unexpected=1&rec=bogus&sort=sideways&from=2026-13-40"),
+    );
+    expect(response.status).toBe(200);
+    const input = listPage.mock.calls[0]![0];
+    expect(input.sort).toBe("newest");
+    expect(input.filters.recommendations).toEqual([]);
+    expect(input.filters.discoveredFrom).toBeNull();
+  });
 
   it("returns a safe error when the reader fails", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await createOpportunityListHandler({
-      listOpportunities: vi.fn().mockRejectedValue(new Error("connection refused: secret-host")),
+      listPage: vi.fn().mockRejectedValue(new Error("connection refused: secret-host")),
     })(new Request("http://localhost/api/opportunities"));
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain("secret-host");

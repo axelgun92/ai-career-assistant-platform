@@ -1,31 +1,43 @@
 import Link from "next/link";
 import type { OpportunityListItem } from "@ai-career/database";
 import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
+import { evaluationStatusLabel, priorityBandLabel } from "./labels";
 import { sourceTypeLabel } from "../opportunity-provenance";
+import { ExternalLink, safeExternalUrl } from "../external-link";
 
-function LatestEvaluation({
-  evaluation,
-  deferred,
-}: {
-  evaluation: OpportunityListItem["latestEvaluation"];
-  deferred?: boolean;
-}) {
-  const deferredBadge = deferred ? (
-    <span className="status-label status-label-deferred">Evaluation deferred</span>
-  ) : null;
-  if (!evaluation) return deferredBadge ?? <span className="status-label">Not evaluated</span>;
+type Row = Omit<OpportunityListItem, "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily" | "customerSegment"> &
+  Partial<Pick<OpportunityListItem, "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily" | "customerSegment">>;
+
+function EvaluationBadges({ opportunity }: { opportunity: Row }) {
+  const evaluation = opportunity.latestEvaluation;
+  const recommendation = opportunity.currentRecommendation ??
+    (evaluation?.decision ? { decision: evaluation.decision, isLatest: true } : null);
+  const priority = priorityBandLabel(opportunity.priorityBand);
   return (
     <>
-      {evaluation.decision ? (
-        <span className="status-label status-label-decision">{formatLabel(evaluation.decision)}</span>
+      {recommendation ? (
+        <span
+          className="status-label status-label-decision"
+          title={recommendation.isLatest ? undefined : "From the last completed evaluation"}
+        >
+          {formatLabel(recommendation.decision)}
+          {recommendation.isLatest ? "" : " (last completed)"}
+        </span>
       ) : null}
-      <span className="status-label">Evaluation {formatLabel(evaluation.status).toLowerCase()}</span>
-      {deferredBadge}
+      {priority ? <span className="status-label status-label-priority">{priority}</span> : null}
+      {evaluation ? (
+        <span className="status-label">{evaluationStatusLabel(evaluation.status)}</span>
+      ) : opportunity.deferred ? null : (
+        <span className="status-label">Not evaluated</span>
+      )}
+      {opportunity.deferred ? (
+        <span className="status-label status-label-deferred">Evaluation deferred</span>
+      ) : null}
     </>
   );
 }
 
-export function OpportunityList({ opportunities }: { opportunities: OpportunityListItem[] }) {
+export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
   if (opportunities.length === 0) {
     return (
       <p className="empty-state">
@@ -37,44 +49,49 @@ export function OpportunityList({ opportunities }: { opportunities: OpportunityL
 
   return (
     <ul className="opportunity-list" aria-label="Opportunities">
-      {opportunities.map((opportunity) => (
-        <li key={opportunity.id} className="opportunity-row">
-          <div className="opportunity-row-main">
-            <Link href={`/opportunities/${opportunity.id}`} className="opportunity-row-title">
-              {opportunity.title ?? "Untitled opportunity"}
-            </Link>
-            <span>{formatText(opportunity.companyName)}</span>
-          </div>
-          <dl className="opportunity-row-facts">
-            <div>
-              <dt>Location</dt>
-              <dd>{formatText(opportunity.location)}</dd>
+      {opportunities.map((opportunity) => {
+        const applicationUrl = safeExternalUrl(opportunity.applicationUrl ?? null);
+        return (
+          <li key={opportunity.id} className="opportunity-row">
+            <div className="opportunity-row-main">
+              <Link href={`/opportunities/${opportunity.id}`} className="opportunity-row-title">
+                {opportunity.title ?? "Untitled opportunity"}
+              </Link>
+              <span>
+                {formatText(opportunity.companyName)}
+                {opportunity.location ? ` · ${opportunity.location}` : ""}
+              </span>
             </div>
-            <div>
-              <dt>Compensation</dt>
-              <dd>{formatText(opportunity.salaryText)}</dd>
+            <dl className="opportunity-row-facts">
+              <div>
+                <dt>Compensation</dt>
+                <dd>{opportunity.salaryText?.trim() ? opportunity.salaryText : "Salary not stated"}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{sourceTypeLabel(opportunity.sourceType)}</dd>
+              </div>
+              <div>
+                <dt>Discovered</dt>
+                <dd>{formatDate(opportunity.discoveredAt ?? opportunity.createdAt)}</dd>
+              </div>
+              <div>
+                <dt>Domain</dt>
+                <dd>{formatLabel(opportunity.domain)}</dd>
+              </div>
+            </dl>
+            <div className="opportunity-row-status">
+              <span className="status-label status-label-lifecycle">
+                {formatLifecycle(opportunity.status)}
+              </span>
+              <EvaluationBadges opportunity={opportunity} />
+              {applicationUrl ? (
+                <ExternalLink href={applicationUrl}>Application page</ExternalLink>
+              ) : null}
             </div>
-            <div>
-              <dt>Domain</dt>
-              <dd>{formatLabel(opportunity.domain)}</dd>
-            </div>
-            <div>
-              <dt>Source</dt>
-              <dd>{sourceTypeLabel(opportunity.sourceType)}</dd>
-            </div>
-            <div>
-              <dt>Added</dt>
-              <dd>{formatDate(opportunity.createdAt)}</dd>
-            </div>
-          </dl>
-          <div className="opportunity-row-status">
-            <span className="status-label status-label-lifecycle">
-              {formatLifecycle(opportunity.status)}
-            </span>
-            <LatestEvaluation evaluation={opportunity.latestEvaluation} deferred={opportunity.deferred} />
-          </div>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -375,6 +375,33 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Keep `enqueueAdmitted()`'s consumption in the same transaction as Evaluation/Task creation, and keep the conditional `WHERE` clauses; the no-duplicate guarantee depends on both.
 
+### Handoff: Task 7 — Dashboard Reads Evaluation Result Fields (Awareness)
+
+**Date:** 2026-10-08  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+- Dashboard search, filters, sorts, pagination and summaries, all read-only (`database/src/opportunity-list-repository.ts`, `database/src/opportunity-dashboard-repository.ts`).
+- Migration `20261008090000_dashboard_indexes` adds Opportunity indexes only. No evaluator tables are touched, and the known `Recommendation` drift is excluded again.
+
+#### Current Contract / Assumptions (read dependency)
+
+- The dashboard reads these persisted Customer Success result paths from the Evaluation linked to the **latest Recommendation row**:
+  - `domainResult.opportunityPriority.band`;
+  - `domainResult.hardFilters.role.classification`;
+  - `domainResult.companyAlignment.alignment.customerSegment.classification`.
+- It also reads `Recommendation.decision`, the latest `Evaluation`/`EvaluationTask` status, and open `DeferredEvaluation` rows.
+- **If these result field names or enum values change, the dashboard filters and labels need a matching update.** Unit tests assert the dashboard's option lists equal the current Customer Success schema enums, so a rename fails the build.
+- Values are never reinterpreted or inferred; a missing value is shown as "Not evaluated"/"Unknown".
+
+#### Carried Forward to Final Integration (unchanged)
+
+- Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change.
+- Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.

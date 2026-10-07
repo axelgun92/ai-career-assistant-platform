@@ -16,7 +16,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: /(profile-management|budget)\.spec\.ts/,
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -32,8 +32,16 @@ export default defineConfig({
       // budget spec runs last, after every other spec has finished.
       name: "budget",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /budget\.spec\.ts/,
+      testMatch: /\/budget\.spec\.ts$/,
       dependencies: ["profile-management"],
+    },
+    {
+      // The dashboard spec sets a budget (to create a deferral) and an active
+      // profile, so it runs alone after the budget project.
+      name: "dashboard",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /\/dashboard\.spec\.ts$/,
+      dependencies: ["budget"],
     },
   ],
   webServer: {

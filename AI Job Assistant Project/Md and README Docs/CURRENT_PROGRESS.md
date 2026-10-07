@@ -274,13 +274,53 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - integration: `evaluation-admission.test.ts` (recovery, durable association, delayed enqueue after abandonment, consume/abandon race ×20, failed enqueue, unchanged `enqueue()`, concurrent requests with and without budget, no-budget integrity) and `budget-deferral.test.ts` (gate, deferral with zero rows created, restart persistence, resume re-check, reconciliation, unknown cost, both concurrency cases, pinned profile, archived/cancel, abandoned resume, settings never rewrite usage, currency, period boundaries);
   - E2E: `budget.spec.ts`, its own Playwright project, run last.
 
+#### Completed — Task 7: Dashboard search, sort, filters, and analytics polish (October 8, 2026)
+
+- **Server-side, read-only, URL-held state** (`/`, plus `GET /api/opportunities`). Filters, search and sort never mutate anything.
+- **Lifecycle views:** Active (default), **To triage** (new: system states only, so "recommended to apply, not yet acted on" is an exact view), Saved, Applied, Dismissed, Archived, All. Archived appears only in Archived/All.
+- **Filters** (OR within a filter, AND across filters):
+  - recommendation (latest completed evaluation: apply / review / skip / none);
+  - evaluation state (none / queued / running / completed / failed / deferred);
+  - priority band;
+  - role family;
+  - customer segment;
+  - source type, source, company, domain;
+  - title contains, location contains;
+  - salary stated / not stated;
+  - discovered date range (inclusive UTC days).
+- **Evaluation-derived values** (priority, role family, segment) are read as-is from the latest completed evaluation's persisted result. They are never inferred; a "Not evaluated"/"Unknown" option covers their absence.
+- **Deferred filters** (data not reliable yet):
+  - numeric salary range and salary sorts (`salaryMin`/`salaryMax`/`currency` are never normalized);
+  - remote/seniority/department (never populated);
+  - structured location;
+  - salary analytics.
+- **Search** (`q`): case-insensitive partial matching, AND across up to 8 terms (80 characters each), over title, company, location, source, original source, salary text and listing/requisition IDs. Wildcards are escaped. Descriptions are excluded (full-text search is an additive follow-up).
+- **Sorts:** newest/oldest discovered, recently updated, priority (contract band order, unknown last), company A–Z and title A–Z (missing last). All end with deterministic tie-breakers. Recommendation is a filter, not a sort.
+- **URL state.**
+  - A pure parser and serializer (`apps/web/src/server/opportunity-query.ts`). Invalid or stale values are dropped and never error.
+  - The dashboard redirects to the canonical URL, so empty or invalid params are removed and a page past the end becomes the last valid page (`?page=99` with 63 results at 25 per page → page 3; zero results → page 1).
+  - Refresh, back/forward and bookmarks all work. The filter form is a plain GET form, auto-submitting on change.
+- **Pagination.** Offset-based, 25 per page. A filtered `COUNT(*)` and the page query share one predicate builder and run in one RepeatableRead read-only snapshot, so totals and items cannot disagree.
+- **Dashboard.**
+  - A "Needs attention" strip (not evaluated, recommended to apply, deferred for budget, evaluation failed, in progress); each count equals the total of the view it links to.
+  - Removable filter chips, clear-all, a result count, and distinct "no opportunities yet" vs "no matches" empty states.
+  - Pipeline overview counts and lightweight distributions (current recommendation, priority, source).
+  - Richer rows: company · location, salary or "Salary not stated", source, discovered date, lifecycle, current recommendation (marked "last completed" when a reevaluation is pending or failed), priority, evaluation state, deferred badge, and a safe application link.
+  - The budget card and AI usage totals are unchanged.
+- **Migration.** `20261008090000_dashboard_indexes` adds Opportunity indexes only (`discoveredAt/id`, `status/discoveredAt`, `sourceType`, `updatedAt`); the known `Recommendation` drift line is excluded.
+- **API.** `GET /api/opportunities` now accepts every filter/sort/page param and returns `total`, `page`, `requestedPage`, `pageCount` and `pageSize`. Unknown params and invalid values are now ignored; malformed `limit`/`page`/`pageSize` still return 400. Without `view`, the API keeps listing every lifecycle state.
+- **Tests:**
+  - unit: `opportunity-query.test.ts` (parsing, dropping, normalization, escaping, canonical serialization, `clampPage`, canonical redirect, contract value parity) and `dashboard-ui.test.tsx` (chips, count, form state, rows, pagination, attention links, distributions);
+  - integration: `dashboard-query.test.ts` (every filter and combinations, search, sorts with nulls last, page beyond end, exact final page, zero results, count/items agreement across pages, summary counts equal linked views, read-only);
+  - E2E: `dashboard.spec.ts`, its own Playwright project, run last.
+
 #### Remaining main-product order
 
 Revised roadmap:
 
 - Task 5 — Profile + Preferences: done (see above).
 - Task 6 — Budget Ledger + Deferral: done (see above).
-- Task 7 — Product UI: dashboard, search, sort, filters, analytics polish.
+- Task 7 — Product UI: dashboard, search, sort, filters, analytics polish: done (see above).
 - Task 8 — Application Tracker: notes, follow-ups, contacts, outcomes.
 - Task 9 — Final setup, operations, integration, E2E.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.

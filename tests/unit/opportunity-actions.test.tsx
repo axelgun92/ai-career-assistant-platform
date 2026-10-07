@@ -132,10 +132,13 @@ describe("dashboard lifecycle presentation", () => {
     expect(opportunityListViews.active.statuses).toEqual(["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"]);
     expect(opportunityListViews.archived.statuses).toEqual(["ARCHIVED", "CLOSED"]);
     expect(opportunityListViews.all.statuses).toBeUndefined();
-    const listOpportunities = vi.fn().mockResolvedValue([]);
-    const handler = createOpportunityListHandler({ listOpportunities });
+    expect(opportunityListViews.triage.statuses).toEqual(["NORMALIZED", "EVALUATED", "RECOMMENDED"]);
+    const listPage = vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, requestedPage: 1, pageCount: 1, pageSize: 25 });
+    const handler = createOpportunityListHandler({ listPage });
     expect((await handler(new Request("http://localhost/api/opportunities?view=dismissed"))).status).toBe(200);
-    expect(listOpportunities).toHaveBeenCalledWith({ limit: undefined, statuses: ["REJECTED_BY_USER"] });
-    expect((await handler(new Request("http://localhost/api/opportunities?view=unknown"))).status).toBe(400);
+    expect(listPage.mock.calls[0]![0].filters.statuses).toEqual(["REJECTED_BY_USER"]);
+    // An unknown view is ignored (all lifecycle states), never an error.
+    expect((await handler(new Request("http://localhost/api/opportunities?view=unknown"))).status).toBe(200);
+    expect(listPage.mock.calls[1]![0].filters.statuses).toBeUndefined();
   });
 });
