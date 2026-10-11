@@ -81,7 +81,7 @@ describe("Organizational Maturity authoritative cross-functional relationships",
     const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilities, catalog);
     const candidate = validOrganizationalMaturity();
     const transport = { ...candidate, ownershipAndCrossFunctionalDesign: {
-      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: organizationalMaturityRelationshipTransport(catalog),
+      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: providerRelationshipDimension(catalog),
     } };
     expect(schema.safeParse(transport).success).toBe(true);
     expect(responsibilities.areas.education.ownership).toBe("OWNS");
@@ -103,7 +103,7 @@ describe("Organizational Maturity authoritative cross-functional relationships",
     const catalog = organizationalMaturityRelationshipCatalog(map, evidence);
     const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilityMapWithRenewals("UNKNOWN"), catalog);
     const candidate = validOrganizationalMaturity();
-    const dimension = organizationalMaturityRelationshipTransport(catalog);
+    const dimension = providerRelationshipDimension(catalog);
     const make = (replacement: unknown) => ({ ...candidate, ownershipAndCrossFunctionalDesign: {
       ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: replacement,
     } });
@@ -122,7 +122,7 @@ describe("Organizational Maturity authoritative cross-functional relationships",
     const transport = { ...candidate, customerOperatingModel: {
       ...candidate.customerOperatingModel, classification: "EDUCATION_FOCUSED", substantialPatterns: ["EDUCATION_FOCUSED"],
     }, ownershipAndCrossFunctionalDesign: {
-      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: organizationalMaturityRelationshipTransport(catalog),
+      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: providerRelationshipDimension(catalog),
     } };
     expect(schema.safeParse(transport).success).toBe(true);
     const domain = semanticOrganizationalMaturityFromTransport(schema.parse(transport), [...availableEvidence, ...evidence], responsibilityMapWithRenewals("UNKNOWN"), catalog);
@@ -138,7 +138,9 @@ describe("Organizational Maturity authoritative cross-functional relationships",
 
   it("retains weak-signal/Unknown rejection after authoritative relationship restoration", () => {
     const catalog = organizationalMaturityRelationshipCatalog({ functions: { education: map.functions.education } }, evidence);
-    const candidate = validOrganizationalMaturity();
+    const candidate = toLegacyOrganizationalMaturityTransport(
+      validOrganizationalMaturity(),
+    );
     const transport = { ...candidate,
       weakSignals: [supportedWeakSignal("CROSS_FUNCTIONAL_RELATIONSHIPS")],
       ownershipAndCrossFunctionalDesign: { ...candidate.ownershipAndCrossFunctionalDesign,
@@ -150,8 +152,9 @@ describe("Organizational Maturity authoritative cross-functional relationships",
 
   it("restores complete relationship evidence deterministically and projects legacy v5 without changing public shape or other fields", () => {
     const catalog = organizationalMaturityRelationshipCatalog(map, evidence);
-    const candidate = validOrganizationalMaturity();
-    candidate.score = 58;
+    const currentCandidate = validOrganizationalMaturity();
+    currentCandidate.score = 58;
+    const candidate = toLegacyOrganizationalMaturityTransport(currentCandidate);
     candidate.ownershipAndCrossFunctionalDesign.crossFunctionalRelationships = {
       evidenceState: "SUPPORTED_PRESENT", conclusion: "Collaborates with Product and Education through education ownership.", evidenceReferences: ["product-team", "education-work"],
     };
@@ -173,8 +176,12 @@ describe("Organizational Maturity authoritative cross-functional relationships",
     expect(organizationalMaturityDataSchema.parse({ evaluated: true, maturity: JSON.parse(JSON.stringify(projected)) })).toEqual({ evaluated: true, maturity: projected });
     const dimension = organizationalMaturityRelationshipTransport(catalog);
     const schema = createSemanticOrganizationalMaturityTransportSchema(responsibilityMapWithRenewals("UNKNOWN"), catalog);
-    const repeated = { ...candidate, ownershipAndCrossFunctionalDesign: {
-      ...candidate.ownershipAndCrossFunctionalDesign, crossFunctionalRelationships: { ...dimension, evidenceReferences: ["product-team", "product-team"] },
+    const repeated = { ...currentCandidate, ownershipAndCrossFunctionalDesign: {
+      ...currentCandidate.ownershipAndCrossFunctionalDesign,
+      crossFunctionalRelationships: {
+        ...providerRelationshipDimension(catalog),
+        evidenceReferences: ["product-team", "product-team"],
+      },
     } };
     expect(semanticOrganizationalMaturityFromTransport(schema.parse(repeated), sources, responsibilityMapWithRenewals("UNKNOWN"), catalog)).toEqual(projected);
     expect(() => restoreOrganizationalMaturityRelationships({ ...legacy, ownershipAndCrossFunctionalDesign: {
@@ -251,6 +258,71 @@ const ownershipDimensions = [
   "unrealisticOwnership",
 ] as const;
 
+const maturityAssessmentAreas = [
+  "EXISTING_CS_FUNCTION",
+  "CUSTOMER_OPERATING_MODEL",
+  "ROLE_BOUNDARIES",
+  "TEAM_BOUNDARIES",
+  "HANDOFFS",
+  "SHARED_OWNERSHIP",
+  "CROSS_FUNCTIONAL_RELATIONSHIPS",
+  "UNRELATED_RESPONSIBILITIES",
+  "SCOPE_CREEP",
+  "MULTIPLE_JOBS_COMBINED",
+  "UNREALISTIC_OWNERSHIP",
+] as const;
+
+const ownershipKeyByAssessmentArea = {
+  ROLE_BOUNDARIES: "roleBoundaries",
+  TEAM_BOUNDARIES: "teamBoundaries",
+  HANDOFFS: "handoffs",
+  SHARED_OWNERSHIP: "sharedOwnership",
+  CROSS_FUNCTIONAL_RELATIONSHIPS: "crossFunctionalRelationships",
+  UNRELATED_RESPONSIBILITIES: "unrelatedResponsibilities",
+  SCOPE_CREEP: "scopeCreep",
+  MULTIPLE_JOBS_COMBINED: "multipleJobsCombined",
+  UNREALISTIC_OWNERSHIP: "unrealisticOwnership",
+} as const;
+
+const neutralMaturityImpact = () => ({
+  impact: "NEUTRAL" as const,
+  finding: null,
+  affirmativeEvidenceReferences: [] as string[],
+});
+
+const positiveMaturityImpact = (
+  findingText = finding.finding,
+  references = evidenceReferences,
+) => ({
+  impact: "SUPPORTED_POSITIVE" as const,
+  finding: findingText,
+  affirmativeEvidenceReferences: references,
+});
+
+const weakMaturityImpact = (
+  findingText = "The posting explicitly combines ownership across separate functions.",
+  references = evidenceReferences,
+) => ({
+  impact: "SUPPORTED_WEAKNESS" as const,
+  finding: findingText,
+  affirmativeEvidenceReferences: references,
+});
+
+const notEstablishedMaturityImpact = () => ({
+  impact: "NOT_ESTABLISHED" as const,
+  finding: null,
+  affirmativeEvidenceReferences: [] as string[],
+});
+
+function contextualMaturityUnknown(code = "maturity-information-unknown") {
+  return {
+    code,
+    description: "The available evidence does not resolve this information.",
+    materiality: "Completeness is reduced.",
+    evidenceReferences: [] as string[],
+  };
+}
+
 function supportedOwnershipDimension(
   evidenceState: "SUPPORTED_PRESENT" | "SUPPORTED_ABSENT" =
     "SUPPORTED_PRESENT",
@@ -259,6 +331,8 @@ function supportedOwnershipDimension(
     evidenceState,
     conclusion: "The boundary is supported.",
     evidenceReferences,
+    semanticImpact: neutralMaturityImpact(),
+    unknowns: [] as ReturnType<typeof contextualMaturityUnknown>[],
   };
 }
 
@@ -267,7 +341,26 @@ function unknownOwnershipDimension() {
     evidenceState: "NOT_ESTABLISHED" as const,
     conclusion: null,
     evidenceReferences: [] as string[],
+    semanticImpact: notEstablishedMaturityImpact(),
+    unknowns: [contextualMaturityUnknown()],
   };
+}
+
+function providerRelationshipDimension(
+  catalog: ReturnType<typeof organizationalMaturityRelationshipCatalog>,
+) {
+  const dimension = organizationalMaturityRelationshipTransport(catalog);
+  return dimension.evidenceState === "NOT_ESTABLISHED"
+    ? {
+        ...dimension,
+        semanticImpact: notEstablishedMaturityImpact(),
+        unknowns: [contextualMaturityUnknown("relationship-design-unknown")],
+      }
+    : {
+        ...dimension,
+        semanticImpact: neutralMaturityImpact(),
+        unknowns: [] as ReturnType<typeof contextualMaturityUnknown>[],
+      };
 }
 
 function supportedWeakSignal(
@@ -306,6 +399,158 @@ function maturityUnknown(
   };
 }
 
+function setMaturityAssessment(
+  transport: ReturnType<typeof validOrganizationalMaturity>,
+  assessmentArea: ReturnType<typeof supportedWeakSignal>["assessmentArea"],
+  semanticImpact: ReturnType<
+    | typeof neutralMaturityImpact
+    | typeof positiveMaturityImpact
+    | typeof weakMaturityImpact
+    | typeof notEstablishedMaturityImpact
+  >,
+  unknowns: ReturnType<typeof contextualMaturityUnknown>[] = [],
+) {
+  if (assessmentArea === "EXISTING_CS_FUNCTION") {
+    Object.assign(transport.existingCustomerSuccessFunction, {
+      semanticImpact,
+      unknowns,
+    });
+    return;
+  }
+  if (assessmentArea === "CUSTOMER_OPERATING_MODEL") {
+    Object.assign(transport.customerOperatingModel, { semanticImpact, unknowns });
+    return;
+  }
+  Object.assign(
+    transport.ownershipAndCrossFunctionalDesign[
+      ownershipKeyByAssessmentArea[assessmentArea]
+    ],
+    { semanticImpact, unknowns },
+  );
+}
+
+function maturityAssessmentFor(
+  transport: ReturnType<typeof validOrganizationalMaturity>,
+  assessmentArea: (typeof maturityAssessmentAreas)[number],
+) {
+  if (assessmentArea === "EXISTING_CS_FUNCTION") {
+    return transport.existingCustomerSuccessFunction;
+  }
+  if (assessmentArea === "CUSTOMER_OPERATING_MODEL") {
+    return transport.customerOperatingModel;
+  }
+  return transport.ownershipAndCrossFunctionalDesign[
+    ownershipKeyByAssessmentArea[assessmentArea]
+  ];
+}
+
+function setMaturityAssessmentStatement(
+  transport: ReturnType<typeof validOrganizationalMaturity>,
+  assessmentArea: (typeof maturityAssessmentAreas)[number],
+  statement: string,
+) {
+  const assessment = maturityAssessmentFor(transport, assessmentArea);
+  if ("explanation" in assessment) assessment.explanation = statement;
+  else assessment.conclusion = statement;
+}
+
+function setMaturityAssessmentNotEstablished(
+  transport: ReturnType<typeof validOrganizationalMaturity>,
+  assessmentArea: (typeof maturityAssessmentAreas)[number],
+) {
+  if (assessmentArea === "EXISTING_CS_FUNCTION") {
+    transport.existingCustomerSuccessFunction = {
+      classification: "UNKNOWN",
+      explanation: "The existing Customer Success function is unresolved.",
+      evidenceReferences: [],
+      semanticImpact: notEstablishedMaturityImpact(),
+      unknowns: [contextualMaturityUnknown("cs-function-unknown")],
+    } as never;
+    return;
+  }
+  if (assessmentArea === "CUSTOMER_OPERATING_MODEL") {
+    transport.customerOperatingModel = {
+      classification: "UNKNOWN",
+      explanation: "The customer operating model is unresolved.",
+      evidenceReferences: [],
+      substantialPatterns: [],
+      semanticImpact: notEstablishedMaturityImpact(),
+      unknowns: [contextualMaturityUnknown("operating-model-unknown")],
+    } as never;
+    return;
+  }
+  transport.ownershipAndCrossFunctionalDesign[
+    ownershipKeyByAssessmentArea[assessmentArea]
+  ] = unknownOwnershipDimension() as never;
+}
+
+function toLegacyOrganizationalMaturityTransport(
+  current: ReturnType<typeof validOrganizationalMaturity>,
+) {
+  const areas = [
+    ["EXISTING_CS_FUNCTION", current.existingCustomerSuccessFunction],
+    ["CUSTOMER_OPERATING_MODEL", current.customerOperatingModel],
+    ...ownershipDimensions.map((key, index) => [
+      [
+        "ROLE_BOUNDARIES",
+        "TEAM_BOUNDARIES",
+        "HANDOFFS",
+        "SHARED_OWNERSHIP",
+        "CROSS_FUNCTIONAL_RELATIONSHIPS",
+        "UNRELATED_RESPONSIBILITIES",
+        "SCOPE_CREEP",
+        "MULTIPLE_JOBS_COMBINED",
+        "UNREALISTIC_OWNERSHIP",
+      ][index],
+      current.ownershipAndCrossFunctionalDesign[key],
+    ]),
+  ] as Array<[ReturnType<typeof supportedWeakSignal>["assessmentArea"], any]>;
+  const stripAssessment = ({ semanticImpact: _impact, unknowns: _unknowns, ...value }: any) => value;
+  const positiveSignals = areas.flatMap(([, assessment]) =>
+    assessment.semanticImpact.impact === "SUPPORTED_POSITIVE"
+      ? [{
+          finding: assessment.semanticImpact.finding,
+          evidenceReferences: assessment.semanticImpact.affirmativeEvidenceReferences,
+        }]
+      : [],
+  );
+  const weakSignals = areas.flatMap(([assessmentArea, assessment]) =>
+    assessment.semanticImpact.impact === "SUPPORTED_WEAKNESS"
+      ? [{
+          assessmentArea,
+          evidenceState: "SUPPORTED_WEAKNESS" as const,
+          finding: assessment.semanticImpact.finding,
+          affirmativeEvidenceReferences: assessment.semanticImpact.affirmativeEvidenceReferences,
+        }]
+      : [],
+  );
+  const unknowns = areas.flatMap(([assessmentArea, assessment]) =>
+    assessment.unknowns.map((unknown: ReturnType<typeof contextualMaturityUnknown>) => ({
+      assessmentArea,
+      ...unknown,
+    })),
+  );
+  return {
+    ...current,
+    existingCustomerSuccessFunction: stripAssessment(
+      current.existingCustomerSuccessFunction,
+    ),
+    customerOperatingModel: stripAssessment(current.customerOperatingModel),
+    ownershipAndCrossFunctionalDesign: {
+      ...current.ownershipAndCrossFunctionalDesign,
+      ...Object.fromEntries(
+        ownershipDimensions.map((key) => [
+          key,
+          stripAssessment(current.ownershipAndCrossFunctionalDesign[key]),
+        ]),
+      ),
+    },
+    positiveSignals,
+    weakSignals,
+    unknowns,
+  };
+}
+
 function validOrganizationalMaturity() {
   return {
     score: 75,
@@ -315,12 +560,16 @@ function validOrganizationalMaturity() {
       classification: "ESTABLISHED" as const,
       explanation: "An established function is supported.",
       evidenceReferences,
+      semanticImpact: positiveMaturityImpact(),
+      unknowns: [] as ReturnType<typeof contextualMaturityUnknown>[],
     },
     customerOperatingModel: {
       classification: "ADOPTION_FOCUSED" as const,
       explanation: "The operating model is adoption focused.",
       evidenceReferences,
       substantialPatterns: ["ADOPTION_FOCUSED" as const],
+      semanticImpact: neutralMaturityImpact(),
+      unknowns: [] as ReturnType<typeof contextualMaturityUnknown>[],
     },
     ownershipAndCrossFunctionalDesign: {
       summary: "The ownership design is bounded.",
@@ -336,9 +585,6 @@ function validOrganizationalMaturity() {
       evidenceReferences,
     },
     summary: "The organization has a supported operating structure.",
-    positiveSignals: [finding],
-    weakSignals: [],
-    unknowns: [],
     evidenceReferences,
     contradictions: [],
   };
@@ -553,9 +799,8 @@ describe("Customer Success provider/application contracts", () => {
     (key) => {
       const knownWithoutConclusion = validOrganizationalMaturity();
       knownWithoutConclusion.ownershipAndCrossFunctionalDesign[key] = {
+        ...supportedOwnershipDimension(),
         conclusion: null as never,
-        evidenceState: "SUPPORTED_PRESENT",
-        evidenceReferences,
       };
       expect(
         semanticOrganizationalMaturityTransportSchema.safeParse(
@@ -565,9 +810,8 @@ describe("Customer Success provider/application contracts", () => {
 
       const unknownWithConclusion = validOrganizationalMaturity();
       unknownWithConclusion.ownershipAndCrossFunctionalDesign[key] = {
+        ...unknownOwnershipDimension(),
         conclusion: "An unknown must not assert this.",
-        evidenceState: "NOT_ESTABLISHED" as never,
-        evidenceReferences: [],
       };
       expect(
         semanticOrganizationalMaturityTransportSchema.safeParse(
@@ -577,8 +821,8 @@ describe("Customer Success provider/application contracts", () => {
 
       const knownWithoutEvidence = validOrganizationalMaturity();
       knownWithoutEvidence.ownershipAndCrossFunctionalDesign[key] = {
+        ...supportedOwnershipDimension(),
         conclusion: "Known conclusion.",
-        evidenceState: "SUPPORTED_PRESENT",
         evidenceReferences: [],
       };
       expect(
@@ -589,8 +833,8 @@ describe("Customer Success provider/application contracts", () => {
 
       const absentWithoutEvidence = validOrganizationalMaturity();
       absentWithoutEvidence.ownershipAndCrossFunctionalDesign[key] = {
+        ...supportedOwnershipDimension("SUPPORTED_ABSENT"),
         conclusion: "The evidence affirmatively supports absence.",
-        evidenceState: "SUPPORTED_ABSENT",
         evidenceReferences: [],
       };
       expect(
@@ -609,6 +853,370 @@ describe("Customer Success provider/application contracts", () => {
     },
   );
 
+  it.each(ownershipDimensions)(
+    "co-locates positive, weak, neutral, and unresolved impact for %s",
+    (key) => {
+      const positive = validOrganizationalMaturity();
+      positive.ownershipAndCrossFunctionalDesign[key] =
+        supportedOwnershipDimension();
+      positive.ownershipAndCrossFunctionalDesign[key].semanticImpact =
+        positiveMaturityImpact(`Supported positive ${key}.`);
+      const positiveResult = semanticOrganizationalMaturityFromTransport(
+        semanticOrganizationalMaturityTransportSchema.parse(positive),
+        availableEvidence,
+      );
+      expect(positiveResult.positiveSignals).toContainEqual({
+        finding: `Supported positive ${key}.`,
+        evidenceReferences,
+      });
+      expect(positiveResult.weakSignals).not.toContainEqual(
+        expect.objectContaining({ finding: `Supported positive ${key}.` }),
+      );
+
+      const weak = validOrganizationalMaturity();
+      weak.ownershipAndCrossFunctionalDesign[key] = supportedOwnershipDimension();
+      weak.ownershipAndCrossFunctionalDesign[key].semanticImpact =
+        weakMaturityImpact(`Supported weakness ${key}.`);
+      const weakResult = semanticOrganizationalMaturityFromTransport(
+        semanticOrganizationalMaturityTransportSchema.parse(weak),
+        availableEvidence,
+      );
+      expect(weakResult.weakSignals).toContainEqual({
+        finding: `Supported weakness ${key}.`,
+        evidenceReferences,
+      });
+      expect(weakResult.positiveSignals).not.toContainEqual(
+        expect.objectContaining({ finding: `Supported weakness ${key}.` }),
+      );
+
+      const neutral = validOrganizationalMaturity();
+      neutral.ownershipAndCrossFunctionalDesign[key] = supportedOwnershipDimension();
+      const neutralResult = semanticOrganizationalMaturityFromTransport(
+        semanticOrganizationalMaturityTransportSchema.parse(neutral),
+        availableEvidence,
+      );
+      expect(neutralResult.positiveSignals).not.toContainEqual(
+        expect.objectContaining({ finding: expect.stringContaining(key) }),
+      );
+      expect(neutralResult.weakSignals).not.toContainEqual(
+        expect.objectContaining({ finding: expect.stringContaining(key) }),
+      );
+      expect(neutralResult.ownershipAndCrossFunctionalDesign[key].unknown).toBe(
+        false,
+      );
+
+      const unresolved = validOrganizationalMaturity();
+      unresolved.ownershipAndCrossFunctionalDesign[key] =
+        unknownOwnershipDimension();
+      expect(
+        semanticOrganizationalMaturityTransportSchema.safeParse(unresolved)
+          .success,
+      ).toBe(true);
+      const unresolvedResult = semanticOrganizationalMaturityFromTransport(
+        unresolved,
+        availableEvidence,
+      );
+      expect(
+        unresolvedResult.ownershipAndCrossFunctionalDesign[key].unknown,
+      ).toBe(true);
+      expect(unresolvedResult.positiveSignals).toHaveLength(1);
+      expect(unresolvedResult.weakSignals).toEqual([]);
+
+      for (const invalidImpact of [
+        positiveMaturityImpact("Invalid unresolved positive."),
+        weakMaturityImpact("Invalid unresolved weakness."),
+      ]) {
+        const invalid = structuredClone(unresolved);
+        invalid.ownershipAndCrossFunctionalDesign[key].semanticImpact =
+          invalidImpact as never;
+        expect(
+          semanticOrganizationalMaturityTransportSchema.safeParse(invalid)
+            .success,
+        ).toBe(false);
+      }
+    },
+  );
+
+  it.each(["SUPPORTED_POSITIVE", "SUPPORTED_WEAKNESS"] as const)(
+    "requires affirmative evidence for %s impact",
+    (impact) => {
+      const transport = validOrganizationalMaturity();
+      transport.ownershipAndCrossFunctionalDesign.scopeCreep.semanticImpact = {
+        impact,
+        finding: "A claimed maturity impact.",
+        affirmativeEvidenceReferences: [],
+      };
+      expect(
+        semanticOrganizationalMaturityTransportSchema.safeParse(transport)
+          .success,
+      ).toBe(false);
+    },
+  );
+
+  it.each(maturityAssessmentAreas)(
+    "prevents NOT_ESTABLISHED from carrying positive or weak impact for %s",
+    (assessmentArea) => {
+      for (const semanticImpact of [
+        positiveMaturityImpact("Invalid unresolved positive."),
+        weakMaturityImpact("Invalid unresolved weakness."),
+      ]) {
+        const transport = validOrganizationalMaturity();
+        setMaturityAssessmentNotEstablished(transport, assessmentArea);
+        const assessment = maturityAssessmentFor(transport, assessmentArea);
+        assessment.semanticImpact = semanticImpact as never;
+        expect(
+          semanticOrganizationalMaturityTransportSchema.safeParse(transport)
+            .success,
+        ).toBe(false);
+      }
+    },
+  );
+
+  it.each(maturityAssessmentAreas)(
+    "accepts an independently supported positive with a narrower contextual Unknown for %s",
+    (assessmentArea) => {
+      const transport = validOrganizationalMaturity();
+      setMaturityAssessmentStatement(
+        transport,
+        assessmentArea,
+        "The documented operating design is established; implementation capacity is unclear.",
+      );
+      setMaturityAssessment(
+        transport,
+        assessmentArea,
+        positiveMaturityImpact("The documented operating design is repeatable."),
+        [
+          {
+            ...contextualMaturityUnknown(
+              `${assessmentArea.toLowerCase().replaceAll("_", "-")}-capacity`,
+            ),
+            description: "Implementation capacity is unclear.",
+          },
+        ],
+      );
+
+      const domain = semanticOrganizationalMaturityFromTransport(
+        transport,
+        availableEvidence,
+      );
+      expect(domain.positiveSignals).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            finding: "The documented operating design is repeatable.",
+          }),
+        ]),
+      );
+      expect(domain.unknowns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: `${assessmentArea.toLowerCase().replaceAll("_", "-")}-capacity`,
+          }),
+        ]),
+      );
+    },
+  );
+
+  it.each(maturityAssessmentAreas)(
+    "accepts an independently supported weakness with a narrower contextual Unknown for %s",
+    (assessmentArea) => {
+      const transport = validOrganizationalMaturity();
+      setMaturityAssessmentStatement(
+        transport,
+        assessmentArea,
+        "The documented ownership design combines unrelated functions; staffing capacity is not described.",
+      );
+      setMaturityAssessment(
+        transport,
+        assessmentArea,
+        weakMaturityImpact(
+          "The documented ownership design combines unrelated functions.",
+        ),
+        [
+          {
+            ...contextualMaturityUnknown(
+              `${assessmentArea.toLowerCase().replaceAll("_", "-")}-staffing`,
+            ),
+            description: "Staffing capacity is not described.",
+          },
+        ],
+      );
+
+      const domain = semanticOrganizationalMaturityFromTransport(
+        transport,
+        availableEvidence,
+      );
+      expect(domain.weakSignals).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            finding:
+              "The documented ownership design combines unrelated functions.",
+          }),
+        ]),
+      );
+    },
+  );
+
+  it.each(maturityAssessmentAreas)(
+    "accepts a neutral established assessment with a contextual Unknown for %s",
+    (assessmentArea) => {
+      const transport = validOrganizationalMaturity();
+      setMaturityAssessmentStatement(
+        transport,
+        assessmentArea,
+        "The documented operating condition is established.",
+      );
+      setMaturityAssessment(
+        transport,
+        assessmentArea,
+        neutralMaturityImpact(),
+        [
+          {
+            ...contextualMaturityUnknown(
+              `${assessmentArea.toLowerCase().replaceAll("_", "-")}-detail`,
+            ),
+            description: "A narrower staffing detail is unclear.",
+          },
+        ],
+      );
+
+      const domain = semanticOrganizationalMaturityFromTransport(
+        transport,
+        availableEvidence,
+      );
+      expect(domain.weakSignals).toEqual([]);
+      expect(domain.unknowns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: `${assessmentArea.toLowerCase().replaceAll("_", "-")}-detail`,
+          }),
+        ]),
+      );
+    },
+  );
+
+  it.each(["SUPPORTED_POSITIVE", "SUPPORTED_WEAKNESS"] as const)(
+    "rejects %s inferred from missing information even when a contextual Unknown exists",
+    (impact) => {
+      const transport = validOrganizationalMaturity();
+      setMaturityAssessment(
+        transport,
+        "TEAM_BOUNDARIES",
+        impact === "SUPPORTED_POSITIVE"
+          ? positiveMaturityImpact("Team boundaries are not described.")
+          : weakMaturityImpact("Team boundaries are not described."),
+        [
+          {
+            ...contextualMaturityUnknown("team-boundaries-unknown"),
+            description: "Team boundaries are not described.",
+          },
+        ],
+      );
+      expectNonRetryableEvidenceFailure(
+        () =>
+          semanticOrganizationalMaturityFromTransport(
+            transport,
+            availableEvidence,
+          ),
+        impact === "SUPPORTED_POSITIVE"
+          ? "ORGANIZATIONAL_MATURITY_POSITIVE_SIGNAL_INVALID"
+          : "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+      );
+    },
+  );
+
+  it("rejects an unresolved-only conclusion represented as established", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.teamBoundaries = {
+      ...supportedOwnershipDimension(),
+      conclusion: "Team boundaries are not described.",
+      unknowns: [
+        {
+          ...contextualMaturityUnknown("team-boundaries-unknown"),
+          description: "Team boundaries are not described.",
+        },
+      ],
+    };
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+        ),
+      "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+    );
+  });
+
+  it("rejects an unresolved clause that is not represented by a contextual Unknown", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.roleBoundaries = {
+      ...supportedOwnershipDimension(),
+      conclusion:
+        "Lifecycle ownership is established; implementation boundaries are unclear.",
+      unknowns: [
+        {
+          ...contextualMaturityUnknown("staffing-unknown"),
+          description: "Staffing capacity is unclear.",
+        },
+      ],
+    };
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+        ),
+      "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+    );
+  });
+
+  it("rejects a contextual Unknown that contradicts the supported proposition", () => {
+    const transport = validOrganizationalMaturity();
+    transport.ownershipAndCrossFunctionalDesign.roleBoundaries = {
+      ...supportedOwnershipDimension(),
+      conclusion: "Role boundaries are clear.",
+      semanticImpact: positiveMaturityImpact("Role boundaries are clear."),
+      unknowns: [
+        {
+          ...contextualMaturityUnknown("role-boundaries-unknown"),
+          description: "Role boundaries are unclear.",
+        },
+      ],
+    };
+    expectNonRetryableEvidenceFailure(
+      () =>
+        semanticOrganizationalMaturityFromTransport(
+          transport,
+          availableEvidence,
+        ),
+      "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+    );
+  });
+
+  it("requires positive and weak impact evidence to belong to its assessment", () => {
+    for (const semanticImpact of [
+      positiveMaturityImpact("A supported strength.", ["e2"]),
+      weakMaturityImpact("A supported weakness.", ["e2"]),
+    ]) {
+      const transport = validOrganizationalMaturity();
+      setMaturityAssessment(
+        transport,
+        "CUSTOMER_OPERATING_MODEL",
+        semanticImpact,
+      );
+      expectNonRetryableEvidenceFailure(
+        () =>
+          semanticOrganizationalMaturityFromTransport(
+            transport,
+            [
+              ...availableEvidence,
+              { referenceId: "e2", sourceType: "MANUAL" },
+            ],
+          ),
+        "ORGANIZATIONAL_MATURITY_IMPACT_EVIDENCE_INVALID",
+      );
+    }
+  });
+
   it("structurally enforces every Organizational Maturity criterion branch", () => {
     const knownFunctionWithoutEvidence = validOrganizationalMaturity();
     knownFunctionWithoutEvidence.existingCustomerSuccessFunction.evidenceReferences =
@@ -624,6 +1232,8 @@ describe("Customer Success provider/application contracts", () => {
       classification: "UNKNOWN",
       explanation: "The function is unknown.",
       evidenceReferences: [],
+      semanticImpact: notEstablishedMaturityImpact(),
+      unknowns: [contextualMaturityUnknown("cs-function-unknown")],
     };
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(unknownFunction)
@@ -636,6 +1246,8 @@ describe("Customer Success provider/application contracts", () => {
       explanation: "Only one pattern was supplied.",
       evidenceReferences,
       substantialPatterns: ["ADOPTION_FOCUSED"],
+      semanticImpact: neutralMaturityImpact(),
+      unknowns: [],
     };
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(invalidHybrid)
@@ -648,6 +1260,8 @@ describe("Customer Success provider/application contracts", () => {
       explanation: "Unknown cannot assert patterns.",
       evidenceReferences: [],
       substantialPatterns: ["ADOPTION_FOCUSED"],
+      semanticImpact: notEstablishedMaturityImpact(),
+      unknowns: [contextualMaturityUnknown("operating-model-unknown")],
     };
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(invalidUnknown)
@@ -700,6 +1314,8 @@ describe("Customer Success provider/application contracts", () => {
             explanation: "Material renewal work is established, independently of ownership.",
             evidenceReferences,
             substantialPatterns: ["RENEWAL_FOCUSED"],
+            semanticImpact: neutralMaturityImpact(),
+            unknowns: [],
           },
         };
         const domain = semanticOrganizationalMaturityFromTransport(
@@ -707,7 +1323,12 @@ describe("Customer Success provider/application contracts", () => {
         );
         expect(semanticOrganizationalMaturitySchema.parse(domain)).toEqual(domain);
         expect(organizationalMaturityDataSchema.parse({ evaluated: true, maturity: domain })).toEqual({ evaluated: true, maturity: domain });
-        expect(domain.customerOperatingModel).toEqual(candidate.customerOperatingModel);
+        expect(domain.customerOperatingModel).toEqual({
+          classification: candidate.customerOperatingModel.classification,
+          explanation: candidate.customerOperatingModel.explanation,
+          evidenceReferences: candidate.customerOperatingModel.evidenceReferences,
+          substantialPatterns: candidate.customerOperatingModel.substantialPatterns,
+        });
       }
     },
   );
@@ -723,6 +1344,8 @@ describe("Customer Success provider/application contracts", () => {
           explanation: "The provider claims renewal focus without evidence.",
           evidenceReferences,
           substantialPatterns: ["ADOPTION_FOCUSED", "RENEWAL_FOCUSED"],
+          semanticImpact: neutralMaturityImpact(),
+          unknowns: [],
         },
       };
       expect(createSemanticOrganizationalMaturityTransportSchema(map).safeParse(candidate).success).toBe(false);
@@ -742,6 +1365,8 @@ describe("Customer Success provider/application contracts", () => {
         explanation: "Repeatable adoption, education and enablement programs exist; renewals and implementation are not established.",
         evidenceReferences,
         substantialPatterns: ["ADOPTION_FOCUSED", "EDUCATION_FOCUSED", "ENABLEMENT_FOCUSED", "RENEWAL_FOCUSED"],
+        semanticImpact: neutralMaturityImpact(),
+        unknowns: [],
       },
     };
     expect(semanticOrganizationalMaturityTransportSchema.safeParse(candidate).success).toBe(true);
@@ -763,6 +1388,8 @@ describe("Customer Success provider/application contracts", () => {
           explanation: "The non-renewal pattern retains its existing semantic interpretation.",
           evidenceReferences,
           substantialPatterns: [pattern],
+          semanticImpact: neutralMaturityImpact(),
+          unknowns: [],
         },
       };
       expect(semanticOrganizationalMaturityFromTransport(schema.parse(candidate), availableEvidence, map))
@@ -777,6 +1404,8 @@ describe("Customer Success provider/application contracts", () => {
       explanation: "The model combines adoption and renewal work.",
       evidenceReferences,
       substantialPatterns: ["ADOPTION_FOCUSED", "RENEWAL_FOCUSED"],
+      semanticImpact: neutralMaturityImpact(),
+      unknowns: [],
     };
 
     expectNonRetryableEvidenceFailure(
@@ -799,6 +1428,8 @@ describe("Customer Success provider/application contracts", () => {
         explanation: "Renewals are a substantial operating pattern.",
         evidenceReferences,
         substantialPatterns: ["RENEWAL_FOCUSED"],
+        semanticImpact: neutralMaturityImpact(),
+        unknowns: [],
       };
 
       const result = semanticOrganizationalMaturityFromTransport(
@@ -821,6 +1452,8 @@ describe("Customer Success provider/application contracts", () => {
         explanation: "Renewals are claimed as the operating model.",
         evidenceReferences,
         substantialPatterns: ["RENEWAL_FOCUSED"],
+        semanticImpact: neutralMaturityImpact(),
+        unknowns: [],
       };
       expectNonRetryableEvidenceFailure(
         () =>
@@ -900,9 +1533,9 @@ describe("Customer Success provider/application contracts", () => {
   it("rejects missing information represented as supported absence", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.handoffs = {
+      ...supportedOwnershipDimension("SUPPORTED_ABSENT"),
       evidenceState: "SUPPORTED_ABSENT",
       conclusion: "Formal handoffs are not described.",
-      evidenceReferences,
     };
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(transport).success,
@@ -913,17 +1546,17 @@ describe("Customer Success provider/application contracts", () => {
           transport,
           availableEvidence,
         ),
-      "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+      "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
     );
   });
 
   it("preserves affirmative evidence of absence as a Known conclusion", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.unrealisticOwnership = {
+      ...supportedOwnershipDimension("SUPPORTED_ABSENT"),
       evidenceState: "SUPPORTED_ABSENT",
       conclusion:
         "The posting explicitly assigns technical escalation ownership to Support, so the CS role does not own that function.",
-      evidenceReferences,
     };
     const domain = semanticOrganizationalMaturityFromTransport(
       transport,
@@ -959,7 +1592,7 @@ describe("Customer Success provider/application contracts", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.scopeCreep =
       supportedOwnershipDimension("SUPPORTED_PRESENT");
-    transport.weakSignals = [supportedWeakSignal()];
+    setMaturityAssessment(transport, "SCOPE_CREEP", weakMaturityImpact());
 
     const domain = semanticOrganizationalMaturityFromTransport(
       transport,
@@ -992,9 +1625,11 @@ describe("Customer Success provider/application contracts", () => {
     "rejects missing information in %s weak signals",
     (assessmentArea, findingText) => {
       const transport = validOrganizationalMaturity();
-      transport.weakSignals = [
-        supportedWeakSignal(assessmentArea, findingText),
-      ];
+      setMaturityAssessment(
+        transport,
+        assessmentArea,
+        weakMaturityImpact(findingText),
+      );
       expect(
         semanticOrganizationalMaturityTransportSchema.safeParse(transport)
           .success,
@@ -1014,7 +1649,6 @@ describe("Customer Success provider/application contracts", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.handoffs =
       unknownOwnershipDimension();
-    transport.unknowns = [maturityUnknown("HANDOFFS")];
 
     const domain = semanticOrganizationalMaturityFromTransport(
       transport,
@@ -1033,66 +1667,65 @@ describe("Customer Success provider/application contracts", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.handoffs =
       unknownOwnershipDimension();
-    transport.weakSignals = [
-      supportedWeakSignal(
-        "HANDOFFS",
+    setMaturityAssessment(
+      transport,
+      "HANDOFFS",
+      weakMaturityImpact(
         "The handoff process creates repeated ownership failures.",
       ),
-    ];
-
-    expectNonRetryableEvidenceFailure(
-      () =>
-        semanticOrganizationalMaturityFromTransport(
-          transport,
-          availableEvidence,
-        ),
-      "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
     );
+    expect(
+      semanticOrganizationalMaturityTransportSchema.safeParse(transport).success,
+    ).toBe(false);
   });
 
-  it("rejects the same evidence as both unresolved and affirmatively weak", () => {
+  it("allows one source to support a weakness and a distinct contextual Unknown", () => {
     const transport = validOrganizationalMaturity();
-    transport.unknowns = [
+    setMaturityAssessment(
+      transport,
+      "CUSTOMER_OPERATING_MODEL",
+      weakMaturityImpact(
+        "The documented operating process is internally inconsistent.",
+        evidenceReferences,
+      ),
+      [{
+        ...contextualMaturityUnknown(),
+        evidenceReferences,
+      }],
+    );
+
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
+    );
+    expect(domain.weakSignals).toEqual([
       {
-        ...maturityUnknown("CUSTOMER_OPERATING_MODEL"),
+        finding: "The documented operating process is internally inconsistent.",
         evidenceReferences,
       },
-    ];
-    transport.weakSignals = [
-      supportedWeakSignal(
-        "CUSTOMER_OPERATING_MODEL",
-        "The documented operating process is internally inconsistent.",
-      ),
-    ];
-
-    expectNonRetryableEvidenceFailure(
-      () =>
-        semanticOrganizationalMaturityFromTransport(
-          transport,
-          availableEvidence,
-        ),
-      "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+    ]);
+    expect(domain.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "maturity-information-unknown" }),
+      ]),
     );
   });
 
   it("allows a distinct evidenced weakness alongside a separate Unknown in the same criterion", () => {
     const transport = validOrganizationalMaturity();
-    transport.unknowns = [
-      {
-        ...maturityUnknown("CUSTOMER_OPERATING_MODEL"),
+    transport.customerOperatingModel.evidenceReferences = ["e1", "e2"];
+    setMaturityAssessment(
+      transport,
+      "CUSTOMER_OPERATING_MODEL",
+      weakMaturityImpact(
+        "The posting explicitly assigns renewal accountability without a defined renewal process.",
+        ["e2"],
+      ),
+      [{
+        ...contextualMaturityUnknown(),
         evidenceReferences,
-      },
-    ];
-    transport.weakSignals = [
-      {
-        ...supportedWeakSignal(
-          "CUSTOMER_OPERATING_MODEL",
-          "The posting explicitly assigns renewal accountability without a defined renewal process.",
-        ),
-        affirmativeEvidenceReferences: ["e2"],
-      },
-    ];
-
+      }],
+    );
     const domain = semanticOrganizationalMaturityFromTransport(transport, [
       ...availableEvidence,
       { referenceId: "e2", sourceType: "MANUAL" },
@@ -1109,9 +1742,11 @@ describe("Customer Success provider/application contracts", () => {
       unknownOwnershipDimension();
     transport.ownershipAndCrossFunctionalDesign.handoffs =
       unknownOwnershipDimension();
-    transport.unknowns = [
-      maturityUnknown("TEAM_BOUNDARIES", "team-boundaries-unknown"),
-      maturityUnknown("HANDOFFS", "handoffs-unknown"),
+    transport.ownershipAndCrossFunctionalDesign.teamBoundaries.unknowns = [
+      contextualMaturityUnknown("team-boundaries-unknown"),
+    ];
+    transport.ownershipAndCrossFunctionalDesign.handoffs.unknowns = [
+      contextualMaturityUnknown("handoffs-unknown"),
     ];
 
     const domain = semanticOrganizationalMaturityFromTransport(
@@ -1127,24 +1762,23 @@ describe("Customer Success provider/application contracts", () => {
     );
   });
 
-  it("requires provider weak signals to declare affirmative state, area, and evidence", () => {
-    const missingMetadata = validOrganizationalMaturity() as Record<
-      string,
-      any
-    >;
-    missingMetadata.weakSignals = [finding];
+  it("requires dimension-local weak signals to carry affirmative evidence", () => {
+    const missingMetadata = validOrganizationalMaturity() as Record<string, any>;
+    missingMetadata.ownershipAndCrossFunctionalDesign.scopeCreep.semanticImpact = {
+      finding: "Missing discriminator.",
+      affirmativeEvidenceReferences: evidenceReferences,
+    };
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(missingMetadata)
         .success,
     ).toBe(false);
 
     const missingEvidence = validOrganizationalMaturity();
-    missingEvidence.weakSignals = [
-      {
-        ...supportedWeakSignal(),
-        affirmativeEvidenceReferences: [],
-      },
-    ];
+    setMaturityAssessment(
+      missingEvidence,
+      "SCOPE_CREEP",
+      weakMaturityImpact("An affirmative weakness.", []),
+    );
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(missingEvidence)
         .success,

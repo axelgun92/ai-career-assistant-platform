@@ -25,13 +25,16 @@ import {
 
 const operationSchema = z.object({ ok: z.boolean() }).strict();
 
-const productionLunaOperationIds = [
+const productionGpt56LunaOperationIds = [
   "customer-success.job-evaluation",
-  "customer-success.company-alignment",
   "customer-success.organizational-maturity",
   "customer-success.alex-fit",
-  "customer-success.burnout-risk",
   "customer-success.opportunity-priority",
+] as const satisfies readonly CustomerSuccessSemanticOperationId[];
+
+const productionGpt6LunaOperationIds = [
+  "customer-success.company-alignment",
+  "customer-success.burnout-risk",
 ] as const satisfies readonly CustomerSuccessSemanticOperationId[];
 
 const productionTerraOperationIds = [
@@ -113,16 +116,27 @@ describe("per-semantic-operation execution routing", () => {
       customerSuccessProductionSemanticPolicyVersion,
     );
     expect(customerSuccessProductionSemanticPolicyVersion).toBe(
-      "customer-success-semantic-policy-v3-mixed-terra-luna",
+      "customer-success-semantic-policy-v4-final-terra-luna-gpt6",
     );
     expect(Object.keys(config.executionPolicy?.operations ?? {})).toEqual(
       customerSuccessSemanticOperationIds,
     );
-    for (const operationId of productionLunaOperationIds) {
+    for (const operationId of productionGpt56LunaOperationIds) {
       expect(config.executionPolicy?.operations[operationId]).toEqual({
         provider: "openai",
         model: "gpt-5.6-luna",
         pricingVersion: "openai-gpt-5.6-luna-standard-2026-08-26",
+        reasoningEffort: "medium",
+        maximumOutputTokens: 12_000,
+        timeoutMs: 120_000,
+        semanticRetryLimit: 1,
+      });
+    }
+    for (const operationId of productionGpt6LunaOperationIds) {
+      expect(config.executionPolicy?.operations[operationId]).toEqual({
+        provider: "openai",
+        model: "gpt-6-luna",
+        pricingVersion: "openai-gpt-6-luna-standard-2026-09-22",
         reasoningEffort: "medium",
         maximumOutputTokens: 12_000,
         timeoutMs: 120_000,
@@ -151,22 +165,52 @@ describe("per-semantic-operation execution routing", () => {
       cachedInputCostPerMillionTokens: 0.02,
       outputCostPerMillionTokens: 1.2,
     });
+    expect(
+      config.pricingConfigurations?.find(
+        (pricing) => pricing.model === "gpt-6-luna",
+      ),
+    ).toMatchObject({
+      provider: "openai",
+      version: "openai-gpt-6-luna-standard-2026-09-22",
+      inputCostPerMillionTokens: 0.1,
+      cachedInputCostPerMillionTokens: 0.01,
+      outputCostPerMillionTokens: 0.5,
+    });
   });
 
-  it("uses the versioned Organizational Maturity renewal-contract prompt", () => {
+  it("uses the versioned Organizational Maturity local-impact prompt", () => {
     expect(customerSuccessOrganizationalMaturityPromptVersion).toBe(
-      "cs-organizational-maturity-v6",
+      "cs-organizational-maturity-v7",
     );
     expect(
       createCustomerSuccessEvaluator().stages.find(
         (stage) => stage.id === "organizational-maturity",
       )?.promptVersion,
-    ).toBe("cs-organizational-maturity-v6");
+    ).toBe("cs-organizational-maturity-v7");
   });
 
-  it.each(productionLunaOperationIds)(
-    "records production %s retries only on Luna with Luna pricing",
-    async (operationId) => {
+  it.each([
+    ...productionGpt56LunaOperationIds.map(
+      (operationId) =>
+        [
+          operationId,
+          "gpt-5.6-luna",
+          "openai-gpt-5.6-luna-standard-2026-08-26",
+          0.000782,
+        ] as const,
+    ),
+    ...productionGpt6LunaOperationIds.map(
+      (operationId) =>
+        [
+          operationId,
+          "gpt-6-luna",
+          "openai-gpt-6-luna-standard-2026-09-22",
+          0.000341,
+        ] as const,
+    ),
+  ])(
+    "records production %s retries only on its selected Luna route and pricing",
+    async (operationId, expectedModel, expectedPricingVersion, expectedCost) => {
       const attempts: SemanticOperationAttempt[] = [];
       const models: string[] = [];
       const config = semanticExecutorConfigFromEnvironment(
@@ -200,15 +244,15 @@ describe("per-semantic-operation execution routing", () => {
       await expect(executor.execute(operation(operationId))).resolves.toEqual({
         ok: true,
       });
-      expect(models).toEqual(["gpt-5.6-luna", "gpt-5.6-luna"]);
+      expect(models).toEqual([expectedModel, expectedModel]);
       expect(attempts).toHaveLength(2);
       expect(
         attempts.every(
           (attempt) =>
-            attempt.model === "gpt-5.6-luna" &&
+            attempt.model === expectedModel &&
             attempt.pricingConfiguration.version ===
-              "openai-gpt-5.6-luna-standard-2026-08-26" &&
-            attempt.estimatedCost === 0.000782,
+              expectedPricingVersion &&
+            attempt.estimatedCost === expectedCost,
         ),
       ).toBe(true);
       expect(executor.usage()).toEqual({ callsUsed: 2, callBudget: 16 });

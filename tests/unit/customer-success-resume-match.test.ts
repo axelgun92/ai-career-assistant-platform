@@ -222,14 +222,20 @@ describe("Customer Success Resume Match pipeline", () => {
         }
         for (const assessment of transport.requirementAssessments) {
           for (const source of ["jdEvidence", "profileEvidence"] as const) {
-            const partition = assessment[source];
-            const reference = partition.assessmentOnlyReferences.shift();
-            if (reference) partition.decisionImpactReferences.push(reference);
+            const selection = assessment[source];
+            if (selection.evidenceAssignments[0]) {
+              selection.evidenceAssignments[0].purpose = "DECISION_IMPACT";
+            }
           }
         }
         if (overlap) {
-          const assessment = transport.requirementAssessments.find((item) => item.profileEvidence.decisionImpactReferences.length > 0)!;
-          assessment.profileEvidence.assessmentOnlyReferences.push(assessment.profileEvidence.decisionImpactReferences[0]!);
+          const assessment = transport.requirementAssessments.find(
+            (item) => item.profileEvidence.evidenceAssignments.length > 0,
+          )!;
+          assessment.profileEvidence.evidenceAssignments.push({
+            ...assessment.profileEvidence.evidenceAssignments[0]!,
+            purpose: "ASSESSMENT_ONLY",
+          });
         }
         expect(createSemanticResumeMatchTransportSchema(providerInput.schemaEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
         const executor = createSemanticExecutor({
@@ -262,6 +268,12 @@ describe("Customer Success Resume Match pipeline", () => {
       expect(result.evaluation.stageResults[6]).toMatchObject({ status: "FAILED", failureCode: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false, attempt: 1 });
       expect(result.evaluation.stageResults.slice(0, 6).every((stage) => stage.status === "COMPLETED")).toBe(true);
       expect(fixture.stats.opportunityPriorityCalls).toBe(0);
+      expect(result.recommendation).toBeUndefined();
+      expect(
+        result.evaluation.stageResults
+          .slice(7)
+          .every((stage) => stage.status !== "COMPLETED"),
+      ).toBe(true);
       return;
     }
     expect(result.evaluation.stageResults[6]?.status, result.evaluation.stageResults[6]?.errorMessage ?? undefined).toBe("COMPLETED");

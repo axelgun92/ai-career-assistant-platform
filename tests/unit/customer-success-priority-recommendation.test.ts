@@ -201,6 +201,78 @@ describe("Customer Success Milestone 8 pipeline", () => {
     expect(fixture.stats.opportunityPriorityReceivedValidatedInputs).toBe(true);
   });
 
+  it("keeps a contextual Organizational Maturity Unknown neutral through priority and finalization", async () => {
+    const baseline = await run();
+    const mixed = await run({
+      transformOperations(operations) {
+        return {
+          ...operations,
+          async evaluateOrganizationalMaturity(input) {
+            const maturity = await operations.evaluateOrganizationalMaturity(
+              input,
+            );
+            return {
+              ...maturity,
+              ownershipAndCrossFunctionalDesign: {
+                ...maturity.ownershipAndCrossFunctionalDesign,
+                roleBoundaries: {
+                  conclusion:
+                    "Customer Success ownership is established for the documented lifecycle work.",
+                  unknown: false,
+                  evidenceReferences: ["actual-work"],
+                },
+              },
+              unknowns: [
+                ...maturity.unknowns,
+                {
+                  code: "implementation-boundaries-unknown",
+                  description:
+                    "The narrower implementation boundary remains unresolved.",
+                  materiality:
+                    "This reduces completeness without becoming a strength or concern.",
+                  evidenceReferences: ["actual-work"],
+                },
+              ],
+            };
+          },
+        };
+      },
+    });
+
+    expect(mixed.result.evaluation.status).toBe("COMPLETED");
+    expect(mixed.fixture.stats.burnoutRiskCalls).toBe(1);
+    expect(mixed.fixture.stats.opportunityPriorityCalls).toBe(1);
+    expect(mixed.result.domainResult?.organizationalMaturity).toMatchObject({
+      evaluated: true,
+      maturity: {
+        score: 84,
+        unknowns: expect.arrayContaining([
+          expect.objectContaining({
+            code: "implementation-boundaries-unknown",
+          }),
+        ]),
+      },
+    });
+    expect(mixed.result.domainResult?.organizationalMaturity).toMatchObject({
+      maturity: {
+        positiveSignals:
+          baseline.result.domainResult?.organizationalMaturity.evaluated &&
+          baseline.result.domainResult.organizationalMaturity.maturity
+            .positiveSignals,
+        weakSignals:
+          baseline.result.domainResult?.organizationalMaturity.evaluated &&
+          baseline.result.domainResult.organizationalMaturity.maturity
+            .weakSignals,
+      },
+    });
+    expect(mixed.result.domainResult?.opportunityPriority).toEqual(
+      baseline.result.domainResult?.opportunityPriority,
+    );
+    expect(mixed.result.domainResult?.recommendation.recommendation).toBe(
+      baseline.result.domainResult?.recommendation.recommendation,
+    );
+  });
+
   it("returns valid NOT_EVALUATED stages after a hard-filter failure", async () => {
     const { result, fixture } = await run({ scenario: "unrelated" });
     expect(result.domainResult!.opportunityPriority.evaluated).toBe(false);

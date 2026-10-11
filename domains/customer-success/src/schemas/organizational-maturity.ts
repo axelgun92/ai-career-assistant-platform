@@ -21,7 +21,7 @@ const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
 export const customerSuccessOrganizationalMaturityPromptVersion =
-  "cs-organizational-maturity-v6";
+  "cs-organizational-maturity-v7";
 
 export const organizationalMaturityOperatingModelRules = {
   renewalFocused:
@@ -99,6 +99,13 @@ export const organizationalMaturityCalibration = {
     "A weak signal must identify its assessment area and cite evidence that affirmatively supports the weakness.",
     "A fact classified as Unknown or NOT_ESTABLISHED must not also be a weak signal; missing information belongs only in Unknowns, while a distinct actual weakness requires separate affirmative evidence.",
   ],
+  semanticImpactRules: [
+    "Unknown is neutral: missing information is neither strength nor weakness.",
+    "SUPPORTED_POSITIVE requires affirmative evidence of an actual maturity strength.",
+    "SUPPORTED_WEAKNESS requires affirmative evidence of an actual structural weakness.",
+    "NEUTRAL means the dimension is established but is neither a maturity strength nor a structural weakness.",
+    "NOT_ESTABLISHED means unresolved and cannot carry positive or weak semantic impact.",
+  ],
   evidenceStates: {
     SUPPORTED_PRESENT:
       "Available evidence affirmatively supports that the assessed condition is present.",
@@ -135,6 +142,7 @@ export const organizationalMaturitySemanticInstructions = [
   organizationalMaturityCalibration.teamBoundariesRule,
   organizationalMaturityOperatingModelRules.renewalFocused,
   `Weak-signal handling: ${organizationalMaturityCalibration.weakSignalRules.join(" ")}`,
+  `Dimension-local impact handling: ${organizationalMaturityCalibration.semanticImpactRules.join(" ")}`,
   `Evidence-state meanings: SUPPORTED_PRESENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_PRESENT} SUPPORTED_ABSENT means ${organizationalMaturityCalibration.evidenceStates.SUPPORTED_ABSENT} NOT_ESTABLISHED means ${organizationalMaturityCalibration.evidenceStates.NOT_ESTABLISHED}`,
   `Do not assess ${organizationalMaturityCalibration.excludedMeasures.join(", ")}. Do not use weights, keyword points, prestige, culture, management assumptions, or a mathematical scoring formula.`,
 ].join(" ");
@@ -303,6 +311,243 @@ export const semanticOrganizationalMaturitySchema = z
   })
   .strict();
 
+const transportMaturityUnknownSchema = companyAlignmentUnknownSchema;
+
+const transportKnownMaturityImpactSchema = z.union([
+  z
+    .object({
+      impact: z.literal("SUPPORTED_POSITIVE"),
+      finding: requiredText.describe(
+        "An affirmatively evidenced maturity strength. Missing, unclear, or unreported information is not a strength.",
+      ),
+      affirmativeEvidenceReferences: evidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      impact: z.literal("SUPPORTED_WEAKNESS"),
+      finding: requiredText.describe(
+        "An affirmatively evidenced structural weakness. Missing, unclear, or unreported information is not a weakness.",
+      ),
+      affirmativeEvidenceReferences: evidenceReferences.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      impact: z.literal("NEUTRAL"),
+      finding: z.null(),
+      affirmativeEvidenceReferences: evidenceReferences.max(0),
+    })
+    .strict(),
+]).describe([
+  ...organizationalMaturityCalibration.weakSignalRules,
+  ...organizationalMaturityCalibration.semanticImpactRules,
+].join(" "));
+
+const transportNotEstablishedMaturityImpactSchema = z
+  .object({
+    impact: z.literal("NOT_ESTABLISHED"),
+    finding: z.null(),
+    affirmativeEvidenceReferences: evidenceReferences.max(0),
+  })
+  .strict();
+
+const transportKnownMaturityAssessmentShape = {
+  semanticImpact: transportKnownMaturityImpactSchema,
+  unknowns: z.array(transportMaturityUnknownSchema),
+};
+
+const transportNotEstablishedMaturityAssessmentShape = {
+  semanticImpact: transportNotEstablishedMaturityImpactSchema,
+  unknowns: z.array(transportMaturityUnknownSchema).min(1),
+};
+
+const missingInformationLanguage =
+  /\b(?:missing|not (?:described|stated|specified|provided|available|established|evidenced)|no (?:evidence|information|details?|description|mention)|absence of (?:evidence|information|details?|description)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;
+
+const semanticComparisonStopWords = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "been", "being", "but",
+  "by", "can", "does", "for", "from", "has", "have", "in", "is", "it",
+  "its", "of", "on", "or", "that", "the", "their", "there", "this", "to",
+  "was", "were", "with", "without", "work", "information", "evidence",
+  "detail", "details", "description", "described", "stated", "specified",
+  "provided", "available", "established", "evidenced", "missing", "unclear",
+  "unknown", "clear", "known", "not", "no", "absence", "insufficient",
+  "cannot", "could", "determine", "remain", "remains",
+]);
+
+function maturityStatementClauses(value: string) {
+  return value
+    .split(/(?:[.;!?]+|\b(?:although|however|whereas|while)\b)/i)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+}
+
+function maturitySemanticTokens(value: string) {
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .split(/\s+/)
+      .map((token) =>
+        token.length > 4 && token.endsWith("ies")
+          ? `${token.slice(0, -3)}y`
+          : token.length > 3 && token.endsWith("s")
+            ? token.slice(0, -1)
+            : token,
+      )
+      .filter(
+        (token) => token.length > 2 && !semanticComparisonStopWords.has(token),
+      ),
+  );
+}
+
+function materiallySameMaturityProposition(left: string, right: string) {
+  const leftTokens = maturitySemanticTokens(left);
+  const rightTokens = maturitySemanticTokens(right);
+  const smallerSize = Math.min(leftTokens.size, rightTokens.size);
+  if (smallerSize < 2) return false;
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return overlap >= 2 && overlap / smallerSize >= 0.8;
+}
+
+function contextualUnknownCoversMaturityClause(
+  unresolvedClause: string,
+  unknownDescription: string,
+) {
+  const clauseTokens = maturitySemanticTokens(unresolvedClause);
+  const unknownTokens = maturitySemanticTokens(unknownDescription);
+  const smallerSize = Math.min(clauseTokens.size, unknownTokens.size);
+  if (smallerSize < 2) return false;
+  const overlap = [...clauseTokens].filter((token) =>
+    unknownTokens.has(token),
+  ).length;
+  return overlap >= 2 && overlap / smallerSize >= 0.4;
+}
+
+type MaturityAssessmentConsistencyInput = {
+  assessmentArea: string;
+  evidenceState: "SUPPORTED_PRESENT" | "SUPPORTED_ABSENT" | "NOT_ESTABLISHED";
+  statement: string | null;
+  evidenceReferences: string[];
+  semanticImpact: {
+    impact:
+      | "SUPPORTED_POSITIVE"
+      | "SUPPORTED_WEAKNESS"
+      | "NEUTRAL"
+      | "NOT_ESTABLISHED";
+    finding: string | null;
+    affirmativeEvidenceReferences: string[];
+  };
+  unknowns: Array<z.infer<typeof transportMaturityUnknownSchema>>;
+};
+
+function assertMaturityAssessmentConsistency({
+  assessmentArea,
+  evidenceState,
+  statement,
+  evidenceReferences: assessmentEvidenceReferences,
+  semanticImpact,
+  unknowns,
+}: MaturityAssessmentConsistencyInput) {
+  if (evidenceState === "NOT_ESTABLISHED") return;
+  if (statement === null) {
+    semanticContractViolation(
+      "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+      "Supported Organizational Maturity conclusions must be present",
+    );
+  }
+
+  const clauses = maturityStatementClauses(statement);
+  const unresolvedClauses = clauses.filter((clause) =>
+    missingInformationLanguage.test(clause),
+  );
+  const supportedClauses = clauses.filter(
+    (clause) => !missingInformationLanguage.test(clause),
+  );
+  if (unresolvedClauses.length > 0) {
+    if (unknowns.length === 0) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+        "Unresolved Organizational Maturity details must be represented as contextual Unknowns",
+      );
+    }
+    if (supportedClauses.length === 0) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+        "Supported Organizational Maturity conclusions cannot consist only of missing information",
+      );
+    }
+    for (const unresolvedClause of unresolvedClauses) {
+      if (
+        !unknowns.some((unknown) =>
+          contextualUnknownCoversMaturityClause(
+            unresolvedClause,
+            unknown.description,
+          ),
+        )
+      ) {
+        semanticContractViolation(
+          "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+          `Every unresolved ${assessmentArea} sub-detail must have a matching contextual Unknown`,
+        );
+      }
+    }
+  }
+
+  if (
+    semanticImpact.impact === "SUPPORTED_POSITIVE" ||
+    semanticImpact.impact === "SUPPORTED_WEAKNESS"
+  ) {
+    if (
+      semanticImpact.finding === null ||
+      missingInformationLanguage.test(semanticImpact.finding)
+    ) {
+      semanticContractViolation(
+        semanticImpact.impact === "SUPPORTED_POSITIVE"
+          ? "ORGANIZATIONAL_MATURITY_POSITIVE_SIGNAL_INVALID"
+          : "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+        semanticImpact.impact === "SUPPORTED_POSITIVE"
+          ? "Organizational Maturity positive signals require affirmative evidence of an actual strength"
+          : "Organizational Maturity weak signals require affirmative evidence of an actual weakness",
+      );
+    }
+    const assessmentEvidence = new Set(assessmentEvidenceReferences);
+    if (
+      semanticImpact.affirmativeEvidenceReferences.some(
+        (reference) => !assessmentEvidence.has(reference),
+      )
+    ) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_IMPACT_EVIDENCE_INVALID",
+        "Organizational Maturity impact evidence must belong to its assessment evidence",
+      );
+    }
+  }
+
+  const supportedPropositions =
+    semanticImpact.impact === "SUPPORTED_POSITIVE" ||
+    semanticImpact.impact === "SUPPORTED_WEAKNESS"
+      ? [semanticImpact.finding!]
+      : supportedClauses;
+  for (const unknown of unknowns) {
+    if (
+      supportedPropositions.some((supportedProposition) =>
+        materiallySameMaturityProposition(
+          supportedProposition,
+          unknown.description,
+        ),
+      )
+    ) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+        `A contextual Unknown cannot contradict the supported ${assessmentArea} proposition`,
+      );
+    }
+  }
+}
+
 const transportKnownMaturityCriterionSchema = <T extends z.ZodEnum>(
   classification: T,
 ) =>
@@ -311,6 +556,7 @@ const transportKnownMaturityCriterionSchema = <T extends z.ZodEnum>(
       classification: classification.exclude(["UNKNOWN"]),
       explanation: requiredText,
       evidenceReferences: evidenceReferences.min(1),
+      ...transportKnownMaturityAssessmentShape,
     })
     .strict();
 
@@ -319,6 +565,7 @@ const transportUnknownMaturityCriterionSchema = z
     classification: z.literal("UNKNOWN"),
     explanation: requiredText,
     evidenceReferences,
+    ...transportNotEstablishedMaturityAssessmentShape,
   })
   .strict();
 
@@ -337,6 +584,7 @@ const transportCustomerOperatingModelSchema = z.union([
       explanation: requiredText,
       evidenceReferences: evidenceReferences.min(1),
       substantialPatterns: substantialOperatingModelPatternsSchema,
+      ...transportKnownMaturityAssessmentShape,
     })
     .strict(),
   z
@@ -345,6 +593,7 @@ const transportCustomerOperatingModelSchema = z.union([
       explanation: requiredText,
       evidenceReferences: evidenceReferences.min(1),
       substantialPatterns: substantialOperatingModelPatternsSchema.min(2),
+      ...transportKnownMaturityAssessmentShape,
     })
     .strict(),
   z
@@ -353,6 +602,7 @@ const transportCustomerOperatingModelSchema = z.union([
       explanation: requiredText,
       evidenceReferences,
       substantialPatterns: substantialOperatingModelPatternsSchema.max(0),
+      ...transportNotEstablishedMaturityAssessmentShape,
     })
     .strict(),
 ]);
@@ -391,6 +641,7 @@ const transportOwnershipDesignDimensionSchema = z.union([
       evidenceReferences: evidenceReferences.min(1).describe(
         "At least one resolvable evidence reference affirmatively supporting presence.",
       ),
+      ...transportKnownMaturityAssessmentShape,
     })
     .strict(),
   z
@@ -406,6 +657,7 @@ const transportOwnershipDesignDimensionSchema = z.union([
       evidenceReferences: evidenceReferences.min(1).describe(
         "At least one resolvable evidence reference affirmatively supporting absence.",
       ),
+      ...transportKnownMaturityAssessmentShape,
     })
     .strict(),
   z
@@ -421,11 +673,12 @@ const transportOwnershipDesignDimensionSchema = z.union([
       evidenceReferences: evidenceReferences.describe(
         "Optional references explaining why the dimension remains unresolved; they must not be treated as positive or negative evidence.",
       ),
+      ...transportNotEstablishedMaturityAssessmentShape,
     })
     .strict(),
 ]);
 
-const transportWeakMaturitySignalSchema = z
+const legacyTransportWeakMaturitySignalSchema = z
   .object({
     assessmentArea: organizationalMaturityAssessmentAreaSchema.describe(
       "The Organizational Maturity criterion or ownership-design dimension that this affirmative weakness assesses.",
@@ -442,7 +695,7 @@ const transportWeakMaturitySignalSchema = z
   })
   .strict();
 
-const transportMaturityUnknownSchema = z
+const legacyTransportMaturityUnknownSchema = z
   .object({
     ...companyAlignmentUnknownSchema.shape,
     assessmentArea: organizationalMaturityAssessmentAreaSchema.describe(
@@ -452,7 +705,11 @@ const transportMaturityUnknownSchema = z
   .strict();
 
 const semanticOrganizationalMaturityTransportShape = {
-  ...semanticOrganizationalMaturitySchema.shape,
+  ...semanticOrganizationalMaturitySchema.omit({
+    positiveSignals: true,
+    weakSignals: true,
+    unknowns: true,
+  }).shape,
   existingCustomerSuccessFunction:
     transportExistingCustomerSuccessFunctionSchema,
   customerOperatingModel: transportCustomerOperatingModelSchema,
@@ -473,14 +730,83 @@ const semanticOrganizationalMaturityTransportShape = {
       evidenceReferences,
     })
     .strict(),
-  weakSignals: z
-    .array(transportWeakMaturitySignalSchema)
-    .describe(organizationalMaturityCalibration.weakSignalRules.join(" ")),
-  unknowns: z.array(transportMaturityUnknownSchema),
 };
 
 export const semanticOrganizationalMaturityTransportSchema = z
   .object(semanticOrganizationalMaturityTransportShape)
+  .strict();
+
+const legacyTransportOwnershipDesignDimensionSchema = z.union([
+  z.object({
+    evidenceState: z.literal("SUPPORTED_PRESENT"),
+    conclusion: requiredText,
+    evidenceReferences: evidenceReferences.min(1),
+  }).strict(),
+  z.object({
+    evidenceState: z.literal("SUPPORTED_ABSENT"),
+    conclusion: requiredText,
+    evidenceReferences: evidenceReferences.min(1),
+  }).strict(),
+  z.object({
+    evidenceState: z.literal("NOT_ESTABLISHED"),
+    conclusion: z.null(),
+    evidenceReferences,
+  }).strict(),
+]);
+
+// Historical raw responses remain replayable offline. Production generation
+// uses only semanticOrganizationalMaturityTransportSchema above.
+const legacySemanticOrganizationalMaturityTransportSchema = z
+  .object({
+    ...semanticOrganizationalMaturitySchema.shape,
+    existingCustomerSuccessFunction: z.union([
+      z.object({
+        classification: existingCustomerSuccessFunctionSchema.exclude(["UNKNOWN"]),
+        explanation: requiredText,
+        evidenceReferences: evidenceReferences.min(1),
+      }).strict(),
+      z.object({
+        classification: z.literal("UNKNOWN"),
+        explanation: requiredText,
+        evidenceReferences,
+      }).strict(),
+    ]),
+    customerOperatingModel: z.union([
+      z.object({
+        classification: customerOperatingModelSchema.exclude(["HYBRID", "UNKNOWN"]),
+        explanation: requiredText,
+        evidenceReferences: evidenceReferences.min(1),
+        substantialPatterns: substantialOperatingModelPatternsSchema,
+      }).strict(),
+      z.object({
+        classification: z.literal("HYBRID"),
+        explanation: requiredText,
+        evidenceReferences: evidenceReferences.min(1),
+        substantialPatterns: substantialOperatingModelPatternsSchema.min(2),
+      }).strict(),
+      z.object({
+        classification: z.literal("UNKNOWN"),
+        explanation: requiredText,
+        evidenceReferences,
+        substantialPatterns: substantialOperatingModelPatternsSchema.max(0),
+      }).strict(),
+    ]),
+    ownershipAndCrossFunctionalDesign: z.object({
+      summary: requiredText,
+      roleBoundaries: legacyTransportOwnershipDesignDimensionSchema,
+      teamBoundaries: legacyTransportOwnershipDesignDimensionSchema,
+      handoffs: legacyTransportOwnershipDesignDimensionSchema,
+      sharedOwnership: legacyTransportOwnershipDesignDimensionSchema,
+      crossFunctionalRelationships: legacyTransportOwnershipDesignDimensionSchema,
+      unrelatedResponsibilities: legacyTransportOwnershipDesignDimensionSchema,
+      scopeCreep: legacyTransportOwnershipDesignDimensionSchema,
+      multipleJobsCombined: legacyTransportOwnershipDesignDimensionSchema,
+      unrealisticOwnership: legacyTransportOwnershipDesignDimensionSchema,
+      evidenceReferences,
+    }).strict(),
+    weakSignals: z.array(legacyTransportWeakMaturitySignalSchema),
+    unknowns: z.array(legacyTransportMaturityUnknownSchema),
+  })
   .strict();
 
 const relationshipDescriptions = {
@@ -648,11 +974,13 @@ export function createSemanticOrganizationalMaturityTransportSchema(
         evidenceState: z.literal("NOT_ESTABLISHED"),
         conclusion: z.null(),
         evidenceReferences: evidenceReferences.max(0),
+        ...transportNotEstablishedMaturityAssessmentShape,
       }).strict()
     : z.object({
         evidenceState: z.literal("SUPPORTED_PRESENT"),
         conclusion: z.literal(dimension.conclusion),
         evidenceReferences: z.array(z.enum(references as [string, ...string[]])).min(1),
+        ...transportKnownMaturityAssessmentShape,
       }).strict();
   return schema.extend({
     ownershipAndCrossFunctionalDesign:
@@ -683,12 +1011,18 @@ export function assertCustomerOperatingModelResponsibilitySupport(
 }
 
 export function semanticOrganizationalMaturityFromTransport(
-  value: z.input<typeof semanticOrganizationalMaturityTransportSchema>,
+  value: unknown,
   availableEvidence: AvailableSemanticEvidence[],
   responsibilityMap?: ResponsibilityMap,
   relationshipCatalog?: RelationshipCatalog,
 ) {
-  const transport = semanticOrganizationalMaturityTransportSchema.parse(value);
+  const currentTransport = semanticOrganizationalMaturityTransportSchema.safeParse(value);
+  const legacyTransport = currentTransport.success
+    ? null
+    : legacySemanticOrganizationalMaturityTransportSchema.parse(value);
+  const transport = currentTransport.success
+    ? currentTransport.data
+    : legacyTransport!;
   if (
     transport.customerOperatingModel.classification === "RENEWAL_FOCUSED" ||
     transport.customerOperatingModel.substantialPatterns.includes(
@@ -713,17 +1047,30 @@ export function semanticOrganizationalMaturityFromTransport(
     code: "ORGANIZATIONAL_MATURITY_EVIDENCE_INVALID",
     message: "Organizational Maturity references unavailable evidence",
   });
-  const transportDesign = {
-    ...transport.ownershipAndCrossFunctionalDesign,
+  const restoreRelationshipDimension = <T extends {
+    crossFunctionalRelationships: object;
+  }>(design: T) => ({
+    ...design,
     ...(relationshipCatalog === undefined ? {} : {
-      crossFunctionalRelationships: organizationalMaturityRelationshipTransport(relationshipCatalog),
+      crossFunctionalRelationships: {
+        ...design.crossFunctionalRelationships,
+        ...organizationalMaturityRelationshipTransport(relationshipCatalog),
+      },
     }),
-  };
-  const missingInformationConclusion =
-    /\b(?:missing|not (?:described|stated|specified|provided|available|established|evidenced)|no (?:evidence|information|details?|description|mention)|absence of (?:evidence|information|details?|description)|insufficient (?:evidence|information)|unclear|unknown|cannot (?:determine|establish)|could not (?:determine|establish))\b/i;
-  const toDomainDimension = (
-    dimension: z.infer<typeof transportOwnershipDesignDimensionSchema>,
-  ) => {
+  });
+  const currentDesign = currentTransport.success
+    ? restoreRelationshipDimension(
+        currentTransport.data.ownershipAndCrossFunctionalDesign,
+      )
+    : null;
+  const transportDesign = currentDesign ?? restoreRelationshipDimension(
+    legacyTransport!.ownershipAndCrossFunctionalDesign,
+  );
+  const toDomainDimension = (dimension: {
+    evidenceState: z.infer<typeof organizationalMaturityEvidenceStateSchema>;
+    conclusion: string | null;
+    evidenceReferences: string[];
+  }) => {
     if (dimension.evidenceState === "NOT_ESTABLISHED") {
       return {
         conclusion: null,
@@ -731,10 +1078,19 @@ export function semanticOrganizationalMaturityFromTransport(
         evidenceReferences: dimension.evidenceReferences,
       };
     }
-    if (missingInformationConclusion.test(dimension.conclusion)) {
+    if (dimension.conclusion === null) {
       semanticContractViolation(
         "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
-        "Supported Organizational Maturity conclusions cannot be based on missing information",
+        "Supported Organizational Maturity conclusions must be present",
+      );
+    }
+    if (
+      !currentTransport.success &&
+      missingInformationLanguage.test(dimension.conclusion)
+    ) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+        "Legacy supported Organizational Maturity conclusions cannot be based on missing information",
       );
     }
     return {
@@ -773,8 +1129,79 @@ export function semanticOrganizationalMaturityFromTransport(
     MULTIPLE_JOBS_COMBINED: "multipleJobsCombined",
     UNREALISTIC_OWNERSHIP: "unrealisticOwnership",
   } as const;
-  for (const signal of transport.weakSignals) {
-    if (missingInformationConclusion.test(signal.finding)) {
+  const currentAssessments = currentTransport.success
+    ? ([
+        ["EXISTING_CS_FUNCTION", currentTransport.data.existingCustomerSuccessFunction],
+        ["CUSTOMER_OPERATING_MODEL", currentTransport.data.customerOperatingModel],
+        ["ROLE_BOUNDARIES", currentDesign!.roleBoundaries],
+        ["TEAM_BOUNDARIES", currentDesign!.teamBoundaries],
+        ["HANDOFFS", currentDesign!.handoffs],
+        ["SHARED_OWNERSHIP", currentDesign!.sharedOwnership],
+        ["CROSS_FUNCTIONAL_RELATIONSHIPS", currentDesign!.crossFunctionalRelationships],
+        ["UNRELATED_RESPONSIBILITIES", currentDesign!.unrelatedResponsibilities],
+        ["SCOPE_CREEP", currentDesign!.scopeCreep],
+        ["MULTIPLE_JOBS_COMBINED", currentDesign!.multipleJobsCombined],
+        ["UNREALISTIC_OWNERSHIP", currentDesign!.unrealisticOwnership],
+      ] as const)
+    : [];
+  for (const [assessmentArea, assessment] of currentAssessments) {
+    const criterion = "classification" in assessment;
+    const evidenceState = criterion
+      ? assessment.classification === "UNKNOWN"
+        ? "NOT_ESTABLISHED"
+        : "SUPPORTED_PRESENT"
+      : assessment.evidenceState;
+    assertMaturityAssessmentConsistency({
+      assessmentArea,
+      evidenceState,
+      statement: criterion ? assessment.explanation : assessment.conclusion,
+      evidenceReferences: assessment.evidenceReferences,
+      semanticImpact: assessment.semanticImpact,
+      unknowns: assessment.unknowns,
+    });
+  }
+  const convertedPositiveSignals = currentTransport.success
+    ? currentAssessments.flatMap(([, assessment]) =>
+        assessment.semanticImpact.impact === "SUPPORTED_POSITIVE"
+          ? [{
+              finding: assessment.semanticImpact.finding,
+              evidenceReferences:
+                assessment.semanticImpact.affirmativeEvidenceReferences,
+            }]
+          : [],
+      )
+    : legacyTransport!.positiveSignals;
+  const transportWeakSignals = currentTransport.success
+    ? currentAssessments.flatMap(([assessmentArea, assessment]) =>
+        assessment.semanticImpact.impact === "SUPPORTED_WEAKNESS"
+          ? [{
+              assessmentArea,
+              evidenceState: "SUPPORTED_WEAKNESS" as const,
+              finding: assessment.semanticImpact.finding,
+              affirmativeEvidenceReferences:
+                assessment.semanticImpact.affirmativeEvidenceReferences,
+            }]
+          : [],
+      )
+    : legacyTransport!.weakSignals;
+  const transportUnknowns = currentTransport.success
+    ? currentAssessments.flatMap(([assessmentArea, assessment]) =>
+        assessment.unknowns.map((unknown) => ({
+          assessmentArea,
+          ...unknown,
+        })),
+      )
+    : legacyTransport!.unknowns;
+  for (const signal of convertedPositiveSignals) {
+    if (missingInformationLanguage.test(signal.finding)) {
+      semanticContractViolation(
+        "ORGANIZATIONAL_MATURITY_POSITIVE_SIGNAL_INVALID",
+        "Organizational Maturity positive signals require affirmative evidence of an actual strength",
+      );
+    }
+  }
+  for (const signal of transportWeakSignals) {
+    if (missingInformationLanguage.test(signal.finding)) {
       semanticContractViolation(
         "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
         "Organizational Maturity weak signals require affirmative evidence of an actual weakness",
@@ -793,32 +1220,25 @@ export function semanticOrganizationalMaturityFromTransport(
         "A NOT_ESTABLISHED ownership dimension cannot also be a weak signal",
       );
     }
-    const relatedUnknownReferences = new Set(
-      transport.unknowns
-        .filter(
-          (unknown) => unknown.assessmentArea === signal.assessmentArea,
-        )
-        .flatMap((unknown) => unknown.evidenceReferences),
-    );
-    if (
-      relatedUnknownReferences.size > 0 &&
-      signal.affirmativeEvidenceReferences.every((reference) =>
-        relatedUnknownReferences.has(reference),
-      )
-    ) {
-      semanticContractViolation(
-        "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
-        "The same unresolved evidence cannot also support a weak signal",
-      );
-    }
   }
-  const convertedWeakSignals = transport.weakSignals.map((signal) => ({
+  const convertedWeakSignals = transportWeakSignals.map((signal) => ({
     finding: signal.finding,
     evidenceReferences: signal.affirmativeEvidenceReferences,
   }));
-  const convertedUnknowns = transport.unknowns.map(
+  const convertedUnknowns = transportUnknowns.map(
     ({ assessmentArea: _assessmentArea, ...unknown }) => unknown,
   );
+  const toDomainCriterion = <T extends {
+    semanticImpact: unknown;
+    unknowns: unknown;
+  }>({ semanticImpact: _semanticImpact, unknowns: _unknowns, ...criterion }: T) =>
+    criterion;
+  const domainExistingCustomerSuccessFunction = currentTransport.success
+    ? toDomainCriterion(currentTransport.data.existingCustomerSuccessFunction)
+    : legacyTransport!.existingCustomerSuccessFunction;
+  const domainCustomerOperatingModel = currentTransport.success
+    ? toDomainCriterion(currentTransport.data.customerOperatingModel)
+    : legacyTransport!.customerOperatingModel;
   const dimensionLabels: Record<keyof typeof convertedDimensions, string> = {
     roleBoundaries: "Role boundaries",
     teamBoundaries: "Team boundaries",
@@ -862,11 +1282,14 @@ export function semanticOrganizationalMaturityFromTransport(
     schema: semanticOrganizationalMaturitySchema,
     value: {
       ...transport,
+      existingCustomerSuccessFunction: domainExistingCustomerSuccessFunction,
+      customerOperatingModel: domainCustomerOperatingModel,
       ownershipAndCrossFunctionalDesign: {
         summary: transportDesign.summary,
         ...convertedDimensions,
         evidenceReferences: transportDesign.evidenceReferences,
       },
+      positiveSignals: convertedPositiveSignals,
       weakSignals: convertedWeakSignals,
       unknowns: [...convertedUnknowns, ...dimensionUnknowns],
     },

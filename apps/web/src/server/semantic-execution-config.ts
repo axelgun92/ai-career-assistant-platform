@@ -12,6 +12,7 @@ import {
 import {
   readSemanticEnvironment,
   gpt56LunaPricingConfiguration,
+  gpt6LunaPricingConfiguration,
   semanticPricingConfigurationsFromEnvironment,
   semanticPricingFromEnvironment,
   type SemanticEnvironment,
@@ -35,8 +36,8 @@ const approvedProductionOperationOverrides: Partial<
     pricingVersion: gpt56LunaPricingConfiguration.version,
   },
   "customer-success.company-alignment": {
-    model: gpt56LunaPricingConfiguration.model,
-    pricingVersion: gpt56LunaPricingConfiguration.version,
+    model: gpt6LunaPricingConfiguration.model,
+    pricingVersion: gpt6LunaPricingConfiguration.version,
   },
   "customer-success.organizational-maturity": {
     model: gpt56LunaPricingConfiguration.model,
@@ -47,8 +48,8 @@ const approvedProductionOperationOverrides: Partial<
     pricingVersion: gpt56LunaPricingConfiguration.version,
   },
   "customer-success.burnout-risk": {
-    model: gpt56LunaPricingConfiguration.model,
-    pricingVersion: gpt56LunaPricingConfiguration.version,
+    model: gpt6LunaPricingConfiguration.model,
+    pricingVersion: gpt6LunaPricingConfiguration.version,
   },
   "customer-success.opportunity-priority": {
     model: gpt56LunaPricingConfiguration.model,

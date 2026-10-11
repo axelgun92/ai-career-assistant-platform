@@ -4,7 +4,10 @@ import {
   customerSuccessDomain,
   type CustomerSuccessSemanticOperations,
 } from "@ai-career/customer-success";
-import { createEvaluationExecutor } from "@ai-career/evaluation";
+import {
+  createEvaluationExecutor,
+  StageExecutionError,
+} from "@ai-career/evaluation";
 import { describe, expect, it } from "vitest";
 import {
   createCustomerSuccessFixtureOperations,
@@ -286,6 +289,100 @@ describe("Customer Success domain foundation", () => {
         resolutionStatus: "UNRESOLVED",
       }),
     );
+  });
+
+  it("carries a valid mixed Organizational Maturity result through downstream finalization", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    const mixed: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async evaluateOrganizationalMaturity(input) {
+        const maturity = await fixture.semanticOperations.evaluateOrganizationalMaturity(
+          input,
+        );
+        return {
+          ...maturity,
+          ownershipAndCrossFunctionalDesign: {
+            ...maturity.ownershipAndCrossFunctionalDesign,
+            roleBoundaries: {
+              conclusion:
+                "Customer Success ownership is established for the documented lifecycle work.",
+              unknown: false,
+              evidenceReferences: ["actual-work"],
+            },
+          },
+          unknowns: [
+            ...maturity.unknowns,
+            {
+              code: "implementation-boundaries-unknown",
+              description:
+                "The narrower implementation boundary remains unresolved.",
+              materiality:
+                "This reduces completeness without becoming a positive or negative signal.",
+              evidenceReferences: ["actual-work"],
+            },
+          ],
+        };
+      },
+    };
+
+    const { result } = await run({ operations: mixed });
+    expect(result.evaluation.status).toBe("COMPLETED");
+    expect(result.domainResult?.organizationalMaturity).toMatchObject({
+      evaluated: true,
+      maturity: {
+        score: 84,
+        ownershipAndCrossFunctionalDesign: {
+          roleBoundaries: { unknown: false },
+        },
+        unknowns: expect.arrayContaining([
+          expect.objectContaining({
+            code: "implementation-boundaries-unknown",
+          }),
+        ]),
+      },
+    });
+    expect(fixture.stats.burnoutRiskCalls).toBe(1);
+    expect(result.domainResult?.recommendation).toBeDefined();
+  });
+
+  it("stops non-retryably at invalid Organizational Maturity without running downstream stages", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    const invalid: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async evaluateOrganizationalMaturity() {
+        throw new StageExecutionError({
+          code: "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+          message:
+            "A contextual Unknown cannot contradict its supported proposition",
+          retryable: false,
+        });
+      },
+    };
+
+    const { result } = await run({ operations: invalid });
+    expect(result.evaluation.status).toBe("FAILED");
+    expect(result.evaluation.stageResults.slice(0, 4)).toEqual([
+      expect.objectContaining({ stageId: "hard-filters", status: "COMPLETED" }),
+      expect.objectContaining({ stageId: "job-evaluation", status: "COMPLETED" }),
+      expect.objectContaining({ stageId: "company-alignment", status: "COMPLETED" }),
+      expect.objectContaining({
+        stageId: "organizational-maturity",
+        status: "FAILED",
+        failureCode: "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+        retryable: false,
+        result: null,
+      }),
+    ]);
+    expect(
+      result.evaluation.stageResults.slice(4).every((stage) =>
+        stage.status === "PENDING" && stage.result === null,
+      ),
+    ).toBe(true);
+    expect(fixture.stats.alexFitCalls).toBe(0);
+    expect(fixture.stats.burnoutRiskCalls).toBe(0);
+    expect(fixture.stats.resumeMatchCalls).toBe(0);
+    expect(fixture.stats.opportunityPriorityCalls).toBe(0);
+    expect(result.recommendation).toBeUndefined();
   });
 
   it("retries a transient reconstruction failure without corrupting the evaluation", async () => {

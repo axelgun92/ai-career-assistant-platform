@@ -175,8 +175,12 @@ export function toResumeMatchProviderTransport(
         ...assessment
       }) => {
         const partition = (references: string[]) => ({
-          decisionImpactReferences: references.filter((reference) => decisionImpactEvidenceReferences.includes(reference)),
-          assessmentOnlyReferences: references.filter((reference) => !decisionImpactEvidenceReferences.includes(reference)),
+          evidenceAssignments: references.map((evidenceReference) => ({
+            evidenceReference,
+            purpose: decisionImpactEvidenceReferences.includes(evidenceReference)
+              ? ("DECISION_IMPACT" as const)
+              : ("ASSESSMENT_ONLY" as const),
+          })),
         });
         if (decisionImpactEvidenceReferences.some((reference) =>
           ![...jdEvidenceReferences, ...profileEvidenceReferences].includes(reference))) {
@@ -242,6 +246,7 @@ export function toResumeMatchProviderTransport(
     "profileEvidenceReferences",
     "decisionImpactReferences",
     "assessmentOnlyReferences",
+    "evidenceReference",
     "evidenceReferencesA",
     "evidenceReferencesB",
   ]);
@@ -251,7 +256,18 @@ export function toResumeMatchProviderTransport(
     return Object.fromEntries(
       Object.entries(value).map(([key, child]) => [
         key,
-        evidenceReferenceKeys.has(key) && Array.isArray(child)
+        key === "evidenceReference" && typeof child === "string"
+          ? (() => {
+              const providerReference =
+                providerReferenceByCoreReference.get(child);
+              if (!providerReference) {
+                throw new Error(
+                  `Fixture references evidence outside the provider catalog: ${child}`,
+                );
+              }
+              return providerReference;
+            })()
+          : evidenceReferenceKeys.has(key) && Array.isArray(child)
           ? child.map((reference) => {
               const providerReference =
                 providerReferenceByCoreReference.get(String(reference));
@@ -292,9 +308,87 @@ export function toOrganizationalMaturityProviderTransport(
       : design.multipleJobsCombined.conclusion?.includes("combines multiple")
         ? ("MULTIPLE_JOBS_COMBINED" as const)
         : ("UNREALISTIC_OWNERSHIP" as const);
+  const positiveSignalAssessmentArea = "HANDOFFS" as const;
+  const assessmentUnknowns = new Map<string, typeof maturity.unknowns>();
+  const addUnknown = (assessmentArea: string, unknown: (typeof maturity.unknowns)[number]) => {
+    assessmentUnknowns.set(assessmentArea, [
+      ...(assessmentUnknowns.get(assessmentArea) ?? []),
+      unknown,
+    ]);
+  };
+  for (const unknown of maturity.unknowns) {
+    addUnknown(
+      unknown.code.includes("unrealistic-ownership")
+        ? "UNREALISTIC_OWNERSHIP"
+        : unknown.code.includes("multiple-jobs")
+          ? "MULTIPLE_JOBS_COMBINED"
+          : unknown.code.includes("scope-creep")
+            ? "SCOPE_CREEP"
+            : unknown.code.includes("handoff")
+              ? "HANDOFFS"
+              : unknown.code.includes("team-boundar")
+                ? "TEAM_BOUNDARIES"
+                : unknown.code.includes("role-boundar")
+                  ? "ROLE_BOUNDARIES"
+                  : unknown.code.includes("shared-ownership")
+                    ? "SHARED_OWNERSHIP"
+                    : unknown.code.includes("cross-functional")
+                      ? "CROSS_FUNCTIONAL_RELATIONSHIPS"
+                      : unknown.code.includes("unrelated-responsibilit")
+                        ? "UNRELATED_RESPONSIBILITIES"
+                        : unknown.code.includes("cs-function")
+                          ? "EXISTING_CS_FUNCTION"
+                          : "CUSTOMER_OPERATING_MODEL",
+      unknown,
+    );
+  }
+  const neutralImpact = {
+    impact: "NEUTRAL" as const,
+    finding: null,
+    affirmativeEvidenceReferences: [] as string[],
+  };
+  const impactFor = (assessmentArea: string) => {
+    const weak = assessmentArea === weakSignalAssessmentArea
+      ? maturity.weakSignals[0]
+      : undefined;
+    if (weak) return {
+      impact: "SUPPORTED_WEAKNESS" as const,
+      finding: weak.finding,
+      affirmativeEvidenceReferences: weak.evidenceReferences,
+    };
+    const positive = assessmentArea === positiveSignalAssessmentArea
+      ? maturity.positiveSignals[0]
+      : undefined;
+    if (positive) return {
+      impact: "SUPPORTED_POSITIVE" as const,
+      finding: positive.finding,
+      affirmativeEvidenceReferences: positive.evidenceReferences,
+    };
+    return neutralImpact;
+  };
+  const unknownFor = (assessmentArea: string, fallbackEvidence: string[] = []) => {
+    const unknowns = assessmentUnknowns.get(assessmentArea) ?? [];
+    return unknowns.length > 0 ? unknowns : [{
+      code: `fixture-${assessmentArea.toLowerCase().replaceAll("_", "-")}-unknown`,
+      description: "The available evidence does not establish this maturity dimension.",
+      materiality: "Completeness is reduced.",
+      evidenceReferences: fallbackEvidence,
+    }];
+  };
   const dimensions = Object.fromEntries(
-    organizationalMaturityOwnershipDimensions.map((key) => {
+    organizationalMaturityOwnershipDimensions.map((key, index) => {
       const dimension = design[key];
+      const assessmentArea = [
+        "ROLE_BOUNDARIES",
+        "TEAM_BOUNDARIES",
+        "HANDOFFS",
+        "SHARED_OWNERSHIP",
+        "CROSS_FUNCTIONAL_RELATIONSHIPS",
+        "UNRELATED_RESPONSIBILITIES",
+        "SCOPE_CREEP",
+        "MULTIPLE_JOBS_COMBINED",
+        "UNREALISTIC_OWNERSHIP",
+      ][index]!;
       if (dimension.unknown) {
         return [
           key,
@@ -302,6 +396,12 @@ export function toOrganizationalMaturityProviderTransport(
             evidenceState: "NOT_ESTABLISHED" as const,
             conclusion: null,
             evidenceReferences: dimension.evidenceReferences,
+            semanticImpact: {
+              impact: "NOT_ESTABLISHED" as const,
+              finding: null,
+              affirmativeEvidenceReferences: [] as string[],
+            },
+            unknowns: unknownFor(assessmentArea, dimension.evidenceReferences),
           },
         ];
       }
@@ -317,36 +417,72 @@ export function toOrganizationalMaturityProviderTransport(
             : ("SUPPORTED_PRESENT" as const),
           conclusion: dimension.conclusion,
           evidenceReferences: dimension.evidenceReferences,
+          semanticImpact: impactFor(assessmentArea),
+          unknowns: assessmentUnknowns.get(assessmentArea) ?? [],
         },
       ];
     }),
   );
+  const existingFunctionUnknown =
+    maturity.existingCustomerSuccessFunction.classification === "UNKNOWN";
+  const operatingModelUnknown =
+    maturity.customerOperatingModel.classification === "UNKNOWN";
   return {
-    ...maturity,
+    score: maturity.score,
+    scoreExplanation: maturity.scoreExplanation,
+    scoreEvidenceReferences: maturity.scoreEvidenceReferences,
+    existingCustomerSuccessFunction: {
+      ...maturity.existingCustomerSuccessFunction,
+      semanticImpact: existingFunctionUnknown
+        ? {
+            impact: "NOT_ESTABLISHED" as const,
+            finding: null,
+            affirmativeEvidenceReferences: [] as string[],
+          }
+        : impactFor("EXISTING_CS_FUNCTION"),
+      unknowns: existingFunctionUnknown
+        ? unknownFor("EXISTING_CS_FUNCTION")
+        : assessmentUnknowns.get("EXISTING_CS_FUNCTION") ?? [],
+    },
+    customerOperatingModel: {
+      ...maturity.customerOperatingModel,
+      semanticImpact: operatingModelUnknown
+        ? {
+            impact: "NOT_ESTABLISHED" as const,
+            finding: null,
+            affirmativeEvidenceReferences: [] as string[],
+          }
+        : impactFor("CUSTOMER_OPERATING_MODEL"),
+      unknowns: operatingModelUnknown
+        ? unknownFor("CUSTOMER_OPERATING_MODEL")
+        : assessmentUnknowns.get("CUSTOMER_OPERATING_MODEL") ?? [],
+    },
     ownershipAndCrossFunctionalDesign: {
       summary: design.summary,
       ...dimensions,
       ...(relationshipCatalog === undefined ? {} : {
-        crossFunctionalRelationships: organizationalMaturityRelationshipTransport(relationshipCatalog),
+        crossFunctionalRelationships: {
+          ...organizationalMaturityRelationshipTransport(relationshipCatalog),
+          ...((organizationalMaturityRelationshipTransport(relationshipCatalog).evidenceState === "NOT_ESTABLISHED")
+            ? {
+                semanticImpact: {
+                  impact: "NOT_ESTABLISHED" as const,
+                  finding: null,
+                  affirmativeEvidenceReferences: [] as string[],
+                },
+                unknowns: unknownFor("CROSS_FUNCTIONAL_RELATIONSHIPS"),
+              }
+            : {
+                semanticImpact: impactFor("CROSS_FUNCTIONAL_RELATIONSHIPS"),
+                unknowns: assessmentUnknowns.get("CROSS_FUNCTIONAL_RELATIONSHIPS") ?? [],
+              }),
+        },
       }),
       evidenceReferences: design.evidenceReferences,
     },
-    weakSignals: maturity.weakSignals.map((signal) => ({
-      assessmentArea: weakSignalAssessmentArea,
-      evidenceState: "SUPPORTED_WEAKNESS" as const,
-      finding: signal.finding,
-      affirmativeEvidenceReferences: signal.evidenceReferences,
-    })),
-    unknowns: maturity.unknowns.map((unknown) => ({
-      ...unknown,
-      assessmentArea: unknown.code.includes("unrealistic-ownership")
-        ? ("UNREALISTIC_OWNERSHIP" as const)
-        : unknown.code.includes("scope-creep")
-          ? ("SCOPE_CREEP" as const)
-          : unknown.code.includes("cs-function")
-            ? ("EXISTING_CS_FUNCTION" as const)
-            : ("CUSTOMER_OPERATING_MODEL" as const),
-    })),
+    summary: maturity.summary,
+    evidenceReferences: maturity.evidenceReferences,
+    contradictions: maturity.contradictions,
   };
 }
 
