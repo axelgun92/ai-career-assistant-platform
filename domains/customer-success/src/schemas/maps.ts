@@ -121,6 +121,11 @@ export const requirementSchema = z
     statedYearsMaximum: z.number().nonnegative().nullable(),
     statedYearsOpenEnded: z.boolean(),
     experienceSpecificity: optionalText,
+    // Structured specialization semantics authored by JD Reconstruction and
+    // consumed by Resume Match legality. Absent only in historical maps, which
+    // carry no specialization semantics; wording is never consulted instead.
+    requiresDirectWorkExperience: z.boolean().optional(),
+    requiresStartupExperience: z.boolean().optional(),
     evidenceReferences: evidenceReferences.min(1),
     ambiguity: z
       .object({
@@ -308,8 +313,24 @@ const transportOwnershipFunctionsSchema = z
   )
   .max(ownershipFunctions.length);
 
+export const requirementSpecializationDescriptions = {
+  requiresDirectWorkExperience:
+    "True only if this EXPERIENCE requirement demands direct employment in the stated work, so transferable, adjacent, or readiness evidence cannot satisfy it.",
+  requiresStartupExperience:
+    "True only if this EXPERIENCE requirement demands startup or early-stage company experience.",
+} as const;
+
 const transportRequirementBaseShape = {
   ...requirementSchema.shape,
+  // Named definitions keep each description once across the union branches.
+  requiresDirectWorkExperience: z
+    .boolean()
+    .describe(requirementSpecializationDescriptions.requiresDirectWorkExperience)
+    .meta({ id: "requiresDirectWorkExperience" }),
+  requiresStartupExperience: z
+    .boolean()
+    .describe(requirementSpecializationDescriptions.requiresStartupExperience)
+    .meta({ id: "requiresStartupExperience" }),
   evidenceReferences: evidenceReferences.length(1),
 };
 

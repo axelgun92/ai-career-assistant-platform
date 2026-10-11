@@ -54,6 +54,8 @@ function requirement(
     statedYearsMaximum: null,
     statedYearsOpenEnded: false,
     experienceSpecificity: null,
+    requiresDirectWorkExperience: false,
+    requiresStartupExperience: false,
     evidenceReferences: [reference],
     ambiguity: { isAmbiguous: false, explanation: null },
     assessmentUnit: "INDEPENDENT_QUALIFICATION",
@@ -120,14 +122,19 @@ function createSubject() {
   return subject;
 }
 
-async function runEvaluation(mutate?: Mutation) {
+const defaultResumeMatch = {
+  requirementClassifications: ["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN"],
+  matchedExperienceSpecificities: ["DIRECT_CUSTOMER_SUCCESS", "UNSUPPORTED", "UNKNOWN"],
+  decisionImpacts: ["NON_DECISIVE", "MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
+};
+
+async function runEvaluation(
+  mutate?: Mutation,
+  resumeMatch: Record<string, string[]> = defaultResumeMatch,
+) {
   const subject = createSubject();
   const fixture = createCustomerSuccessFixtureTransport({
-    resumeMatch: {
-      requirementClassifications: ["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN"],
-      matchedExperienceSpecificities: ["DIRECT_CUSTOMER_SUCCESS", "UNSUPPORTED", "UNKNOWN"],
-      decisionImpacts: ["NON_DECISIVE", "MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
-    },
+    resumeMatch: resumeMatch as never,
   });
   const requests: SemanticProviderRequest[] = [];
   const outputs = new Map<string, ProviderOutput>();
@@ -235,9 +242,9 @@ describe("complete offline evaluator with grounded requirements", () => {
 // Provider-authored narrative keys across all eight semantic stages. These are
 // display-only: replacing them must not change acceptance or any structured
 // field. Excluded on purpose: JD evidence sourceText (verbatim provenance
-// checked against the source), JD requirement text and experienceSpecificity
-// (open finding: Resume Match legality is still derived from that wording
-// before generation), identifiers, codes, and enums.
+// checked against the source), identifiers, codes, and enums. JD requirement
+// wording is rewritten separately (requirementWordingKeys) because it is also
+// the exact-duplicate requirement identity.
 const narrativeKeys = new Set([
   "alignmentSummary",
   "claim",
@@ -261,6 +268,15 @@ const narrativeKeys = new Set([
   "summary",
   "supportedPortion",
   "unsupportedPortion",
+]);
+
+// JD Reconstruction requirement wording and its verbatim copies in Resume
+// Match results. Legality comes only from structured requirement fields.
+const requirementWordingKeys = new Set([
+  "requirement",
+  "experienceSpecificity",
+  "requirementText",
+  "requestedExperienceSpecificity",
 ]);
 
 const adversarialWording = [
@@ -297,16 +313,17 @@ function rewriteNarrative(
   value: unknown,
   rewrite: (original: string) => string,
   path: string[] = [],
+  keys: ReadonlySet<string> = narrativeKeys,
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => rewriteNarrative(item, rewrite, path));
+    return value.map((item) => rewriteNarrative(item, rewrite, path, keys));
   }
   if (value === null || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, child]) => {
       const childPath = [...path, key];
       if (
-        narrativeKeys.has(key) &&
+        keys.has(key) &&
         !applicationDerivedPaths.has(childPath.join("."))
       ) {
         if (typeof child === "string") return [key, rewrite(child)];
@@ -314,7 +331,7 @@ function rewriteNarrative(
           return [key, child.map(rewrite)];
         }
       }
-      return [key, rewriteNarrative(child, rewrite, childPath)];
+      return [key, rewriteNarrative(child, rewrite, childPath, keys)];
     }),
   );
 }
@@ -332,11 +349,15 @@ function structuredView(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(structuredView);
   if (value instanceof Date) return "<date>";
   if (value === null || typeof value !== "object") return value;
+  const isText = (child: unknown) =>
+    typeof child === "string" ||
+    (Array.isArray(child) && child.every((item) => typeof item === "string"));
   return Object.fromEntries(
     Object.entries(value).map(([key, child]) => [
       key,
-      narrativeKeys.has(key) ||
-      runIdentityKeys.has(key)
+      runIdentityKeys.has(key) ||
+      (narrativeKeys.has(key) && isText(child)) ||
+      (requirementWordingKeys.has(key) && (child === null || isText(child)))
         ? "<excluded>"
         : structuredView(child),
     ]),
@@ -352,7 +373,7 @@ describe("provider wording is display-only across every semantic stage", () => {
       rewriteNarrative(output, (original) => {
         rewrites += 1;
         return rewrite(original);
-      }) as ProviderOutput,
+      }, [], new Set([...narrativeKeys, "requirement", "experienceSpecificity"])) as ProviderOutput,
     );
     expect(rewrites).toBeGreaterThan(50);
     expect(
@@ -696,7 +717,7 @@ type TextDependency =
   | "IDENTITY" // exact-duplicate identity of an authoritative key
   | "DISPLAY" // presentation-only rewriting that never decides acceptance
   | "IDENTIFIER" // application identifiers or diagnostic messages
-  | "OPEN_UPSTREAM_WORDING"; // open finding: legality derived from upstream wording
+  | "USER_PROFILE_TEXT"; // the candidate's own authoritative profile statements, never provider output
 
 const allowedTextDependencies: Record<string, { lines: number; kind: TextDependency; reason: string }> = {
   "evaluation/hard-filters.ts#salaryResult": { lines: 2, kind: "SOURCE_TEXT", reason: "country normalization of deterministically extracted location facts" },
@@ -706,12 +727,9 @@ const allowedTextDependencies: Record<string, { lines: number; kind: TextDepende
   "recommendation/recommendation.ts#createCustomerSuccessRecommendation": { lines: 1, kind: "IDENTIFIER", reason: "Unknown code prefix, an application identifier" },
   "schemas/maps.ts#semanticReconstructionFromTransport": { lines: 5, kind: "PROVENANCE", reason: "whitespace/case normalization for verbatim source grounding and exact requirement identity" },
   "schemas/resume-match.ts#restoreProviderNarrativeCitations": { lines: 4, kind: "DISPLAY", reason: "translates resolvable narrative citations; never rejects" },
-  "schemas/resume-match.ts#createResumeMatchProviderInputProjection": { lines: 1, kind: "OPEN_UPSTREAM_WORDING", reason: "startup specialization flag derived from user-profile wording" },
-  "schemas/resume-match.ts#requestsDirectExperience": { lines: 1, kind: "OPEN_UPSTREAM_WORDING", reason: "direct-work legality derived from JD Reconstruction requirement wording" },
-  "schemas/resume-match.ts#requiresStartupSpecialization": { lines: 1, kind: "OPEN_UPSTREAM_WORDING", reason: "startup legality derived from JD Reconstruction requirement wording" },
-  "schemas/resume-match.ts#supportsStartupSpecialization": { lines: 1, kind: "OPEN_UPSTREAM_WORDING", reason: "startup evidence derived from user-profile wording" },
-  "schemas/resume-match.ts#gapRequirementTerms": { lines: 2, kind: "OPEN_UPSTREAM_WORDING", reason: "Genuine Gap relevance terms from JD Reconstruction requirement wording" },
-  "schemas/resume-match.ts#supportsExplicitGapEvidence": { lines: 4, kind: "OPEN_UPSTREAM_WORDING", reason: "Genuine Gap proof eligibility from profile wording and requirement terms" },
+  "schemas/resume-match.ts#createResumeMatchProviderInputProjection": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience flag for the candidate's own profile statements" },
+  "schemas/resume-match.ts#supportsStartupSpecialization": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience evidence in the candidate's own profile statements" },
+  "schemas/resume-match.ts#supportsExplicitGapEvidence": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "affirmative limitation statements in the candidate's own profile; requirement wording is never compared" },
 };
 
 function textOperationsBySymbol(root: string) {
@@ -776,3 +794,86 @@ describe("regression guard against provider-wording gates", () => {
   });
 });
 
+
+// Requirement-level mutation of the JD Reconstruction provider output, applied
+// only to the three grounded requirements this suite adds.
+function withRequirementChanges(
+  change: (requirement: Record<string, any>) => void,
+): Mutation {
+  return (operationId, output) => {
+    if (operationId !== "customer-success.jd-reconstruction") return output;
+    const changed = structuredClone(output) as Record<string, any>;
+    for (const requirement of changed.requirements) {
+      if (String(requirement.evidenceReferences[0]).startsWith("jd-req-")) change(requirement);
+    }
+    return changed;
+  };
+}
+
+const transferableFirstRequirement = {
+  requirementClassifications: ["TRANSFERABLE_MATCH", "GENUINE_GAP", "UNKNOWN"],
+  matchedExperienceSpecificities: ["TRANSFERABLE", "UNSUPPORTED", "UNKNOWN"],
+  decisionImpacts: ["NON_DECISIVE", "MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
+};
+
+describe("direct-work and startup legality is structured, never worded", () => {
+  it("keeps legality identical when requirement wording says direct and startup but the structured fields do not", async () => {
+    for (const resumeMatch of [defaultResumeMatch, transferableFirstRequirement]) {
+      const baseline = await runEvaluation(undefined, resumeMatch);
+      const reworded = await runEvaluation(
+        withRequirementChanges((requirement) => {
+          requirement.requirement = `Direct employment at an early-stage startup: ${requirement.requirement}`;
+          requirement.experienceSpecificity = "Direct startup work experience";
+        }),
+        resumeMatch,
+      );
+      expect(baseline.evaluation.status).toBe("COMPLETED");
+      expect(
+        reworded.evaluation.status,
+        JSON.stringify(reworded.evaluation.stageResults.find((stage) => stage.status !== "COMPLETED")),
+      ).toBe("COMPLETED");
+      expect(structuredView(reworded.evaluation.stageResults.map((stage) => stage.result?.data)))
+        .toEqual(structuredView(baseline.evaluation.stageResults.map((stage) => stage.result?.data)));
+      expect(reworded.requests.find((request) => request.operationId === "customer-success.resume-match")!.jsonSchema)
+        .toEqual(baseline.requests.find((request) => request.operationId === "customer-success.resume-match")!.jsonSchema);
+    }
+  });
+
+  it("changes legality when only the structured direct-work field changes", async () => {
+    const markOnboardingDirect = withRequirementChanges((requirement) => {
+      if (requirement.requirement === "Customer onboarding experience") {
+        requirement.requiresDirectWorkExperience = true;
+      }
+    });
+    const transferable = await runEvaluation(undefined, transferableFirstRequirement);
+    expect(transferable.evaluation.status).toBe("COMPLETED");
+    const direct = await runEvaluation(markOnboardingDirect, transferableFirstRequirement);
+    expect(direct.evaluation.status).toBe("FAILED");
+    const failed = direct.evaluation.stageResults.find((stage) => stage.status === "FAILED")!;
+    expect([failed.stageId, failed.failureCode]).toEqual(["resume-match", "STRUCTURED_OUTPUT_INVALID"]);
+    // Direct evidence still satisfies the structured direct-work requirement.
+    expect((await runEvaluation(markOnboardingDirect)).evaluation.status).toBe("COMPLETED");
+  });
+
+  it("changes legality when only the structured startup field changes", async () => {
+    const markOnboardingStartup = withRequirementChanges((requirement) => {
+      if (requirement.requirement === "Customer onboarding experience") {
+        requirement.requiresStartupExperience = true;
+      }
+    });
+    const startup = await runEvaluation(markOnboardingStartup);
+    expect(startup.evaluation.status).toBe("FAILED");
+    const failed = startup.evaluation.stageResults.find((stage) => stage.status === "FAILED")!;
+    expect([failed.stageId, failed.failureCode]).toEqual(["resume-match", "STRUCTURED_OUTPUT_INVALID"]);
+    // Without startup-specific profile evidence the requirement must stay Unknown.
+    const unknown = await runEvaluation(markOnboardingStartup, {
+      requirementClassifications: ["UNKNOWN", "GENUINE_GAP", "UNKNOWN"],
+      matchedExperienceSpecificities: ["UNKNOWN", "UNSUPPORTED", "UNKNOWN"],
+      decisionImpacts: ["NON_DECISIVE", "MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
+    });
+    expect(
+      unknown.evaluation.status,
+      JSON.stringify(unknown.evaluation.stageResults.find((stage) => stage.status !== "COMPLETED")),
+    ).toBe("COMPLETED");
+  });
+});

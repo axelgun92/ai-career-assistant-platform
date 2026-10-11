@@ -88,6 +88,15 @@ Finish the evaluator and remaining main-product work in parallel so they can be 
 - Open: Resume Match direct-work, startup, and Genuine Gap relevance legality are still derived (pre-generation, grammar-encoded) from JD Reconstruction requirement wording; the uploaded raw responses for `8c77e46f` and `cdb1dc32` did not reach the session, so corpus replay is outstanding.
 - 681 unit tests, typecheck, Prisma validation, changed-file ESLint, and diff check pass. No provider calls, live evaluations, or database mutations.
 
+#### Structured requirement specialization and real-artifact replay — October 11, 2026 (Claude)
+
+- Replayed the preserved live request/response pairs offline (`tests/unit/customer-success-live-artifact-replay.test.ts`, artifacts via `LIVE_REPLAY_DIR`, never copied into the repository). Fidelity checks: Organizational Maturity relationship catalog and provider schema are byte-identical to the request; Resume Match provider catalogs and requirement projection are reproduced exactly; the pre-refactor commit reproduces the exact live `ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID` message.
+- Organizational Maturity `8c77e46f` now converts; removing the repeatability sentence yields the identical structured result.
+- Resume Match `cdb1dc32` remains invalid for one structural reason only: requirement 0 reuses `profile-6` across decision-impact and assessment-only purposes. Narrative citations (69 grouped citations) are translated and never decide acceptance.
+- JD Reconstruction `cs-jd-reconstruction-v4` adds structured `requiresDirectWorkExperience` and `requiresStartupExperience` per requirement (optional in the persisted domain for historical maps, which carry no specialization semantics). Resume Match direct-work and startup legality now use only those fields.
+- Genuine Gap relevance is the provider's structured `gapEvidence` selection; requirement-term overlap was removed. Gap proof must still be an affirmative limitation statement from the user's own profile. Consequence seen in the replay: gaps 10 and 11 citing a SaaS-employment disclaimer are now structurally valid, so relevance quality must be reviewed in the live diagnostic.
+- Closure tests extended: requirement wording changes do not change legality; flipping only the structured fields does. 687 tests (with artifacts), typecheck, Prisma validation, changed-file ESLint, and diff check pass. No provider calls, live evaluations, or database mutations.
+
 ## Current Accepted Model Routing
 
 | Operation | Execution |

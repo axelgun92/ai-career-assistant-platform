@@ -607,6 +607,8 @@ function toJdReconstructionProviderTransport(
       }
       return {
         ...requirement,
+        requiresDirectWorkExperience: requirement.requiresDirectWorkExperience ?? false,
+        requiresStartupExperience: requirement.requiresStartupExperience ?? false,
         evidenceReferences: [requirement.evidenceReferences[0]!],
         assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
         compoundExplanation: null,

@@ -502,48 +502,23 @@ const positiveSpecificities = {
 
 const explicitGapPattern =
   /\b(?:do(?:es)?\s+not|did\s+not|no\s+(?:source|evidence|experience)|never|without|lack(?:s|ed|ing)?|unverified|unsupported|not\s+established|not\s+verified)\b/i;
-const gapTermStopWords = new Set([
-  "and", "are", "background", "candidate", "candidates", "customer",
-  "customers", "direct", "experience", "ideal", "nice", "preferred",
-  "required", "requirement", "requirements", "the", "with", "work",
-  "working", "years",
-]);
-
-function gapRequirementTerms(requirement: ResumeMatchRequirement) {
-  return new Set(
-    [requirement.requirement, requirement.experienceSpecificity]
-      .filter((value): value is string => Boolean(value))
-      .join(" ")
-      .toLowerCase()
-      .match(/[a-z0-9]+/g)
-      ?.filter((term) => term.length >= 3 && !gapTermStopWords.has(term)) ?? [],
-  );
-}
-
-function supportsExplicitGapEvidence(
-  evidence: AvailableResumeMatchEvidence,
-  requirement: ResumeMatchRequirement,
-) {
+// A Genuine Gap needs affirmative gap proof: a user-profile record that
+// explicitly states a limitation, never mere absence of evidence. This
+// classifies the user's own authoritative profile statements, not provider
+// output. Which requirement a proof record establishes is the provider's
+// structured gapEvidence selection; requirement wording is never compared.
+function supportsExplicitGapEvidence(evidence: AvailableResumeMatchEvidence) {
   if (evidence.sourceType !== "USER_PROFILE") return false;
-  const statement = [evidence.claim, evidence.sourceText]
-    .filter(Boolean)
-    .join(" ");
-  if (!explicitGapPattern.test(statement)) return false;
-  const terms = gapRequirementTerms(requirement);
-  if (terms.size === 0) return false;
-  const normalizedStatement = statement.toLowerCase();
-  return [...terms].some((term) =>
-    new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i")
-      .test(normalizedStatement),
+  return explicitGapPattern.test(
+    [evidence.claim, evidence.sourceText].filter(Boolean).join(" "),
   );
 }
 
 function explicitGapEvidenceReferenceIds(
   availableEvidence: AvailableResumeMatchEvidence[],
-  requirement: ResumeMatchRequirement,
 ) {
   return availableEvidence
-    .filter((evidence) => supportsExplicitGapEvidence(evidence, requirement))
+    .filter(supportsExplicitGapEvidence)
     .map((evidence) => evidence.referenceId);
 }
 
@@ -617,17 +592,12 @@ const providerUnknownRequirementSchema = z.object({
   profileEvidenceReferences: transportEvidenceReferences,
 }).strict();
 
-// OPEN DEPENDENCY: direct-work and startup legality, and Genuine Gap
-// relevance below, are still derived from JD Reconstruction requirement
-// wording. They are resolved before generation and encoded in the provider
-// grammar, so they cannot reject a provider-valid output, but they belong in
-// structured upstream requirement fields. The semantic-closure guard test
-// pins every such text dependency.
+// Direct-work and startup legality come only from the structured requirement
+// fields authored by JD Reconstruction. Historical maps without those fields
+// carry no specialization semantics; requirement wording is never consulted.
 function requestsDirectExperience(requirement?: ResumeMatchRequirement) {
   return requirement?.category === "EXPERIENCE" &&
-    /\bdirect\b/i.test(
-      [requirement.requirement, requirement.experienceSpecificity].filter(Boolean).join(" "),
-    );
+    requirement.requiresDirectWorkExperience === true;
 }
 
 function requiresDirectWork(requirement?: ResumeMatchRequirement) {
@@ -637,11 +607,8 @@ function requiresDirectWork(requirement?: ResumeMatchRequirement) {
 const startupSpecializationPattern = /\b(?:startup|start-up|startups|start-ups)\b/i;
 
 function requiresStartupSpecialization(requirement?: ResumeMatchRequirement) {
-  return requirement?.category === "EXPERIENCE" && startupSpecializationPattern.test(
-    [requirement.requirement, requirement.experienceSpecificity]
-      .filter(Boolean)
-      .join(" "),
-  );
+  return requirement?.category === "EXPERIENCE" &&
+    requirement.requiresStartupExperience === true;
 }
 
 function supportsStartupSpecialization(evidence: AvailableResumeMatchEvidence) {
@@ -733,12 +700,12 @@ function providerAssessmentEvidenceSchema(
   }).strict().meta({ id });
 }
 
-// A Genuine Gap must cite at least one profile record that the application
-// has already determined, before generation, to explicitly establish the
-// requirement's absence. Those records get their own collection, drawn only
-// from that requirement's eligible catalog, so the provider grammar carries the
-// rule instead of a hidden conversion check. The ordinary gap profileEvidence
-// catalog excludes them, keeping one identity in exactly one collection.
+// A Genuine Gap must cite at least one affirmative profile gap-proof record.
+// Those records get their own collection, so the provider grammar carries the
+// rule instead of a hidden conversion check, and the provider's selection is
+// the authoritative statement of which requirement the proof establishes. The
+// ordinary gap profileEvidence catalog excludes them, keeping one identity in
+// exactly one collection.
 function providerGapEvidenceSchema(references: z.ZodArray, id: string) {
   const assignment = z.object({
     evidenceReference: references.element,
@@ -914,63 +881,39 @@ function providerRequirementAssessmentSchema(
           schema.shape.classification.value !== "UNKNOWN",
         ),
       });
-  const gapEvidenceSchemas = new Map<string, z.ZodObject>();
   const boundGapSchemas: z.ZodObject[] = [];
-  const profileReferenceIds = availableEvidence
-    .filter((evidence) => evidence.sourceType === "USER_PROFILE")
-    .map((evidence) => evidence.referenceId);
+  const gapReferenceIds = explicitGapEvidenceReferenceIds(availableEvidence);
+  const gapReferences = providerProfileReferenceSchema(gapReferenceIds, referenceCatalogs);
+  const gapIds = new Set(gapReferenceIds);
+  const contextReferences = providerProfileReferenceSchema(
+    availableEvidence
+      .filter((evidence) =>
+        evidence.sourceType === "USER_PROFILE" && !gapIds.has(evidence.referenceId))
+      .map((evidence) => evidence.referenceId),
+    referenceCatalogs,
+  );
+  const gapEvidence = gapReferences
+    ? providerGapEvidenceSchema(gapReferences, "resumeMatchGapEvidence")
+    : null;
   for (const schema of providerGapRequirementSchema.options) {
-    if (semanticRequirements === undefined) break;
+    if (semanticRequirements === undefined || !gapEvidence) break;
     const decisive = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER";
-    const groupsByGapEvidence = new Map<
-      string,
-      { gapReferenceIds: string[]; indexes: number[] }
-    >();
-    for (const { requirement, index } of semanticRequirements) {
-      if (
-        predeterminedStartupUnknownIndexes.has(index) ||
-        (decisive && requirement.strength !== "REQUIRED")
-      ) continue;
-      const gapReferenceIds = explicitGapEvidenceReferenceIds(
-        availableEvidence,
-        requirement,
-      );
-      if (gapReferenceIds.length === 0) continue;
-      const key = JSON.stringify(gapReferenceIds);
-      const group = groupsByGapEvidence.get(key) ?? { gapReferenceIds, indexes: [] };
-      group.indexes.push(index);
-      groupsByGapEvidence.set(key, group);
-    }
-    for (const group of groupsByGapEvidence.values()) {
-      const gapReferences = providerProfileReferenceSchema(
-        group.gapReferenceIds,
-        referenceCatalogs,
-      )!;
-      const gapIds = new Set(group.gapReferenceIds);
-      const contextReferences = providerProfileReferenceSchema(
-        profileReferenceIds.filter((referenceId) => !gapIds.has(referenceId)),
-        referenceCatalogs,
-      );
-      const cacheKey = JSON.stringify(group.gapReferenceIds);
-      let gapEvidence = gapEvidenceSchemas.get(cacheKey);
-      if (!gapEvidence) {
-        gapEvidence = providerGapEvidenceSchema(
-          gapReferences,
-          "resumeMatchGapEvidence" + gapEvidenceSchemas.size,
-        );
-        gapEvidenceSchemas.set(cacheKey, gapEvidence);
-      }
-      boundGapSchemas.push(constrainIndexes(
-        schema
-          .omit({ jdEvidenceReferences: true, profileEvidenceReferences: true })
-          .extend({
-            jdEvidence: groupedEvidence(jdReferences, true),
-            gapEvidence,
-            profileEvidence: groupedEvidence(contextReferences, false),
-          }),
-        group.indexes,
-      ));
-    }
+    const eligibleIndexes = semanticRequirements
+      .filter(({ requirement, index }) =>
+        !predeterminedStartupUnknownIndexes.has(index) &&
+        (!decisive || requirement.strength === "REQUIRED"))
+      .map(({ index }) => index);
+    if (eligibleIndexes.length === 0) continue;
+    boundGapSchemas.push(constrainIndexes(
+      schema
+        .omit({ jdEvidenceReferences: true, profileEvidenceReferences: true })
+        .extend({
+          jdEvidence: groupedEvidence(jdReferences, true),
+          gapEvidence,
+          profileEvidence: groupedEvidence(contextReferences, false),
+        }),
+      eligibleIndexes,
+    ));
   }
   const sourcedSchemas = [...schemas.map(bindEvidence), ...boundGapSchemas];
   return sourcedSchemas.length === 0
@@ -1486,8 +1429,8 @@ function normalizeLegacyAssessmentEvidence(input: unknown) {
 }
 
 // Historical grouped outputs predate the separate gapEvidence collection.
-// Move only the selected records that were eligible gap proof for that
-// requirement, keeping identity and purpose; never add, drop or reassign one.
+// Move only the selected records that are affirmative gap proof, keeping
+// identity and purpose; never add, drop or reassign one.
 function normalizeLegacyGapEvidence(
   input: unknown,
   availableEvidence: AvailableResumeMatchEvidence[],
@@ -1524,7 +1467,7 @@ function normalizeLegacyGapEvidence(
         return candidate;
       }
       const eligible = new Set(
-        explicitGapEvidenceReferenceIds(availableEvidence, requirement),
+        explicitGapEvidenceReferenceIds(availableEvidence),
       );
       const assignments = profileEvidence.evidenceAssignments as Array<{
         evidenceReference?: unknown;
@@ -1534,7 +1477,7 @@ function normalizeLegacyGapEvidence(
         eligible.has(assignment.evidenceReference);
       if (!assignments.some(isGapProof)) {
         evidenceResultViolation(
-          `Requirement ${assessment.requirementIndex} claims a Genuine Gap without explicit requirement-relevant profile evidence`,
+          `Requirement ${assessment.requirementIndex} claims a Genuine Gap without affirmative profile gap proof`,
         );
       }
       return {
@@ -2311,11 +2254,11 @@ export function semanticResumeMatchFromTransport(
     if (
       assessment.classification === "GENUINE_GAP" &&
       !assessment.profileEvidenceReferences.some((reference) =>
-        supportsExplicitGapEvidence(knownEvidence.get(reference)!, authoritative),
+        supportsExplicitGapEvidence(knownEvidence.get(reference)!),
       )
     ) {
       evidenceResultViolation(
-        `Requirement ${assessment.requirementIndex} claims a Genuine Gap without explicit requirement-relevant profile evidence`,
+        `Requirement ${assessment.requirementIndex} claims a Genuine Gap without affirmative profile gap proof`,
       );
     }
     const assessmentDecisionReferences =
@@ -2328,11 +2271,11 @@ export function semanticResumeMatchFromTransport(
       !assessmentDecisionReferences.some((reference) => {
         const evidence = knownEvidence.get(reference);
         return evidence !== undefined &&
-          supportsExplicitGapEvidence(evidence, authoritative);
+          supportsExplicitGapEvidence(evidence);
       })
     ) {
       evidenceResultViolation(
-        `Requirement ${assessment.requirementIndex} assigns decisive gap impact without explicit requirement-relevant profile evidence`,
+        `Requirement ${assessment.requirementIndex} assigns decisive gap impact without affirmative profile gap proof`,
       );
     }
     if (!assessment.jdEvidenceReferences.some((reference) => authoritative.evidenceReferences.includes(reference))) {
