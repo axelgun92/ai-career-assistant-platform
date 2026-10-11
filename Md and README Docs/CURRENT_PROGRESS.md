@@ -77,6 +77,17 @@ Finish the evaluator and remaining main-product work in parallel so they can be 
 - No provider calls, live evaluations, or database mutations were performed.
 - Next gate: one final paid acceptance rerun after review, commit, and explicit authorization.
 
+#### Provider-prose semantic closure — October 11, 2026 (Claude)
+
+- Principle applied: no acceptance decision depends on provider-authored wording; prose is display-only.
+- Organizational Maturity: removed the missing-information regex, clause splitting, and token-overlap coverage/contradiction gates (the source of `ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID` in evaluation `8c77e46f`). Acceptance now uses only evidence state, semantic impact, impact-evidence membership, NOT_ESTABLISHED neutrality, and evidence resolution. Provider schema and prompt version `cs-organizational-maturity-v7` are byte-identical.
+- Resume Match: narrative citations are display-only (well-formed resolvable tokens are translated; nothing in prose rejects). Genuine Gap proof now has its own provider-visible `gapEvidence` collection drawn only from the requirement's precomputed eligible records, disjoint from ordinary profile evidence, so the former hidden conversion check is in the grammar. Legacy grouped outputs are split deterministically. Schema grows only when gap-eligible records exist (representative case 36,985 → 38,078 bytes).
+- JD Reconstruction: removed the exclusion-vocabulary regex from ABSENT acceptance; typed `absenceBasis`, EXPLICIT/CONFIRMED evidence, and verbatim source grounding remain.
+- Final Recommendation: strengths/concerns/contradictions now merge only records identical in wording and evidence, so evidence references no longer disappear when distinct findings share wording.
+- Added `tests/unit/customer-success-semantic-closure.test.ts`: full production-executor path with grounded requirements and a Genuine Gap, end-to-end wording invariance across all eight semantic stages, the `8c77e46f` shape, 15 structural failure injections, and a static guard pinning every remaining text dependency.
+- Open: Resume Match direct-work, startup, and Genuine Gap relevance legality are still derived (pre-generation, grammar-encoded) from JD Reconstruction requirement wording; the uploaded raw responses for `8c77e46f` and `cdb1dc32` did not reach the session, so corpus replay is outstanding.
+- 681 unit tests, typecheck, Prisma validation, changed-file ESLint, and diff check pass. No provider calls, live evaluations, or database mutations.
+
 ## Current Accepted Model Routing
 
 | Operation | Execution |

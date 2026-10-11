@@ -1095,7 +1095,7 @@ describe("Customer Success provider/application contracts", () => {
   );
 
   it.each(["SUPPORTED_POSITIVE", "SUPPORTED_WEAKNESS"] as const)(
-    "rejects %s inferred from missing information even when a contextual Unknown exists",
+    "accepts %s whose display finding mentions missing information; impact kind and evidence decide",
     (impact) => {
       const transport = validOrganizationalMaturity();
       setMaturityAssessment(
@@ -1111,20 +1111,23 @@ describe("Customer Success provider/application contracts", () => {
           },
         ],
       );
-      expectNonRetryableEvidenceFailure(
-        () =>
-          semanticOrganizationalMaturityFromTransport(
-            transport,
-            availableEvidence,
-          ),
-        impact === "SUPPORTED_POSITIVE"
-          ? "ORGANIZATIONAL_MATURITY_POSITIVE_SIGNAL_INVALID"
-          : "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
+      const domain = semanticOrganizationalMaturityFromTransport(
+        transport,
+        availableEvidence,
+      );
+      const signals =
+        impact === "SUPPORTED_POSITIVE" ? domain.positiveSignals : domain.weakSignals;
+      expect(signals).toContainEqual({
+        finding: "Team boundaries are not described.",
+        evidenceReferences,
+      });
+      expect(domain.unknowns.map((unknown) => unknown.code)).toContain(
+        "team-boundaries-unknown",
       );
     },
   );
 
-  it("rejects an unresolved-only conclusion represented as established", () => {
+  it("keeps an established conclusion as display text without inspecting its wording", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.teamBoundaries = {
       ...supportedOwnershipDimension(),
@@ -1136,17 +1139,18 @@ describe("Customer Success provider/application contracts", () => {
         },
       ],
     };
-    expectNonRetryableEvidenceFailure(
-      () =>
-        semanticOrganizationalMaturityFromTransport(
-          transport,
-          availableEvidence,
-        ),
-      "ORGANIZATIONAL_MATURITY_EVIDENCE_STATE_INVALID",
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
     );
+    expect(domain.ownershipAndCrossFunctionalDesign.teamBoundaries).toEqual({
+      conclusion: "Team boundaries are not described.",
+      unknown: false,
+      evidenceReferences,
+    });
   });
 
-  it("rejects an unresolved clause that is not represented by a contextual Unknown", () => {
+  it("derives unresolved semantics only from contextual Unknown records, never from conclusion clauses", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.roleBoundaries = {
       ...supportedOwnershipDimension(),
@@ -1159,17 +1163,23 @@ describe("Customer Success provider/application contracts", () => {
         },
       ],
     };
-    expectNonRetryableEvidenceFailure(
-      () =>
-        semanticOrganizationalMaturityFromTransport(
-          transport,
-          availableEvidence,
-        ),
-      "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+    const control = structuredClone(transport);
+    control.ownershipAndCrossFunctionalDesign.roleBoundaries.conclusion =
+      "Lifecycle ownership is established.";
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
     );
+    const controlDomain = semanticOrganizationalMaturityFromTransport(
+      control,
+      availableEvidence,
+    );
+    expect(domain.unknowns).toEqual(controlDomain.unknowns);
+    expect(domain.positiveSignals).toEqual(controlDomain.positiveSignals);
+    expect(domain.weakSignals).toEqual(controlDomain.weakSignals);
   });
 
-  it("rejects a contextual Unknown that contradicts the supported proposition", () => {
+  it("keeps a supported positive impact and a neutral contextual Unknown independent of their wording", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.roleBoundaries = {
       ...supportedOwnershipDimension(),
@@ -1182,14 +1192,18 @@ describe("Customer Success provider/application contracts", () => {
         },
       ],
     };
-    expectNonRetryableEvidenceFailure(
-      () =>
-        semanticOrganizationalMaturityFromTransport(
-          transport,
-          availableEvidence,
-        ),
-      "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+    const domain = semanticOrganizationalMaturityFromTransport(
+      transport,
+      availableEvidence,
     );
+    expect(domain.positiveSignals).toContainEqual({
+      finding: "Role boundaries are clear.",
+      evidenceReferences,
+    });
+    expect(domain.unknowns.map((unknown) => unknown.code)).toContain(
+      "role-boundaries-unknown",
+    );
+    expect(domain.score).toBe(transport.score);
   });
 
   it("requires positive and weak impact evidence to belong to its assessment", () => {
@@ -1530,7 +1544,7 @@ describe("Customer Success provider/application contracts", () => {
     ).toHaveProperty("unknown", false);
   });
 
-  it("rejects missing information represented as supported absence", () => {
+  it("accepts a structurally supported absence without inspecting its conclusion wording", () => {
     const transport = validOrganizationalMaturity();
     transport.ownershipAndCrossFunctionalDesign.handoffs = {
       ...supportedOwnershipDimension("SUPPORTED_ABSENT"),
@@ -1540,14 +1554,14 @@ describe("Customer Success provider/application contracts", () => {
     expect(
       semanticOrganizationalMaturityTransportSchema.safeParse(transport).success,
     ).toBe(true);
-    expectNonRetryableEvidenceFailure(
-      () =>
-        semanticOrganizationalMaturityFromTransport(
-          transport,
-          availableEvidence,
-        ),
-      "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
-    );
+    expect(
+      semanticOrganizationalMaturityFromTransport(transport, availableEvidence)
+        .ownershipAndCrossFunctionalDesign.handoffs,
+    ).toEqual({
+      conclusion: "Formal handoffs are not described.",
+      unknown: false,
+      evidenceReferences,
+    });
   });
 
   it("preserves affirmative evidence of absence as a Known conclusion", () => {
@@ -1622,7 +1636,7 @@ describe("Customer Success provider/application contracts", () => {
       "Technical and implementation boundaries are not established.",
     ],
   ] as const)(
-    "rejects missing information in %s weak signals",
+    "accepts %s weak signals whatever their finding wording",
     (assessmentArea, findingText) => {
       const transport = validOrganizationalMaturity();
       setMaturityAssessment(
@@ -1634,14 +1648,10 @@ describe("Customer Success provider/application contracts", () => {
         semanticOrganizationalMaturityTransportSchema.safeParse(transport)
           .success,
       ).toBe(true);
-      expectNonRetryableEvidenceFailure(
-        () =>
-          semanticOrganizationalMaturityFromTransport(
-            transport,
-            availableEvidence,
-          ),
-        "ORGANIZATIONAL_MATURITY_WEAK_SIGNAL_INVALID",
-      );
+      expect(
+        semanticOrganizationalMaturityFromTransport(transport, availableEvidence)
+          .weakSignals,
+      ).toContainEqual({ finding: findingText, evidenceReferences });
     },
   );
 

@@ -189,7 +189,13 @@ export function toResumeMatchProviderTransport(
         return {
           ...assessment,
           jdEvidence: partition(jdEvidenceReferences),
-          profileEvidence: partition(profileEvidenceReferences),
+          // Fixture gaps cite only explicit gap-proof profile records.
+          ...(assessment.classification === "GENUINE_GAP"
+            ? {
+                gapEvidence: partition(profileEvidenceReferences),
+                profileEvidence: partition([]),
+              }
+            : { profileEvidence: partition(profileEvidenceReferences) }),
           experienceEvidenceBasis:
             assessment.classification === "UNKNOWN"
               ? "UNKNOWN"

@@ -499,12 +499,13 @@ function decisiveProviderResumeMatchTransport() {
             purpose: "DECISION_IMPACT" as const,
           })),
         },
-        profileEvidence: {
+        gapEvidence: {
           evidenceAssignments: decisionImpactEvidence.profileEvidenceReferences.map((evidenceReference) => ({
             evidenceReference,
             purpose: "DECISION_IMPACT" as const,
           })),
-        },
+        } as ReturnType<typeof providerEvidenceSelection>,
+        profileEvidence: providerEvidenceSelection(),
       },
     ],
   };
@@ -1011,12 +1012,22 @@ describe("production semantic execution", () => {
     expect(JSON.stringify(auditOpenAiProviderSchema(other).jsonSchema)).not.toContain("candidate-59");
     for (const item of evidence.filter((entry) => entry.sourceType === "USER_PROFILE")) {
       const value = decisiveProviderResumeMatchTransport();
-      value.requirementAssessments[0]!.profileEvidence =
-        providerEvidenceSelection([], [item.referenceId]);
-      // Explicit profile-1 gap proof enables the variant; the full catalog
-      // remains available for legitimate assessment context. Conversion is the
-      // defense-in-depth boundary requiring selected gap-proof evidence.
+      if (item.referenceId !== "profile-1") {
+        value.requirementAssessments[0]!.profileEvidence =
+          providerEvidenceSelection([item.referenceId]);
+      }
+      // Explicit profile-1 gap proof is carried by gapEvidence; every other
+      // profile record remains available as assessment context.
       expect(schema.safeParse(value).success).toBe(true);
+      const { gapEvidence: _gapEvidence, ...withoutProof } =
+        value.requirementAssessments[0]!;
+      expect(schema.safeParse({
+        ...value,
+        requirementAssessments: [{
+          ...withoutProof,
+          profileEvidence: providerEvidenceSelection([], [item.referenceId]),
+        }],
+      }).success).toBe(false);
     }
   });
 
@@ -1034,8 +1045,15 @@ describe("production semantic execution", () => {
       const value = decisive ? decisiveProviderResumeMatchTransport() : validProviderResumeMatchTransport();
       value.requirementAssessments[0]!.jdEvidence =
         providerEvidenceSelection(["jd-context"], ["jd-1"]);
-      value.requirementAssessments[0]!.profileEvidence =
-        providerEvidenceSelection(["profile-context"], ["profile-1"]);
+      // Both profile records explicitly establish the gap, so a gap carries
+      // them as gap proof; other classifications cite them as profile evidence.
+      if (decisive) {
+        (value.requirementAssessments[0] as { gapEvidence?: unknown }).gapEvidence =
+          providerEvidenceSelection(["profile-context"], ["profile-1"]);
+      } else {
+        value.requirementAssessments[0]!.profileEvidence =
+          providerEvidenceSelection(["profile-context"], ["profile-1"]);
+      }
       const domain = semanticResumeMatchFromTransport(value, authoritativeResumeMatchRequirements(), evidence);
       const assessment = domain.requirementAssessments[0]!;
       expect(assessment.jdEvidenceReferences).toEqual(["jd-1", "jd-context"]);
@@ -2853,7 +2871,7 @@ describe("production semantic execution", () => {
     ).toEqual(["jd-1", "profile-1"]);
 
     const schema = createSemanticResumeMatchTransportSchema(evidence, authoritativeResumeMatchRequirements());
-    for (const source of ["jdEvidence", "profileEvidence"] as const) {
+    for (const source of ["jdEvidence", "gapEvidence"] as const) {
       const missing = structuredClone(transport);
       missing.requirementAssessments[0]![source].evidenceAssignments =
         missing.requirementAssessments[0]![source].evidenceAssignments.map(
@@ -2975,33 +2993,43 @@ describe("production semantic execution", () => {
     ]);
     const schema = createSemanticResumeMatchTransportSchema(evidence, requirement);
     const base = decisiveProviderResumeMatchTransport();
-    const gap = (reference: string) => ({
+    const gap = (proof: string[], context: string[] = []) => ({
       ...base,
       requirementAssessments: [{
         ...base.requirementAssessments[0]!,
         decisionImpact: "NON_DECISIVE" as const,
-        profileEvidence: providerEvidenceSelection([reference]),
+        gapEvidence: providerEvidenceSelection(proof),
+        profileEvidence: providerEvidenceSelection(context),
       }],
     });
 
-    // A valid gap-proof fact in the inventory enables this requirement's gap
-    // variant while still allowing assessment context. Selecting only unrelated
-    // negative evidence remains a nonretryable conversion failure.
-    expect(schema.safeParse(gap("profile-saas-gap")).success).toBe(true);
-    expect(schema.safeParse(gap("profile-fundraising-gap")).success).toBe(true);
+    // Only requirement-relevant explicit gap facts are selectable as gap proof,
+    // so the provider grammar itself rejects unrelated negative evidence.
+    // Unrelated records remain available as assessment context next to proof.
+    expect(schema.safeParse(gap(["profile-saas-gap"])).success).toBe(false);
+    expect(schema.safeParse(gap([], ["profile-saas-gap"])).success).toBe(false);
+    expect(schema.safeParse(gap(["profile-fundraising-gap"])).success).toBe(true);
+    expect(schema.safeParse(
+      gap(["profile-fundraising-gap"], ["profile-saas-gap"]),
+    ).success).toBe(true);
     expect(() => semanticResumeMatchFromTransport(
-      gap("profile-saas-gap"),
+      gap(["profile-fundraising-gap"], ["profile-saas-gap"]),
+      requirement,
+      evidence,
+    )).not.toThrow();
+    // A historical flat selection containing only unrelated negative evidence
+    // still fails closed with the explicit diagnostic.
+    const { gapEvidence: _proof, ...legacyAssessment } =
+      gap([], ["profile-saas-gap"]).requirementAssessments[0]!;
+    expect(() => semanticResumeMatchFromTransport(
+      { ...base, requirementAssessments: [legacyAssessment] },
       requirement,
       evidence,
     )).toThrowError(expect.objectContaining({
       code: "RESUME_MATCH_EVIDENCE_INVALID",
+      message: expect.stringContaining("without explicit requirement-relevant profile evidence"),
       retryable: false,
     }));
-    expect(() => semanticResumeMatchFromTransport(
-      gap("profile-fundraising-gap"),
-      requirement,
-      evidence,
-    )).not.toThrow();
 
     const unrelatedOnlyEvidence = evidence.filter(
       (item) => item.referenceId !== "profile-fundraising-gap",
@@ -3009,7 +3037,7 @@ describe("production semantic execution", () => {
     expect(createSemanticResumeMatchTransportSchema(
       unrelatedOnlyEvidence,
       requirement,
-    ).safeParse(gap("profile-saas-gap")).success).toBe(false);
+    ).safeParse(gap(["profile-saas-gap"])).success).toBe(false);
   });
 
   it("exhaustively preserves or rejects two-reference partition assignments for both sources", () => {
@@ -4047,31 +4075,32 @@ describe("production semantic execution", () => {
       expect(restored.summary).toBe(`Supported by ${expected}.`);
     }
 
-    for (const invalidCitation of [
-      "[jd-x]",
-      "[JD-0]",
-      "[jd-999]",
-      "profile-999",
-      "[jd-0; jd-1]",
-      "[jd-0 - jd-1]",
-      "[jd-0, note]",
-      "[see jd-0]",
-      "[jd-0,]",
-      "[jd-0, jd-0]",
-      "[jd-0,,profile-0]",
-    ]) {
-      const invalid = structuredClone(providerValue);
-      invalid.summary = `Invalid citation ${invalidCitation}.`;
-      expect(() => semanticResumeMatchFromTransport(
-        invalid,
+    // Narrative citations are display-only: malformed or unresolvable citation
+    // text never changes acceptance or any structured field.
+    for (const [displayCitation, expected] of [
+      ["[jd-x]", "[jd-x]"],
+      ["[JD-0]", "[JD-0]"],
+      ["[jd-999]", "[jd-999]"],
+      ["profile-999", "profile-999"],
+      ["[jd-0; jd-1]", "[core-jd-evidence-0; core-jd-evidence-2]"],
+      ["[jd-0 - jd-1]", "[core-jd-evidence-0 - core-jd-evidence-2]"],
+      ["[jd-0, note]", "[core-jd-evidence-0, note]"],
+      ["[see jd-0]", "[see core-jd-evidence-0]"],
+      ["[jd-0,]", "[core-jd-evidence-0,]"],
+      ["[jd-0, jd-0]", "[core-jd-evidence-0, core-jd-evidence-0]"],
+      ["[jd-0,,profile-0]", "[core-jd-evidence-0,,core-profile-evidence-1]"],
+    ] as const) {
+      const display = structuredClone(providerValue);
+      display.summary = `Display citation ${displayCitation}.`;
+      const restored = semanticResumeMatchFromTransport(
+        display,
         requirements,
         completeEvidence,
         semanticResumeMatchJobEvidenceCatalog(completeEvidence),
         projection,
-      )).toThrowError(expect.objectContaining({
-        code: "RESUME_MATCH_EVIDENCE_INVALID",
-        retryable: false,
-      }));
+      );
+      expect(restored.summary).toBe(`Display citation ${expected}.`);
+      expect({ ...restored, summary: domain.summary }).toEqual(domain);
     }
   });
 

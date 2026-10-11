@@ -439,10 +439,11 @@ export function semanticReconstructionFromTransport(
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
-  const explicitAbsencePattern =
-    /\b(?:does not|do not|will not|not responsible|not own|no responsibility|excluded|excluding|handled by|owned by|outside (?:the )?role|not part of)\b/i;
   for (const assessment of transport.responsibilityMap.areas) {
     if (assessment.prominence !== "ABSENT") continue;
+    // The grammar requires absenceBasis EXPLICIT_EXCLUSION. Acceptance then
+    // depends on typed evidence and verbatim source grounding, not on whether
+    // the quoted source happens to use particular exclusion vocabulary.
     const validAbsenceEvidence = assessment.evidenceReferences.every(
       (reference) => {
         const evidenceRecord = evidenceByReference.get(reference);
@@ -459,10 +460,7 @@ export function semanticReconstructionFromTransport(
           .replace(/\s+/g, " ")
           .trim()
           .toLowerCase();
-        return (
-          explicitAbsencePattern.test(normalizedQuote) &&
-          normalizedSourceContent.includes(normalizedQuote)
-        );
+        return normalizedSourceContent.includes(normalizedQuote);
       },
     );
     if (!validAbsenceEvidence) {
