@@ -112,6 +112,31 @@ export const requirementCategorySchema = z.enum([
   "TRAVEL",
 ]);
 
+// The Customer Success experience ladder, most specific first. Resume Match
+// profile labels and specificity values use the same ladder.
+export const customerSuccessExperienceLadder = [
+  "DIRECT_SAAS_CUSTOMER_SUCCESS",
+  "DIRECT_CUSTOMER_SUCCESS",
+  "RELATED_CUSTOMER_RELATIONSHIP",
+  "BROADER_CUSTOMER_FACING",
+] as const;
+
+// The least specific experience that satisfies an EXPERIENCE requirement:
+// a ladder rung, or ANY_WORK_EXPERIENCE when the requirement's subject is not
+// a Customer Success level (remote work, a customer segment, company stage).
+export const requirementExperienceLevelSchema = z.enum([
+  ...customerSuccessExperienceLadder,
+  "ANY_WORK_EXPERIENCE",
+]);
+
+export type RequirementExperienceLevel = z.infer<
+  typeof requirementExperienceLevelSchema
+>;
+
+// Identifies evidence authored by JD Reconstruction, as opposed to
+// deterministically extracted job facts.
+export const jdReconstructionCriterionId = "jd-reconstruction";
+
 export const requirementSchema = z
   .object({
     requirement: requiredText,
@@ -121,11 +146,14 @@ export const requirementSchema = z
     statedYearsMaximum: z.number().nonnegative().nullable(),
     statedYearsOpenEnded: z.boolean(),
     experienceSpecificity: optionalText,
-    // Structured specialization semantics authored by JD Reconstruction and
+    // Structured experience semantics authored by JD Reconstruction and
     // consumed by Resume Match legality. Absent only in historical maps, which
-    // carry no specialization semantics; wording is never consulted instead.
-    requiresDirectWorkExperience: z.boolean().optional(),
+    // carry no experience-level semantics; wording is never consulted instead.
+    minimumExperienceSpecificity: requirementExperienceLevelSchema.optional(),
     requiresStartupExperience: z.boolean().optional(),
+    // Historical JD Reconstruction key, still readable in persisted results.
+    // It carries no semantics and is never authored.
+    requiresDirectWorkExperience: z.boolean().optional(),
     evidenceReferences: evidenceReferences.min(1),
     ambiguity: z
       .object({
@@ -147,11 +175,12 @@ export const requirementSchema = z
         message: "The maximum stated years cannot be below the minimum",
       });
     }
-    // Specialization semantics belong to EXPERIENCE requirements only. INDUSTRY
+    // Experience semantics belong to EXPERIENCE requirements only. INDUSTRY
     // requirements already carry direct-specialization legality by category.
     if (
       value.category !== "EXPERIENCE" &&
-      (value.requiresDirectWorkExperience === true ||
+      (value.minimumExperienceSpecificity !== undefined ||
+        value.requiresDirectWorkExperience === true ||
         value.requiresStartupExperience === true)
     ) {
       context.addIssue({
@@ -327,8 +356,8 @@ const transportOwnershipFunctionsSchema = z
   .max(ownershipFunctions.length);
 
 export const requirementSpecializationDescriptions = {
-  requiresDirectWorkExperience:
-    "True only if this requirement demands direct employment in the stated work, so transferable, adjacent, or readiness evidence cannot satisfy it.",
+  minimumExperienceSpecificity:
+    "The least specific experience that satisfies this requirement. DIRECT_SAAS_CUSTOMER_SUCCESS: Customer Success employment in SaaS. DIRECT_CUSTOMER_SUCCESS: Customer Success employment. RELATED_CUSTOMER_RELATIONSHIP: customer-relationship or account roles. BROADER_CUSTOMER_FACING: any customer-facing work. ANY_WORK_EXPERIENCE: the subject is not a Customer Success level, such as remote work, a customer segment, or company stage.",
   requiresStartupExperience:
     "True only if this requirement demands startup or early-stage company experience.",
 } as const;
@@ -336,6 +365,9 @@ export const requirementSpecializationDescriptions = {
 // Shared fields are named definitions so the category-bound union below does
 // not repeat them in every branch of the provider schema.
 const transportRequirementYears = z.number().nonnegative().nullable().meta({ id: "requirementYears" });
+const transportMinimumExperienceSpecificity = requirementExperienceLevelSchema
+  .describe(requirementSpecializationDescriptions.minimumExperienceSpecificity)
+  .meta({ id: "requirementMinimumExperienceSpecificity" });
 
 const transportRequirementSharedShape = {
   requirement: requiredText.meta({ id: "requirementText" }),
@@ -351,7 +383,7 @@ const transportRequirementTailShape = {
   ambiguity: requirementSchema.shape.ambiguity.meta({ id: "requirementAmbiguity" }),
 };
 
-// Only EXPERIENCE requirements can express specialization semantics; other
+// Only EXPERIENCE requirements can express experience semantics; other
 // categories have no such fields, so the provider cannot author them there.
 const transportRequirementCategoryShapes = [
   {
@@ -359,9 +391,7 @@ const transportRequirementCategoryShapes = [
   },
   {
     category: z.literal("EXPERIENCE"),
-    requiresDirectWorkExperience: z
-      .boolean()
-      .describe(requirementSpecializationDescriptions.requiresDirectWorkExperience),
+    minimumExperienceSpecificity: transportMinimumExperienceSpecificity,
     requiresStartupExperience: z
       .boolean()
       .describe(requirementSpecializationDescriptions.requiresStartupExperience),
@@ -560,7 +590,7 @@ export function semanticReconstructionFromTransport(
       }
       return {
         ...semanticEvidence,
-        criterionId: "jd-reconstruction",
+        criterionId: jdReconstructionCriterionId,
         sourceType: evidenceSource.sourceType,
         sourceRecordId: evidenceSource.sourceRecordId,
         provenanceId: evidenceSource.provenanceId,
@@ -622,7 +652,6 @@ export function semanticReconstructionFromTransport(
           compoundExplanation: _compoundExplanation,
           ...requirement
         }) => ({
-          requiresDirectWorkExperience: false,
           requiresStartupExperience: false,
           ...requirement,
         }),

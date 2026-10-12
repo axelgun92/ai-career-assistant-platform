@@ -58,7 +58,7 @@ function requirement(
     statedYearsOpenEnded: false,
     experienceSpecificity: null,
     ...(category === "EXPERIENCE"
-      ? { requiresDirectWorkExperience: false, requiresStartupExperience: false }
+      ? { minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE", requiresStartupExperience: false }
       : {}),
     evidenceReferences: [reference],
     ambiguity: { isAmbiguous: false, explanation: null },
@@ -112,7 +112,6 @@ function createSubject() {
       experience: [
         { id: "direct", statement: "Led customer onboarding, adoption, and education.", relationship: "DIRECT" },
         { id: "teaching", statement: "Customer education through teaching.", relationship: "TRANSFERABLE" },
-        { id: "gap", statement: "I have never worked in nonprofit fundraising and do not have fundraising experience.", relationship: "TRANSFERABLE" },
       ],
       skills: [{ id: "skill", statement: "Education and analytics" }],
       transferableSkills: [{ id: "transfer", statement: "Process documentation" }],
@@ -121,6 +120,10 @@ function createSubject() {
       workPreferences: null,
       companyPreferences: null,
       domainPreferences: null,
+      // A structured limitation: the only kind of Genuine Gap proof.
+      limitations: [
+        { id: "gap", statement: "I have never worked in nonprofit fundraising and do not have fundraising experience.", category: "INDUSTRY", disclaimedExperienceSpecificity: null },
+      ],
     },
   };
   return subject;
@@ -225,7 +228,7 @@ describe("complete offline evaluator with grounded requirements", () => {
       ),
     ).toEqual(["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN", "UNKNOWN"]);
     const gap = match.requirementAssessments[1];
-    expect(gap.profileEvidenceReferences).toEqual(["cs-profile-experience-2"]);
+    expect(gap.profileEvidenceReferences).toEqual(["cs-profile-limitations-0"]);
     expect(gap.decisionImpact).toBe("MATERIAL_UNCERTAINTY");
     expect(evaluation.recommendation).not.toBeNull();
     const evidenceIds = new Set(evaluation.evidenceRecords.map((record) => record.referenceId));
@@ -446,17 +449,17 @@ const injections: Injection[] = [
     },
   },
   {
-    name: "JD Reconstruction direct-work specialization on an INDUSTRY requirement",
+    name: "JD Reconstruction experience level on an INDUSTRY requirement",
     operationId: "customer-success.jd-reconstruction",
     stageId: "hard-filters",
     failureCode: "STRUCTURED_OUTPUT_INVALID",
     inject(output) {
-      // Exact live finding: an INDUSTRY requirement marked as direct work.
+      // Category binding: experience semantics exist only on EXPERIENCE.
       const industry = output.requirements.find(
         (requirement: { category: string }) => requirement.category === "INDUSTRY",
       );
       industry.requirement = "Experience working with nonprofit or SMB customers";
-      industry.requiresDirectWorkExperience = true;
+      industry.minimumExperienceSpecificity = "DIRECT_CUSTOMER_SUCCESS";
       industry.requiresStartupExperience = false;
     },
   },
@@ -548,6 +551,25 @@ const injections: Injection[] = [
     failureCode: "STRUCTURED_OUTPUT_INVALID",
     inject(output) {
       output.requirementAssessments[1].gapEvidence.evidenceAssignments = [];
+    },
+  },
+  {
+    name: "Resume Match reuses one limitation as a Genuine Gap for unrelated requirements",
+    operationId: "customer-success.resume-match",
+    stageId: "resume-match",
+    failureCode: "STRUCTURED_OUTPUT_INVALID",
+    inject(output) {
+      // Live 7149563 shape: the onboarding EXPERIENCE and Salesforce TOOL
+      // requirements cite the one fundraising limitation as gap proof.
+      const gap = output.requirementAssessments.find(
+        (assessment: { classification: string }) => assessment.classification === "GENUINE_GAP",
+      );
+      output.requirementAssessments = output.requirementAssessments.map(
+        (assessment: { requirementIndex: number; jdEvidence: unknown }) =>
+          assessment.requirementIndex === 0 || assessment.requirementIndex === 2
+            ? { ...structuredClone(gap), requirementIndex: assessment.requirementIndex, jdEvidence: assessment.jdEvidence }
+            : assessment,
+      );
     },
   },
   {
@@ -748,7 +770,6 @@ const allowedTextDependencies: Record<string, { lines: number; kind: TextDepende
   "schemas/resume-match.ts#restoreProviderNarrativeCitations": { lines: 4, kind: "DISPLAY", reason: "translates resolvable narrative citations; never rejects" },
   "schemas/resume-match.ts#createResumeMatchProviderInputProjection": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience flag for the candidate's own profile statements" },
   "schemas/resume-match.ts#supportsStartupSpecialization": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience evidence in the candidate's own profile statements" },
-  "schemas/resume-match.ts#supportsExplicitGapEvidence": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "affirmative limitation statements in the candidate's own profile; requirement wording is never compared" },
 };
 
 function textOperationsBySymbol(root: string) {
@@ -858,10 +879,10 @@ describe("direct-work and startup legality is structured, never worded", () => {
     }
   });
 
-  it("changes legality when only the structured direct-work field changes", async () => {
+  it("changes legality when only the structured experience level changes", async () => {
     const markOnboardingDirect = withRequirementChanges((requirement) => {
       if (requirement.requirement === "Customer onboarding experience") {
-        requirement.requiresDirectWorkExperience = true;
+        requirement.minimumExperienceSpecificity = "DIRECT_CUSTOMER_SUCCESS";
       }
     });
     const transferable = await runEvaluation(undefined, transferableFirstRequirement);
@@ -870,7 +891,7 @@ describe("direct-work and startup legality is structured, never worded", () => {
     expect(direct.evaluation.status).toBe("FAILED");
     const failed = direct.evaluation.stageResults.find((stage) => stage.status === "FAILED")!;
     expect([failed.stageId, failed.failureCode]).toEqual(["resume-match", "STRUCTURED_OUTPUT_INVALID"]);
-    // Direct evidence still satisfies the structured direct-work requirement.
+    // Direct evidence still satisfies the direct Customer Success level.
     expect((await runEvaluation(markOnboardingDirect)).evaluation.status).toBe("COMPLETED");
   });
 
@@ -898,7 +919,7 @@ describe("direct-work and startup legality is structured, never worded", () => {
 });
 
 describe("specialization semantics are bound to EXPERIENCE requirements", () => {
-  const transportRequirement = (category: string, specialization?: Record<string, boolean>) => ({
+  const transportRequirement = (category: string, specialization?: Record<string, unknown>) => ({
     requirement: "Experience working with nonprofit or SMB customers",
     category,
     ...specialization,
@@ -918,8 +939,10 @@ describe("specialization semantics are bound to EXPERIENCE requirements", () => 
     for (const category of requirementCategorySchema.options.filter((value) => value !== "EXPERIENCE")) {
       expect(requirementsSchema.safeParse([transportRequirement(category)]).success).toBe(true);
       for (const specialization of [
-        { requiresDirectWorkExperience: true, requiresStartupExperience: false },
-        { requiresDirectWorkExperience: false, requiresStartupExperience: true },
+        { minimumExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS", requiresStartupExperience: false },
+        { minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE", requiresStartupExperience: true },
+        { minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE", requiresStartupExperience: false },
+        // The retired direct-work field is not part of the grammar at all.
         { requiresDirectWorkExperience: false, requiresStartupExperience: false },
       ]) {
         expect(requirementsSchema.safeParse([transportRequirement(category, specialization)]).success).toBe(false);
@@ -930,8 +953,11 @@ describe("specialization semantics are bound to EXPERIENCE requirements", () => 
   it("requires both specialization fields on EXPERIENCE requirements", () => {
     expect(requirementsSchema.safeParse([transportRequirement("EXPERIENCE")]).success).toBe(false);
     expect(requirementsSchema.safeParse([
-      transportRequirement("EXPERIENCE", { requiresDirectWorkExperience: true, requiresStartupExperience: false }),
+      transportRequirement("EXPERIENCE", { minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING", requiresStartupExperience: false }),
     ]).success).toBe(true);
+    expect(requirementsSchema.safeParse([
+      transportRequirement("EXPERIENCE", { requiresDirectWorkExperience: true, requiresStartupExperience: false }),
+    ]).success).toBe(false);
   });
 
   it("rejects persisted non-EXPERIENCE requirements that claim specialization", () => {
@@ -941,21 +967,27 @@ describe("specialization semantics are bound to EXPERIENCE requirements", () => 
     expect(requirementSchema.safeParse({ ...domain, requiresDirectWorkExperience: true }).success).toBe(false);
     expect(requirementSchema.safeParse({ ...domain, requiresStartupExperience: true }).success).toBe(false);
     expect(requirementSchema.safeParse({ ...domain, category: "EXPERIENCE", requiresDirectWorkExperience: true }).success).toBe(true);
+    expect(requirementSchema.safeParse({ ...domain, minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" }).success).toBe(false);
+    expect(requirementSchema.safeParse({ ...domain, category: "EXPERIENCE", minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" }).success).toBe(true);
   });
 
   it("converts non-EXPERIENCE requirements without specialization and keeps EXPERIENCE values", async () => {
     const { evaluation, outputs } = await runEvaluation();
     const provided = outputs.get("customer-success.jd-reconstruction")!.requirements as Array<Record<string, unknown>>;
     expect(provided.filter((requirement) => requirement.category !== "EXPERIENCE")
-      .some((requirement) => "requiresDirectWorkExperience" in requirement)).toBe(false);
+      .some((requirement) => "minimumExperienceSpecificity" in requirement)).toBe(false);
     const reconstruction = stageData(evaluation, "hard-filters").reconstruction as {
-      requirements: Array<{ category: string; requiresDirectWorkExperience?: boolean; requiresStartupExperience?: boolean }>;
+      requirements: Array<{ category: string; evidenceReferences: string[]; minimumExperienceSpecificity?: string; requiresDirectWorkExperience?: boolean; requiresStartupExperience?: boolean }>;
     };
     for (const requirement of reconstruction.requirements) {
+      expect(requirement.requiresDirectWorkExperience).toBeUndefined();
       if (requirement.category === "EXPERIENCE") {
-        expect(typeof requirement.requiresDirectWorkExperience).toBe("boolean");
+        // Deterministically extracted requirements assert no experience level.
+        expect(typeof requirement.minimumExperienceSpecificity).toBe(
+          requirement.evidenceReferences[0]!.startsWith("jd-req-") ? "string" : "undefined",
+        );
       } else {
-        expect([requirement.requiresDirectWorkExperience, requirement.requiresStartupExperience]).toEqual([false, false]);
+        expect([requirement.minimumExperienceSpecificity, requirement.requiresStartupExperience]).toEqual([undefined, false]);
       }
     }
     expect(reconstruction.requirements.some((requirement) => requirement.category === "INDUSTRY")).toBe(true);

@@ -7,6 +7,10 @@ import {
   customerSuccessDomainPreferencesSchema,
   loadCustomerSuccessPreferencesFromProfile,
 } from "../config/preferences";
+import {
+  requirementCategorySchema,
+  requirementExperienceLevelSchema,
+} from "../schemas/maps";
 
 const requiredText = z.string().trim().min(1);
 
@@ -27,6 +31,36 @@ const profileExperienceSchema = profileStatementSchema
   .extend({ relationship: experienceRelationshipSchema })
   .strict();
 
+// An affirmative statement that the user lacks something a job may require.
+// Its requirement category, and for EXPERIENCE the Customer Success ladder
+// level it disclaims, are authored by the user as structure; Resume Match
+// never infers a limitation from wording or from missing evidence.
+export const profileLimitationSchema = profileStatementSchema
+  .extend({
+    category: requirementCategorySchema,
+    disclaimedExperienceSpecificity: requirementExperienceLevelSchema.nullable(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      (value.category === "EXPERIENCE") !==
+      (value.disclaimedExperienceSpecificity !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["disclaimedExperienceSpecificity"],
+        message:
+          "Only an EXPERIENCE limitation states, and must state, the experience level it disclaims",
+      });
+    }
+  });
+
+export type CustomerSuccessProfileLimitation = z.infer<
+  typeof profileLimitationSchema
+>;
+
+export const profileLimitationEvidenceType = "PROFILE_LIMITATION";
+
 export const customerSuccessUserProfileDataSchema = z
   .object({
     label: requiredText,
@@ -37,6 +71,8 @@ export const customerSuccessUserProfileDataSchema = z
     locationPreferences: z.json().nullable(),
     compensationPreferences: z.json().nullable(),
     workPreferences: z.array(profileStatementSchema).nullable(),
+    // Optional so stored profile versions without limitations stay valid.
+    limitations: z.array(profileLimitationSchema).nullable().optional(),
     companyPreferences: z.json().nullable(),
     domainPreferences: z.json().nullable(),
   })
@@ -62,6 +98,10 @@ export function validateCustomerSuccessUserProfileData(input: unknown) {
   return data;
 }
 
+function profileEvidenceReferenceId(category: string, index: number) {
+  return `cs-profile-${category}-${index}`;
+}
+
 function statementEvidence(
   profileId: string,
   version: number,
@@ -71,7 +111,7 @@ function statementEvidence(
   evidenceType: string,
 ): EvidenceRecordDraft {
   return evidenceRecordDraftSchema.parse({
-    referenceId: `cs-profile-${category}-${index}`,
+    referenceId: profileEvidenceReferenceId(category, index),
     criterionId: "customer-success-profile",
     claim: statement,
     sourceType: "USER_PROFILE",
@@ -144,6 +184,16 @@ export function createCustomerSuccessProfileContext(input: {
         "WORK_PREFERENCE",
       ),
     ),
+    ...(data.limitations ?? []).map((item, index) =>
+      statementEvidence(
+        input.id,
+        input.version,
+        "limitations",
+        index,
+        item.statement,
+        profileLimitationEvidenceType,
+      ),
+    ),
   ];
   return customerSuccessProfileContextSchema.parse({
     id: input.id,
@@ -151,4 +201,17 @@ export function createCustomerSuccessProfileContext(input: {
     data,
     evidence,
   });
+}
+
+// Structured limitation semantics keyed by the profile evidence identity that
+// carries each limitation statement.
+export function customerSuccessProfileLimitationsByEvidenceReference(
+  profile: Pick<CustomerSuccessProfileContext, "data"> | undefined,
+) {
+  return new Map(
+    (profile?.data.limitations ?? []).map((limitation, index) => [
+      profileEvidenceReferenceId("limitations", index),
+      limitation,
+    ]),
+  );
 }

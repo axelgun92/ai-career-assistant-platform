@@ -606,16 +606,18 @@ function toJdReconstructionProviderTransport(
         );
       }
       const {
-        requiresDirectWorkExperience,
+        minimumExperienceSpecificity,
+        requiresDirectWorkExperience: _historical,
         requiresStartupExperience,
         ...unspecialized
       } = requirement;
       return {
         ...unspecialized,
-        // Only EXPERIENCE requirements carry specialization in the transport.
+        // Only EXPERIENCE requirements carry experience semantics in the transport.
         ...(requirement.category === "EXPERIENCE"
           ? {
-              requiresDirectWorkExperience: requiresDirectWorkExperience ?? false,
+              minimumExperienceSpecificity:
+                minimumExperienceSpecificity ?? ("ANY_WORK_EXPERIENCE" as const),
               requiresStartupExperience: requiresStartupExperience ?? false,
             }
           : {}),
@@ -1715,8 +1717,8 @@ export function createCustomerSuccessFixtureOperations(input: {
           (item) => item.evidenceType === "TRANSFERABLE_SKILL",
         )?.referenceId ?? directProfileReference;
       const gapProfileReference =
-        profileEvidence.find((item) =>
-          /\b(?:no|lack|without|not have|have not)\b/i.test(item.claim),
+        profileEvidence.find(
+          (item) => item.evidenceType === "PROFILE_LIMITATION",
         )?.referenceId ?? directProfileReference;
       if (!directProfileReference || !transferableProfileReference) {
         throw new Error("The Resume Match fixture requires profile evidence");

@@ -346,8 +346,8 @@ function parseRequirements(
         : /experience/i.test(candidate)
           ? "Experience area stated in source text"
           : null,
-      // Deterministic extraction asserts no specialization semantics.
-      requiresDirectWorkExperience: false,
+      // Deterministic extraction asserts no experience-level or startup
+      // semantics.
       requiresStartupExperience: false,
       evidenceReferences: [referenceId],
       ambiguity: {

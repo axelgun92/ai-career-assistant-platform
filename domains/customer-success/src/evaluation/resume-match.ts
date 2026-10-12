@@ -6,6 +6,7 @@ import {
 import type { EvidenceRecordDraft } from "@ai-career/evidence";
 import type { CustomerSuccessDomainData } from "../evaluator";
 import { createCustomerSuccessProfileContext } from "../profile/user-profile";
+import { jdReconstructionCriterionId } from "../schemas/maps";
 import { alexFitDataSchema } from "../schemas/alex-fit";
 import { burnoutRiskDataSchema } from "../schemas/burnout-risk";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
@@ -123,6 +124,30 @@ export function createResumeMatchStage() {
       const reconstruction =
         context.domainData.reconstruction ?? hardFilters.reconstruction;
       context.domainData.reconstruction = reconstruction;
+      // A current execution needs the current requirement contract. A persisted
+      // JD Reconstruction map that predates experience levels cannot be
+      // reinterpreted: fail closed so JD Reconstruction is regenerated.
+      const reconstructionEvidence = new Map(
+        reconstruction.evidence.map((item) => [item.referenceId, item]),
+      );
+      const outdatedRequirementIndexes = reconstruction.requirements
+        .map((requirement, index) => ({ requirement, index }))
+        .filter(({ requirement }) =>
+          requirement.category === "EXPERIENCE" &&
+          !requirement.ambiguity.isAmbiguous &&
+          requirement.minimumExperienceSpecificity === undefined &&
+          requirement.evidenceReferences.some((reference) =>
+            reconstructionEvidence.get(reference)?.criterionId ===
+              jdReconstructionCriterionId,
+          ),
+        )
+        .map(({ index }) => index);
+      if (outdatedRequirementIndexes.length > 0) {
+        authoritativeResultViolation(
+          `JD Reconstruction requirements ${outdatedRequirementIndexes.join(", ")} predate the experience-level contract; regenerate JD Reconstruction before Resume Match`,
+          "RESUME_MATCH_PREREQUISITE_OUTDATED",
+        );
+      }
       const profile =
         context.domainData.userProfile ??
         createCustomerSuccessProfileContext(context.userProfile);
