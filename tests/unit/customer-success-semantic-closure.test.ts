@@ -1,5 +1,8 @@
 import {
   createCustomerSuccessDomainData,
+  requirementCategorySchema,
+  requirementSchema,
+  semanticReconstructionTransportSchema,
   createCustomerSuccessEvaluator,
   createProductionCustomerSuccessSemanticOperations,
 } from "@ai-career/customer-success";
@@ -54,8 +57,9 @@ function requirement(
     statedYearsMaximum: null,
     statedYearsOpenEnded: false,
     experienceSpecificity: null,
-    requiresDirectWorkExperience: false,
-    requiresStartupExperience: false,
+    ...(category === "EXPERIENCE"
+      ? { requiresDirectWorkExperience: false, requiresStartupExperience: false }
+      : {}),
     evidenceReferences: [reference],
     ambiguity: { isAmbiguous: false, explanation: null },
     assessmentUnit: "INDEPENDENT_QUALIFICATION",
@@ -439,6 +443,21 @@ const injections: Injection[] = [
       Object.assign(renewals, {
         prominence: "ABSENT", absenceBasis: "EXPLICIT_EXCLUSION", evidenceReferences: ["renewal-absence"],
       });
+    },
+  },
+  {
+    name: "JD Reconstruction direct-work specialization on an INDUSTRY requirement",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "STRUCTURED_OUTPUT_INVALID",
+    inject(output) {
+      // Exact live finding: an INDUSTRY requirement marked as direct work.
+      const industry = output.requirements.find(
+        (requirement: { category: string }) => requirement.category === "INDUSTRY",
+      );
+      industry.requirement = "Experience working with nonprofit or SMB customers";
+      industry.requiresDirectWorkExperience = true;
+      industry.requiresStartupExperience = false;
     },
   },
   {
@@ -875,5 +894,83 @@ describe("direct-work and startup legality is structured, never worded", () => {
       unknown.evaluation.status,
       JSON.stringify(unknown.evaluation.stageResults.find((stage) => stage.status !== "COMPLETED")),
     ).toBe("COMPLETED");
+  });
+});
+
+describe("specialization semantics are bound to EXPERIENCE requirements", () => {
+  const transportRequirement = (category: string, specialization?: Record<string, boolean>) => ({
+    requirement: "Experience working with nonprofit or SMB customers",
+    category,
+    ...specialization,
+    strength: "NICE_TO_HAVE",
+    statedYears: null,
+    statedYearsMaximum: null,
+    statedYearsOpenEnded: false,
+    experienceSpecificity: "Nonprofit or SMB customers",
+    evidenceReferences: ["jd-req-onboarding"],
+    ambiguity: { isAmbiguous: false, explanation: null },
+    assessmentUnit: "INDEPENDENT_QUALIFICATION",
+    compoundExplanation: null,
+  });
+  const requirementsSchema = semanticReconstructionTransportSchema.shape.requirements;
+
+  it("rejects either specialization field on every non-EXPERIENCE category in the provider grammar", () => {
+    for (const category of requirementCategorySchema.options.filter((value) => value !== "EXPERIENCE")) {
+      expect(requirementsSchema.safeParse([transportRequirement(category)]).success).toBe(true);
+      for (const specialization of [
+        { requiresDirectWorkExperience: true, requiresStartupExperience: false },
+        { requiresDirectWorkExperience: false, requiresStartupExperience: true },
+        { requiresDirectWorkExperience: false, requiresStartupExperience: false },
+      ]) {
+        expect(requirementsSchema.safeParse([transportRequirement(category, specialization)]).success).toBe(false);
+      }
+    }
+  });
+
+  it("requires both specialization fields on EXPERIENCE requirements", () => {
+    expect(requirementsSchema.safeParse([transportRequirement("EXPERIENCE")]).success).toBe(false);
+    expect(requirementsSchema.safeParse([
+      transportRequirement("EXPERIENCE", { requiresDirectWorkExperience: true, requiresStartupExperience: false }),
+    ]).success).toBe(true);
+  });
+
+  it("rejects persisted non-EXPERIENCE requirements that claim specialization", () => {
+    const { assessmentUnit: _unit, compoundExplanation: _explanation, ...domain } = transportRequirement("INDUSTRY");
+    expect(requirementSchema.safeParse(domain).success).toBe(true);
+    expect(requirementSchema.safeParse({ ...domain, requiresDirectWorkExperience: false, requiresStartupExperience: false }).success).toBe(true);
+    expect(requirementSchema.safeParse({ ...domain, requiresDirectWorkExperience: true }).success).toBe(false);
+    expect(requirementSchema.safeParse({ ...domain, requiresStartupExperience: true }).success).toBe(false);
+    expect(requirementSchema.safeParse({ ...domain, category: "EXPERIENCE", requiresDirectWorkExperience: true }).success).toBe(true);
+  });
+
+  it("converts non-EXPERIENCE requirements without specialization and keeps EXPERIENCE values", async () => {
+    const { evaluation, outputs } = await runEvaluation();
+    const provided = outputs.get("customer-success.jd-reconstruction")!.requirements as Array<Record<string, unknown>>;
+    expect(provided.filter((requirement) => requirement.category !== "EXPERIENCE")
+      .some((requirement) => "requiresDirectWorkExperience" in requirement)).toBe(false);
+    const reconstruction = stageData(evaluation, "hard-filters").reconstruction as {
+      requirements: Array<{ category: string; requiresDirectWorkExperience?: boolean; requiresStartupExperience?: boolean }>;
+    };
+    for (const requirement of reconstruction.requirements) {
+      if (requirement.category === "EXPERIENCE") {
+        expect(typeof requirement.requiresDirectWorkExperience).toBe("boolean");
+      } else {
+        expect([requirement.requiresDirectWorkExperience, requirement.requiresStartupExperience]).toEqual([false, false]);
+      }
+    }
+    expect(reconstruction.requirements.some((requirement) => requirement.category === "INDUSTRY")).toBe(true);
+  });
+
+  it("keeps INDUSTRY direct-specialization legality through category, not the flag", async () => {
+    // A transferable match for the INDUSTRY requirement stays rejected even
+    // though INDUSTRY requirements no longer carry the direct-work field.
+    const transferableIndustry = await runEvaluation(undefined, {
+      requirementClassifications: ["STRONG_MATCH", "TRANSFERABLE_MATCH", "UNKNOWN"],
+      matchedExperienceSpecificities: ["DIRECT_CUSTOMER_SUCCESS", "TRANSFERABLE", "UNKNOWN"],
+      decisionImpacts: ["NON_DECISIVE", "NON_DECISIVE", "NON_DECISIVE"],
+    });
+    expect(transferableIndustry.evaluation.status).toBe("FAILED");
+    const failed = transferableIndustry.evaluation.stageResults.find((stage) => stage.status === "FAILED")!;
+    expect([failed.stageId, failed.failureCode]).toEqual(["resume-match", "STRUCTURED_OUTPUT_INVALID"]);
   });
 });

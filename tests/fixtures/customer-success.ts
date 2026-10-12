@@ -605,10 +605,20 @@ function toJdReconstructionProviderTransport(
           "JD reconstruction fixture requirements must have one atomic evidence reference",
         );
       }
+      const {
+        requiresDirectWorkExperience,
+        requiresStartupExperience,
+        ...unspecialized
+      } = requirement;
       return {
-        ...requirement,
-        requiresDirectWorkExperience: requirement.requiresDirectWorkExperience ?? false,
-        requiresStartupExperience: requirement.requiresStartupExperience ?? false,
+        ...unspecialized,
+        // Only EXPERIENCE requirements carry specialization in the transport.
+        ...(requirement.category === "EXPERIENCE"
+          ? {
+              requiresDirectWorkExperience: requiresDirectWorkExperience ?? false,
+              requiresStartupExperience: requiresStartupExperience ?? false,
+            }
+          : {}),
         evidenceReferences: [requirement.evidenceReferences[0]!],
         assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
         compoundExplanation: null,

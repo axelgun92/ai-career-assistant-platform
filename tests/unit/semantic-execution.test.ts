@@ -8,6 +8,7 @@ import {
   customerSuccessJdReconstructionInstructions,
   customerSuccessResumeMatchPromptVersion,
   customerSuccessJdReconstructionSchema,
+  requirementCategorySchema,
   createResumeMatchProviderInputProjection,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
@@ -95,11 +96,12 @@ const openAiStructuredOutputLimits = {
   largeEnumStringCharacters: 15_000,
 } as const;
 
-// cs-jd-reconstruction-v4 adds the structured requirement specialization
-// fields (direct-work and startup experience) consumed by Resume Match.
+// cs-jd-reconstruction-v5 adds the structured requirement specialization
+// fields (direct-work and startup experience), only on EXPERIENCE requirements,
+// consumed by Resume Match. Instructions are unchanged from the v3 control.
 const state2JdReconstructionControl = {
-  schemaBytes: 9_513,
-  instructionBytes: 1_384,
+  schemaBytes: 11_200,
+  instructionBytes: 1_147,
   representativeResponseBytes: 18_278,
 } as const;
 
@@ -1470,31 +1472,45 @@ describe("production semantic execution", () => {
     const requirementOptions = requirementItem.anyOf as Array<
       Record<string, unknown>
     >;
-    expect(requirementOptions).toHaveLength(2);
+    // Specialization fields exist only on EXPERIENCE branches, so the
+    // provider grammar cannot express direct-work or startup semantics for
+    // INDUSTRY or any other category.
+    expect(requirementOptions).toHaveLength(4);
+    const definitions = jsonSchema.$defs as Record<string, { enum?: string[] }>;
     expect(
       requirementOptions.map((option) => {
         const optionProperties = option.properties as Record<
           string,
           Record<string, unknown>
         >;
+        const category = optionProperties.category!;
         return {
-          assessmentUnit: optionProperties.assessmentUnit.const,
+          categories: category.const !== undefined
+            ? [category.const]
+            : definitions[String(category.$ref).split("/").at(-1)!]!.enum,
+          specialization: ["requiresDirectWorkExperience", "requiresStartupExperience"]
+            .filter((field) => field in optionProperties && (option.required as string[]).includes(field)),
+          assessmentUnit: optionProperties.assessmentUnit!.const,
           compoundExplanation: optionProperties.compoundExplanation,
         };
       }),
     ).toEqual([
-      {
-        assessmentUnit: "INDEPENDENT_QUALIFICATION",
-        compoundExplanation: { type: "null" },
-      },
-      {
-        assessmentUnit: "SINGLE_COMPOUND_CONCEPT",
-        compoundExplanation: {
-          type: "string",
-          minLength: 1,
-          pattern: "\\S",
-        },
-      },
+      ...[
+        { assessmentUnit: "INDEPENDENT_QUALIFICATION", compoundExplanation: { type: "null" } },
+        { assessmentUnit: "SINGLE_COMPOUND_CONCEPT", compoundExplanation: { type: "string", minLength: 1, pattern: "\\S" } },
+      ].map((unit) => ({
+        categories: requirementCategorySchema.options.filter((category) => category !== "EXPERIENCE"),
+        specialization: [],
+        ...unit,
+      })),
+      ...[
+        { assessmentUnit: "INDEPENDENT_QUALIFICATION", compoundExplanation: { type: "null" } },
+        { assessmentUnit: "SINGLE_COMPOUND_CONCEPT", compoundExplanation: { type: "string", minLength: 1, pattern: "\\S" } },
+      ].map((unit) => ({
+        categories: ["EXPERIENCE"],
+        specialization: ["requiresDirectWorkExperience", "requiresStartupExperience"],
+        ...unit,
+      })),
     ]);
     expect(serializedSchema).toContain('"absenceBasis"');
     expect(serializedSchema).toContain('"EXPLICIT_EXCLUSION"');
@@ -1506,7 +1522,7 @@ describe("production semantic execution", () => {
     expect(serializedSchema).toContain('"requiresStartupExperience"');
     expect(metrics.bytes).toBe(state2JdReconstructionControl.schemaBytes);
     expect(createHash("sha256").update(serializedSchema).digest("hex")).toBe(
-      "77597b34fccf587252ad055af4adcf065c9fd709dc6aa5428fcbe4277e1acca5",
+      "e8926d9ab101cd84cead64d0119b260a18b6fac5e0e608cdb9a856fb0455428f",
     );
     expect(Buffer.byteLength(customerSuccessJdReconstructionInstructions)).toBe(
       state2JdReconstructionControl.instructionBytes,
@@ -1516,7 +1532,7 @@ describe("production semantic execution", () => {
         .update(customerSuccessJdReconstructionInstructions)
         .digest("hex"),
     ).toBe(
-      "5d49703efe3524be8faa654ef348b2043628556d100fcd5c559910d0c2913685",
+      "286b6a646eda7dd969186a5f50ea0dac8f2ee5cc3d201af4c52efedd2b834466",
     );
     expect(customerSuccessJdReconstructionInstructions).toContain(
       "absenceBasis EXPLICIT_EXCLUSION",
@@ -1829,8 +1845,6 @@ describe("production semantic execution", () => {
       statedYearsMaximum: null,
       statedYearsOpenEnded: false,
       experienceSpecificity: null,
-      requiresDirectWorkExperience: false,
-      requiresStartupExperience: false,
       evidenceReferences: [evidenceRecord.referenceId],
       ambiguity: { isAmbiguous: false, explanation: null },
       assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
@@ -2043,8 +2057,13 @@ describe("production semantic execution", () => {
         | "INDEPENDENT_QUALIFICATION"
         | "SINGLE_COMPOUND_CONCEPT",
     ): SemanticReconstructionTransport["requirements"][number] => {
+      const {
+        requiresDirectWorkExperience: _direct,
+        requiresStartupExperience: _startup,
+        ...experienceRequirement
+      } = transport.requirements[0]! as Record<string, unknown>;
       const base = {
-        ...transport.requirements[0]!,
+        ...(experienceRequirement as Omit<SemanticReconstructionTransport["requirements"][number], "requiresDirectWorkExperience" | "requiresStartupExperience">),
         requirement: text,
         category: "CAPABILITY" as const,
         strength,

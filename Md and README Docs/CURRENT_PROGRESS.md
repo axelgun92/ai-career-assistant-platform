@@ -97,6 +97,12 @@ Finish the evaluator and remaining main-product work in parallel so they can be 
 - Genuine Gap relevance is the provider's structured `gapEvidence` selection; requirement-term overlap was removed. Gap proof must still be an affirmative limitation statement from the user's own profile. Consequence seen in the replay: gaps 10 and 11 citing a SaaS-employment disclaimer are now structurally valid, so relevance quality must be reviewed in the live diagnostic.
 - Closure tests extended: requirement wording changes do not change legality; flipping only the structured fields does. 687 tests (with artifacts), typecheck, Prisma validation, changed-file ESLint, and diff check pass. No provider calls, live evaluations, or database mutations.
 
+#### JD Reconstruction specialization category binding — October 12, 2026 (Claude)
+
+- Live finding (Codex, local run): the INDUSTRY requirement "Experience working with nonprofit or SMB customers" came back with `requiresDirectWorkExperience: true`. Cause: the provider grammar put both specialization booleans on every requirement while "EXPERIENCE only" existed only in prose, the domain stored the value, and Resume Match silently honored it only for EXPERIENCE.
+- Fix (`cs-jd-reconstruction-v5`): the fields now exist only on EXPERIENCE requirement branches of the provider grammar; non-EXPERIENCE requirements convert with both false; the persisted requirement schema rejects specialization on non-EXPERIENCE categories. INDUSTRY keeps its direct-specialization legality through category. The added instruction sentence was removed, so instructions are byte-identical to v3.
+- Regression coverage: grammar rejection for every non-EXPERIENCE category, the exact live shape as end-to-end failure injection, domain invariant, conversion, and INDUSTRY legality. 690 tests (693 with replay artifacts), typecheck, Prisma validation, changed-file ESLint, and diff check pass. No provider calls.
+
 ## Current Accepted Model Routing
 
 | Operation | Execution |

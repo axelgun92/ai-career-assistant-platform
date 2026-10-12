@@ -147,6 +147,19 @@ export const requirementSchema = z
         message: "The maximum stated years cannot be below the minimum",
       });
     }
+    // Specialization semantics belong to EXPERIENCE requirements only. INDUSTRY
+    // requirements already carry direct-specialization legality by category.
+    if (
+      value.category !== "EXPERIENCE" &&
+      (value.requiresDirectWorkExperience === true ||
+        value.requiresStartupExperience === true)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["category"],
+        message: "Only EXPERIENCE requirements can carry specialization semantics",
+      });
+    }
   });
 
 export const requirementMapSchema = z.array(requirementSchema);
@@ -315,40 +328,77 @@ const transportOwnershipFunctionsSchema = z
 
 export const requirementSpecializationDescriptions = {
   requiresDirectWorkExperience:
-    "True only if this EXPERIENCE requirement demands direct employment in the stated work, so transferable, adjacent, or readiness evidence cannot satisfy it.",
+    "True only if this requirement demands direct employment in the stated work, so transferable, adjacent, or readiness evidence cannot satisfy it.",
   requiresStartupExperience:
-    "True only if this EXPERIENCE requirement demands startup or early-stage company experience.",
+    "True only if this requirement demands startup or early-stage company experience.",
 } as const;
 
-const transportRequirementBaseShape = {
-  ...requirementSchema.shape,
-  // Named definitions keep each description once across the union branches.
-  requiresDirectWorkExperience: z
-    .boolean()
-    .describe(requirementSpecializationDescriptions.requiresDirectWorkExperience)
-    .meta({ id: "requiresDirectWorkExperience" }),
-  requiresStartupExperience: z
-    .boolean()
-    .describe(requirementSpecializationDescriptions.requiresStartupExperience)
-    .meta({ id: "requiresStartupExperience" }),
-  evidenceReferences: evidenceReferences.length(1),
+// Shared fields are named definitions so the category-bound union below does
+// not repeat them in every branch of the provider schema.
+const transportRequirementYears = z.number().nonnegative().nullable().meta({ id: "requirementYears" });
+
+const transportRequirementSharedShape = {
+  requirement: requiredText.meta({ id: "requirementText" }),
+  strength: requirementStrengthSchema.meta({ id: "requirementStrength" }),
+  statedYears: transportRequirementYears,
+  statedYearsMaximum: transportRequirementYears,
+  statedYearsOpenEnded: z.boolean(),
+  experienceSpecificity: optionalText.meta({ id: "requirementSpecificity" }),
 };
 
+const transportRequirementTailShape = {
+  evidenceReferences: evidenceReferences.length(1).meta({ id: "requirementEvidence" }),
+  ambiguity: requirementSchema.shape.ambiguity.meta({ id: "requirementAmbiguity" }),
+};
+
+// Only EXPERIENCE requirements can express specialization semantics; other
+// categories have no such fields, so the provider cannot author them there.
+const transportRequirementCategoryShapes = [
+  {
+    category: requirementCategorySchema.exclude(["EXPERIENCE"]).meta({ id: "nonExperienceRequirementCategory" }),
+  },
+  {
+    category: z.literal("EXPERIENCE"),
+    requiresDirectWorkExperience: z
+      .boolean()
+      .describe(requirementSpecializationDescriptions.requiresDirectWorkExperience),
+    requiresStartupExperience: z
+      .boolean()
+      .describe(requirementSpecializationDescriptions.requiresStartupExperience),
+  },
+] as const;
+
+const transportRequirementUnitShapes = [
+  {
+    assessmentUnit: z.literal("INDEPENDENT_QUALIFICATION"),
+    compoundExplanation: z.null(),
+  },
+  {
+    assessmentUnit: z.literal("SINGLE_COMPOUND_CONCEPT"),
+    compoundExplanation: requiredText,
+  },
+] as const;
+
+const { requirement: transportRequirementText, ...transportRequirementDetailShape } =
+  transportRequirementSharedShape;
+
+const transportRequirementVariants = transportRequirementCategoryShapes.flatMap(
+  (categoryShape) =>
+    transportRequirementUnitShapes.map((unitShape) =>
+      z.object({
+        requirement: transportRequirementText,
+        ...categoryShape,
+        ...transportRequirementDetailShape,
+        ...transportRequirementTailShape,
+        ...unitShape,
+      }).strict(),
+    ),
+);
+
 const transportRequirementSchema = z.union([
-  z
-    .object({
-      ...transportRequirementBaseShape,
-      assessmentUnit: z.literal("INDEPENDENT_QUALIFICATION"),
-      compoundExplanation: z.null(),
-    })
-    .strict(),
-  z
-    .object({
-      ...transportRequirementBaseShape,
-      assessmentUnit: z.literal("SINGLE_COMPOUND_CONCEPT"),
-      compoundExplanation: requiredText,
-    })
-    .strict(),
+  transportRequirementVariants[0]!,
+  transportRequirementVariants[1]!,
+  ...transportRequirementVariants.slice(2),
 ]);
 
 const transportEvidenceRecordDraftSchema = z
@@ -571,7 +621,11 @@ export function semanticReconstructionFromTransport(
           assessmentUnit: _assessmentUnit,
           compoundExplanation: _compoundExplanation,
           ...requirement
-        }) => requirement,
+        }) => ({
+          requiresDirectWorkExperience: false,
+          requiresStartupExperience: false,
+          ...requirement,
+        }),
       ),
       evidence,
     },
