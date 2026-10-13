@@ -3,8 +3,9 @@ import type { EvidenceRecordDraft } from "@ai-career/evidence";
 import type {
   CustomerSuccessDomainData,
 } from "../evaluator";
-import type {
-  CustomerSuccessJdReconstruction,
+import {
+  deterministicRequirementCriterionId,
+  type CustomerSuccessJdReconstruction,
 } from "../schemas/maps";
 
 type ExplicitFacts = Pick<
@@ -291,6 +292,28 @@ function requirementCategory(value: string) {
   return "CAPABILITY" as const;
 }
 
+// Section labels such as "Required" or "Nice to Have" match the candidate
+// pattern but state no requirement. A line made only of these closed-set label
+// words is a heading, not a requirement.
+const requirementLabelWords = new Set([
+  "required",
+  "requirements",
+  "preferred",
+  "ideal",
+  "ideally",
+  "nice",
+  "to",
+  "have",
+  "must",
+  "qualifications",
+  "bonus",
+]);
+
+function isRequirementLabel(value: string) {
+  const words = value.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => requirementLabelWords.has(word));
+}
+
 function parseRequirements(
   context: CoreEvaluationContext<CustomerSuccessDomainData>,
   text: string,
@@ -301,6 +324,7 @@ function parseRequirements(
     .filter(
       (value) =>
         value.length >= 8 &&
+        !isRequirementLabel(value) &&
         /\brequired\b|\bmust have\b|\bpreferred\b|\bideal(?:ly)?\b|nice to have|\d+(?:\s*(?:-|–|—|to)\s*\d+)?\+?\s+years? of experience/i.test(
           value,
         ),
@@ -321,7 +345,7 @@ function parseRequirements(
     const item = evidence({
       context,
       referenceId,
-      criterionId: "candidate-requirement",
+      criterionId: deterministicRequirementCriterionId,
       claim: "The job states a candidate requirement.",
       sourceField: "jobDescription",
       sourceText: candidate,

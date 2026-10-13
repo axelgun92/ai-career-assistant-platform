@@ -1006,6 +1006,59 @@ describe("Customer Success seniority contradictions and failure isolation", () =
     expect(resumeMatchCalls).toBe(0);
   });
 
+  it("fails closed when a persisted map has experience levels but predates source-statement provenance", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    let resumeMatchCalls = 0;
+    // A persisted v6 map: structured experience level and an authored
+    // ambiguity flag on an explicit strength, but no statement provenance.
+    const v6: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async reconstructJobDescription(input) {
+        const reconstruction = (await fixture.semanticOperations.reconstructJobDescription(input)) as {
+          evidence: Array<{ referenceId: string }>;
+          requirements: unknown[];
+        };
+        const reference = reconstruction.evidence[0]!.referenceId;
+        return {
+          ...reconstruction,
+          requirements: [
+            ...reconstruction.requirements,
+            {
+              requirement: "2+ years of customer-facing work experience; Customer Success experience in SaaS ideally",
+              category: "EXPERIENCE" as const,
+              strength: "REQUIRED" as const,
+              statedYears: 2,
+              statedYearsMaximum: null,
+              statedYearsOpenEnded: true,
+              experienceSpecificity: "Customer-facing work",
+              minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING" as const,
+              requiresStartupExperience: false,
+              evidenceReferences: [reference],
+              ambiguity: { isAmbiguous: true, explanation: "Mixed required and ideal strength." },
+            },
+          ],
+        };
+      },
+      async evaluateResumeMatch(input) {
+        resumeMatchCalls += 1;
+        return fixture.semanticOperations.evaluateResumeMatch(input);
+      },
+    };
+    const { result } = await run({ operations: v6 });
+    const hardFilters = result.evaluation.stageResults.find((stage) => stage.stageId === "hard-filters")!;
+    // History stays readable: the stored map is not rewritten.
+    expect(hardFilters.status).toBe("COMPLETED");
+    const stored = (hardFilters.result!.data as { reconstruction: { requirements: Array<Record<string, unknown>> } })
+      .reconstruction.requirements.find((requirement) => requirement.minimumExperienceSpecificity === "BROADER_CUSTOMER_FACING" &&
+        requirement.sourceStatement === undefined)!;
+    expect([stored.sourceStatement, (stored.ambiguity as { isAmbiguous: boolean }).isAmbiguous]).toEqual([undefined, true]);
+    const resumeMatch = result.evaluation.stageResults.find((stage) => stage.stageId === "resume-match")!;
+    expect([resumeMatch.status, resumeMatch.failureCode, resumeMatch.retryable])
+      .toEqual(["FAILED", "RESUME_MATCH_PREREQUISITE_OUTDATED", false]);
+    expect(resumeMatch.errorMessage).toContain("source-statement");
+    expect(resumeMatchCalls).toBe(0);
+  });
+
   it("does not treat deterministically extracted EXPERIENCE requirements as outdated", async () => {
     // The default job states "3-5 years of Customer Success experience
     // required.", which deterministic extraction turns into an EXPERIENCE

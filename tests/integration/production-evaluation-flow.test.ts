@@ -1,5 +1,6 @@
 import {
   createCustomerSuccessFixtureOperations,
+  toRequirementStatementTransport,
   customerSuccessTestPreferences,
   toOrganizationalMaturityProviderTransport,
   toAlexFitProviderTransport,
@@ -126,12 +127,13 @@ function deterministicTransport(input: {
       switch (request.operationId) {
         case "customer-success.jd-reconstruction": {
           const reconstruction =
-            await fixture.semanticOperations.reconstructJobDescription({
+            (await fixture.semanticOperations.reconstructJobDescription({
               ...(trusted as never),
               untrustedJobDescription: payload.untrustedSourceContent!,
-            });
+            })) as SemanticReconstruction;
+          const { requirements: _requirements, ...sections } = reconstruction;
           output = {
-            ...reconstruction,
+            ...sections,
             responsibilityMap: {
               areas: Object.entries(reconstruction.responsibilityMap.areas).map(
                 ([area, assessment]) =>
@@ -145,19 +147,9 @@ function deterministicTransport(input: {
               ),
               other: reconstruction.responsibilityMap.other,
             },
-            requirements: reconstruction.requirements.map((requirement) => {
-              if (requirement.evidenceReferences.length !== 1) {
-                throw new Error(
-                  "JD reconstruction fixture requirements must have one atomic evidence reference",
-                );
-              }
-              return {
-                ...requirement,
-                evidenceReferences: [requirement.evidenceReferences[0]!],
-                assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
-                compoundExplanation: null,
-              };
-            }),
+            requirementStatements: toRequirementStatementTransport(
+              reconstruction.requirements,
+            ),
             ownershipMap: {
               functions: Object.entries(
                 reconstruction.ownershipMap.functions,

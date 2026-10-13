@@ -19,6 +19,7 @@ import type {
 import type { PostingHistoryFact } from "../schemas/ghost-job-risk";
 import type { CustomerSuccessProfileContext } from "../profile/user-profile";
 import { extractExplicitCustomerSuccessFacts } from "./explicit-facts";
+import { reconcileRequirementMap } from "./requirement-reconciliation";
 
 export interface CustomerSuccessSemanticOperations {
   reconstructJobDescription(input: {
@@ -187,10 +188,14 @@ export async function reconstructCustomerSuccessJob(
       item,
     ]),
   );
-  return customerSuccessJdReconstructionSchema.parse({
-    ...semantic,
+  const reconciled = reconcileRequirementMap({
     requirements: [...semantic.requirements, ...explicit.requirements],
     evidence: [...evidenceByReference.values()],
+  });
+  return customerSuccessJdReconstructionSchema.parse({
+    ...semantic,
+    requirements: reconciled.requirements,
+    evidence: reconciled.evidence,
     location: explicit.location,
     salary: explicit.salary,
     travel: explicit.travel,

@@ -43,16 +43,11 @@ const requirementEvidence = [
   ["jd-req-salesforce", "Salesforce proficiency."],
 ] as const;
 
-function requirement(
-  text: string,
-  category: string,
-  strength: string,
-  reference: string,
-) {
+function qualification(text: string, category: string, strength: string) {
   return {
     requirement: text,
     category,
-    strength,
+    strengthAssessment: { strength },
     statedYears: null,
     statedYearsMaximum: null,
     statedYearsOpenEnded: false,
@@ -60,10 +55,23 @@ function requirement(
     ...(category === "EXPERIENCE"
       ? { minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE", requiresStartupExperience: false }
       : {}),
-    evidenceReferences: [reference],
-    ambiguity: { isAmbiguous: false, explanation: null },
     assessmentUnit: "INDEPENDENT_QUALIFICATION",
     compoundExplanation: null,
+  };
+}
+
+// One source statement with one qualification.
+function requirement(
+  text: string,
+  category: string,
+  strength: string,
+  reference: string,
+) {
+  return {
+    evidenceReference: reference,
+    statementStrengths: [strength],
+    statementExperienceLevels: category === "EXPERIENCE" ? ["ANY_WORK_EXPERIENCE"] : [],
+    qualifications: [qualification(text, category, strength)],
   };
 }
 
@@ -86,7 +94,7 @@ function withRequirements(output: ProviderOutput): ProviderOutput {
         evidenceLevel: "CONFIRMED",
       })),
     ],
-    requirements: [
+    requirementStatements: [
       requirement("Customer onboarding experience", "EXPERIENCE", "REQUIRED", "jd-req-onboarding"),
       requirement("Nonprofit fundraising experience", "INDUSTRY", "PREFERRED", "jd-req-fundraising"),
       requirement("Salesforce proficiency", "TOOL", "REQUIRED", "jd-req-salesforce"),
@@ -226,7 +234,15 @@ describe("complete offline evaluator with grounded requirements", () => {
       match.requirementAssessments.map(
         (assessment: { classification: string }) => assessment.classification,
       ),
-    ).toEqual(["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN", "UNKNOWN"]);
+    ).toEqual(["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN"]);
+    // The deterministic line "Nonprofit fundraising experience preferred." is
+    // covered by its source statement and reconciled into it, not duplicated.
+    expect(stageData(evaluation, "hard-filters").reconstruction.requirements
+      .map((requirement: { requirement: string }) => requirement.requirement)).toEqual([
+      "Customer onboarding experience",
+      "Nonprofit fundraising experience",
+      "Salesforce proficiency",
+    ]);
     const gap = match.requirementAssessments[1];
     expect(gap.profileEvidenceReferences).toEqual(["cs-profile-limitations-0"]);
     expect(gap.decisionImpact).toBe("MATERIAL_UNCERTAINTY");
@@ -400,7 +416,7 @@ describe("provider wording is display-only across every semantic stage", () => {
     // A false employment claim in prose cannot create structured direct SaaS evidence.
     const match = stageData(rewritten.evaluation, "resume-match").match;
     expect(match.requirementAssessments.map((item: { classification: string }) => item.classification))
-      .toEqual(["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN", "UNKNOWN"]);
+      .toEqual(["STRONG_MATCH", "GENUINE_GAP", "UNKNOWN"]);
   });
 
   it("keeps the decision and every evidence reference when all narrative shares one identical wording", async () => {
@@ -455,12 +471,119 @@ const injections: Injection[] = [
     failureCode: "STRUCTURED_OUTPUT_INVALID",
     inject(output) {
       // Category binding: experience semantics exist only on EXPERIENCE.
-      const industry = output.requirements.find(
-        (requirement: { category: string }) => requirement.category === "INDUSTRY",
-      );
+      const industry = output.requirementStatements
+        .flatMap((statement: { qualifications: unknown[] }) => statement.qualifications)
+        .find((requirement: { category: string }) => requirement.category === "INDUSTRY");
       industry.requirement = "Experience working with nonprofit or SMB customers";
       industry.minimumExperienceSpecificity = "DIRECT_CUSTOMER_SUCCESS";
       industry.requiresStartupExperience = false;
+    },
+  },
+  {
+    name: "JD Reconstruction mixed-strength statement merged into one qualification",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "JD_RECONSTRUCTION_STATEMENT_INVALID",
+    inject(output) {
+      // The statement declares REQUIRED and IDEAL; one qualification holds both.
+      output.requirementStatements[0].statementStrengths = ["REQUIRED", "IDEAL"];
+    },
+  },
+  {
+    name: "JD Reconstruction statement missing the qualification for a declared level",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "JD_RECONSTRUCTION_STATEMENT_INVALID",
+    inject(output) {
+      output.requirementStatements[0].statementExperienceLevels = [
+        "ANY_WORK_EXPERIENCE", "DIRECT_SAAS_CUSTOMER_SUCCESS",
+      ];
+    },
+  },
+  {
+    name: "JD Reconstruction qualification strength the statement does not declare",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "JD_RECONSTRUCTION_STATEMENT_INVALID",
+    inject(output) {
+      output.requirementStatements[0].qualifications.push({
+        ...structuredClone(output.requirementStatements[0].qualifications[0]),
+        requirement: "Customer onboarding experience in SaaS",
+        strengthAssessment: { strength: "IDEAL" },
+      });
+    },
+  },
+  {
+    name: "JD Reconstruction repeated qualification within one statement",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID",
+    inject(output) {
+      output.requirementStatements[0].qualifications.push(
+        structuredClone(output.requirementStatements[0].qualifications[0]),
+      );
+    },
+  },
+  {
+    name: "JD Reconstruction requirement quote that is not verbatim source text",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "JD_RECONSTRUCTION_REQUIREMENT_GROUNDING_INVALID",
+    inject(output) {
+      output.evidence.find((item: { referenceId: string }) => item.referenceId === "jd-req-onboarding")
+        .sourceText = "Customer onboarding experience in a SaaS environment.";
+    },
+  },
+  {
+    name: "JD Reconstruction two statements quoting one source span",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "JD_RECONSTRUCTION_STATEMENT_IDENTITY_INVALID",
+    inject(output) {
+      output.evidence.find((item: { referenceId: string }) => item.referenceId === "jd-req-salesforce")
+        .sourceText = "Customer onboarding experience.";
+    },
+  },
+  {
+    name: "JD Reconstruction authored ambiguity on an explicit strength",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "STRUCTURED_OUTPUT_INVALID",
+    inject(output) {
+      output.requirementStatements[0].qualifications[0].strengthAssessment = {
+        strength: "REQUIRED", ambiguityExplanation: "Ideally may soften this requirement.",
+      };
+    },
+  },
+  {
+    name: "JD Reconstruction historical authored ambiguity flag",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "STRUCTURED_OUTPUT_INVALID",
+    inject(output) {
+      output.requirementStatements[0].qualifications[0].ambiguity = {
+        isAmbiguous: true, explanation: "Mixed strengths.",
+      };
+    },
+  },
+  {
+    name: "JD Reconstruction statement without qualifications",
+    operationId: "customer-success.jd-reconstruction",
+    stageId: "hard-filters",
+    failureCode: "STRUCTURED_OUTPUT_INVALID",
+    inject(output) {
+      output.requirementStatements[0].qualifications = [];
+    },
+  },
+  {
+    name: "Resume Match Unknown carrying supported and unsupported portions",
+    operationId: "customer-success.resume-match",
+    stageId: "resume-match",
+    failureCode: "STRUCTURED_OUTPUT_INVALID",
+    inject(output) {
+      Object.assign(output.requirementAssessments[2], {
+        supportedPortion: "CRM administration", unsupportedPortion: "Salesforce specifically",
+      });
     },
   },
   {
@@ -766,7 +889,8 @@ const allowedTextDependencies: Record<string, { lines: number; kind: TextDepende
   "evaluation/hard-filters.ts#travelResult": { lines: 1, kind: "SOURCE_TEXT", reason: "travel frequency extracted deterministically from the job source" },
   "evaluation/resume-match.ts#assertReferenceSources": { lines: 1, kind: "IDENTIFIER", reason: "diagnostic message formatting" },
   "recommendation/recommendation.ts#createCustomerSuccessRecommendation": { lines: 1, kind: "IDENTIFIER", reason: "Unknown code prefix, an application identifier" },
-  "schemas/maps.ts#semanticReconstructionFromTransport": { lines: 5, kind: "PROVENANCE", reason: "whitespace/case normalization for verbatim source grounding and exact requirement identity" },
+  "extraction/requirement-reconciliation.ts#isCovered": { lines: 1, kind: "PROVENANCE", reason: "content-character span coverage of a deterministic source line by verbatim statement quotes" },
+  "schemas/maps.ts#normalizeSourceSpan": { lines: 1, kind: "PROVENANCE", reason: "whitespace/case normalization for verbatim source grounding, span identity and exact requirement identity" },
   "schemas/resume-match.ts#restoreProviderNarrativeCitations": { lines: 4, kind: "DISPLAY", reason: "translates resolvable narrative citations; never rejects" },
   "schemas/resume-match.ts#createResumeMatchProviderInputProjection": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience flag for the candidate's own profile statements" },
   "schemas/resume-match.ts#supportsStartupSpecialization": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience evidence in the candidate's own profile statements" },
@@ -843,8 +967,13 @@ function withRequirementChanges(
   return (operationId, output) => {
     if (operationId !== "customer-success.jd-reconstruction") return output;
     const changed = structuredClone(output) as Record<string, any>;
-    for (const requirement of changed.requirements) {
-      if (String(requirement.evidenceReferences[0]).startsWith("jd-req-")) change(requirement);
+    for (const statement of changed.requirementStatements) {
+      if (!String(statement.evidenceReference).startsWith("jd-req-")) continue;
+      for (const requirement of statement.qualifications) change(requirement);
+      // Keep the statement's declared levels those its qualifications express.
+      statement.statementExperienceLevels = [...new Set(statement.qualifications
+        .filter((requirement: Record<string, any>) => requirement.category === "EXPERIENCE")
+        .map((requirement: Record<string, any>) => requirement.minimumExperienceSpecificity))];
     }
     return changed;
   };
@@ -923,17 +1052,34 @@ describe("specialization semantics are bound to EXPERIENCE requirements", () => 
     requirement: "Experience working with nonprofit or SMB customers",
     category,
     ...specialization,
-    strength: "NICE_TO_HAVE",
+    strengthAssessment: { strength: "NICE_TO_HAVE" },
     statedYears: null,
     statedYearsMaximum: null,
     statedYearsOpenEnded: false,
     experienceSpecificity: "Nonprofit or SMB customers",
-    evidenceReferences: ["jd-req-onboarding"],
-    ambiguity: { isAmbiguous: false, explanation: null },
     assessmentUnit: "INDEPENDENT_QUALIFICATION",
     compoundExplanation: null,
   });
-  const requirementsSchema = semanticReconstructionTransportSchema.shape.requirements;
+  const domainRequirement = (category: string) => {
+    const {
+      assessmentUnit: _unit, compoundExplanation: _explanation, strengthAssessment, ...domain
+    } = transportRequirement(category);
+    return {
+      ...domain,
+      strength: strengthAssessment.strength,
+      evidenceReferences: ["jd-req-onboarding"],
+      ambiguity: { isAmbiguous: false, explanation: null },
+    };
+  };
+  const statementsSchema = semanticReconstructionTransportSchema.shape.requirementStatements;
+  const requirementsSchema = {
+    safeParse: (qualifications: unknown[]) => statementsSchema.safeParse([{
+      evidenceReference: "jd-req-onboarding",
+      statementStrengths: ["NICE_TO_HAVE"],
+      statementExperienceLevels: [],
+      qualifications,
+    }]),
+  };
 
   it("rejects either specialization field on every non-EXPERIENCE category in the provider grammar", () => {
     for (const category of requirementCategorySchema.options.filter((value) => value !== "EXPERIENCE")) {
@@ -961,7 +1107,7 @@ describe("specialization semantics are bound to EXPERIENCE requirements", () => 
   });
 
   it("rejects persisted non-EXPERIENCE requirements that claim specialization", () => {
-    const { assessmentUnit: _unit, compoundExplanation: _explanation, ...domain } = transportRequirement("INDUSTRY");
+    const domain = domainRequirement("INDUSTRY");
     expect(requirementSchema.safeParse(domain).success).toBe(true);
     expect(requirementSchema.safeParse({ ...domain, requiresDirectWorkExperience: false, requiresStartupExperience: false }).success).toBe(true);
     expect(requirementSchema.safeParse({ ...domain, requiresDirectWorkExperience: true }).success).toBe(false);
@@ -973,7 +1119,9 @@ describe("specialization semantics are bound to EXPERIENCE requirements", () => 
 
   it("converts non-EXPERIENCE requirements without specialization and keeps EXPERIENCE values", async () => {
     const { evaluation, outputs } = await runEvaluation();
-    const provided = outputs.get("customer-success.jd-reconstruction")!.requirements as Array<Record<string, unknown>>;
+    const provided = (outputs.get("customer-success.jd-reconstruction")!.requirementStatements as Array<{
+      qualifications: Array<Record<string, unknown>>;
+    }>).flatMap((statement) => statement.qualifications);
     expect(provided.filter((requirement) => requirement.category !== "EXPERIENCE")
       .some((requirement) => "minimumExperienceSpecificity" in requirement)).toBe(false);
     const reconstruction = stageData(evaluation, "hard-filters").reconstruction as {

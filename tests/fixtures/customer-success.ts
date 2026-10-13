@@ -581,11 +581,92 @@ export function toOpportunityPriorityProviderTransport(
   };
 }
 
+/**
+ * Groups domain-shaped requirements into JD Reconstruction source statements:
+ * requirements citing the same evidence record form one statement, whose
+ * declared strengths and experience levels are exactly those its
+ * qualifications express. Ambiguity is derived from strength.
+ */
+export function toRequirementStatementTransport(
+  requirements: ReadonlyArray<
+    Omit<SemanticReconstruction["requirements"][number], "sourceStatement"> & {
+      sourceStatement?: unknown;
+      assessmentUnit?: "INDEPENDENT_QUALIFICATION" | "SINGLE_COMPOUND_CONCEPT";
+      compoundExplanation?: string | null;
+    }
+  >,
+) {
+  const statements = new Map<string, typeof requirements[number][]>();
+  for (const requirement of requirements) {
+    if (requirement.evidenceReferences.length !== 1) {
+      throw new Error(
+        "JD reconstruction fixture requirements must have one statement evidence reference",
+      );
+    }
+    const reference = requirement.evidenceReferences[0]!;
+    statements.set(reference, [...(statements.get(reference) ?? []), requirement]);
+  }
+  return [...statements].map(([evidenceReference, members]) => {
+    const qualifications = members.map((requirement) => {
+      const {
+        minimumExperienceSpecificity,
+        requiresDirectWorkExperience: _historical,
+        requiresStartupExperience,
+        sourceStatement: _sourceStatement,
+        evidenceReferences: _evidenceReferences,
+        ambiguity,
+        strength,
+        assessmentUnit,
+        compoundExplanation,
+        ...unspecialized
+      } = requirement;
+      return {
+        ...unspecialized,
+        strengthAssessment:
+          strength === "AMBIGUOUS"
+            ? {
+                strength,
+                ambiguityExplanation:
+                  ambiguity.explanation ?? "The source states no strength.",
+              }
+            : { strength },
+        // Only EXPERIENCE requirements carry experience semantics in the transport.
+        ...(requirement.category === "EXPERIENCE"
+          ? {
+              minimumExperienceSpecificity:
+                minimumExperienceSpecificity ?? ("ANY_WORK_EXPERIENCE" as const),
+              requiresStartupExperience: requiresStartupExperience ?? false,
+            }
+          : {}),
+        assessmentUnit: assessmentUnit ?? ("INDEPENDENT_QUALIFICATION" as const),
+        compoundExplanation: compoundExplanation ?? null,
+      };
+    });
+    return {
+      evidenceReference,
+      statementStrengths: [
+        ...new Set(qualifications.map(({ strengthAssessment }) => strengthAssessment.strength)),
+      ],
+      statementExperienceLevels: [
+        ...new Set(
+          qualifications.flatMap((qualification) =>
+            "minimumExperienceSpecificity" in qualification
+              ? [qualification.minimumExperienceSpecificity]
+              : [],
+          ),
+        ),
+      ],
+      qualifications,
+    };
+  });
+}
+
 function toJdReconstructionProviderTransport(
   reconstruction: SemanticReconstruction,
 ) {
+  const { requirements: _requirements, ...sections } = reconstruction;
   return {
-    ...reconstruction,
+    ...sections,
     responsibilityMap: {
       areas: responsibilityAreas.map((area) => {
         const assessment = reconstruction.responsibilityMap.areas[area];
@@ -599,33 +680,9 @@ function toJdReconstructionProviderTransport(
       }),
       other: reconstruction.responsibilityMap.other,
     },
-    requirements: reconstruction.requirements.map((requirement) => {
-      if (requirement.evidenceReferences.length !== 1) {
-        throw new Error(
-          "JD reconstruction fixture requirements must have one atomic evidence reference",
-        );
-      }
-      const {
-        minimumExperienceSpecificity,
-        requiresDirectWorkExperience: _historical,
-        requiresStartupExperience,
-        ...unspecialized
-      } = requirement;
-      return {
-        ...unspecialized,
-        // Only EXPERIENCE requirements carry experience semantics in the transport.
-        ...(requirement.category === "EXPERIENCE"
-          ? {
-              minimumExperienceSpecificity:
-                minimumExperienceSpecificity ?? ("ANY_WORK_EXPERIENCE" as const),
-              requiresStartupExperience: requiresStartupExperience ?? false,
-            }
-          : {}),
-        evidenceReferences: [requirement.evidenceReferences[0]!],
-        assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
-        compoundExplanation: null,
-      };
-    }),
+    requirementStatements: toRequirementStatementTransport(
+      reconstruction.requirements,
+    ),
     ownershipMap: {
       functions: ownershipFunctions.flatMap((functionName) => {
         const assessment =
