@@ -255,6 +255,9 @@ model UserProfile {
   locationPreferences     Json?
   compensationPreferences Json?
   workPreferences         Json?
+  // Structured profile limitations, as authored by the user. Validated by the
+  // domain profile contract; NULL when the version states none.
+  limitations             Json?
   companyPreferences      Json?
   domainPreferences       Json?
   evaluations             Evaluation[]

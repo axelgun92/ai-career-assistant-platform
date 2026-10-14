@@ -11,8 +11,20 @@ export interface VersionedUserProfileData {
   locationPreferences: Prisma.InputJsonValue;
   compensationPreferences: Prisma.InputJsonValue;
   workPreferences: Prisma.InputJsonValue;
+  // Structured limitations. Absent or null means the version states none; its
+  // structure is validated by the domain profile contract before import.
+  limitations?: Prisma.InputJsonValue | null;
   companyPreferences: Prisma.InputJsonValue;
   domainPreferences: Prisma.InputJsonValue;
+}
+
+// The persisted content of a version. Sections are kept as authored; a null
+// or absent `limitations` is omitted, so versions without limitations keep
+// the identity (content hash) they had before the field existed, and a
+// version with limitations differs from one without.
+function versionContent(data: VersionedUserProfileData) {
+  const { limitations, ...sections } = data;
+  return limitations === null || limitations === undefined ? sections : { ...sections, limitations };
 }
 
 export type UserProfileImportResult =
@@ -43,7 +55,7 @@ function canonicalize(value: unknown): unknown {
 
 export function hashUserProfileData(data: VersionedUserProfileData): string {
   return createHash("sha256")
-    .update(JSON.stringify(canonicalize(data)))
+    .update(JSON.stringify(canonicalize(versionContent(data))))
     .digest("hex");
 }
 
@@ -71,7 +83,7 @@ export class PrismaUserProfileImportRepository {
         });
         const version = (latest?.version ?? 0) + 1;
         const created = await transaction.userProfile.create({
-          data: { ...data, version, contentHash },
+          data: { ...versionContent(data), version, contentHash },
           select: { id: true, version: true },
         });
         return { status: "CREATED", ...created, contentHash };

@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 10, 2026
+**Last updated:** October 14, 2026
 
 ## Current Objective
 
@@ -436,6 +436,39 @@ The manual-input product is ready to use as one product. It is ready for the eva
   - build and a `next start` health smoke check pass;
   - E2E 23/23;
   - `pnpm app:doctor` reports no blocking problems.
+
+#### Completed — Profile limitations persistence (main-product completion, task 1; October 14, 2026)
+
+The product persistence boundary can now carry structured profile `limitations`, which the accepted evaluator's Resume Match needs before a requirement can become a Genuine Gap. Only product-owned plumbing was added. No evaluator-owned domain schema, enum, prompt, Resume Match logic or bundled-profile content was ported or changed, and the installed strict profile contract was not loosened.
+
+- **Schema:** additive nullable `UserProfile.limitations` (JSONB), migration `20261014090000_user_profile_limitations`. Existing rows keep NULL and are never rewritten.
+- **Import and versioning:**
+  - `VersionedUserProfileData.limitations` is optional (`database/src/user-profile-import-repository.ts`).
+  - Content identity includes limitations when present. A version without them, absent or null, hashes and stores exactly as before, so existing versions keep their identity and re-saving them creates no duplicate.
+  - Changing limitations appends a new version; identical content does not.
+- **Repository:** `PrismaUserProfileRepository.getVersion()` returns `document.limitations` only when stored. So the JSON editor round-trips limitations, and versions without them look exactly as before.
+- **Evaluator delivery:** `loadSubject()` adds `userProfile.data.limitations` only when the pinned version stores them (shared persistence; flagged in `HANDOFFS.md`).
+- **Pinning:** active-profile, evaluation and deferral pinning are unchanged. A newer version with limitations never changes queued or deferred work.
+- **Editor and API:** documents pass to the domain validator unchanged. With the currently installed contract, `limitations` is rejected as an unknown field. Once Codex's profile contract is integrated, the same path accepts it with no product change.
+- **Tests:** `tests/integration/profile-limitations.test.ts` (7):
+  1. import → database → repository round trip;
+  2. identity and versioning (duplicate, change, removal, old rows unchanged);
+  3. absent and null identity;
+  4. legacy rows still building the evaluator profile context;
+  5. `loadSubject` delivery with evaluation and deferral pinning;
+  6. the starting-profile web save path;
+  7. the editor deferring to the installed domain contract.
+- **Isolated test database:** all verification ran against a separate database (`ai_career_assistant_test`) via `TEST_DATABASE_URL`. The normal application database recorded zero transactions throughout.
+- **Verification:**
+  - typecheck, lint, Prisma validate, and `db:verify-migrations` (12 migrations, known drift only) pass;
+  - unit 896/896, integration 145/145, E2E 23/23;
+  - build passes.
+  - No paid calls.
+- **Post-integration acceptance tests (run when the evaluator branch is integrated):**
+  1. the editor accepts valid limitations and rejects invalid ones per Codex's `profileLimitationSchema`;
+  2. `pnpm profile:import:customer-success` and "Create from the starting profile" persist the migrated bundled profile, including its limitation;
+  3. a persisted profile with a limitation lets deterministic Resume Match produce a Genuine Gap end to end;
+  4. re-import and activate the migrated profile before any acceptance run.
 
 #### Remaining main-product order
 

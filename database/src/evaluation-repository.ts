@@ -219,6 +219,12 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
               locationPreferences: userProfile.locationPreferences,
               compensationPreferences: userProfile.compensationPreferences,
               workPreferences: userProfile.workPreferences,
+              // Structured limitations reach the evaluator only when the
+              // pinned version stores them; versions without limitations
+              // are delivered exactly as before.
+              ...(userProfile.limitations === null
+                ? {}
+                : { limitations: userProfile.limitations }),
               companyPreferences: userProfile.companyPreferences,
               domainPreferences: userProfile.domainPreferences,
             },

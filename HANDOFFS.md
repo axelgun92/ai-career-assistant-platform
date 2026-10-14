@@ -442,6 +442,40 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Keep lifecycle user actions on the guarded path (Opportunity row lock, then guard, then `applyUserActionInTransaction`). Bypassing it could leave a planned application under an Applied lifecycle.
 
+### Handoff: Profile Limitations Persistence Boundary (Review Requested)
+
+**Date:** 2026-10-14  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Verification Needed (shared persistence; post-integration acceptance pending)
+
+#### Completed
+
+- Product-owned persistence and delivery for structured profile `limitations`, so the accepted Resume Match contract (Genuine Gap requires a `PROFILE_LIMITATION` record) works on persisted production profiles, not only on the in-memory bundled profile.
+- No evaluator-owned schema, enum, prompt, Resume Match logic or bundled-profile content was ported, copied or changed. The installed strict profile contract was not loosened.
+
+#### Files Changed (Codex-relevant)
+
+- **⚠ `database/prisma/schema.prisma` and migration `20261014090000_user_profile_limitations`:** new nullable `UserProfile.limitations` JSONB. Existing rows stay NULL.
+- **⚠ `database/src/evaluation-repository.ts` `loadSubject()`:** adds `userProfile.data.limitations` only when the pinned version stores them. A version without limitations is delivered byte-for-byte as before, which keeps the currently installed strict schema valid.
+- **`database/src/user-profile-import-repository.ts`:**
+  - `VersionedUserProfileData.limitations` is optional.
+  - Hash and create use the version content with a null or absent `limitations` omitted, so pre-existing identities are unchanged.
+  - Your branch's import path (`{ ...data, version, contentHash }`) will persist the migrated bundled profile once both are merged. Before this change it would have failed with an unknown Prisma field.
+- **`database/src/user-profile-repository.ts`:** `getVersion().document.limitations` is present only when stored.
+
+#### Current Contract / Assumptions
+
+- The product treats limitations as opaque JSON. Its structure is decided only by `customerSuccessUserProfileDataSchema` / `validateCustomerSuccessUserProfileData`, so both the web save path and the import CLI validate with the domain contract before persisting.
+- Profile rows stay immutable and versions append-only. Evaluations and deferrals keep their pinned version; nothing is reassigned to a newer version.
+
+#### Post-Integration Acceptance (required once the evaluator branch is merged)
+
+1. The JSON editor accepts valid limitations and rejects invalid structure per `profileLimitationSchema`. `tests/integration/profile-limitations.test.ts` asserts the product follows whichever contract is installed, so it passes before and after integration.
+2. `pnpm profile:import:customer-success` and "Create from the starting profile" persist the migrated bundled profile, with its `limitations` read back unchanged.
+3. Deterministic Resume Match on a persisted profile with a limitation produces a Genuine Gap end to end.
+4. Operational: re-import and activate the migrated profile; cancel or re-request deferrals pinned to pre-migration versions; then run acceptance.
+
 ### Handoff: Task 9 — Operations Hardening and Final Integration Checklist (Review Requested)
 
 **Date:** 2026-10-10  
@@ -498,8 +532,9 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 4. Task 8 guarded lifecycle path (`applyUserActionInTransaction`, `pendingUserActions`, `applyLifecycleActionGuarded`).
 5. Core executor lifecycle guard review (earlier handoff).
 6. The `Recommendation.evidenceReferences` default drift decision. `pnpm db:verify-migrations` confirms it is the only schema/migration difference.
-7. Task 9 additions above (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
-8. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
+7. Task 9 additions in this handoff (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
+8. Profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`; handoff above) and its post-integration acceptance tests.
+9. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
 
 #### Before Scraper Work
 

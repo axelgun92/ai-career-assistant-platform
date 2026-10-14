@@ -16,6 +16,8 @@ export interface UserProfileDocument {
   locationPreferences: unknown;
   compensationPreferences: unknown;
   workPreferences: unknown;
+  // Present only when the version stores limitations (see versionContent).
+  limitations?: unknown;
   companyPreferences: unknown;
   domainPreferences: unknown;
 }
@@ -62,6 +64,7 @@ const documentSelect = {
   locationPreferences: true,
   compensationPreferences: true,
   workPreferences: true,
+  limitations: true,
   companyPreferences: true,
   domainPreferences: true,
 } as const;
@@ -113,6 +116,7 @@ export class PrismaUserProfileRepository {
         locationPreferences: row.locationPreferences,
         compensationPreferences: row.compensationPreferences,
         workPreferences: row.workPreferences,
+        ...(row.limitations === null ? {} : { limitations: row.limitations }),
         companyPreferences: row.companyPreferences,
         domainPreferences: row.domainPreferences,
       },
