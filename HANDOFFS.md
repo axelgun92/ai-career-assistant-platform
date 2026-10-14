@@ -452,7 +452,7 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 #### Completed
 
 - Warning thresholds, daily and weekly evaluation-volume limits, a monthly output-token cap, and a user-lowerable per-evaluation AI call allowance.
-- All are enforced at admission as operational deferrals (`USAGE_LIMIT_REACHED`, or `BUDGET_UNAVAILABLE` when the monetary budget is also reached).
+- All are enforced at admission as operational deferrals (`USAGE_LIMIT_REACHED`, or `AI_BUDGET_LIMIT` when the monetary budget is also reached).
 - `GET /api/budget/report` and the `/budget` "AI usage and capacity" section.
 - Details in `CURRENT_PROGRESS.md`.
 
@@ -464,11 +464,16 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
   - No evaluator code changed. If Codex changes the number of semantic operations, the lower bound follows automatically.
 - **Output-token limit:** a monthly cap on provider-reported output tokens that gates new admissions. Per-operation `maximumOutputTokens` (routing) is untouched.
 
-#### Contract Questions (unresolved, not blocking)
+#### Contract Questions
 
 1. Already-queued evaluations are not cancelled when the budget or a limit is lowered or reached. Unchanged; still awaiting explicit acceptance (final integration checklist item 2).
-2. The TDD names the deferral reason `AI_BUDGET_LIMIT`; the product persists `BUDGET_UNAVAILABLE` (Task 6) and now `USAGE_LIMIT_REACHED`. Decide whether to rename or update the TDD.
-3. "Terra-eligible under the active model configuration" is reported as eligible for evaluation in an executable domain; there is no per-model eligibility concept.
+2. **Resolved (2026-10-14 naming cleanup): deferral reason name.**
+   - The monthly dollar budget now defers with the TDD name `AI_BUDGET_LIMIT`; non-dollar limits keep `USAGE_LIMIT_REACHED`.
+   - **Compatibility:** read-time only. `PrismaDeferredEvaluationRepository` maps a stored legacy `BUDGET_UNAVAILABLE` to `AI_BUDGET_LIMIT` (`normalizeDeferralReason` in `packages/core/src/budget.ts`). There is no migration or rewrite, and a legacy row is updated only by a normal resume recheck.
+   - Product-owned only; no evaluator code changed.
+3. **Resolved (2026-10-14 naming cleanup): eligibility wording.**
+   - Product wording is neutral: "eligible for evaluation" (a normalized, active opportunity in a domain the evaluator supports).
+   - There is no per-model eligibility concept.
 4. Source Analytics must exclude budget and limit deferrals when Source Analytics is built. Nothing records a deferral as a negative outcome today.
 
 ### Handoff: Profile Limitations Persistence Boundary (Review Requested)

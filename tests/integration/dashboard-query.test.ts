@@ -113,7 +113,7 @@ async function seed(item: Seed) {
       data: {
         opportunityId: opportunity.id,
         domain: "customer-success",
-        reasonCode: "BUDGET_UNAVAILABLE",
+        reasonCode: "AI_BUDGET_LIMIT",
         reasonSnapshot: {},
         lastCheckedAt: new Date(item.discoveredAt),
       },

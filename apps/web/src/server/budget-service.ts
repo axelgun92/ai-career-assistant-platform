@@ -1,4 +1,6 @@
 import {
+  aiBudgetLimitReason,
+  usageLimitReachedReason,
   budgetDecision,
   budgetPeriod,
   budgetSettingsSchema,
@@ -55,9 +57,10 @@ export interface LimitSnapshot {
   outputTokens: { limit: number | null; used: number; unreportedAttempts: number };
 }
 
-// Deferral reason codes: the monetary budget, or a throughput limit only.
-export const budgetDeferralReason = "BUDGET_UNAVAILABLE";
-export const usageLimitDeferralReason = "USAGE_LIMIT_REACHED";
+// Deferral reason codes: the monthly AI dollar budget (AI_BUDGET_LIMIT), or
+// a non-dollar usage limit only (USAGE_LIMIT_REACHED).
+export const budgetDeferralReason = aiBudgetLimitReason;
+export const usageLimitDeferralReason = usageLimitReachedReason;
 
 export type AdmitResult =
   | {

@@ -229,6 +229,20 @@ export function capacityEstimate(input: {
   };
 }
 
+// Why an evaluation was deferred. An operational queue state, never an
+// evaluation result. AI_BUDGET_LIMIT (Core TDD v1.4) is the monthly AI
+// dollar budget; USAGE_LIMIT_REACHED is any non-dollar limit (daily or weekly
+// evaluations, monthly output tokens).
+export const aiBudgetLimitReason = "AI_BUDGET_LIMIT";
+export const usageLimitReachedReason = "USAGE_LIMIT_REACHED";
+// Rows written before the TDD name was adopted. Never rewritten in place;
+// read as AI_BUDGET_LIMIT.
+export const legacyBudgetUnavailableReason = "BUDGET_UNAVAILABLE";
+
+export function normalizeDeferralReason(code: string): string {
+  return code === legacyBudgetUnavailableReason ? aiBudgetLimitReason : code;
+}
+
 export type AdmissionState = "LIVE" | "CONSUMED" | "ABANDONED";
 export type EvaluationTaskState = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 

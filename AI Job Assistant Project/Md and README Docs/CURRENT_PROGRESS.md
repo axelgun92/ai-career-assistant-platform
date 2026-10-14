@@ -250,7 +250,7 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - Actual cost replaces the hold automatically, and nothing is rewritten.
 - **Gate and deferral.** Each request runs under one Postgres advisory lock.
   - With no budget, it is unrestricted: no reservation, no deferral, behaviour as before.
-  - With enforcement on and no room, the request is recorded as a `DeferredEvaluation` (BUDGET_UNAVAILABLE, with a budget snapshot). It creates no Evaluation, Task or provider call, and the lifecycle is untouched.
+  - With enforcement on and no room, the request is recorded as a `DeferredEvaluation` (`AI_BUDGET_LIMIT`, originally persisted as `BUDGET_UNAVAILABLE`; see the Task 6 naming cleanup below; with a budget snapshot). It creates no Evaluation, Task or provider call, and the lifecycle is untouched.
   - The evaluate API returns 200 `outcome: "DEFERRED"` instead of 202.
 - **Resume and cancel.**
   - From the backlog on `/budget`, or the opportunity page ("Resume deferred evaluation" / "Cancel request").
@@ -510,7 +510,7 @@ Completes the Core PRD v1.3 "Configurable AI Budget and Throughput Controls" and
   - Every configured limit is checked under the existing admission lock against persisted rows only, so concurrent requests cannot overshoot and restarts never reset counts.
   - Volume counts non-abandoned admissions in the local day and week.
   - The output-token limit counts provider-reported output tokens in the budget month. Unreported tokens stay Unknown and are reported, never counted as zero. Running evaluations always finish.
-  - A limit hit is an operational deferral: reason `USAGE_LIMIT_REACHED`, or the existing `BUDGET_UNAVAILABLE` when the monetary budget is among the limits reached.
+  - A limit hit is an operational deferral: reason `USAGE_LIMIT_REACHED`, or `AI_BUDGET_LIMIT` when the monetary budget is among the limits reached.
   - The snapshot records every limit reached.
   - Resume rechecks the budget and all limits, plus the existing eligibility, active-work and pinned-profile checks.
   - The enforcement switch covers the budget and the limits; when off, limits are reported but never defer.
@@ -539,9 +539,33 @@ Completes the Core PRD v1.3 "Configurable AI Budget and Throughput Controls" and
 
 **Still open (recorded in `HANDOFFS.md`):**
 - Already-queued evaluations are still not cancelled when the budget is lowered (unchanged, still awaiting explicit acceptance).
-- The TDD's deferral reason name `AI_BUDGET_LIMIT` differs from the implemented `BUDGET_UNAVAILABLE` / `USAGE_LIMIT_REACHED`.
 - Source Analytics exclusion of budget deferral applies once Source Analytics exists.
-- "Model-eligible" is reported as eligible for evaluation by the executable domains; there is no per-model eligibility concept yet.
+
+**Resolved by the Task 6 naming cleanup (below):** the deferral reason name (now `AI_BUDGET_LIMIT`, matching the TDD) and the eligibility wording (neutral "eligible for evaluation").
+
+#### Task 6 naming cleanup — completed (2026-10-14)
+
+A small alignment patch. Task 6 stays complete; admission behaviour is unchanged.
+
+- **Deferral reason renamed:**
+  - The monthly dollar budget now defers with `AI_BUDGET_LIMIT`, the TDD name. It replaces `BUDGET_UNAVAILABLE`.
+  - Non-dollar limits keep `USAGE_LIMIT_REACHED`.
+  - The constants and `normalizeDeferralReason()` live in `packages/core/src/budget.ts`.
+  - The backlog label reads "AI budget limit".
+- **Backward compatibility:**
+  - Handled at read time. `PrismaDeferredEvaluationRepository` maps a stored legacy `BUDGET_UNAVAILABLE` to `AI_BUDGET_LIMIT`, so the API, UI and resume results only ever show the current name.
+  - There is no migration and no bulk rewrite; the column is free text.
+  - A legacy row keeps its stored value until a normal resume recheck writes the current reason (existing behaviour).
+  - No code filters on the stored reason.
+- **Eligibility wording:**
+  - Product-owned text uses "eligible for evaluation" (`eligibleNotEvaluated`, "Eligible, not yet evaluated").
+  - Model-specific eligibility wording was only in the HANDOFFS contract question, which is now resolved.
+  - No Codex-owned text was touched.
+- **Unchanged:** queued evaluations are not cancelled when limits are lowered; running evaluations finish; new and resumed evaluations are checked against current limits.
+- **Tests:**
+  - a unit test for the constants and the normalizer;
+  - an integration test: a legacy row reads as `AI_BUDGET_LIMIT` through the list and the gate, the stored value is not rewritten on read, and a still-deferred resume reports `AI_BUDGET_LIMIT`;
+  - existing assertions are updated to the new name.
 
 #### Remaining main-product order
 

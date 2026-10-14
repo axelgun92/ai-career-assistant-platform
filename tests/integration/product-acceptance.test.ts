@@ -131,7 +131,7 @@ describe("manual opportunity → evaluation → recommendation → lifecycle →
     //    budget and resuming queues it with the pinned profile.
     await setBudget({ amount: 0.1, reservePerEvaluation: 0.6 });
     const deferred = await harness.service.requestEvaluation(opportunityId, {});
-    expect(deferred).toMatchObject({ outcome: "DEFERRED", reason: "BUDGET_UNAVAILABLE", userProfileVersion: first.version });
+    expect(deferred).toMatchObject({ outcome: "DEFERRED", reason: "AI_BUDGET_LIMIT", userProfileVersion: first.version });
     expect(await database.evaluation.count({ where: { opportunityId } })).toBe(0);
     await setBudget({ amount: 5, reservePerEvaluation: 0.6 });
     if (deferred.outcome !== "DEFERRED") throw new Error("unreachable");

@@ -1,3 +1,4 @@
+import { normalizeDeferralReason } from "@ai-career/core";
 import type { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
 import type { AdmissionTransaction } from "./evaluation-admission-repository";
@@ -46,6 +47,9 @@ function toRecord(row: Row): DeferredEvaluationRecord {
   const { opportunity, resumedAdmission, ...rest } = row;
   return {
     ...rest,
+    // Legacy BUDGET_UNAVAILABLE rows read as AI_BUDGET_LIMIT; the stored
+    // value is left as written.
+    reasonCode: normalizeDeferralReason(rest.reasonCode),
     resumedEvaluationId: resumedAdmission?.evaluationId ?? null,
     opportunityTitle: opportunity.title,
     companyName: opportunity.company?.name ?? null,
@@ -54,7 +58,7 @@ function toRecord(row: Row): DeferredEvaluationRecord {
 }
 
 // The persistent backlog of evaluation requests that were deferred because
-// budget was unavailable. Rows are kept as history after resume or cancel.
+// the AI budget or a usage limit had no room. Rows are kept as history after resume or cancel.
 export class PrismaDeferredEvaluationRepository {
   private readonly database = getDatabaseClient();
 

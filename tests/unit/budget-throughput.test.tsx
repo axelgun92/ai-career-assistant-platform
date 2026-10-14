@@ -1,6 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+  aiBudgetLimitReason,
+  normalizeDeferralReason,
+  usageLimitReachedReason,
   budgetSettingsSchema,
   capacityEstimate,
   throughputLimitsReached,
@@ -87,6 +90,16 @@ describe("warnings, limits and estimates", () => {
       recentEvaluationCosts: [0.5], remainingBudget: -1, dailyEvaluationLimit: null, weeklyEvaluationLimit: null,
       usage, deferredCount: 0, eligibleCount: 0,
     }).byBudget).toBe(0);
+  });
+});
+
+describe("deferral reasons", () => {
+  it("use the TDD name for the dollar budget and read the legacy name as it", () => {
+    expect(aiBudgetLimitReason).toBe("AI_BUDGET_LIMIT");
+    expect(usageLimitReachedReason).toBe("USAGE_LIMIT_REACHED");
+    expect(normalizeDeferralReason("BUDGET_UNAVAILABLE")).toBe("AI_BUDGET_LIMIT");
+    expect(normalizeDeferralReason("AI_BUDGET_LIMIT")).toBe("AI_BUDGET_LIMIT");
+    expect(normalizeDeferralReason("USAGE_LIMIT_REACHED")).toBe("USAGE_LIMIT_REACHED");
   });
 });
 

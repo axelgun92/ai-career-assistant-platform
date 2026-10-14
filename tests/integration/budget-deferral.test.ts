@@ -85,7 +85,7 @@ describe("budget gate", () => {
     const result = await service.requestEvaluation(second.opportunityId, { userProfileId: second.profile.id });
     expect(result).toMatchObject({
       outcome: "DEFERRED",
-      reason: "BUDGET_UNAVAILABLE",
+      reason: "AI_BUDGET_LIMIT",
       resumed: false,
       userProfileVersion: 1,
       budget: { amount: 1, held: 0.6, available: 0.4, reserve: 0.6, currency: "USD", enforced: true },
@@ -98,7 +98,7 @@ describe("budget gate", () => {
     // Persistent backlog, visible to fresh service instances ("restart").
     const restarted = createHarness(clock);
     const open = await restarted.service.getOpenDeferral(second.opportunityId);
-    expect(open).toMatchObject({ status: "DEFERRED", userProfileId: second.profile.id, reasonCode: "BUDGET_UNAVAILABLE" });
+    expect(open).toMatchObject({ status: "DEFERRED", userProfileId: second.profile.id, reasonCode: "AI_BUDGET_LIMIT" });
     expect((await restarted.budget.listDeferred("DEFERRED")).map((item) => item.opportunityId)).toContain(second.opportunityId);
     expect((await configuredStatus()).openDeferrals).toBe(1);
   });

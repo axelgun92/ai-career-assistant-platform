@@ -116,7 +116,7 @@ test("an evaluation that does not fit is deferred, listed, and resumed when budg
 
   await page.goto("/budget");
   const row = page.locator("tr", { hasText: deferredTitle });
-  await expect(row).toContainText("Budget unavailable");
+  await expect(row).toContainText("AI budget limit");
   await row.getByRole("button", { name: "Resume" }).click();
   await expect(row).toContainText("Still deferred");
 

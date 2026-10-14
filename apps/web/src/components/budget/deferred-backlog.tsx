@@ -94,7 +94,7 @@ export function DeferredBacklog({
                         </span>
                       </td>
                       <td>{formatDateTime(deferral.createdAt)}</td>
-                      <td>{deferral.reasonCode === "USAGE_LIMIT_REACHED" ? "Usage limit reached" : "Budget unavailable"}</td>
+                      <td>{deferral.reasonCode === "USAGE_LIMIT_REACHED" ? "Usage limit reached" : "AI budget limit"}</td>
                       <td>{deferral.snapshot ? formatMoney(deferral.snapshot.reserve, deferral.snapshot.currency) : "Unknown"}</td>
                       <td>
                         <ProfileVersionNote deferral={deferral} activeProfile={activeProfile} />

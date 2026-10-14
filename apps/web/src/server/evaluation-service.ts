@@ -269,7 +269,7 @@ export function createEvaluationService(
           opportunityId: input.opportunityId,
           domain: input.domain,
           deferredEvaluationId: admitted.deferral.id,
-          // BUDGET_UNAVAILABLE (monetary budget) or USAGE_LIMIT_REACHED
+          // AI_BUDGET_LIMIT (monthly dollar budget) or USAGE_LIMIT_REACHED
           // (a throughput limit): an operational deferral, never a result.
           reason: admitted.deferral.reasonCode,
           resumed: admitted.outcome === "STILL_DEFERRED",

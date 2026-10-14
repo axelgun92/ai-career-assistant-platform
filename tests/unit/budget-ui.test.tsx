@@ -129,7 +129,7 @@ describe("deferral explanation and backlog", () => {
       companyName: "Acme",
       opportunityStatus: "SAVED",
       status: "DEFERRED",
-      reasonCode: "BUDGET_UNAVAILABLE",
+      reasonCode: "AI_BUDGET_LIMIT",
       snapshot,
       userProfileId: "profile-3",
       userProfileVersion: 3,
@@ -145,7 +145,7 @@ describe("deferral explanation and backlog", () => {
     const visible = text(markup);
     expect(visible).toContain("Customer Success Manager");
     expect(visible).toContain("Acme · Saved");
-    expect(visible).toContain("Budget unavailable");
+    expect(visible).toContain("AI budget limit");
     expect(visible).toContain("$0.60");
     expect(visible).toContain("v3 (active profile is v4)");
     expect(visible).toContain("Resume");
@@ -202,11 +202,11 @@ describe("evaluation API outcomes", () => {
     expect((await queued.post(post(), opportunityId)).status).toBe(202);
 
     const deferred = createEvaluationApiHandlers({
-      requestEvaluation: vi.fn().mockResolvedValue({ outcome: "DEFERRED", deferredEvaluationId: "d", reason: "BUDGET_UNAVAILABLE" }),
+      requestEvaluation: vi.fn().mockResolvedValue({ outcome: "DEFERRED", deferredEvaluationId: "d", reason: "AI_BUDGET_LIMIT" }),
     } as unknown as EvaluationService);
     const response = await deferred.post(post(), opportunityId);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ outcome: "DEFERRED", reason: "BUDGET_UNAVAILABLE" });
+    expect(await response.json()).toMatchObject({ outcome: "DEFERRED", reason: "AI_BUDGET_LIMIT" });
   });
 
   it("resume returns 202 when queued and 200 when still deferred; cancel returns the new status", async () => {

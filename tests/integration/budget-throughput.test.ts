@@ -113,7 +113,7 @@ describe("volume limits", () => {
     const first = await captureOpportunity(cleanup);
     const second = await captureOpportunity(cleanup);
     expect(await request(first)).toMatchObject({ outcome: "QUEUED" });
-    expect(await request(second)).toMatchObject({ outcome: "DEFERRED", reason: "BUDGET_UNAVAILABLE" });
+    expect(await request(second)).toMatchObject({ outcome: "DEFERRED", reason: "AI_BUDGET_LIMIT" });
     const snapshot = (await deferralFor(second)).reasonSnapshot as { limits: { reached: string[] } };
     expect(snapshot.limits.reached).toEqual(["BUDGET", "DAILY_EVALUATIONS"]);
   });
@@ -291,5 +291,25 @@ describe("operational report", () => {
     for (const secret of ["providerRequestId", "req-budget-", "apiKey", "deterministic-integration-key"]) {
       expect(json).not.toContain(secret);
     }
+  });
+});
+
+describe("deferral reason naming", () => {
+  it("records AI_BUDGET_LIMIT, and reads rows written as BUDGET_UNAVAILABLE as the same reason without rewriting them", async () => {
+    await settings({ amount: 0.2, reservePerEvaluation: 0.5 });
+    const opportunityId = await captureOpportunity(cleanup);
+    expect(await request(opportunityId)).toMatchObject({ outcome: "DEFERRED", reason: "AI_BUDGET_LIMIT" });
+    const row = await deferralFor(opportunityId);
+    expect(row.reasonCode).toBe("AI_BUDGET_LIMIT");
+
+    // A row written before the TDD name was adopted.
+    await database.$executeRaw`UPDATE "DeferredEvaluation" SET "reasonCode" = 'BUDGET_UNAVAILABLE' WHERE "id" = ${row.id}::uuid`;
+    expect((await harness.budget.listDeferred("DEFERRED")).find((item) => item.id === row.id)?.reasonCode).toBe("AI_BUDGET_LIMIT");
+    expect((await harness.budget.gate.findOpenDeferral(opportunityId))?.reasonCode).toBe("AI_BUDGET_LIMIT");
+    expect((await deferralFor(opportunityId)).reasonCode).toBe("BUDGET_UNAVAILABLE"); // reads never rewrite
+
+    // A normal recheck records the current reason, as it always did.
+    expect(await harness.service.resumeDeferred(row.id)).toMatchObject({ outcome: "DEFERRED", reason: "AI_BUDGET_LIMIT", resumed: true });
+    expect((await deferralFor(opportunityId)).reasonCode).toBe("AI_BUDGET_LIMIT");
   });
 });
