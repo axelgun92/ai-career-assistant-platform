@@ -7,7 +7,21 @@ import {
   NeedsAttention,
   PipelineOverview,
 } from "../../apps/web/src/components/dashboard/dashboard-summary";
-import { activeFilterChips } from "../../apps/web/src/components/dashboard/labels";
+import {
+  activeFilterChips,
+  salaryExclusionNote,
+  salarySortNote,
+} from "../../apps/web/src/components/dashboard/labels";
+import {
+  fieldErrorsFromIssues,
+  ManualOpportunityFields,
+} from "../../apps/web/src/components/manual-opportunity-fields";
+import {
+  employmentTypeLabel,
+  formatSalaryRange,
+  seniorityLabel,
+  workArrangementLabel,
+} from "../../apps/web/src/components/opportunity-facts";
 import { OpportunityFilters } from "../../apps/web/src/components/dashboard/opportunity-filters";
 import { OpportunityList } from "../../apps/web/src/components/dashboard/opportunity-list";
 import { Pagination } from "../../apps/web/src/components/dashboard/pagination";
@@ -83,6 +97,8 @@ describe("filter form", () => {
       sources: [{ value: "manual-input", count: 3 }],
       domains: [{ value: "customer-success", count: 3 }],
       companies: [{ id: companyId, name: "Acme", count: 2 }],
+      departments: [],
+      currencies: [],
     };
     const closed = renderToStaticMarkup(<OpportunityFilters query={parse("q=acme")} options={options} />);
     expect(closed).toContain('method="get"');
@@ -227,5 +243,97 @@ describe("dashboard summary", () => {
 
   it("renders no overview when there are no opportunities", () => {
     expect(renderToStaticMarkup(<PipelineOverview summary={{ ...summary, total: 0 }} />)).toBe("");
+  });
+});
+
+describe("normalized facts on the dashboard (Task 7 completion)", () => {
+  it("chips name each new filter; removing the currency also removes its amounts", () => {
+    const chips = activeFilterChips(parse("arrangement=remote&seniority=unknown&department=Support&currency=EUR&salaryMin=60000"));
+    expect(chips.map((chip) => chip.label)).toEqual([
+      "Work arrangement: Remote",
+      "Seniority: Unknown (not stated)",
+      "Department: Support",
+      "Salary currency: EUR",
+      "Salary at least: 60,000 EUR",
+    ]);
+    expect(chips.find((chip) => chip.label.startsWith("Salary currency"))!.removeHref).toBe(
+      "/?arrangement=remote&seniority=unknown&department=Support",
+    );
+    expect(chips.find((chip) => chip.label.startsWith("Salary at least"))!.removeHref).toBe(
+      "/?arrangement=remote&seniority=unknown&department=Support&currency=EUR",
+    );
+  });
+
+  it("explains what a salary filter left out and how salary sorts treat currencies", () => {
+    const visible = text(renderToStaticMarkup(
+      <ActiveFilters
+        query={parse("salaryMin=90000&sort=salary-high")}
+        total={2}
+        page={1}
+        pageSize={25}
+        companyNames={{}}
+        salaryExclusions={{ currency: "USD", withoutAmount: 3, unknownCurrency: 1, otherCurrency: 2 }}
+      />,
+    ));
+    expect(visible).toContain(
+      "Salary filter compares USD amounts only. Not included: 3 opportunities without a stated salary amount; " +
+        "2 opportunities with a salary in another currency; 1 opportunity with an unknown salary currency.",
+    );
+    expect(visible).not.toContain("sorted within each currency"); // one currency is selected
+    expect(salarySortNote(parse("sort=salary-low"))).toContain("sorted within each currency");
+    expect(salarySortNote(parse("sort=title"))).toBeNull();
+    expect(salaryExclusionNote({ currency: "USD", withoutAmount: 0, unknownCurrency: 0, otherCurrency: 0 })).toBeNull();
+  });
+
+  it("the filter form offers the new groups, the active sort, and keeps selections", () => {
+    const options = {
+      sources: [], domains: [], companies: [],
+      departments: [{ value: "Customer Success", count: 2 }],
+      currencies: [{ value: "GBP", count: 1 }],
+    };
+    const markup = renderToStaticMarkup(
+      <OpportunityFilters query={parse("arrangement=hybrid&department=Support&currency=GBP&salaryMin=50000&sort=salary-high")} options={options} />,
+    );
+    for (const legend of ["Work arrangement", "Seniority (as stated)", "Salary range"]) {
+      expect(markup).toContain(`<legend>${legend}</legend>`);
+    }
+    expect(markup).toContain('<input type="checkbox" name="arrangement" checked="" value="hybrid"/>');
+    expect(markup).toMatch(/<option value="Support" selected="">Support<\/option>/);
+    expect(markup).toMatch(/<option value="Customer Success">Customer Success \(2\)<\/option>/);
+    expect(markup).toMatch(/<option value="GBP" selected="">GBP<\/option>/);
+    expect(markup).toContain('<option value="USD">USD</option>');
+    expect(markup).toContain('name="salaryMin" value="50000"');
+    expect(markup).toMatch(/<option value="salary-high" selected="">Salary, highest first \(per currency\)<\/option>/);
+    expect(text(markup)).toContain("there is no currency conversion");
+  });
+
+  it("rows show the work arrangement, Unknown when not stated", () => {
+    const visible = text(renderToStaticMarkup(
+      <OpportunityList opportunities={[item({ remoteStatus: "HYBRID" }), item({ id: "other", remoteStatus: null })]} />,
+    ));
+    expect(visible).toContain("Work arrangement Hybrid");
+    expect(visible).toContain("Work arrangement Unknown");
+  });
+
+  it("formats salary ranges without assuming a currency", () => {
+    expect(formatSalaryRange(72000, 88000, "USD")).toBe("72,000–88,000 USD");
+    expect(formatSalaryRange(80000, 80000, "GBP")).toBe("80,000 GBP");
+    expect(formatSalaryRange(70000, null, "USD")).toBe("At least 70,000 USD");
+    expect(formatSalaryRange(null, 90000, null)).toBe("Up to 90,000 (currency unknown)");
+    expect(formatSalaryRange(null, null, "USD")).toBeNull();
+    expect(workArrangementLabel(null)).toBe("Unknown");
+    expect(seniorityLabel("EXECUTIVE")).toBe("VP / executive");
+    expect(employmentTypeLabel("FULL_TIME")).toBe("Full-time");
+  });
+
+  it("the manual form offers the optional details, blank by default", () => {
+    const markup = renderToStaticMarkup(<ManualOpportunityFields fieldErrors={{ department: "Too long" }} />);
+    expect(markup).toContain("<legend>Additional details (optional)</legend>");
+    for (const name of ["workArrangement", "seniority", "employmentType", "compensationCurrency"]) {
+      expect(markup).toMatch(new RegExp(`<select name="${name}"[^>]*><option value="" selected="">Not stated</option>`));
+    }
+    expect(markup).toContain('<input type="date" name="closingDate"/>');
+    expect(markup).toContain('aria-describedby="department-error"');
+    expect(fieldErrorsFromIssues([{ path: "seniority", message: "Invalid option" }]).fieldErrors).toEqual({ seniority: "Invalid option" });
   });
 });

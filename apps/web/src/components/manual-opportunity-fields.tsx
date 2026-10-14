@@ -1,6 +1,13 @@
 // Presentational fields for manual opportunity entry, with per-field
 // validation messages from the API's `issues` array.
 
+import { salaryCurrencyOptions } from "../server/opportunity-query";
+import {
+  employmentTypeChoices,
+  seniorityChoices,
+  workArrangementChoices,
+} from "./opportunity-facts";
+
 // Domains the platform can currently evaluate. A blank domain cannot be
 // evaluated, so the form always submits one of these slugs.
 export const domainOptions = [
@@ -20,6 +27,12 @@ export const manualOpportunityFieldNames = [
   "applicationUrl",
   "sourceJobId",
   "foundOn",
+  "workArrangement",
+  "seniority",
+  "employmentType",
+  "department",
+  "closingDate",
+  "compensationCurrency",
 ] as const;
 
 export type ManualOpportunityFieldName = (typeof manualOpportunityFieldNames)[number];
@@ -84,6 +97,17 @@ const provenanceFields = [
   ["foundOn", "Where you found it (optional, e.g. LinkedIn)"],
 ] as const;
 
+const currencyChoices = salaryCurrencyOptions.map((code) => [code, code] as const);
+
+const selectFields = [
+  ["workArrangement", "Work arrangement", workArrangementChoices],
+  ["seniority", "Seniority", seniorityChoices],
+  ["employmentType", "Employment type", employmentTypeChoices],
+  ["compensationCurrency", "Salary currency", currencyChoices],
+] as const satisfies ReadonlyArray<
+  readonly [ManualOpportunityFieldName, string, ReadonlyArray<readonly [string, string]>]
+>;
+
 export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErrors }) {
   return (
     <>
@@ -127,6 +151,41 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
           </label>
         ))}
       </div>
+
+      <fieldset className="form-details">
+        <legend>Additional details (optional)</legend>
+        <p className="field-help">
+          Fill in only what the listing states. Anything left blank stays Unknown; nothing is guessed from the
+          job text. Salary amounts are read from the compensation text; a plain “$” is read as US dollars unless
+          you choose a currency here.
+        </p>
+        <div className="form-grid">
+          {selectFields.map(([name, label, choices]) => (
+            <label key={name}>
+              {label}
+              <select name={name} defaultValue="" {...errorProps(name, fieldErrors)}>
+                <option value="">Not stated</option>
+                {choices.map(([value, text]) => (
+                  <option key={value} value={value}>
+                    {text}
+                  </option>
+                ))}
+              </select>
+              <FieldError name={name} fieldErrors={fieldErrors} />
+            </label>
+          ))}
+          <label>
+            Department
+            <input name="department" maxLength={120} {...errorProps("department", fieldErrors)} />
+            <FieldError name="department" fieldErrors={fieldErrors} />
+          </label>
+          <label>
+            Closing date
+            <input name="closingDate" type="date" {...errorProps("closingDate", fieldErrors)} />
+            <FieldError name="closingDate" fieldErrors={fieldErrors} />
+          </label>
+        </div>
+      </fieldset>
     </>
   );
 }

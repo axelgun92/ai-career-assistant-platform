@@ -78,6 +78,28 @@ export const sourceTypeOptions = {
   other: "OTHER",
 } as const;
 
+// Normalized position facts. "unknown" matches opportunities where the fact
+// was not stated (null); it is never treated as any particular value.
+export const arrangementOptions = { remote: "REMOTE", hybrid: "HYBRID", onsite: "ONSITE", unknown: "UNKNOWN" } as const;
+export const seniorityOptions = {
+  entry: "ENTRY",
+  mid: "MID",
+  senior: "SENIOR",
+  lead: "LEAD",
+  principal: "PRINCIPAL",
+  director: "DIRECTOR",
+  executive: "EXECUTIVE",
+  unknown: "UNKNOWN",
+} as const;
+// Salary amounts are only compared within one currency (no conversion).
+export const salaryCurrencyOptions = [
+  "USD", "CAD", "AUD", "NZD", "EUR", "GBP", "CHF", "SEK", "NOK", "DKK",
+  "PLN", "INR", "SGD", "JPY", "MXN", "BRL", "ZAR",
+] as const;
+export type SalaryCurrency = (typeof salaryCurrencyOptions)[number];
+export const defaultSalaryCurrency: SalaryCurrency = "USD";
+export const maximumSalaryAmount = 999_999_999;
+
 export const sortOptions = {
   newest: "Newest discovered",
   oldest: "Oldest discovered",
@@ -85,6 +107,8 @@ export const sortOptions = {
   priority: "Priority (highest first)",
   company: "Company A–Z",
   title: "Title A–Z",
+  "salary-high": "Salary, highest first (per currency)",
+  "salary-low": "Salary, lowest first (per currency)",
 } as const;
 export type OpportunitySort = keyof typeof sortOptions;
 export const defaultSort: OpportunitySort = "newest";
@@ -106,12 +130,18 @@ export interface OpportunityQuery {
   role: Keys<typeof roleFamilyOptions>;
   segment: Keys<typeof segmentOptions>;
   sourceType: Keys<typeof sourceTypeOptions>;
+  arrangement: Keys<typeof arrangementOptions>;
+  seniority: Keys<typeof seniorityOptions>;
   source: string | null;
   company: string | null;
   domain: string | null;
   title: string | null;
   location: string | null;
   salary: "stated" | "not-stated" | null;
+  department: string | null;
+  currency: SalaryCurrency | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
   from: string | null;
   to: string | null;
   sort: OpportunitySort;
@@ -155,6 +185,12 @@ export function isoDate(value: string | undefined): string | null {
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value) ? value : null;
 }
 
+// A whole salary amount; thousands separators are allowed ("80,000").
+export function salaryAmount(value: string | undefined): number | null {
+  const parsed = positiveInteger(value?.replace(/[,\s]/g, ""));
+  return parsed !== null && parsed <= maximumSalaryAmount ? parsed : null;
+}
+
 export function positiveInteger(value: string | undefined): number | null {
   if (!value || !/^\d{1,9}$/.test(value)) return null;
   const parsed = Number(value);
@@ -188,6 +224,17 @@ export function parseOpportunityQuery(
   }
   const salary = firstValue(params, "salary")?.trim().toLowerCase();
   const company = firstValue(params, "company")?.trim();
+  let salaryMin = salaryAmount(firstValue(params, "salaryMin"));
+  let salaryMax = salaryAmount(firstValue(params, "salaryMax"));
+  if (salaryMin !== null && salaryMax !== null && salaryMin > salaryMax) {
+    salaryMin = null;
+    salaryMax = null;
+  }
+  const currencyValue = firstValue(params, "currency")?.trim().toUpperCase();
+  const currency = currencyValue && (salaryCurrencyOptions as readonly string[]).includes(currencyValue)
+    ? (currencyValue as SalaryCurrency)
+    : // An amount always has a currency; a bare amount means the default.
+      salaryMin !== null || salaryMax !== null ? defaultSalaryCurrency : null;
   return {
     view: viewValue && Object.hasOwn(opportunityViews, viewValue)
       ? (viewValue as OpportunityView)
@@ -199,12 +246,18 @@ export function parseOpportunityQuery(
     role: multi(params, "role", roleFamilyOptions),
     segment: multi(params, "segment", segmentOptions),
     sourceType: multi(params, "sourceType", sourceTypeOptions),
+    arrangement: multi(params, "arrangement", arrangementOptions),
+    seniority: multi(params, "seniority", seniorityOptions),
     source: text(params, "source"),
     company: company && uuidPattern.test(company) ? company.toLowerCase() : null,
     domain: text(params, "domain"),
     title: text(params, "title"),
     location: text(params, "location"),
     salary: salary === "stated" || salary === "not-stated" ? salary : null,
+    department: text(params, "department", 120),
+    currency,
+    salaryMin,
+    salaryMax,
     from,
     to,
     sort: sortValue && Object.hasOwn(sortOptions, sortValue) ? (sortValue as OpportunitySort) : defaultSort,
@@ -222,10 +275,16 @@ export function serializeOpportunityQuery(
   const params = new URLSearchParams();
   if (query.view !== (options.defaultView ?? defaultView)) params.set("view", query.view);
   if (query.q) params.set("q", query.q);
-  for (const key of ["rec", "eval", "priority", "role", "segment", "sourceType"] as const) {
+  for (const key of ["rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority"] as const) {
     for (const value of query[key]) params.append(key, value);
   }
-  for (const key of ["source", "company", "domain", "title", "location", "salary", "from", "to"] as const) {
+  for (const key of ["source", "company", "domain", "title", "location", "salary", "department", "currency"] as const) {
+    const value = query[key];
+    if (value) params.set(key, value);
+  }
+  if (query.salaryMin !== null) params.set("salaryMin", String(query.salaryMin));
+  if (query.salaryMax !== null) params.set("salaryMax", String(query.salaryMax));
+  for (const key of ["from", "to"] as const) {
     const value = query[key];
     if (value) params.set(key, value);
   }
@@ -256,21 +315,28 @@ export function pageCountFor(total: number, pageSize: number): number {
 }
 
 const filterKeys = [
-  "q", "rec", "eval", "priority", "role", "segment", "sourceType",
-  "source", "company", "domain", "title", "location", "salary", "from", "to",
+  "q", "rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority",
+  "source", "company", "domain", "title", "location", "salary", "department", "currency",
+  "salaryMin", "salaryMax", "from", "to",
 ] as const;
 
 export function hasActiveFilters(query: OpportunityQuery): boolean {
   return filterKeys.some((key) => {
     const value = query[key];
-    return Array.isArray(value) ? value.length > 0 : Boolean(value);
+    return Array.isArray(value) ? value.length > 0 : value !== null && value !== "";
   });
+}
+
+// True when a salary amount filter is active (it then applies in one currency).
+export function hasSalaryRange(query: Pick<OpportunityQuery, "salaryMin" | "salaryMax">): boolean {
+  return query.salaryMin !== null || query.salaryMax !== null;
 }
 
 export function clearFilters(query: OpportunityQuery): OpportunityQuery {
   return withChanges(query, {
-    q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [],
-    source: null, company: null, domain: null, title: null, location: null, salary: null, from: null, to: null,
+    q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [], arrangement: [], seniority: [],
+    source: null, company: null, domain: null, title: null, location: null, salary: null,
+    department: null, currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
   });
 }
 
@@ -284,12 +350,19 @@ export interface OpportunityListFilters {
   roleFamilies: string[];
   segments: string[];
   sourceTypes: string[];
+  workArrangements: string[];
+  seniorities: string[];
   source: string | null;
   companyId: string | null;
   domain: string | null;
   titleContains: string | null;
   locationContains: string | null;
   salaryStated: boolean | null;
+  department: string | null;
+  salaryCurrency: string | null;
+  // Range overlap: the stated range can reach at least / at most this amount.
+  salaryAtLeast: number | null;
+  salaryAtMost: number | null;
   discoveredFrom: Date | null;
   discoveredBefore: Date | null;
 }
@@ -305,12 +378,18 @@ export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
     roleFamilies: stored(query.role, roleFamilyOptions),
     segments: stored(query.segment, segmentOptions),
     sourceTypes: stored(query.sourceType, sourceTypeOptions),
+    workArrangements: stored(query.arrangement, arrangementOptions),
+    seniorities: stored(query.seniority, seniorityOptions),
     source: query.source,
     companyId: query.company,
     domain: query.domain,
     titleContains: query.title,
     locationContains: query.location,
     salaryStated: query.salary === null ? null : query.salary === "stated",
+    department: query.department,
+    salaryCurrency: query.currency,
+    salaryAtLeast: query.salaryMin,
+    salaryAtMost: query.salaryMax,
     discoveredFrom: query.from ? new Date(`${query.from}T00:00:00.000Z`) : null,
     // Inclusive "to" date: everything before the next UTC midnight.
     discoveredBefore: query.to ? new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 86_400_000) : null,

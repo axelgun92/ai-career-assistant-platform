@@ -54,9 +54,15 @@ describe("manual opportunity PostgreSQL persistence", () => {
     expect(detail.opportunity.status).toBe("NORMALIZED");
     expect(detail.opportunity.title).toBe("Customer Success Manager");
     expect(detail.opportunity.domain).toBeNull();
+    // Nothing stated about the arrangement or level: Unknown.
     expect(detail.opportunity.remoteStatus).toBeNull();
-    expect(detail.opportunity.salaryMin).toBeNull();
+    expect(detail.opportunity.seniority).toBeNull();
+    // The stated range is normalized; the original text is kept as written.
+    expect(detail.opportunity.salaryMin).toBe(65000);
+    expect(detail.opportunity.salaryMax).toBe(75000);
+    expect(detail.opportunity.currency).toBe("USD");
     expect(detail.opportunity.salaryText).toBe("$65,000 - $75,000");
+    expect(detail.sourceRecords[0]?.rawSalaryText).toBe("$65,000 - $75,000");
     expect(detail.sourceRecords).toHaveLength(1);
     expect(detail.sourceRecords[0]?.rawDescription).toBe(rawText);
     expect(detail.sourceRecords[0]?.sourceType).toBe("MANUAL");

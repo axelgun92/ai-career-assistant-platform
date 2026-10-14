@@ -289,11 +289,11 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - salary stated / not stated;
   - discovered date range (inclusive UTC days).
 - **Evaluation-derived values** (priority, role family, segment) are read as-is from the latest completed evaluation's persisted result. They are never inferred; a "Not evaluated"/"Unknown" option covers their absence.
-- **Deferred filters** (data not reliable yet):
-  - numeric salary range and salary sorts (`salaryMin`/`salaryMax`/`currency` are never normalized);
-  - remote/seniority/department (never populated);
-  - structured location;
-  - salary analytics.
+- **Deferred filters** (data not reliable yet), mostly completed by the Task 7 completion amendment below:
+  - numeric salary range and salary sorts: **done**;
+  - remote/seniority/department: **done**;
+  - structured location: still deferred (no structured location columns);
+  - salary analytics: still deferred.
 - **Search** (`q`): case-insensitive partial matching, AND across up to 8 terms (80 characters each), over title, company, location, source, original source, salary text and listing/requisition IDs. Wildcards are escaped. Descriptions are excluded (full-text search is an additive follow-up).
 - **Sorts:** newest/oldest discovered, recently updated, priority (contract band order, unknown last), company A–Z and title A–Z (missing last). All end with deterministic tie-breakers. Recommendation is a filter, not a sort.
 - **URL state.**
@@ -313,6 +313,80 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - unit: `opportunity-query.test.ts` (parsing, dropping, normalization, escaping, canonical serialization, `clampPage`, canonical redirect, contract value parity) and `dashboard-ui.test.tsx` (chips, count, form state, rows, pagination, attention links, distributions);
   - integration: `dashboard-query.test.ts` (every filter and combinations, search, sorts with nulls last, page beyond end, exact final page, zero results, count/items agreement across pages, summary counts equal linked views, read-only);
   - E2E: `dashboard.spec.ts`, its own Playwright project, run last.
+
+#### Completed — Task 7 completion amendment: normalized Opportunity fields and the deferred filters (October 14, 2026)
+
+**Audit (before):**
+- `salaryMin`/`salaryMax`/`currency`, `remoteStatus`, `seniority`, `department` and `closingDate` existed in the schema but were never populated.
+- `employmentType` was partial: the normalizer copied it, but manual entry always sent null.
+- Location, salary text, posting date, source/provenance and domain were complete.
+- Every other Task 7 filter, sort, search, URL state, pagination and empty state was complete.
+- Numeric salary filtering and sorting, and work-arrangement, seniority and department filters, were missing.
+
+**Normalization** (deterministic, `packages/normalization`; no AI calls):
+- **Compensation** (`parseCompensation`) from the compensation text only:
+  - a stated range, single amount or open-ended amount ("Up to", "From", "+");
+  - `72k`, `72,000` and `72.000` formats.
+  - **Stays Unknown:**
+    - hourly, daily, weekly or monthly pay (there is no pay-period column);
+    - OTE;
+    - more than one candidate figure, an inverted range, or an implausible amount.
+- **Currency:**
+  - from an explicit code or symbol (USD, US$, CA$, €, £…), or from the user's selection;
+  - a bare "$" is read as USD (user decision);
+  - conflicting currencies, or a "¥", stay Unknown;
+  - no conversion exists.
+- **Work arrangement:** a stated choice, or else the location field when it states exactly one of Remote / Hybrid / On-site. A plain place name is never read as on-site, and the job description is never scanned.
+- **Seniority:** a stated choice, or else unambiguous title words only (Junior, Senior/Sr, Principal, Director, VP/Chief). "Lead", "Staff", "Associate", "Head", "Manager" and mixed titles stay Unknown.
+- **Department, employment type and closing date:** only as stated.
+- **Manual form:** a new optional "Additional details" group (work arrangement, seniority, employment type, salary currency, department, closing date). Blank stays Unknown.
+- **Provenance and preservation:**
+  - every populated value gets `FieldProvenance`: DIRECT when stated, DETERMINISTIC when read from text;
+  - original text, the `SourceRecord` and the raw payload are preserved;
+  - `RawOpportunity` is unchanged, and the stated details live in `sourceMetadata.details`.
+- **Existing rows:**
+  - older opportunities keep null facts; there is no backfill, and they stay listed and filterable as Unknown;
+  - historical evaluations and evaluated job descriptions are untouched.
+- **Evaluator boundary:**
+  - `loadSubject()` withholds the newly populated fields, so the evaluator's input is exactly as before;
+  - the Customer Success salary hard filter would otherwise use parsed amounts without comparing currencies;
+  - Codex review is requested in `HANDOFFS.md`.
+
+**Dashboard (Task 7 completed):**
+- **Filters:**
+  - work arrangement and seniority (multi-select, each with "Unknown (not stated)");
+  - department (values present in the data);
+  - salary currency;
+  - salary at least / at most.
+- **Salary filter semantics:**
+  - amounts are compared in one currency only, USD when none is chosen;
+  - a range matches when it can reach the amount, including open-ended ranges;
+  - opportunities without an amount, in another currency, or with an unknown currency are counted and named in a note under the result count.
+- **Sorts:** "Salary, highest first" and "Salary, lowest first". Both are grouped by currency and never interleave currencies. Unknown currency comes next and no stated amount last, then deterministic tie-breakers. A note explains this when no currency is selected.
+- **Semantics kept:** OR within a filter, AND across filters; malformed values are dropped; old URLs are unchanged; the canonical redirect adds `currency=USD` to a bare amount.
+- **Server-side and parameterized:** filtering runs in the existing `buildFilterPredicate` and sorts in the whitelisted orders. All values are bound parameters, and the API returns `salaryExclusions`.
+- **Rows and detail page:**
+  - rows show the work arrangement;
+  - the opportunity page shows salary range, closing date, work arrangement, seniority (as stated), department and employment type, each "Unknown" when not stated.
+- **Fixed while verifying:** a filter change made before the page finished hydrating was silently lost. The form now submits such a change on mount. A unit test guards against the form ever submitting itself unprompted.
+
+**Not complete, and why:**
+- **Structured location** (country/region/city): there are no columns for it, and manual entry gives free text. It stays a "location contains" filter, deferred to retrieval and schema work.
+- **Time-zone requirements, bonus and equity:** not populated from manual input.
+- **Re-normalizing changed listings:** there is no re-observation path yet, so it is blocked on dedup and re-observation in the scraper phase.
+- **Salary analytics:** still deferred.
+
+**No schema change or migration** (the columns already existed).
+
+**Tests:**
+- unit `opportunity-normalization.test.ts` (26), `opportunity-filters-hydration.test.tsx` (5), plus query, UI and handler additions;
+- integration `normalized-opportunity-filters.test.ts` (12): persistence and provenance, evaluator withholding, salary boundaries, currencies, exclusions, malformed parameters, arrangement, seniority, department, AND/OR, null legacy rows, sorts and Unknown ordering;
+- E2E: manual entry with details, then the arrangement filter, the salary filter with its exclusion note, and the salary sort.
+
+**Verification** (isolated test database; normal database untouched; no paid calls):
+- typecheck, lint and Prisma validate pass;
+- unit 966/966, integration 168/168, E2E 25/25;
+- build passes.
 
 #### Completed — Task 8: Application tracker (October 9, 2026)
 
@@ -573,7 +647,7 @@ Revised roadmap:
 
 - Task 5 — Profile + Preferences: done (see above).
 - Task 6 — Budget Ledger + Deferral: done (see above).
-- Task 7 — Product UI: dashboard, search, sort, filters, analytics polish: done (see above).
+- Task 7 — Product UI: dashboard, search, sort, filters, analytics polish: done, including the completion amendment (normalized fields, salary/arrangement/seniority/department filters and salary sorts; structured location and salary analytics deferred).
 - Task 8 — Application Tracker: done (see above).
 - Task 9 — Final setup, operations, integration, E2E: done (see above).
 - Next: freeze the evaluator, then the deliberate final integration checkpoint (see the final integration checklist in `HANDOFFS.md`), then retrieval/scraper work.

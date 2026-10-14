@@ -22,6 +22,56 @@ export const opportunitySourceTypeSchema = z.enum([
   "OTHER",
 ]);
 
+// Product vocabularies for normalized position and compensation fields. The
+// stored columns stay free text (the shared normalized contract is not
+// narrowed); product normalization writes only these values, and anything
+// it cannot state explicitly stays null (Unknown).
+export const workArrangementValues = ["REMOTE", "HYBRID", "ONSITE"] as const;
+export const seniorityValues = [
+  "ENTRY",
+  "MID",
+  "SENIOR",
+  "LEAD",
+  "PRINCIPAL",
+  "DIRECTOR",
+  "EXECUTIVE",
+] as const;
+export const employmentTypeValues = [
+  "FULL_TIME",
+  "PART_TIME",
+  "CONTRACT",
+  "TEMPORARY",
+  "INTERNSHIP",
+] as const;
+// ISO 4217 codes the product recognizes in compensation text. No conversion
+// exists: amounts are only ever compared within one currency.
+export const compensationCurrencyCodes = [
+  "USD",
+  "CAD",
+  "AUD",
+  "NZD",
+  "EUR",
+  "GBP",
+  "CHF",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+  "INR",
+  "SGD",
+  "JPY",
+  "MXN",
+  "BRL",
+  "ZAR",
+] as const;
+// Currencies written with a "$" sign.
+export const dollarCurrencyCodes = ["USD", "CAD", "AUD", "NZD", "SGD", "MXN"] as const;
+
+export type WorkArrangement = (typeof workArrangementValues)[number];
+export type Seniority = (typeof seniorityValues)[number];
+export type EmploymentType = (typeof employmentTypeValues)[number];
+export type CompensationCurrency = (typeof compensationCurrencyCodes)[number];
+
 const nullableText = z.string().trim().min(1).nullable();
 const nullablePreservedText = z
   .string()

@@ -168,6 +168,27 @@ describe("GET /api/opportunities handler", () => {
     expect(input.filters.discoveredFrom).toBeNull();
   });
 
+  it("ignores malformed normalized-field filters and passes valid ones server-side", async () => {
+    const listPage = vi.fn().mockResolvedValue({
+      ...page([]),
+      salaryExclusions: { currency: "EUR", withoutAmount: 1, unknownCurrency: 0, otherCurrency: 2 },
+    });
+    const response = await createOpportunityListHandler({ listPage })(
+      new Request(
+        "http://localhost/api/opportunities?arrangement=moon&seniority=guru&salaryMin=1%3B%20DROP%20TABLE&currency=XYZ" +
+          "&department=Support&sort=salary-high",
+      ),
+    );
+    expect(response.status).toBe(200);
+    const input = listPage.mock.calls[0]![0];
+    expect(input.sort).toBe("salary-high");
+    expect(input.filters).toMatchObject({
+      workArrangements: [], seniorities: [], salaryAtLeast: null, salaryAtMost: null, salaryCurrency: null, department: "Support",
+    });
+    const body = (await response.json()) as { salaryExclusions: unknown };
+    expect(body.salaryExclusions).toEqual({ currency: "EUR", withoutAmount: 1, unknownCurrency: 0, otherCurrency: 2 });
+  });
+
   it("returns a safe error when the reader fails", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await createOpportunityListHandler({

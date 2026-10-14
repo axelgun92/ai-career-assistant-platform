@@ -23,6 +23,12 @@ export interface OpportunityListItem {
   companyName: string | null;
   location: string | null;
   salaryText: string | null;
+  // Normalized compensation and position facts; null means Unknown.
+  salaryMin: number | null;
+  salaryMax: number | null;
+  currency: string | null;
+  remoteStatus: string | null;
+  seniority: string | null;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -67,17 +73,37 @@ export interface OpportunityListFilters {
   roleFamilies?: string[];
   segments?: string[];
   sourceTypes?: string[];
+  workArrangements?: string[];
+  seniorities?: string[];
   source?: string | null;
   companyId?: string | null;
   domain?: string | null;
   titleContains?: string | null;
   locationContains?: string | null;
   salaryStated?: boolean | null;
+  department?: string | null;
+  // Salary amounts are compared only within this currency (required with an
+  // amount). A stated range matches when it can reach the amount: its top
+  // (or an open top) is at least salaryAtLeast, its bottom (or an open
+  // bottom) at most salaryAtMost.
+  salaryCurrency?: string | null;
+  salaryAtLeast?: number | null;
+  salaryAtMost?: number | null;
   discoveredFrom?: Date | null;
   discoveredBefore?: Date | null;
 }
 
-export type OpportunityListSort = "newest" | "oldest" | "updated" | "priority" | "company" | "title";
+export type OpportunityListSort =
+  | "newest" | "oldest" | "updated" | "priority" | "company" | "title" | "salary-high" | "salary-low";
+
+// Opportunities a salary amount filter could not compare, counted under the
+// other active filters, so the dashboard can say what was left out.
+export interface SalaryFilterExclusions {
+  currency: string;
+  withoutAmount: number;
+  unknownCurrency: number;
+  otherCurrency: number;
+}
 
 export interface OpportunityListPage {
   items: OpportunityListItem[];
@@ -86,6 +112,7 @@ export interface OpportunityListPage {
   requestedPage: number;
   pageCount: number;
   pageSize: number;
+  salaryExclusions: SalaryFilterExclusions | null;
 }
 
 // The latest evaluation per opportunity (any status), the current
@@ -174,6 +201,21 @@ const searchColumns = [
   Prisma.sql`o."atsRequisitionId"`,
 ];
 
+const isPresent = (value: number | null | undefined): value is number => value !== null && value !== undefined;
+
+// The top and bottom of a stated salary range; a one-sided range uses its
+// only bound for both.
+const highAmount = Prisma.sql`COALESCE(o."salaryMax", o."salaryMin")`;
+const lowAmount = Prisma.sql`COALESCE(o."salaryMin", o."salaryMax")`;
+
+// Salary sorts never interleave currencies: known amounts in a known
+// currency first (grouped by currency), then amounts with an unknown
+// currency, then opportunities without a stated amount.
+function salaryOrder(amount: Prisma.Sql, direction: Prisma.Sql) {
+  return Prisma.sql`CASE WHEN ${amount} IS NULL THEN 2 WHEN o."currency" IS NULL THEN 1 ELSE 0 END ASC,
+    o."currency" ASC NULLS LAST, ${amount} ${direction} NULLS LAST`;
+}
+
 // The single filter predicate used by both the count and the item query, so
 // their results can never disagree.
 export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sql {
@@ -196,6 +238,9 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   add(valuesOrMissing(Prisma.sql`cr."roleFamily"`, filters.roleFamilies, "UNKNOWN"));
   add(valuesOrMissing(Prisma.sql`cr."segment"`, filters.segments, "NOT_EVALUATED"));
   if (filters.sourceTypes?.length) add(Prisma.sql`o."sourceType"::text IN (${Prisma.join(filters.sourceTypes)})`);
+  add(valuesOrMissing(Prisma.sql`o."remoteStatus"`, filters.workArrangements, "UNKNOWN"));
+  add(valuesOrMissing(Prisma.sql`o."seniority"`, filters.seniorities, "UNKNOWN"));
+  if (filters.department) add(Prisma.sql`o."department" = ${filters.department}`);
   if (filters.source) add(Prisma.sql`o."source" = ${filters.source}`);
   if (filters.companyId) add(Prisma.sql`o."companyId" = ${filters.companyId}::uuid`);
   if (filters.domain) add(Prisma.sql`o."domain" = ${filters.domain}`);
@@ -207,6 +252,21 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   }
   if (filters.salaryStated === true) add(Prisma.sql`NULLIF(btrim(o."salaryText"), '') IS NOT NULL`);
   if (filters.salaryStated === false) add(Prisma.sql`NULLIF(btrim(o."salaryText"), '') IS NULL`);
+  const amountFilter = isPresent(filters.salaryAtLeast) || isPresent(filters.salaryAtMost);
+  if (amountFilter && !filters.salaryCurrency) {
+    throw new Error("A salary amount filter requires a currency");
+  }
+  if (filters.salaryCurrency) add(Prisma.sql`o."currency" = ${filters.salaryCurrency}`);
+  // An open-ended range ("From $100,000", "Up to $85,000") can reach any
+  // amount on its open side; an opportunity with no amount never matches.
+  if (isPresent(filters.salaryAtLeast)) {
+    add(Prisma.sql`(o."salaryMax" >= ${filters.salaryAtLeast}::numeric
+      OR (o."salaryMax" IS NULL AND o."salaryMin" IS NOT NULL))`);
+  }
+  if (isPresent(filters.salaryAtMost)) {
+    add(Prisma.sql`(o."salaryMin" <= ${filters.salaryAtMost}::numeric
+      OR (o."salaryMin" IS NULL AND o."salaryMax" IS NOT NULL))`);
+  }
   if (filters.discoveredFrom) add(Prisma.sql`o."discoveredAt" >= ${filters.discoveredFrom}`);
   if (filters.discoveredBefore) add(Prisma.sql`o."discoveredAt" < ${filters.discoveredBefore}`);
   return conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.empty;
@@ -222,6 +282,8 @@ const sortOrders: Record<OpportunityListSort, Prisma.Sql> = {
   priority: Prisma.sql`${priorityRank} DESC NULLS LAST, ${tieBreakers}`,
   company: Prisma.sql`lower(NULLIF(btrim(c."name"), '')) ASC NULLS LAST, ${tieBreakers}`,
   title: Prisma.sql`lower(NULLIF(btrim(o."title"), '')) ASC NULLS LAST, ${tieBreakers}`,
+  "salary-high": Prisma.sql`${salaryOrder(highAmount, Prisma.sql`DESC`)}, ${tieBreakers}`,
+  "salary-low": Prisma.sql`${salaryOrder(lowAmount, Prisma.sql`ASC`)}, ${tieBreakers}`,
 };
 
 type Row = {
@@ -234,6 +296,11 @@ type Row = {
   companyName: string | null;
   location: string | null;
   salaryText: string | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  currency: string | null;
+  remoteStatus: string | null;
+  seniority: string | null;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -267,6 +334,11 @@ function toItem(row: Row, today: string): OpportunityListItem {
     companyName: row.companyName,
     location: row.location,
     salaryText: row.salaryText,
+    salaryMin: row.salaryMin,
+    salaryMax: row.salaryMax,
+    currency: row.currency,
+    remoteStatus: row.remoteStatus,
+    seniority: row.seniority,
     postingDate: row.postingDate,
     createdAt: row.createdAt,
     discoveredAt: row.discoveredAt,
@@ -319,6 +391,8 @@ export class PrismaOpportunityListRepository {
     const pageSize = Math.min(Math.max(Math.trunc(input.pageSize) || 1, 1), opportunityListMaximumLimit);
     const requestedPage = Number.isInteger(input.page) && input.page >= 1 ? input.page : 1;
     const predicate = buildFilterPredicate(input.filters);
+    const { salaryCurrency, salaryAtLeast, salaryAtMost } = input.filters;
+    const comparesAmounts = salaryCurrency && (isPresent(salaryAtLeast) || isPresent(salaryAtMost));
     return this.database.$transaction(
       async (transaction) => {
         const [count] = await transaction.$queryRaw<Array<{ total: number }>>`
@@ -326,12 +400,36 @@ export class PrismaOpportunityListRepository {
         `;
         const total = count?.total ?? 0;
         const { page, pageCount } = clamp(requestedPage, total, pageSize);
-        if (total === 0) return { items: [], total, page, requestedPage, pageCount, pageSize };
+        let salaryExclusions: SalaryFilterExclusions | null = null;
+        if (comparesAmounts) {
+          const others = buildFilterPredicate({
+            ...input.filters, salaryCurrency: null, salaryAtLeast: null, salaryAtMost: null,
+          });
+          const [excluded] = await transaction.$queryRaw<Array<Omit<SalaryFilterExclusions, "currency">>>`
+            ${withClause}
+            SELECT
+              COUNT(*) FILTER (WHERE ${highAmount} IS NULL)::int AS "withoutAmount",
+              COUNT(*) FILTER (WHERE ${highAmount} IS NOT NULL AND o."currency" IS NULL)::int AS "unknownCurrency",
+              COUNT(*) FILTER (
+                WHERE ${highAmount} IS NOT NULL AND o."currency" IS NOT NULL AND o."currency" <> ${salaryCurrency}
+              )::int AS "otherCurrency"
+            ${joins} ${others}
+          `;
+          salaryExclusions = {
+            currency: salaryCurrency,
+            withoutAmount: excluded?.withoutAmount ?? 0,
+            unknownCurrency: excluded?.unknownCurrency ?? 0,
+            otherCurrency: excluded?.otherCurrency ?? 0,
+          };
+        }
+        if (total === 0) return { items: [], total, page, requestedPage, pageCount, pageSize, salaryExclusions };
         const rows = await transaction.$queryRaw<Row[]>`
           ${withClause}
           SELECT
             o."id", o."domain", o."status"::text AS "status", o."source", o."sourceType"::text AS "sourceType",
             o."title", c."name" AS "companyName", o."location", o."salaryText", o."postingDate",
+            o."salaryMin"::float8 AS "salaryMin", o."salaryMax"::float8 AS "salaryMax", o."currency",
+            o."remoteStatus", o."seniority",
             o."createdAt", o."discoveredAt", o."updatedAt", o."applicationUrl",
             (od."opportunityId" IS NOT NULL) AS "deferred",
             le."id" AS "latestId", le."status" AS "latestStatus",
@@ -345,7 +443,10 @@ export class PrismaOpportunityListRepository {
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
         `;
         const today = utcToday();
-        return { items: rows.map((row) => toItem(row, today)), total, page, requestedPage, pageCount, pageSize };
+        return {
+          items: rows.map((row) => toItem(row, today)),
+          total, page, requestedPage, pageCount, pageSize, salaryExclusions,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );

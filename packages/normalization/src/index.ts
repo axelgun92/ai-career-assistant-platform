@@ -1,10 +1,21 @@
 import {
+  manualStatedDetailsSchema,
   normalizedOpportunitySchema,
   type FieldProvenanceInput,
+  type ManualStatedDetails,
   type NormalizedOpportunity,
   type OpportunityNormalizer,
   type RawOpportunity,
 } from "@ai-career/core";
+import { parseCompensation } from "./compensation";
+import {
+  seniorityFromTitle,
+  standardizeEmploymentType,
+  workArrangementFromLocation,
+} from "./position";
+
+export { parseCompensation, type ParsedCompensation } from "./compensation";
+export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
 function normalizeOptionalText(value: string | null): string | null {
   if (value === null) {
@@ -15,13 +26,13 @@ function normalizeOptionalText(value: string | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function parseExplicitDate(value: string | null): Date | null {
+function parseExplicitDate(value: string | null, label = "posting date"): Date | null {
   if (value === null) {
     return null;
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error("Manual posting date must use YYYY-MM-DD format");
+    throw new Error(`Manual ${label} must use YYYY-MM-DD format`);
   }
 
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -29,10 +40,21 @@ function parseExplicitDate(value: string | null): Date | null {
     Number.isNaN(parsed.getTime()) ||
     parsed.toISOString().slice(0, 10) !== value
   ) {
-    throw new Error("Manual posting date is invalid");
+    throw new Error(`Manual ${label} is invalid`);
   }
 
   return parsed;
+}
+
+// Details the user stated explicitly on the manual form. Records captured
+// before these fields existed have none.
+function statedDetails(rawOpportunity: RawOpportunity): ManualStatedDetails {
+  const details = rawOpportunity.sourceMetadata?.details;
+  const parsed = manualStatedDetailsSchema.safeParse(details ?? undefined);
+  if (!parsed.success) {
+    throw new Error("Manual stated details are invalid");
+  }
+  return parsed.data;
 }
 
 function provenanceFor(input: {
@@ -71,6 +93,19 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const salaryText = normalizeOptionalText(rawOpportunity.salaryText);
       const domain = normalizeOptionalText(rawOpportunity.domain);
       const postingDate = parseExplicitDate(rawOpportunity.postingDate);
+      const details = statedDetails(rawOpportunity);
+      const closingDate = parseExplicitDate(details.closingDate, "closing date");
+      const department = normalizeOptionalText(details.department);
+      const employmentType = standardizeEmploymentType(
+        normalizeOptionalText(rawOpportunity.employmentType),
+      );
+      // A stated choice takes precedence over a value read from another
+      // field; a value is read from location or title only when explicit.
+      const locationArrangement = workArrangementFromLocation(location);
+      const remoteStatus = details.workArrangement ?? locationArrangement;
+      const titleSeniority = seniorityFromTitle(title);
+      const seniority = details.seniority ?? titleSeniority;
+      const compensation = parseCompensation(salaryText, details.compensationCurrency);
 
       const opportunity: NormalizedOpportunity = normalizedOpportunitySchema.parse({
         domain,
@@ -90,21 +125,21 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         headquarters: null,
         companySize: null,
         title,
-        department: null,
-        employmentType: normalizeOptionalText(rawOpportunity.employmentType),
-        seniority: null,
+        department,
+        employmentType,
+        seniority,
         location,
-        remoteStatus: null,
+        remoteStatus,
         timeZoneRequirements: null,
-        salaryMin: null,
-        salaryMax: null,
+        salaryMin: compensation.minimum,
+        salaryMax: compensation.maximum,
         salaryText,
         bonus: null,
         equity: null,
-        currency: null,
+        currency: compensation.currency,
         compensationNotes: null,
         postingDate,
-        closingDate: null,
+        closingDate,
         source: rawOpportunity.source,
         sourceType: rawOpportunity.sourceType,
         atsPlatform: null,
@@ -194,6 +229,72 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
           sourceText: rawOpportunity.postingDate,
           collectedAt: rawOpportunity.discoveredAt,
         });
+      }
+
+      const derived = (
+        fieldName: string,
+        sourceField: string,
+        kind: FieldProvenanceInput["kind"],
+        normalizedValue: string | number,
+        sourceText: string,
+      ) =>
+        provenance.push({
+          fieldName,
+          sourceField,
+          kind,
+          normalizedValue,
+          sourceReference: "manual-submission",
+          sourceText,
+          collectedAt: rawOpportunity.discoveredAt,
+        });
+
+      if (closingDate !== null && details.closingDate !== null) {
+        derived("closingDate", "closingDate", "DETERMINISTIC", closingDate.toISOString(), details.closingDate);
+      }
+      if (department !== null && details.department !== null) {
+        provenance.push(
+          provenanceFor({
+            fieldName: "department",
+            sourceField: "department",
+            sourceValue: details.department,
+            normalizedValue: department,
+            collectedAt: rawOpportunity.discoveredAt,
+          }),
+        );
+      }
+      if (employmentType !== null && rawOpportunity.employmentType !== null) {
+        derived(
+          "employmentType",
+          "employmentType",
+          rawOpportunity.employmentType === employmentType ? "DIRECT" : "DETERMINISTIC",
+          employmentType,
+          rawOpportunity.employmentType,
+        );
+      }
+      if (details.workArrangement !== null) {
+        derived("remoteStatus", "workArrangement", "DIRECT", details.workArrangement, details.workArrangement);
+      } else if (locationArrangement !== null && location !== null) {
+        derived("remoteStatus", "location", "DETERMINISTIC", locationArrangement, location);
+      }
+      if (details.seniority !== null) {
+        derived("seniority", "seniority", "DIRECT", details.seniority, details.seniority);
+      } else if (titleSeniority !== null && title !== null) {
+        derived("seniority", "title", "DETERMINISTIC", titleSeniority, title);
+      }
+      if (salaryText !== null) {
+        if (compensation.minimum !== null) {
+          derived("salaryMin", "compensationText", "DETERMINISTIC", compensation.minimum, salaryText);
+        }
+        if (compensation.maximum !== null) {
+          derived("salaryMax", "compensationText", "DETERMINISTIC", compensation.maximum, salaryText);
+        }
+      }
+      if (compensation.currency !== null) {
+        if (compensation.currencyBasis === "SELECTED") {
+          derived("currency", "compensationCurrency", "DIRECT", compensation.currency, compensation.currency);
+        } else if (salaryText !== null) {
+          derived("currency", "compensationText", "DETERMINISTIC", compensation.currency, salaryText);
+        }
       }
 
       return { opportunity, provenance };

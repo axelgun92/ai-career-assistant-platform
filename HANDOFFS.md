@@ -586,7 +586,8 @@ Run these against an isolated test database for the automated checks, and as ope
 6. The `Recommendation.evidenceReferences` default drift decision. `pnpm db:verify-migrations` confirms it is the only schema/migration difference.
 7. Task 9 additions in this handoff (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
 8. Profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`; handoff above) and its post-integration acceptance tests.
-9. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
+9. Task 7 completion amendment: the evaluator subject withholds the newly normalized fields (`fieldsWithheldFromEvaluator` in `loadSubject()`); decide whether and how the evaluator adopts them (handoff below).
+10. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
 
 #### Before Scraper Work
 
@@ -599,6 +600,50 @@ Run these against an isolated test database for the automated checks, and as ope
   - re-observation;
   - the evaluator reading the oldest `SourceRecord`;
   - the unused `DuplicateReference`, discovery and deduplication packages.
+
+### Handoff: Task 7 Completion Amendment — Normalized Opportunity Fields (Review Requested)
+
+**Date:** 2026-10-14  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Verification Needed (shared persistence; evaluator inputs deliberately unchanged)
+
+#### Completed
+
+- Product normalization now populates explicit facts on `Opportunity`:
+  - `salaryMin`, `salaryMax`, `currency`;
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
+- Every populated value has a `FieldProvenance` row. The original text, the `SourceRecord` and the raw payload are unchanged.
+- Dashboard filters and sorts use these fields. Details are in `CURRENT_PROGRESS.md` ("Task 7 completion amendment").
+- No migration was needed: the columns already existed.
+
+#### ⚠ Evaluator boundary: inputs withheld, not changed
+
+- **Why:** the Customer Success extractor (`explicit-facts.ts`) prefers `opportunity.salaryMin` / `salaryMax` / `currency` over its own parsing. The salary hard filter does not compare currencies. Delivering, for example, a parsed "€60,000" would silently change hard-filter results and recommendations.
+- **What:** `PrismaEvaluationRepository.loadSubject()` sets `fieldsWithheldFromEvaluator` to null in the subject and drops their provenance rows:
+  - `salaryMin`, `salaryMax`, `currency`;
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
+- **Effect:**
+  - The evaluator receives exactly what it received before this amendment, because these fields were always null.
+  - `salaryText`, `location`, `jobDescription`, `postingDate` and all other inputs are unchanged.
+  - An integration test asserts the withholding.
+- **The evaluator ignores the new raw-payload keys:** the manual raw payload gains `workArrangement`, `seniority`, `employmentType`, `department`, `closingDate` and `compensationCurrency`. The only evaluator reader of `rawPayload` is `ghost-job-risk.ts`, which reads `postingHistory` only.
+- **Decision for Codex:** whether and how the evaluator adopts these fields. Adopting the salary fields would at least need currency-aware salary hard filters. To adopt, remove a field from the list.
+
+#### Ingestion contract notes
+
+- `RawOpportunity` is unchanged.
+  - Manual stated details travel in `sourceMetadata.details` (`manualStatedDetailsSchema` in core).
+  - Employment type uses the existing `RawOpportunity.employmentType`.
+- Future source normalizers can reuse the parsers in `packages/normalization`: `parseCompensation`, `workArrangementFromLocation`, `seniorityFromTitle` and `standardizeEmploymentType`.
+- The vocabularies are product-owned constants in `packages/core/src/opportunity.ts`. The shared `normalizedOpportunitySchema` was not narrowed.
+
+#### Contract Questions (not blocking)
+
+1. A bare "$" is read as USD (user decision, 2026-10-14). This matches the evaluator's own `currency ?? "USD"` default.
+2. Salary range filters use overlap semantics. A range matches when it can reach the amount, and open-ended ranges match on their open side.
+3. A user-stated work arrangement or seniority takes precedence over the value read from location or title.
+   - A stated currency that conflicts with an explicit currency in the compensation text leaves the currency Unknown.
 
 ## Notes
 

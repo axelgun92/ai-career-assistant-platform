@@ -344,7 +344,7 @@ describe("pagination", () => {
 
   it("keeps zero results on page 1", async () => {
     const result = await list("view=all&q=nothing-matches-this&page=5");
-    expect(result).toEqual({ items: [], total: 0, page: 1, requestedPage: 5, pageCount: 1, pageSize: 25 });
+    expect(result).toEqual({ items: [], total: 0, page: 1, requestedPage: 5, pageCount: 1, pageSize: 25, salaryExclusions: null });
   });
 
   it("count and items always agree, with no duplicates or gaps across pages", async () => {

@@ -16,7 +16,36 @@ function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+// Normalized fields first populated by product normalization in the Task 7
+// completion amendment. Until the evaluator workstream adopts them, the
+// evaluator subject keeps receiving exactly what it received before (null,
+// and no provenance rows for them): the Customer Success salary hard filter
+// prefers salaryMin/salaryMax over its own parsing and does not compare
+// currencies, so delivering them would silently change recommendations.
+// See HANDOFFS.md ("Task 7 Completion Amendment").
+export const fieldsWithheldFromEvaluator = [
+  "salaryMin",
+  "salaryMax",
+  "currency",
+  "remoteStatus",
+  "seniority",
+  "department",
+  "employmentType",
+  "closingDate",
+] as const;
+
+const withheldFromEvaluator = new Set<string>(fieldsWithheldFromEvaluator);
+
 function mapOpportunity(
+  record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
+): NormalizedOpportunity & { id: string } {
+  return {
+    ...mapOpportunityFields(record),
+    ...Object.fromEntries(fieldsWithheldFromEvaluator.map((field) => [field, null])),
+  };
+}
+
+function mapOpportunityFields(
   record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
 ): NormalizedOpportunity & { id: string } {
   return {
@@ -196,16 +225,18 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
         rawDescription: source.rawDescription,
         rawPayload: source.rawPayload,
       })),
-      provenance: opportunity.fieldProvenance.map((provenance) => ({
-        id: provenance.id,
-        sourceRecordId: provenance.sourceRecordId,
-        fieldName: provenance.fieldName,
-        sourceField: provenance.sourceField,
-        kind: provenance.kind,
-        normalizedValue: provenance.normalizedValue,
-        sourceReference: provenance.sourceReference,
-        sourceText: provenance.sourceText,
-      })),
+      provenance: opportunity.fieldProvenance
+        .filter((provenance) => !withheldFromEvaluator.has(provenance.fieldName))
+        .map((provenance) => ({
+          id: provenance.id,
+          sourceRecordId: provenance.sourceRecordId,
+          fieldName: provenance.fieldName,
+          sourceField: provenance.sourceField,
+          kind: provenance.kind,
+          normalizedValue: provenance.normalizedValue,
+          sourceReference: provenance.sourceReference,
+          sourceText: provenance.sourceText,
+        })),
       userProfile: userProfile
         ? {
             id: userProfile.id,

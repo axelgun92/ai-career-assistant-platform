@@ -187,3 +187,58 @@ test("deferred and lifecycle badges, and a page past the end lands on the last p
   await expect(page).toHaveURL(new RegExp(`/\\?q=${token.toLowerCase()}&pageSize=10$`));
   await expect(page.getByText("Showing 1–2 of 2 opportunities")).toBeVisible();
 });
+
+test("normalized details from manual entry drive work-arrangement and salary filters and sorts", async ({ page, request }) => {
+  const token = `N${Date.now()}`;
+  await createOpportunity(request, `Remote Customer Success Manager ${token}`, `Remoteco ${token}`);
+
+  // Manual entry with stated details; nothing else is guessed.
+  await page.goto("/opportunities/new");
+  await page.getByLabel("Raw opportunity or job-description text").fill(
+    "Senior Customer Success Manager for a SaaS platform in Berlin. Own onboarding and renewals.",
+  );
+  await page.getByLabel("Title (optional)").fill(`Senior Hybrid Customer Success Manager ${token}`);
+  await page.getByLabel("Company (optional)").fill(`Berlinco ${token}`);
+  await page.getByLabel("Location (optional)").fill("Berlin, Germany");
+  await page.getByLabel("Compensation text (optional)").fill("€60.000 - €70.000");
+  await page.getByLabel("Work arrangement").selectOption("HYBRID");
+  await page.getByLabel("Department").fill("Customer Success");
+  await page.getByRole("button", { name: "Save opportunity" }).click();
+  await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]{36}$/);
+  opportunityIds.push(page.url().split("/").pop()!);
+  await page.getByText("Normalized opportunity and source details").click();
+  const normalized = page.locator("section", { has: page.getByRole("heading", { name: "Normalized Opportunity" }) });
+  await expect(normalized).toContainText(/Salary range\s*60,000–70,000 EUR/);
+  await expect(normalized).toContainText(/Work arrangement\s*Hybrid/);
+  await expect(normalized).toContainText(/Seniority \(as stated\)\s*Senior/);
+  await expect(normalized).toContainText(/Department\s*Customer Success/);
+  await expect(normalized).toContainText(/Employment type\s*Unknown/);
+
+  // Work arrangement filter.
+  await page.goto(`/?q=${token}`);
+  await expect(page.getByText("Showing 1–2 of 2 opportunities")).toBeVisible();
+  await page.getByText("Filters", { exact: true }).click();
+  await page.getByRole("checkbox", { name: "Hybrid", exact: true }).check();
+  await expect(page).toHaveURL(/arrangement=hybrid/);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText("Senior Hybrid Customer Success Manager");
+  await expect(rows(page).first()).toContainText(/Work arrangement\s*Hybrid/);
+
+  // A salary amount compares one currency only (USD unless chosen) and says what it left out.
+  await page.goto(`/?q=${token}&salaryMin=80000`);
+  await expect(page).toHaveURL(/currency=USD&salaryMin=80000/);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText("Remote Customer Success Manager");
+  await expect(page.getByText("Not included: 1 opportunity with a salary in another currency.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Remove filter Salary at least: 80,000 USD" })).toBeVisible();
+  await page.goto(`/?q=${token}&salaryMin=65000&currency=EUR`);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText("Senior Hybrid Customer Success Manager");
+
+  // Salary sort groups by currency and says so.
+  await page.goto(`/?q=${token}&sort=salary-high`);
+  await expect(page.getByLabel("Sort")).toHaveValue("salary-high");
+  await expect(rows(page).nth(0)).toContainText("Senior Hybrid Customer Success Manager"); // EUR
+  await expect(rows(page).nth(1)).toContainText("Remote Customer Success Manager"); // USD
+  await expect(page.getByText(/sorted within each currency/)).toBeVisible();
+});

@@ -38,6 +38,9 @@ export interface DashboardFilterOptions {
   sources: Array<{ value: string; count: number }>;
   domains: Array<{ value: string; count: number }>;
   companies: Array<{ id: string; name: string; count: number }>;
+  departments: Array<{ value: string; count: number }>;
+  // Currencies of opportunities with a stated salary amount.
+  currencies: Array<{ value: string; count: number }>;
 }
 
 const withClause = Prisma.sql`
@@ -145,7 +148,7 @@ export class PrismaOpportunityDashboardRepository {
   }
 
   async filterOptions(): Promise<DashboardFilterOptions> {
-    const [sources, domains, companies] = await Promise.all([
+    const [sources, domains, companies, departments, currencies] = await Promise.all([
       this.database.$queryRaw<Array<{ value: string; count: number }>>`
         SELECT o."source" AS "value", COUNT(*)::int AS "count" FROM "Opportunity" o
         WHERE o."source" IS NOT NULL GROUP BY o."source" ORDER BY o."source" ASC LIMIT 200
@@ -159,7 +162,16 @@ export class PrismaOpportunityDashboardRepository {
         FROM "Company" c JOIN "Opportunity" o ON o."companyId" = c."id"
         GROUP BY c."id", c."name" ORDER BY lower(c."name") ASC, c."id" ASC LIMIT 200
       `,
+      this.database.$queryRaw<Array<{ value: string; count: number }>>`
+        SELECT o."department" AS "value", COUNT(*)::int AS "count" FROM "Opportunity" o
+        WHERE o."department" IS NOT NULL GROUP BY o."department" ORDER BY lower(o."department") ASC, o."department" ASC LIMIT 200
+      `,
+      this.database.$queryRaw<Array<{ value: string; count: number }>>`
+        SELECT o."currency" AS "value", COUNT(*)::int AS "count" FROM "Opportunity" o
+        WHERE o."currency" IS NOT NULL AND COALESCE(o."salaryMax", o."salaryMin") IS NOT NULL
+        GROUP BY o."currency" ORDER BY o."currency" ASC LIMIT 50
+      `,
     ]);
-    return { sources, domains, companies };
+    return { sources, domains, companies, departments, currencies };
   }
 }

@@ -5,8 +5,11 @@ import { evaluationStatusLabel, priorityBandLabel } from "./labels";
 import { sourceTypeLabel } from "../opportunity-provenance";
 import { ExternalLink, safeExternalUrl } from "../external-link";
 import { applicationStatusLabel } from "../application/labels";
+import { workArrangementLabel } from "../opportunity-facts";
 
-type Optional = "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily" | "customerSegment" | "application";
+type Optional =
+  | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
+  | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority";
 type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
 
 // The application tracker's state, kept to one badge plus the next follow-up.
@@ -92,6 +95,10 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
               <div>
                 <dt>Compensation</dt>
                 <dd>{opportunity.salaryText?.trim() ? opportunity.salaryText : "Salary not stated"}</dd>
+              </div>
+              <div>
+                <dt>Work arrangement</dt>
+                <dd>{workArrangementLabel(opportunity.remoteStatus)}</dd>
               </div>
               <div>
                 <dt>Source</dt>

@@ -38,6 +38,12 @@ export function ManualOpportunityForm() {
       domain: optionalFormValue(formData, "domain"),
       sourceJobId: optionalFormValue(formData, "sourceJobId"),
       foundOn: optionalFormValue(formData, "foundOn"),
+      workArrangement: optionalFormValue(formData, "workArrangement"),
+      seniority: optionalFormValue(formData, "seniority"),
+      employmentType: optionalFormValue(formData, "employmentType"),
+      department: optionalFormValue(formData, "department"),
+      closingDate: optionalFormValue(formData, "closingDate"),
+      compensationCurrency: optionalFormValue(formData, "compensationCurrency"),
     };
 
     try {

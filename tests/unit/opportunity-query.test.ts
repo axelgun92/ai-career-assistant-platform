@@ -29,7 +29,9 @@ describe("query parsing", () => {
   it("defaults to the active view, newest first, page 1, 25 per page, no filters", () => {
     expect(parse("")).toEqual({
       view: "active", q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [],
-      source: null, company: null, domain: null, title: null, location: null, salary: null, from: null, to: null,
+      arrangement: [], seniority: [],
+      source: null, company: null, domain: null, title: null, location: null, salary: null,
+      department: null, currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
       sort: "newest", page: 1, pageSize: 25,
     });
   });
@@ -198,5 +200,59 @@ describe("repository filter mapping", () => {
     expect(Object.values(sourceTypeOptions)).toEqual(
       ["MANUAL", "BROWSER_EXTENSION", "PUBLIC_SEARCH", "ATS", "API", "COMPANY_WATCHLIST", "OTHER"],
     );
+  });
+});
+
+describe("normalized-field filters and salary sorts (Task 7 completion)", () => {
+  it("parses work arrangement, seniority, department, currency and salary amounts", () => {
+    const query = parse(
+      "arrangement=hybrid,remote&arrangement=bogus&seniority=Senior&seniority=unknown&department=%20Customer%20Success%20" +
+        "&currency=usd&salaryMin=80%2C000&salaryMax=120000&sort=salary-high",
+    );
+    expect(query).toMatchObject({
+      arrangement: ["remote", "hybrid"],
+      seniority: ["senior", "unknown"],
+      department: "Customer Success",
+      currency: "USD",
+      salaryMin: 80000,
+      salaryMax: 120000,
+      sort: "salary-high",
+    });
+    expect(toListFilters(query)).toMatchObject({
+      workArrangements: ["REMOTE", "HYBRID"],
+      seniorities: ["SENIOR", "UNKNOWN"],
+      department: "Customer Success",
+      salaryCurrency: "USD",
+      salaryAtLeast: 80000,
+      salaryAtMost: 120000,
+    });
+  });
+
+  it("drops malformed values; an amount without a valid currency uses USD; an inverted range is dropped", () => {
+    expect(parse("salaryMin=abc&salaryMax=-1&currency=BTC")).toMatchObject({ salaryMin: null, salaryMax: null, currency: null });
+    expect(parse("salaryMin=1e6")).toMatchObject({ salaryMin: null });
+    expect(parse("salaryMin=1000000000")).toMatchObject({ salaryMin: null });
+    expect(parse("salaryMin=0")).toMatchObject({ salaryMin: null });
+    expect(parse("salaryMin=90000")).toMatchObject({ salaryMin: 90000, currency: "USD" });
+    expect(parse("salaryMin=90000&currency=BTC")).toMatchObject({ currency: "USD" });
+    expect(parse("salaryMin=120000&salaryMax=90000")).toMatchObject({ salaryMin: null, salaryMax: null, currency: null });
+    expect(parse("currency=gbp")).toMatchObject({ currency: "GBP", salaryMin: null });
+    expect(parse("sort=salary")).toMatchObject({ sort: "newest" });
+  });
+
+  it("serializes canonically and round-trips; existing URLs stay valid", () => {
+    const search = "arrangement=remote&seniority=senior&department=Support&currency=USD&salaryMin=80000&salaryMax=120000&sort=salary-low";
+    expect(serializeOpportunityQuery(parse(search))).toBe(search);
+    expect(serializeOpportunityQuery(parse("salaryMin=80000"))).toBe("currency=USD&salaryMin=80000");
+    const before = "rec=apply&salary=stated&from=2026-10-01&sort=priority";
+    expect(serializeOpportunityQuery(parse(before))).toBe(before);
+    expect(canonicalRedirect(new URLSearchParams("salaryMin=80000"), parse("salaryMin=80000"), 1)).toBe("/?currency=USD&salaryMin=80000");
+  });
+
+  it("counts as active filters and clears with the rest", () => {
+    for (const search of ["arrangement=unknown", "seniority=mid", "department=CS", "currency=EUR", "salaryMax=90000"]) {
+      expect(hasActiveFilters(parse(search))).toBe(true);
+      expect(serializeOpportunityQuery(clearFilters(parse(search)))).toBe("");
+    }
   });
 });

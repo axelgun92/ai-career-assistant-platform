@@ -117,13 +117,21 @@ export function createManualOpportunityService(input: {
         location: submission.location ?? null,
         description: submission.rawText,
         salaryText: submission.compensationText ?? null,
-        employmentType: null,
+        employmentType: submission.employmentType ?? null,
         postingDate: submission.postingDate ?? null,
         sourceMetadata: {
           applicationUrl: submission.applicationUrl ?? null,
           domain: submission.domain ?? null,
           // Informational only; never used as the source identity.
           reportedSource: submission.foundOn?.trim() ?? null,
+          // Details the user stated explicitly (see manualStatedDetailsSchema).
+          details: {
+            workArrangement: submission.workArrangement ?? null,
+            seniority: submission.seniority ?? null,
+            department: submission.department ?? null,
+            closingDate: submission.closingDate ?? null,
+            compensationCurrency: submission.compensationCurrency ?? null,
+          },
         },
         rawPayload: {
           rawText: submission.rawText,
@@ -137,6 +145,12 @@ export function createManualOpportunityService(input: {
           domain: submission.domain ?? null,
           sourceJobId: submission.sourceJobId ?? null,
           foundOn: submission.foundOn ?? null,
+          workArrangement: submission.workArrangement ?? null,
+          seniority: submission.seniority ?? null,
+          employmentType: submission.employmentType ?? null,
+          department: submission.department ?? null,
+          closingDate: submission.closingDate ?? null,
+          compensationCurrency: submission.compensationCurrency ?? null,
         },
         discoveredAt,
       });

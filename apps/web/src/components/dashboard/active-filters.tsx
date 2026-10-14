@@ -5,7 +5,8 @@ import {
   opportunityHref,
   type OpportunityQuery,
 } from "../../server/opportunity-query";
-import { activeFilterChips } from "./labels";
+import type { SalaryFilterExclusions } from "@ai-career/database";
+import { activeFilterChips, salaryExclusionNote, salarySortNote } from "./labels";
 
 // Result count, one removable chip per active filter, and clear-all.
 export function ActiveFilters({
@@ -14,14 +15,17 @@ export function ActiveFilters({
   page,
   pageSize,
   companyNames,
+  salaryExclusions = null,
 }: {
   query: OpportunityQuery;
   total: number;
   page: number;
   pageSize: number;
   companyNames: Record<string, string>;
+  salaryExclusions?: SalaryFilterExclusions | null;
 }) {
   const chips = activeFilterChips(query, { companies: companyNames });
+  const notes = [salaryExclusionNote(salaryExclusions), salarySortNote(query)].filter(Boolean);
   const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const last = Math.min(total, page * pageSize);
   return (
@@ -42,6 +46,9 @@ export function ActiveFilters({
           ))}
         </ul>
       ) : null}
+      {notes.map((note) => (
+        <p key={note} className="field-help filter-note">{note}</p>
+      ))}
       {hasActiveFilters(query) ? (
         <Link href={opportunityHref(clearFilters(query))} className="clear-filters">
           Clear all filters

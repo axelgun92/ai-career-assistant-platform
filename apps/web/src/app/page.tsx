@@ -73,7 +73,7 @@ export default async function HomePage({
     }),
     new PrismaOpportunityDashboardRepository().filterOptions().catch((error: unknown): DashboardFilterOptions => {
       logFailure("Opportunity dashboard could not load filter options", error);
-      return { sources: [], domains: [], companies: [] };
+      return { sources: [], domains: [], companies: [], departments: [], currencies: [] };
     }),
     new PrismaUsageSummaryRepository().summarizeAllUsage().catch((error: unknown): UsageTotalsData | null => {
       logFailure("Opportunity dashboard could not load AI usage totals", error);
@@ -129,6 +129,7 @@ export default async function HomePage({
               page={result.page}
               pageSize={result.pageSize}
               companyNames={companyNames}
+              salaryExclusions={result.salaryExclusions}
             />
             {result.total === 0 && (filtered || (summary?.total ?? 0) > 0) ? (
               // Something exists, but not here: distinguish "no matches" from

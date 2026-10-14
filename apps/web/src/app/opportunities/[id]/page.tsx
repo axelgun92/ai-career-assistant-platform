@@ -17,6 +17,12 @@ import { ApplicationPanel } from "@/components/application/application-panel";
 import { toApplicationView } from "@/components/application/types";
 import { getApplicationStore } from "@/server/application-service";
 import {
+  employmentTypeLabel,
+  formatSalaryRange,
+  seniorityLabel,
+  workArrangementLabel,
+} from "@/components/opportunity-facts";
+import {
   applicationCreationModes,
   reopenRefusal,
   reopenTarget,
@@ -122,8 +128,16 @@ export default async function OpportunityPage({
     ["Company", detail.opportunity.companyName],
     ["Location", detail.opportunity.location],
     ["Compensation", detail.opportunity.salaryText],
+    [
+      "Salary range",
+      formatSalaryRange(detail.opportunity.salaryMin, detail.opportunity.salaryMax, detail.opportunity.currency),
+    ],
     ["Posting date", detail.opportunity.postingDate],
-    ["Remote status", detail.opportunity.remoteStatus],
+    ["Closing date", detail.opportunity.closingDate],
+    ["Work arrangement", detail.opportunity.remoteStatus ? workArrangementLabel(detail.opportunity.remoteStatus) : null],
+    ["Seniority (as stated)", detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null],
+    ["Department", detail.opportunity.department],
+    ["Employment type", detail.opportunity.employmentType ? employmentTypeLabel(detail.opportunity.employmentType) : null],
     ["Time-zone requirements", detail.opportunity.timeZoneRequirements],
   ] as const;
   const urlFields = [
@@ -188,7 +202,7 @@ export default async function OpportunityPage({
           company: detail.opportunity.companyName ?? "Unknown company",
           salary: detail.opportunity.salaryText ?? "Unknown",
           location: detail.opportunity.location ?? "Unknown",
-          workArrangement: detail.opportunity.remoteStatus ?? "Unknown",
+          workArrangement: workArrangementLabel(detail.opportunity.remoteStatus),
           timeZoneRequirements: detail.opportunity.timeZoneRequirements ?? "Unknown",
         }}
       />

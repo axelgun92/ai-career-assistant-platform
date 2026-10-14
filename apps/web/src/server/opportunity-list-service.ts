@@ -85,6 +85,7 @@ export function createOpportunityListHandler(reader: OpportunityListReader) {
         requestedPage: result.requestedPage,
         pageCount: result.pageCount,
         pageSize: result.pageSize,
+        salaryExclusions: result.salaryExclusions,
       });
     } catch (error) {
       console.error("Opportunity list request failed", {
