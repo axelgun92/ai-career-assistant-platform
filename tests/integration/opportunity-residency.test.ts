@@ -40,6 +40,12 @@ const seeds: Array<[string, Record<string, string>]> = [
     rawText: "Applicants must reside in the United States.",
     residencyRequirement: "NON_US", residencyRegions: "Spain, Portugal",
   }],
+  // U.S. states: still U.S.-required, with the states preserved.
+  ["texas", { rawText: "Applicants must reside in Texas or Florida.", compensationText: "$65,000" }],
+  // A Canadian province: non-U.S.; the ordinary location field is kept as is.
+  ["ontario", { location: "Toronto, ON", rawText: "Open to residents of Ontario." }],
+  // An ordinary location field alone is not a residency requirement.
+  ["chicago", { location: "Chicago, IL", rawText: "Join our Chicago office." }],
 ];
 
 beforeAll(async () => {
@@ -94,6 +100,21 @@ describe("persisted residency facts", () => {
     expect(await opportunity("legacy")).toMatchObject({ residencyRequirement: null, residencyRegions: [] });
   });
 
+  it("reads explicit state and province statements, never an ordinary location field", async () => {
+    expect(await opportunity("texas")).toMatchObject({ residencyRequirement: "US_REQUIRED", residencyRegions: ["US-TX", "US-FL"], currency: "USD" });
+    expect(await opportunity("ontario")).toMatchObject({ residencyRequirement: "NON_US", residencyRegions: ["CA-ON"], location: "Toronto, ON" });
+    expect(await opportunity("chicago")).toMatchObject({ residencyRequirement: null, residencyRegions: [], location: "Chicago, IL" });
+    expect(await provenance("texas")).toEqual([
+      expect.objectContaining({ fieldName: "residencyRegions", sourceField: "rawText:explicit-residency-statement", normalizedValue: ["US-TX", "US-FL"] }),
+      expect.objectContaining({ fieldName: "residencyRequirement", normalizedValue: "US_REQUIRED", sourceText: "Applicants must reside in Texas or Florida." }),
+    ]);
+    expect(await provenance("ontario")).toEqual([
+      expect.objectContaining({ fieldName: "residencyRegions", normalizedValue: ["CA-ON"], sourceText: "Open to residents of Ontario." }),
+      expect.objectContaining({ fieldName: "residencyRequirement", normalizedValue: "NON_US" }),
+    ]);
+    expect(await provenance("chicago")).toEqual([]);
+  });
+
   it("records deterministic provenance with a source marker, and direct provenance for stated values", async () => {
     expect(await provenance("usRequiredEur")).toEqual([
       expect.objectContaining({ fieldName: "residencyRegions", kind: "DETERMINISTIC", sourceField: "rawText:explicit-residency-statement", normalizedValue: ["US"] }),
@@ -135,21 +156,21 @@ describe("persisted residency facts", () => {
 
 describe("residency filters", () => {
   it("U.S.-required, non-U.S. and Unknown; OR within the filter", async () => {
-    expect(await keysOf("view=all&residency=us-required")).toEqual(["usRequiredEur"]);
-    expect(await keysOf("view=all&residency=non-us")).toEqual(["stated", "spainUsd"]);
-    expect(await keysOf("view=all&residency=unknown")).toEqual(["ambiguous", "remote", "legacy"]);
-    expect(await keysOf("view=all&residency=us-required,non-us")).toEqual(["stated", "spainUsd", "usRequiredEur"]);
+    expect(await keysOf("view=all&residency=us-required")).toEqual(["texas", "usRequiredEur"]);
+    expect(await keysOf("view=all&residency=non-us")).toEqual(["ontario", "stated", "spainUsd"]);
+    expect(await keysOf("view=all&residency=unknown")).toEqual(["chicago", "ambiguous", "remote", "legacy"]);
+    expect(await keysOf("view=all&residency=us-required,non-us")).toEqual(["ontario", "texas", "stated", "spainUsd", "usRequiredEur"]);
   });
 
   it("combines with salary and currency filters (AND), never treating currency as residency", async () => {
     expect(await keysOf("view=all&residency=us-required&currency=EUR")).toEqual(["usRequiredEur"]);
     expect(await keysOf("view=all&residency=non-us&currency=USD&salaryMin=60000")).toEqual(["spainUsd"]);
-    expect(await keysOf("view=all&residency=us-required&currency=USD")).toEqual([]);
-    expect(await keysOf("view=all&currency=USD")).toEqual(["remote", "spainUsd"]);
+    expect(await keysOf("view=all&residency=us-required&currency=USD")).toEqual(["texas"]);
+    expect(await keysOf("view=all&currency=USD")).toEqual(["texas", "remote", "spainUsd"]);
   });
 
   it("ignores malformed residency values; rows carry the facts", async () => {
-    expect(await keysOf("view=all&residency=mars")).toHaveLength(6);
+    expect(await keysOf("view=all&residency=mars")).toHaveLength(9);
     const row = (await list("view=all&residency=non-us&q=spainUsd")).items[0]!;
     expect(row).toMatchObject({ residencyRequirement: "NON_US", residencyRegions: ["ES"], currency: "USD" });
     const legacy = (await list("view=all&q=legacy")).items[0]!;

@@ -351,6 +351,16 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
   - **Never inferred** from salary currency, "Remote" alone, a city or country on its own, headquarters, nationality, work authorization or time zones. Preferred, negated or conflicting wording stays Unknown.
   - **Provenance:** stated values are recorded DIRECT. Parsed values are DETERMINISTIC with markers `rawText:explicit-residency-statement` / `location:explicit-eligible-geography` and the exact sentence.
   - The free-text location and the raw source record are unchanged. Older rows read as Unknown and are not backfilled.
+  - **Geographic levels** (extended 2026-10-16):
+    - countries, regions (EU/EEA/EMEA/LATAM/APAC/North America/Americas/Worldwide), U.S. states, DC and Puerto Rico (`US-TX`, `US-DC`, `US-PR`), Canadian provinces and territories (`CA-ON`), and UK nations (`GB-SCT`);
+    - full names, plus two-letter postal codes written in capitals for U.S. states and Canadian provinces/territories;
+    - **classification:** residence restricted entirely to U.S. geography → `US_REQUIRED` (e.g. "must reside in Texas or Florida" → `US-TX`, `US-FL`); any non-U.S. place allowed or required → `NON_US` (e.g. "open to residents of Ontario", "US or Ontario"). The stated places are kept in `residencyRegions`.
+  - **Never resolved by guessing:**
+    - "Georgia" (state or country), a bare "Washington" (state or D.C.) and "CA" (California or Canada);
+    - a city ("New York City");
+    - a list with an unreadable item ("Texas or Narnia").
+    - Such statements leave residency Unknown.
+  - **Ordinary location fields** such as "Chicago, IL" or "Toronto, ON" are never a residency requirement; explicit candidate residence or eligibility wording is required. A remote-qualified location field ("Remote - Texas", "Remote (Ontario)") still counts as stated eligibility, as before.
 - **Manual form:** a new optional "Additional details" group (work arrangement, seniority, employment type, salary currency, department, closing date). Blank stays Unknown.
 - **Provenance and preservation:**
   - every populated value gets `FieldProvenance`: DIRECT when stated, DETERMINISTIC when read from text;
@@ -385,7 +395,7 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 
 **Not complete, and why:**
 - **Structured location** (office city/region): manual entry gives free text, so it stays a "location contains" filter, deferred to retrieval. Eligible-residence geography is now structured (above).
-- **Residency from US states or cities** ("must reside in California"): not read, so it stays Unknown. Deferred until a geography hierarchy is agreed.
+- **Residency from cities, or from ambiguous names** (Georgia, Washington, CA): stays Unknown. U.S. states, DC, Puerto Rico, Canadian provinces/territories and UK nations are supported.
 - **Time-zone requirements, bonus and equity:** not populated from manual input.
 - **Re-normalizing changed listings:** there is no re-observation path yet, so it is blocked on dedup and re-observation in the scraper phase.
 - **Salary analytics:** still deferred.
@@ -400,14 +410,14 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 
 **Tests:**
 - unit `opportunity-normalization.test.ts` (39, including the bare-$ rule, explicit-currency precedence and provenance marking), `opportunity-filters-hydration.test.tsx` (5), plus query, UI and handler additions;
-- unit `opportunity-residency.test.ts` (37): the geography vocabulary; explicit U.S.-required and non-U.S. statements; generic Remote, ambiguous, negated and conflicting text staying Unknown; a USD salary for a Spain-located role; a U.S.-required role quoted in EUR; provenance; the stated-precedence rule; submission validation; the query and labels;
-- integration `opportunity-residency.test.ts` (7): persisted facts independent of currency, provenance markers, raw records unchanged, evaluator withholding, residency filters alone and with salary/currency, malformed values, legacy rows;
+- unit `opportunity-residency.test.ts` (57, including states, DC, provinces, UK nations, ambiguous names and ordinary location fields): the geography vocabulary; explicit U.S.-required and non-U.S. statements; generic Remote, ambiguous, negated and conflicting text staying Unknown; a USD salary for a Spain-located role; a U.S.-required role quoted in EUR; provenance; the stated-precedence rule; submission validation; the query and labels;
+- integration `opportunity-residency.test.ts` (8, including a U.S.-state statement, a provincial statement with an ordinary "Toronto, ON" field, and a plain "Chicago, IL" field staying Unknown): persisted facts independent of currency, provenance markers, raw records unchanged, evaluator withholding, residency filters alone and with salary/currency, malformed values, legacy rows;
 - integration `normalized-opportunity-filters.test.ts` (12): persistence and provenance, evaluator withholding, salary boundaries, currencies, exclusions, malformed parameters, arrangement, seniority, department, AND/OR, null legacy rows, sorts and Unknown ordering;
 - E2E: manual entry with details, then the arrangement filter, residency filters (U.S.-required and Unknown), the salary filter with its exclusion note, and the salary sort.
 
 **Verification** (isolated test database; normal database untouched; no paid calls):
 - typecheck, lint and Prisma validate pass;
-- unit 1016/1016, integration 175/175, E2E 25/25 (after the residency addition);
+- unit 1036/1036, integration 176/176, E2E 25/25 (after the geographic-levels extension);
 - `db:verify-migrations` passes (14 migrations, known drift only);
 - build passes.
 

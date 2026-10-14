@@ -38,8 +38,11 @@ export const residencySourceFields = {
 const residenceVerb =
   /\b(?:must|required to|requires? (?:you|candidates|applicants) to|needs? to|have to|has to)\s+(?:currently\s+)?(?:reside|live|be based|be located|be a resident of|be resident in|be residing)\s+(?:in|within|of)\s+/i;
 const openTo =
-  /\b(?:open|available)\s+(?:only\s+)?to\s+(?:candidates|applicants|residents|people|those)\s+(?:who\s+(?:reside|live|are based|are located)\s+)?(?:in|from|based in|located in|residing in)\s+/i;
+  /\b(?:open|available)\s+(?:only\s+)?to\s+(?:candidates|applicants|residents|people|those)\s+(?:who\s+(?:reside|live|are based|are located)\s+)?(?:in|of|from|based in|located in|residing in)\s+/i;
 const basedIn = /\b(?:candidates|applicants)\s+(?:must be\s+)?(?:based|located|residing)\s+in\s+/i;
+// "the following states:", "one of these provinces:" before the list.
+const listLeadIn =
+  /^(?:(?:one|any)\s+of\s+)?(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+|canadian\s+)?(?:states|provinces|territories|provinces and territories|countries|locations|regions)(?:\s+listed\s+below)?\s*:?\s*/i;
 const onlySuffix =
   /^\s*[- ]?\s*(?:only|residents only|resident only|based (?:candidates|applicants) only|(?:candidates|applicants) only)\b/i;
 const worldwide =
@@ -49,9 +52,9 @@ const qualifier =
   /\b(?:not|no|never|without|except|excluding|outside|preferred|preferably|prefer|ideally|ideal|bonus|plus|nice to have|may|might|can also|or similar)\b|n't\b/i;
 
 function sentences(text: string): string[] {
-  // Keep "U.S." / "U.K." abbreviations inside their sentence.
+  // Keep "U.S." / "U.K." / "D.C." abbreviations inside their sentence.
   return text
-    .split(/(?<=[.!?])(?<!\bU\.S\.)(?<!\bU\.K\.)(?<!\bU\.S\.A\.)\s+|\r?\n/)
+    .split(/(?<=[.!?])(?<!\bU\.S\.)(?<!\bU\.K\.)(?<!\bU\.S\.A\.)(?<!\bD\.C\.)\s+|\r?\n/)
     .map((part) => part.trim())
     .filter(Boolean);
 }
@@ -60,21 +63,28 @@ type SentenceResult = { regions: string[] } | "QUALIFIED" | null;
 
 function readSentence(sentence: string): SentenceResult {
   const found: string[][] = [];
+  let ambiguous = false;
   for (const pattern of [residenceVerb, openTo, basedIn]) {
     const match = pattern.exec(sentence);
     if (!match) continue;
-    const { codes } = readGeographyList(sentence.slice(match.index + match[0].length));
-    if (codes.length) found.push(codes);
+    const after = sentence.slice(match.index + match[0].length);
+    const reading = readGeographyList(after.replace(listLeadIn, ""));
+    if (reading.ambiguous) ambiguous = true;
+    else if (reading.codes.length) found.push(reading.codes);
   }
-  // "<geography> only" / "<geography> residents only".
+  // "<geography> only" / "<geography> residents only". A bare "only" after
+  // a two-letter abbreviation ("OK only", "IN only") is ordinary English.
   for (let index = 0; index < sentence.length; index += 1) {
     if (index > 0 && /[A-Za-z]/.test(sentence[index - 1]!)) continue;
-    const { codes, consumed } = readGeographyList(sentence.slice(index));
-    if (codes.length && onlySuffix.test(sentence.slice(index + consumed))) {
-      found.push(codes);
-      break;
-    }
+    const reading = readGeographyList(sentence.slice(index));
+    const suffix = onlySuffix.exec(sentence.slice(index + reading.consumed));
+    if (!reading.codes.length || !suffix) continue;
+    if (reading.abbreviated && /^\s*[- ]?\s*only\b/i.test(suffix[0])) continue;
+    if (reading.ambiguous) ambiguous = true;
+    else found.push(reading.codes);
+    break;
   }
+  if (ambiguous) return "QUALIFIED";
   if (worldwide.test(sentence)) found.push(["WORLDWIDE"]);
   if (!found.length) return null;
   if (qualifier.test(sentence)) return "QUALIFIED";

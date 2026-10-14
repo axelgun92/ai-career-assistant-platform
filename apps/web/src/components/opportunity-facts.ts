@@ -62,13 +62,14 @@ export const residencyChoices = [
 
 export const residencyLabel = lookup(residencyChoices);
 
-// "U.S. residence required", "Non-U.S. residence allowed (Spain, Portugal)",
-// or "Unknown". The eligible geographies are shown exactly as stated.
+// "U.S. residence required", "U.S. residence required (Texas, Florida)",
+// "Non-U.S. residence allowed (Spain, Portugal)", or "Unknown". The eligible
+// geographies are shown exactly as stated; the whole U.S. needs no list.
 export function formatResidency(
   requirement: string | null | undefined,
   regions: readonly string[] | null | undefined,
 ): string {
   const label = residencyLabel(requirement);
-  if (!requirement || requirement === "US_REQUIRED" || !regions?.length) return label;
+  if (!requirement || !regions?.length || (regions.length === 1 && regions[0] === "US")) return label;
   return `${label} (${regions.map(geographyName).join(", ")})`;
 }

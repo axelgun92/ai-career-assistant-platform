@@ -628,8 +628,8 @@ Task 7 stores facts only. It makes no Pass / Review / Skip decision, no FX conve
 | Original compensation text | `salaryText` (+ `SourceRecord.rawSalaryText`) | Verbatim | null |
 | Location | `location` (+ `SourceRecord.rawLocation`) | Verbatim free text | null |
 | Work arrangement | `remoteStatus` | `REMOTE` / `HYBRID` / `ONSITE` | null |
-| Residency requirement | `residencyRequirement` | `US_REQUIRED`: residence must be in the U.S. `NON_US`: residence outside the U.S. explicitly permitted or required (e.g. "must be based in Spain", "EU residents only", "US or Canada", "anywhere in the world") | null |
-| Eligible residence | `residencyRegions` (text[]) | Stated geographies as ISO 3166-1 alpha-2 codes or `WORLDWIDE`, `EU`, `EEA`, `EUROPE`, `EMEA`, `LATAM`, `APAC`, `NORTH_AMERICA`, `AMERICAS` | `[]` |
+| Residency requirement | `residencyRequirement` | `US_REQUIRED`: residence restricted entirely to U.S. geography (the country, states, DC, Puerto Rico). `NON_US`: residence outside the U.S. explicitly permitted or required (e.g. "must be based in Spain", "EU residents only", "open to residents of Ontario", "US or Canada", "anywhere in the world") | null |
+| Eligible residence | `residencyRegions` (text[]) | Stated geographies: ISO 3166-1 alpha-2 countries; ISO 3166-2 subdivisions (`US-TX`, `US-DC`, `US-PR`, `CA-ON`, `GB-SCT`); or `WORLDWIDE`, `EU`, `EEA`, `EUROPE`, `EMEA`, `LATAM`, `APAC`, `NORTH_AMERICA`, `AMERICAS` | `[]` |
 
 - **Policy keys on residency, never on currency.** A USD salary does not imply a U.S. job, and "Remote" does not imply U.S.-remote.
 - **Residency sources, in precedence order:**
@@ -640,9 +640,11 @@ Task 7 stores facts only. It makes no Pass / Review / Skip decision, no FX conve
   - One pair of provenance rows is written per contributing statement, with `sourceText` set to the exact sentence or field.
 - **Stays Unknown:**
   - currency, company headquarters, nationality or citizenship, work authorization, and time zones;
-  - a bare "Remote", or a city or country on its own (an office location);
-  - US states;
+  - a bare "Remote", or an ordinary location field ("Chicago, IL", "Toronto, ON", "Berlin, Germany");
+  - cities ("New York City");
+  - ambiguous names (Georgia, a bare Washington, CA) and lists with an unreadable item;
   - preferred, negated or qualified wording, and conflicting statements.
+- **Geographic levels:** state- or province-level eligibility is preserved in `residencyRegions` (for example `["US-TX", "US-FL"]`), so Milestone 4 can see the stated area. Classification only distinguishes U.S. from non-U.S.
 - **Mapping to the supplied policy (for Milestone 4 to implement, not done here):**
   - `US_REQUIRED` → the U.S. policy: $60k+ Pass, below $60k Skip.
   - `NON_US` → the non-U.S. policy, where `residencyRegions` names the geography for cost viability.

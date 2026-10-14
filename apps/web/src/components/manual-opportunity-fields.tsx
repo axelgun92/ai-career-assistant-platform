@@ -189,7 +189,7 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
             <input
               name="residencyRegions"
               maxLength={200}
-              placeholder="e.g. United States, or Spain, Portugal"
+              placeholder="e.g. United States, Texas, Ontario, or Spain"
               {...errorProps("residencyRegions", fieldErrors)}
             />
             <FieldError name="residencyRegions" fieldErrors={fieldErrors} />

@@ -49,7 +49,7 @@ export const manualOpportunitySubmissionSchema = z
     residencyRequirement: z.enum(residencyRequirementValues).optional(),
     residencyRegions: optionalSuppliedText.refine(
       (value) => value === undefined || (value.length <= 200 && parseGeographyList(value) !== null),
-      "List countries or regions such as United States, Spain, Canada or EU",
+      "List countries, states, provinces or regions such as United States, Texas, Ontario, Spain or EU. Some names are ambiguous: write California (not CA), GA for the U.S. state of Georgia, and Washington State or Washington, D.C.",
     ),
     domain: optionalSuppliedText.refine(
       (value) =>

@@ -4,6 +4,7 @@ import {
   manualOpportunitySubmissionSchema,
   parseGeographyList,
   rawOpportunitySchema,
+  readGeographyList,
   residencyRequirementFor,
   residencyRequirementValues,
   type RawOpportunity,
@@ -36,11 +37,42 @@ describe("geography vocabulary", () => {
     expect(parseGeographyList("EU")).toEqual(["EU"]);
     expect(parseGeographyList("Berlin")).toBeNull();
     expect(parseGeographyList("us")).toBeNull(); // a pronoun, not a country
-    expect(parseGeographyList("California")).toBeNull();
+    expect(parseGeographyList("California")).toEqual(["US-CA"]);
+    expect(parseGeographyList("Toronto")).toBeNull();
+  });
+
+  it("reads U.S. states/DC/Puerto Rico, Canadian provinces/territories and UK nations", () => {
+    expect(parseGeographyList("Texas, Florida or Ohio")).toEqual(["US-TX", "US-FL", "US-OH"]);
+    expect(parseGeographyList("TX/FL/GA")).toEqual(["US-TX", "US-FL", "US-GA"]);
+    expect(parseGeographyList("Washington, D.C.")).toEqual(["US-DC"]);
+    expect(parseGeographyList("District of Columbia")).toEqual(["US-DC"]);
+    expect(parseGeographyList("Washington State")).toEqual(["US-WA"]);
+    expect(parseGeographyList("West Virginia and Virginia")).toEqual(["US-WV", "US-VA"]);
+    expect(parseGeographyList("Indiana")).toEqual(["US-IN"]);
+    expect(parseGeographyList("India")).toEqual(["IN"]);
+    expect(parseGeographyList("Puerto Rico")).toEqual(["US-PR"]);
+    expect(parseGeographyList("Ontario or BC")).toEqual(["CA-ON", "CA-BC"]);
+    expect(parseGeographyList("Québec")).toEqual(["CA-QC"]);
+    expect(parseGeographyList("Newfoundland and Labrador")).toEqual(["CA-NL"]);
+    expect(parseGeographyList("Scotland or Northern Ireland")).toEqual(["GB-SCT", "GB-NIR"]);
+  });
+
+  it("never resolves an ambiguous name, and refuses a partly unreadable list", () => {
+    for (const text of ["Georgia", "Washington", "CA", "TX or CA", "US/CA", "Texas or Narnia", "tx"]) {
+      expect(parseGeographyList(text)).toBeNull();
+    }
+    expect(readGeographyList("Georgia")).toMatchObject({ codes: [], ambiguous: true });
+    expect(readGeographyList("Texas or Narnia")).toMatchObject({ ambiguous: true });
+    expect(readGeographyList("Texas, Monday to Friday")).toMatchObject({ codes: ["US-TX"], ambiguous: false });
+    expect(readGeographyList("TX and FL")).toMatchObject({ codes: ["US-TX", "US-FL"], abbreviated: true });
   });
 
   it("classifies: only the United States → US_REQUIRED; residence elsewhere allowed → NON_US", () => {
     expect(residencyRequirementFor(["US"])).toBe("US_REQUIRED");
+    expect(residencyRequirementFor(["US-TX", "US-FL"])).toBe("US_REQUIRED");
+    expect(residencyRequirementFor(["US", "US-DC", "US-PR"])).toBe("US_REQUIRED");
+    expect(residencyRequirementFor(["US-TX", "CA-ON"])).toBe("NON_US");
+    expect(residencyRequirementFor(["CA-ON"])).toBe("NON_US");
     expect(residencyRequirementFor(["ES"])).toBe("NON_US");
     expect(residencyRequirementFor(["US", "CA"])).toBe("NON_US");
     expect(residencyRequirementFor(["WORLDWIDE"])).toBe("NON_US");
@@ -61,6 +93,18 @@ describe("explicit residency statements", () => {
     [null, "You can work from anywhere in the world.", "NON_US", ["WORLDWIDE"]],
     ["Remote (Spain)", "", "NON_US", ["ES"]],
     ["Remote - Worldwide", "", "NON_US", ["WORLDWIDE"]],
+    // Sub-national units.
+    [null, "Applicants must reside in Texas.", "US_REQUIRED", ["US-TX"]],
+    [null, "Candidates must be based in TX, FL, or GA.", "US_REQUIRED", ["US-TX", "US-FL", "US-GA"]],
+    [null, "Open to candidates residing in the following states: Arizona, Colorado, and Washington State.", "US_REQUIRED", ["US-AZ", "US-CO", "US-WA"]],
+    [null, "Must reside in Washington, D.C. or Maryland.", "US_REQUIRED", ["US-DC", "US-MD"]],
+    [null, "Texas residents only.", "US_REQUIRED", ["US-TX"]],
+    [null, "Must reside in Puerto Rico.", "US_REQUIRED", ["US-PR"]],
+    [null, "Open to residents of Ontario or British Columbia.", "NON_US", ["CA-ON", "CA-BC"]],
+    [null, "Applicants must be located in the US or Ontario.", "NON_US", ["US", "CA-ON"]],
+    [null, "Must be based in Scotland.", "NON_US", ["GB-SCT"]],
+    ["Remote - Texas", "", "US_REQUIRED", ["US-TX"]],
+    ["Remote (ON)", "", "NON_US", ["CA-ON"]],
   ])("location %j, text %j → %s %j", (location, rawText, requirement, regions) => {
     expect(residency(location, rawText)).toEqual([requirement, regions]);
   });
@@ -74,12 +118,26 @@ describe("explicit residency statements", () => {
     [null, "Must be authorized to work in the United States."], // work authorization
     [null, "US citizens only."], // nationality
     [null, "We support US time zones."],
-    [null, "Must reside in California."], // not a recognized geography
+    [null, "Must reside in New York City."], // a city, not the state
     [null, "Our worldwide customers rely on us."],
     [null, "Salary $72,000-$88,000 USD."], // currency never implies residency
     [null, "Headquartered in New York, United States."],
+    // Ordinary location fields are office locations, not residency rules.
+    ["Chicago, IL", "Join our Chicago office."],
+    ["Toronto, ON", "Hybrid role."],
+    ["Austin, Texas", ""],
+    ["Remote - Chicago, IL", ""],
+    [null, "Our team is spread across California and Ontario."],
+    [null, "Remote work is OK only on Fridays."], // "OK only" is English, not Oklahoma
   ])("stays Unknown: %j / %j", (location, rawText) => {
     expect(residency(location, rawText)).toEqual([null, []]);
+  });
+
+  it("ambiguous geography in an explicit statement stays Unknown", () => {
+    for (const rawText of ["Must reside in Georgia.", "Must reside in Washington.", "Must reside in CA.", "Must reside in TX or CA.", "Must reside in Texas or Narnia."]) {
+      expect(parseResidency({ location: null, rawText })).toMatchObject({ requirement: null, regions: [], unknownReason: "QUALIFIED_STATEMENT" });
+    }
+    expect(parseResidency({ location: "Remote (US/CA)", rawText: "" })).toMatchObject({ requirement: null });
   });
 
   it("negated, qualified or conflicting statements stay Unknown", () => {
@@ -163,6 +221,8 @@ describe("normalizer: residency is independent of salary currency", () => {
     expect(listOnly.provenance.find((row) => row.fieldName === "residencyRequirement")).toMatchObject({
       kind: "DETERMINISTIC", sourceField: "residencyRegions", sourceText: "Canada",
     });
+    const statesOnly = await normalize({ sourceMetadata: { details: { residencyRegions: "Texas or Florida" } } });
+    expect(statesOnly.opportunity).toMatchObject({ residencyRequirement: "US_REQUIRED", residencyRegions: ["US-TX", "US-FL"] });
     const nonUsOnly = await normalize({ sourceMetadata: { details: { residencyRequirement: "NON_US" } } });
     expect(nonUsOnly.opportunity).toMatchObject({ residencyRequirement: "NON_US", residencyRegions: [] });
   });
@@ -179,12 +239,18 @@ describe("manual submission", () => {
   it("accepts stated residency, rejects unknown places and contradictions", () => {
     expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", residencyRequirement: "US_REQUIRED", residencyRegions: "United States" }).success).toBe(true);
     expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", residencyRegions: "Spain or Portugal" }).success).toBe(true);
+    expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", residencyRequirement: "US_REQUIRED", residencyRegions: "Texas, Florida" }).success).toBe(true);
+    expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", residencyRequirement: "NON_US", residencyRegions: "Ontario" }).success).toBe(true);
     for (const bad of [
       { residencyRequirement: "US" },
       { residencyRegions: "Atlantis" },
       { residencyRegions: "Berlin" },
       { residencyRequirement: "US_REQUIRED", residencyRegions: "Spain" },
       { residencyRequirement: "NON_US", residencyRegions: "United States" },
+      { residencyRequirement: "NON_US", residencyRegions: "Texas" },
+      { residencyRequirement: "US_REQUIRED", residencyRegions: "Ontario" },
+      { residencyRegions: "Georgia" },
+      { residencyRegions: "CA" },
     ]) {
       expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", ...bad }).success).toBe(false);
     }
@@ -224,6 +290,8 @@ describe("dashboard query and display", () => {
 
   it("labels residency without assuming anything", () => {
     expect(formatResidency("US_REQUIRED", ["US"])).toBe("U.S. residence required");
+    expect(formatResidency("US_REQUIRED", ["US-TX", "US-FL"])).toBe("U.S. residence required (Texas, Florida)");
+    expect(formatResidency("NON_US", ["CA-ON"])).toBe("Non-U.S. residence allowed (Ontario)");
     expect(formatResidency("NON_US", ["ES", "PT"])).toBe("Non-U.S. residence allowed (Spain, Portugal)");
     expect(formatResidency("NON_US", ["WORLDWIDE"])).toBe("Non-U.S. residence allowed (Worldwide)");
     expect(formatResidency("NON_US", [])).toBe("Non-U.S. residence allowed");
