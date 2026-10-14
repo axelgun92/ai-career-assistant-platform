@@ -269,7 +269,9 @@ export function createEvaluationService(
           opportunityId: input.opportunityId,
           domain: input.domain,
           deferredEvaluationId: admitted.deferral.id,
-          reason: "BUDGET_UNAVAILABLE" as const,
+          // BUDGET_UNAVAILABLE (monetary budget) or USAGE_LIMIT_REACHED
+          // (a throughput limit): an operational deferral, never a result.
+          reason: admitted.deferral.reasonCode,
           resumed: admitted.outcome === "STILL_DEFERRED",
           userProfileVersion: admitted.deferral.userProfileVersion,
           budget: admitted.budget,
@@ -277,8 +279,18 @@ export function createEvaluationService(
       case "ADMITTED":
         break;
     }
+    // The user's per-evaluation call allowance can only lower the deployment
+    // maximum; it is persisted on the evaluation like the maximum always was.
+    const semanticCallBudget = Math.min(
+      semanticConfig.callBudget,
+      admitted.evaluationCallLimit ?? semanticConfig.callBudget,
+    );
+    const admittedInput = {
+      ...enqueueInput,
+      executionMetadata: { ...enqueueInput.executionMetadata, semanticCallBudget },
+    };
     try {
-      return queued(await enqueueAdmitted({ ...enqueueInput, admissionId: admitted.admissionId }));
+      return queued(await enqueueAdmitted({ ...admittedInput, admissionId: admitted.admissionId }));
     } catch (error) {
       // Nothing was created; release the admission (and return a resumed
       // request to the backlog) so the user can simply try again.

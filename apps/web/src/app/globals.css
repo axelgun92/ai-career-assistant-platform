@@ -1327,3 +1327,129 @@ blockquote {
   text-align: left;
   vertical-align: top;
 }
+
+/* AI usage and capacity report */
+.capacity-report {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.capacity-report h2 {
+  margin: 0 0 0.75rem;
+}
+
+.capacity-report h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.budget-limits {
+  margin: 1rem 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.capacity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  display: block;
+  overflow-x: auto;
+}
+
+.capacity-table caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.5rem 0;
+}
+
+.capacity-table th,
+.capacity-table td {
+  text-align: left;
+  padding: 0.25rem 0.75rem 0.25rem 0;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+/* Single-series bar chart: thin bars, 2px gaps, rounded data ends on the
+   baseline; values live in the tooltip and the table, in text colours. */
+.spend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 8rem;
+  padding-bottom: 1px;
+  border-bottom: 1px solid #9ca3af;
+}
+
+.spend-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 1.5rem;
+  background: #2563eb;
+  border-radius: 4px 4px 0 0;
+}
+
+.spend-bar:hover {
+  background: #1e40af;
+}
+
+/* Shared site header */
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.site-brand {
+  font-weight: 700;
+  color: #111827;
+  text-decoration: none;
+}
+
+.site-header nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-header nav a {
+  color: #1d4ed8;
+  text-decoration: none;
+  padding: 0.25rem 0;
+}
+
+.site-header nav a:hover,
+.site-header nav a:focus-visible {
+  text-decoration: underline;
+}
+
+.site-header nav a[aria-current="page"] {
+  color: #111827;
+  font-weight: 700;
+  border-bottom: 2px solid #111827;
+}
+
+.skip-link {
+  position: absolute;
+  left: -10000px;
+}
+
+.skip-link:focus {
+  position: static;
+  left: auto;
+}
+
+main {
+  padding-top: 2rem;
+}

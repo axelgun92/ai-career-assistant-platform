@@ -16,7 +16,20 @@ const { suggestedReserve } = await import("../../apps/web/src/components/budget/
 const configured: Extract<BudgetStatusView, { configured: true }> = {
   configured: true,
   openDeferrals: 2,
-  settings: { amount: 5, currency: "USD", timeZone: "America/New_York", enforced: true, reservePerEvaluation: 0.6, periodType: "CALENDAR_MONTH" },
+  settings: {
+    amount: 5,
+    currency: "USD",
+    timeZone: "America/New_York",
+    enforced: true,
+    reservePerEvaluation: 0.6,
+    periodType: "CALENDAR_MONTH",
+    warningThresholds: [],
+    dailyEvaluationLimit: null,
+    weeklyEvaluationLimit: null,
+    monthlyOutputTokenLimit: null,
+    evaluationCallLimit: null,
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  },
   period: { label: "2026-10", start: "2026-10-01T04:00:00.000Z", end: "2026-11-01T04:00:00.000Z", timeZone: "America/New_York" },
   knownSpent: 0.42,
   held: 0.4,
@@ -24,6 +37,14 @@ const configured: Extract<BudgetStatusView, { configured: true }> = {
   remaining: 4.18,
   unknownAttempts: 0,
   otherCurrencyAttempts: 0,
+  warning: { usedPercent: 16.4, reached: null, thresholds: [] },
+  limits: {
+    enforced: true,
+    reached: [],
+    daily: { limit: null, used: 0, window: "2026-10-14", resetsAt: "2026-10-15T04:00:00.000Z" },
+    weekly: { limit: null, used: 0, window: "2026-10-12", resetsAt: "2026-10-19T04:00:00.000Z" },
+    outputTokens: { limit: null, used: 0, unreportedAttempts: 0 },
+  },
   recentCosts: null,
 };
 

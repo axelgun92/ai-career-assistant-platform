@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 14, 2026
+**Last updated:** October 15, 2026
 
 ## Current Objective
 
@@ -491,6 +491,57 @@ The audit found no change that would require evaluator semantics to change.
   - unit: doctor policy, active-profile and deferral reporting;
   - integration: doctor reads against a migrated profile and a deferral pinned to the older version, on the isolated test database.
 - **Verification:** see the commit for this task. No paid calls; normal database untouched.
+
+#### Completed — Task 6 completion: AI budget, throughput, capacity and backlog (main-product completion, task 3; October 15, 2026)
+
+Completes the Core PRD v1.3 "Configurable AI Budget and Throughput Controls" and "AI Capacity and Budget Visibility" requirements, and Core TDD v1.4 "AI Usage and Budget Persistence", "Budget and Deferral API Boundary" and "AI Budget Observability". No evaluator stage, prompt, routing, model, schema or recommendation changed.
+
+**Already complete before this task (Task 6):**
+- monthly spending limit (calendar month in a chosen time zone; enforced or advisory);
+- atomic, concurrency- and restart-safe reservation through admissions under an advisory lock;
+- reconciliation, derived from persisted attempt costs (unknown cost is never $0);
+- remaining budget;
+- persistent deferred backlog pinned to the profile version, with resume and cancel; resume rechecks budget, eligibility, active work and the pinned profile;
+- Unknown token and cost handling in usage totals.
+
+**Added by this task:**
+- **Settings** (migration `20261015090000_budget_throughput_limits`, all additive): warning thresholds (up to five percentages), evaluations per day, evaluations per week (ISO week, Monday start, in the budget time zone), output tokens per month, and AI calls per evaluation. Blank means no limit. Nothing is ever raised automatically.
+- **Admission:**
+  - Every configured limit is checked under the existing admission lock against persisted rows only, so concurrent requests cannot overshoot and restarts never reset counts.
+  - Volume counts non-abandoned admissions in the local day and week.
+  - The output-token limit counts provider-reported output tokens in the budget month. Unreported tokens stay Unknown and are reported, never counted as zero. Running evaluations always finish.
+  - A limit hit is an operational deferral: reason `USAGE_LIMIT_REACHED`, or the existing `BUDGET_UNAVAILABLE` when the monetary budget is among the limits reached.
+  - The snapshot records every limit reached.
+  - Resume rechecks the budget and all limits, plus the existing eligibility, active-work and pinned-profile checks.
+  - The enforcement switch covers the budget and the limits; when off, limits are reported but never defer.
+- **AI calls per evaluation:**
+  - The user may only lower the system maximum (`AI_CALL_BUDGET`), and never below the evaluator's operation count, which is what a normal evaluation needs.
+  - It is applied through the existing persisted `executionMetadata.semanticCallBudget` at enqueue, so evaluations already queued keep their allowance.
+  - No monthly call-count cap was added (decision recorded with the user).
+- **Warnings:** derived from configured thresholds over spent plus reserved, and shown on the dashboard budget card and `/budget`.
+- **Reporting** (`GET /api/budget/report`, the `/budget` "AI usage and capacity" section):
+  - counts of eligible-not-yet-evaluated, evaluated, queued, running and deferred, with a domain × source-type breakdown;
+  - provider-reported tokens this month, with unreported attempts counted separately;
+  - estimated remaining capacity (by budget, by today's limit, by this week's limit), Unknown when a budget is set without a cost basis;
+  - estimated cost of the deferred and of the eligible backlog (average recorded cost of the last ten fully costed completed evaluations; Unknown without one);
+  - known spend per day for the month and per month for six months, with unknown-cost attempts shown;
+  - the pricing and configuration basis: policy version, configured pricing versions, the pricing versions behind the estimates, call-allowance bounds, and when the budget was last changed.
+  - No credentials, provider error text or request IDs are returned.
+- **Also fixed:** the shared site header from Task 9 had no styles and rendered as a bullet list; it is now styled.
+- **Tests:**
+  - unit `budget-throughput.test.tsx` (24): windows across time zones, DST and year end; warnings; limits; estimates; validation; card, deferral and report rendering; API error sanitization;
+  - integration `budget-throughput.test.ts` (10): daily and weekly limits and resets; six simultaneous requests against a limit of two; budget plus limit; enforcement off; output-token cap with unreported tokens and untouched queued work; warnings; invalid settings; call allowance bounds and persistence; report counts, tokens, estimates, spend over time and no secrets;
+  - E2E: a daily limit defers the next request, and `/budget` shows the report.
+- **Verification** (isolated test database; normal database untouched; no paid calls):
+  - typecheck, lint, Prisma validate, and `db:verify-migrations` (13 migrations, known drift only) pass;
+  - unit 923/923, integration 155/155, E2E 24/24;
+  - build passes.
+
+**Still open (recorded in `HANDOFFS.md`):**
+- Already-queued evaluations are still not cancelled when the budget is lowered (unchanged, still awaiting explicit acceptance).
+- The TDD's deferral reason name `AI_BUDGET_LIMIT` differs from the implemented `BUDGET_UNAVAILABLE` / `USAGE_LIMIT_REACHED`.
+- Source Analytics exclusion of budget deferral applies once Source Analytics exists.
+- "Model-eligible" is reported as eligible for evaluation by the executable domains; there is no per-model eligibility concept yet.
 
 #### Remaining main-product order
 

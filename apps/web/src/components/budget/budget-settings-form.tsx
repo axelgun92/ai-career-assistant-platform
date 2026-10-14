@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation";
 import { formatMoney } from "./budget-format";
 import type { BudgetStatusView } from "./types";
 
-type FieldName = "amount" | "currency" | "timeZone" | "reservePerEvaluation" | "enforced";
+type FieldName =
+  | "amount"
+  | "currency"
+  | "timeZone"
+  | "reservePerEvaluation"
+  | "enforced"
+  | "warningThresholds"
+  | "dailyEvaluationLimit"
+  | "weeklyEvaluationLimit"
+  | "monthlyOutputTokenLimit"
+  | "evaluationCallLimit";
 
 const fieldIds: Record<FieldName, string> = {
   amount: "budget-amount",
@@ -13,7 +23,26 @@ const fieldIds: Record<FieldName, string> = {
   timeZone: "budget-time-zone",
   reservePerEvaluation: "budget-reserve",
   enforced: "budget-enforced",
+  warningThresholds: "budget-warning-thresholds",
+  dailyEvaluationLimit: "budget-daily-limit",
+  weeklyEvaluationLimit: "budget-weekly-limit",
+  monthlyOutputTokenLimit: "budget-output-token-limit",
+  evaluationCallLimit: "budget-call-limit",
 };
+
+// Blank means "no limit"; anything else is sent as a number for the server
+// to validate.
+const optionalNumber = (value: string) => (value.trim() === "" ? null : Number(value));
+
+// "50, 80" → [50, 80]; entries that are not numbers are sent as-is for the
+// server to reject with a field error.
+export function parseThresholds(value: string): unknown[] {
+  return value
+    .split(",")
+    .map((part) => part.trim().replace(/%$/, ""))
+    .filter(Boolean)
+    .map((part) => (Number.isFinite(Number(part)) ? Number(part) : part));
+}
 
 function errorProps(name: FieldName, errors: Partial<Record<FieldName, string>>) {
   return errors[name] ? { "aria-invalid": true as const, "aria-describedby": `${fieldIds[name]}-error` } : {};
@@ -43,9 +72,12 @@ export function suggestedReserve(max: number): number {
 export function BudgetSettingsForm({
   status,
   defaultCurrency,
+  callLimitBounds = null,
 }: {
   status: BudgetStatusView;
   defaultCurrency: string;
+  // Deployment maximum and the evaluator's minimum, when AI is configured.
+  callLimitBounds?: { minimum: number; maximum: number } | null;
 }) {
   const router = useRouter();
   const current = status.configured ? status.settings : null;
@@ -54,6 +86,12 @@ export function BudgetSettingsForm({
   const [timeZone, setTimeZone] = useState(current?.timeZone ?? "UTC");
   const [reserve, setReserve] = useState(current ? String(current.reservePerEvaluation) : "");
   const [enforced, setEnforced] = useState(current?.enforced ?? true);
+  const text = (value: number | null | undefined) => (value === null || value === undefined ? "" : String(value));
+  const [thresholds, setThresholds] = useState(current ? current.warningThresholds.join(", ") : "80");
+  const [daily, setDaily] = useState(text(current?.dailyEvaluationLimit));
+  const [weekly, setWeekly] = useState(text(current?.weeklyEvaluationLimit));
+  const [outputTokens, setOutputTokens] = useState(text(current?.monthlyOutputTokenLimit));
+  const [callLimit, setCallLimit] = useState(text(current?.evaluationCallLimit));
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -78,6 +116,11 @@ export function BudgetSettingsForm({
                 timeZone: timeZone.trim(),
                 reservePerEvaluation: reserve.trim() === "" ? (enforced ? null : 0) : Number(reserve),
                 enforced,
+                warningThresholds: parseThresholds(thresholds),
+                dailyEvaluationLimit: optionalNumber(daily),
+                weeklyEvaluationLimit: optionalNumber(weekly),
+                monthlyOutputTokenLimit: optionalNumber(outputTokens),
+                evaluationCallLimit: optionalNumber(callLimit),
               })
             : undefined,
       });
@@ -89,7 +132,8 @@ export function BudgetSettingsForm({
         const fieldErrors: Partial<Record<FieldName, string>> = {};
         const unmatched: string[] = [];
         for (const issue of body.issues ?? []) {
-          if (issue.path in fieldIds) fieldErrors[issue.path as FieldName] ??= issue.message;
+          const field = issue.path.split(".")[0] ?? "";
+          if (field in fieldIds) fieldErrors[field as FieldName] ??= issue.message;
           else unmatched.push(issue.message);
         }
         setErrors(fieldErrors);
@@ -200,6 +244,91 @@ export function BudgetSettingsForm({
           </button>
         </p>
       ) : null}
+      <fieldset className="budget-limits">
+        <legend>Warnings and limits</legend>
+        <p className="field-help">
+          Leave a limit blank for no limit. While limits are enforced, an evaluation that would exceed one is
+          deferred, not started; nothing is ever raised automatically. Volume limits count evaluations started in
+          your time zone&apos;s day and week (Monday to Sunday).
+        </p>
+        <div className="form-grid">
+          <label htmlFor={fieldIds.warningThresholds}>
+            Warning thresholds (% of budget)
+            <input
+              id={fieldIds.warningThresholds}
+              value={thresholds}
+              placeholder="e.g. 50, 80"
+              onChange={(event) => setThresholds(event.target.value)}
+              {...errorProps("warningThresholds", errors)}
+            />
+            <FieldError name="warningThresholds" errors={errors} />
+          </label>
+        <label htmlFor={fieldIds.dailyEvaluationLimit}>
+          Evaluations per day
+          <input
+            id={fieldIds.dailyEvaluationLimit}
+            type="number"
+            inputMode="numeric"
+            min="1"
+            step="1"
+            value={daily}
+            onChange={(event) => setDaily(event.target.value)}
+            {...errorProps("dailyEvaluationLimit", errors)}
+          />
+          <FieldError name="dailyEvaluationLimit" errors={errors} />
+        </label>
+        <label htmlFor={fieldIds.weeklyEvaluationLimit}>
+          Evaluations per week
+          <input
+            id={fieldIds.weeklyEvaluationLimit}
+            type="number"
+            inputMode="numeric"
+            min="1"
+            step="1"
+            value={weekly}
+            onChange={(event) => setWeekly(event.target.value)}
+            {...errorProps("weeklyEvaluationLimit", errors)}
+          />
+          <FieldError name="weeklyEvaluationLimit" errors={errors} />
+        </label>
+        <label htmlFor={fieldIds.monthlyOutputTokenLimit}>
+          Output tokens per month
+          <input
+            id={fieldIds.monthlyOutputTokenLimit}
+            type="number"
+            inputMode="numeric"
+            min="1"
+            step="1"
+            value={outputTokens}
+            onChange={(event) => setOutputTokens(event.target.value)}
+            {...errorProps("monthlyOutputTokenLimit", errors)}
+          />
+          <FieldError name="monthlyOutputTokenLimit" errors={errors} />
+        </label>
+        <label htmlFor={fieldIds.evaluationCallLimit}>
+          AI calls per evaluation
+          <input
+            id={fieldIds.evaluationCallLimit}
+            type="number"
+            inputMode="numeric"
+            min="1"
+            step="1"
+            value={callLimit}
+            onChange={(event) => setCallLimit(event.target.value)}
+            {...errorProps("evaluationCallLimit", errors)}
+          />
+          <FieldError name="evaluationCallLimit" errors={errors} />
+        </label>
+        </div>
+        <p className="field-help">
+          The output-token limit counts tokens the AI provider reported this month; evaluations already running
+          finish. AI calls per evaluation lowers the system allowance for each new evaluation
+          {callLimitBounds
+            ? ` (from ${callLimitBounds.minimum}, the calls a normal evaluation needs, up to the system maximum of ${callLimitBounds.maximum}; blank uses the maximum)`
+            : " (available once AI evaluation is configured)"}
+          . An evaluation that needs more calls than its allowance stops with a failure code, so keep room for retries.
+        </p>
+      </fieldset>
       <label className="checkbox-label" htmlFor={fieldIds.enforced}>
         <input
           id={fieldIds.enforced}
@@ -207,11 +336,11 @@ export function BudgetSettingsForm({
           checked={enforced}
           onChange={(event) => setEnforced(event.target.checked)}
         />
-        Enforce the budget (defer evaluations that would not fit)
+        Enforce the budget and limits (defer evaluations that would not fit)
       </label>
       {!enforced ? (
         <p className="field-help">
-          While not enforced, every evaluation starts and spend is still tracked against the budget.
+          While not enforced, every evaluation starts; spend, warnings and limits are still tracked and shown.
         </p>
       ) : null}
       {formError ? (

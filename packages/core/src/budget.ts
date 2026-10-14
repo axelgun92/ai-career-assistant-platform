@@ -50,7 +50,13 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
 
 // The UTC instant of local midnight on the 1st of a month in the zone.
 function zonedMonthStart(year: number, month: number, timeZone: string): Date {
-  const wallClock = Date.UTC(year, month - 1, 1);
+  return zonedDateStart(year, month, 1, timeZone);
+}
+
+// The UTC instant of local midnight on a calendar date in the zone. Day and
+// month overflow normalize (day 32 of January is February 1st).
+function zonedDateStart(year: number, month: number, day: number, timeZone: string): Date {
+  const wallClock = Date.UTC(year, month - 1, day);
   const firstGuess = wallClock - zoneOffsetMs(new Date(wallClock), timeZone);
   // Re-check the offset at the result in case a DST change lies between.
   return new Date(wallClock - zoneOffsetMs(new Date(firstGuess), timeZone));
@@ -74,11 +80,152 @@ export function budgetPeriod(now: Date, timeZone: string): BudgetPeriod {
   const nextYear = month === 12 ? year + 1 : year;
   const nextMonth = month === 12 ? 1 : month + 1;
   return {
-    type: "CALENDAR_MONTH",
+    type: "CALENDAR_MONTH" as const,
     timeZone,
     label: `${year}-${String(month).padStart(2, "0")}`,
     start: zonedMonthStart(year, month, timeZone),
     end: zonedMonthStart(nextYear, nextMonth, timeZone),
+  };
+}
+
+export interface VolumeWindow {
+  // Local calendar date the window starts on, e.g. "2026-10-12".
+  label: string;
+  start: Date;
+  // Exclusive; the reset time.
+  end: Date;
+}
+
+const isoDate = (instant: Date) => instant.toISOString().slice(0, 10);
+
+// The local day and ISO week (Monday start) containing `now`, in the budget
+// time zone. Volume limits count admissions inside these windows, so they
+// reset without any scheduled job.
+export function volumeWindows(now: Date, timeZone: string): { day: VolumeWindow; week: VolumeWindow } {
+  const { year, month, day } = zonedParts(now, timeZone);
+  const mondayOffset = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
+  return {
+    day: {
+      label: isoDate(new Date(Date.UTC(year, month - 1, day))),
+      start: zonedDateStart(year, month, day, timeZone),
+      end: zonedDateStart(year, month, day + 1, timeZone),
+    },
+    week: {
+      label: isoDate(new Date(Date.UTC(year, month - 1, day - mondayOffset))),
+      start: zonedDateStart(year, month, day - mondayOffset, timeZone),
+      end: zonedDateStart(year, month, day - mondayOffset + 7, timeZone),
+    },
+  };
+}
+
+export interface WarningState {
+  // Share of the budget committed: known spend plus reserved holds. Null when
+  // the budget amount is zero.
+  usedPercent: number | null;
+  // The highest configured threshold reached, if any.
+  reached: number | null;
+  thresholds: number[];
+}
+
+// Warnings are derived from configured thresholds only; with none
+// configured there is never a warning.
+export function warningState(input: {
+  amount: number;
+  knownSpent: number;
+  held: number;
+  thresholds: readonly number[];
+}): WarningState {
+  const thresholds = [...input.thresholds].sort((left, right) => left - right);
+  const usedPercent = input.amount > 0 ? roundMoney(((input.knownSpent + input.held) / input.amount) * 100) : null;
+  const reached = usedPercent === null
+    ? null
+    : thresholds.filter((threshold) => usedPercent >= threshold).at(-1) ?? null;
+  return { usedPercent, reached, thresholds };
+}
+
+export type UsageLimit = "BUDGET" | "DAILY_EVALUATIONS" | "WEEKLY_EVALUATIONS" | "MONTHLY_OUTPUT_TOKENS";
+
+export interface ThroughputUsage {
+  dailyEvaluations: number;
+  weeklyEvaluations: number;
+  // Provider-reported output tokens in the budget period. Attempts that did
+  // not report output tokens are not counted here and never treated as zero.
+  outputTokens: number;
+}
+
+// Throughput limits reached for one more evaluation. A null limit is off.
+export function throughputLimitsReached(
+  limits: {
+    dailyEvaluationLimit: number | null;
+    weeklyEvaluationLimit: number | null;
+    monthlyOutputTokenLimit: number | null;
+  },
+  usage: ThroughputUsage,
+): UsageLimit[] {
+  const reached: UsageLimit[] = [];
+  if (limits.dailyEvaluationLimit !== null && usage.dailyEvaluations >= limits.dailyEvaluationLimit) {
+    reached.push("DAILY_EVALUATIONS");
+  }
+  if (limits.weeklyEvaluationLimit !== null && usage.weeklyEvaluations >= limits.weeklyEvaluationLimit) {
+    reached.push("WEEKLY_EVALUATIONS");
+  }
+  if (limits.monthlyOutputTokenLimit !== null && usage.outputTokens >= limits.monthlyOutputTokenLimit) {
+    reached.push("MONTHLY_OUTPUT_TOKENS");
+  }
+  return reached;
+}
+
+export interface CapacityEstimate {
+  // Average recorded cost of recent completed evaluations; null (Unknown)
+  // without any such evaluation.
+  averageEvaluationCost: number | null;
+  basisEvaluations: number;
+  // Evaluations the remaining budget can cover at that average.
+  byBudget: number | null;
+  // Evaluations the volume limits still allow today / this week.
+  byDailyLimit: number | null;
+  byWeeklyLimit: number | null;
+  // The smallest of the known constraints; null when none is known.
+  remaining: number | null;
+  deferredBacklogCost: number | null;
+  eligibleBacklogCost: number | null;
+}
+
+// Estimates, never guarantees: costs come from persisted attempts of recent
+// evaluations, and anything that cannot be estimated stays null (Unknown).
+export function capacityEstimate(input: {
+  recentEvaluationCosts: readonly number[];
+  remainingBudget: number | null;
+  dailyEvaluationLimit: number | null;
+  weeklyEvaluationLimit: number | null;
+  usage: Pick<ThroughputUsage, "dailyEvaluations" | "weeklyEvaluations">;
+  deferredCount: number;
+  eligibleCount: number;
+}): CapacityEstimate {
+  const costs = input.recentEvaluationCosts;
+  const average = costs.length ? roundMoney(costs.reduce((total, cost) => total + cost, 0) / costs.length) : null;
+  const byBudget = average !== null && average > 0 && input.remainingBudget !== null
+    ? Math.max(0, Math.floor(roundMoney(input.remainingBudget / average)))
+    : null;
+  const byDailyLimit = input.dailyEvaluationLimit === null
+    ? null
+    : Math.max(0, input.dailyEvaluationLimit - input.usage.dailyEvaluations);
+  const byWeeklyLimit = input.weeklyEvaluationLimit === null
+    ? null
+    : Math.max(0, input.weeklyEvaluationLimit - input.usage.weeklyEvaluations);
+  const known = [byBudget, byDailyLimit, byWeeklyLimit].filter((value): value is number => value !== null);
+  // With a budget set but no cost basis, budget capacity is Unknown, so the
+  // overall capacity is too (a volume limit alone could overstate it).
+  const budgetUnknown = input.remainingBudget !== null && byBudget === null;
+  return {
+    averageEvaluationCost: average,
+    basisEvaluations: costs.length,
+    byBudget,
+    byDailyLimit,
+    byWeeklyLimit,
+    remaining: budgetUnknown || !known.length ? null : Math.min(...known),
+    deferredBacklogCost: average === null ? null : roundMoney(average * input.deferredCount),
+    eligibleBacklogCost: average === null ? null : roundMoney(average * input.eligibleCount),
   };
 }
 
@@ -153,6 +300,14 @@ const money = z
   .nonnegative("The amount cannot be negative")
   .max(1_000_000_000, "The amount is too large");
 
+const optionalLimit = z
+  .number({ error: "Enter a whole number" })
+  .int("Enter a whole number")
+  .positive("The limit must be at least 1")
+  .max(2_000_000_000, "The limit is too large")
+  .nullable()
+  .default(null);
+
 export const budgetSettingsSchema = z
   .object({
     amount: money,
@@ -168,6 +323,20 @@ export const budgetSettingsSchema = z
     reservePerEvaluation: money,
     enforced: z.boolean(),
     periodType: z.enum(budgetPeriodTypes).default("CALENDAR_MONTH"),
+    warningThresholds: z
+      .array(
+        z.number().int("Use whole percentages").min(1, "Use a percentage from 1 to 100").max(100, "Use a percentage from 1 to 100"),
+      )
+      .max(5, "Use at most five warning thresholds")
+      .refine((values) => new Set(values).size === values.length, "Each warning threshold must be different")
+      .transform((values) => [...values].sort((left, right) => left - right))
+      .default([]),
+    dailyEvaluationLimit: optionalLimit,
+    weeklyEvaluationLimit: optionalLimit,
+    monthlyOutputTokenLimit: optionalLimit,
+    // Bounded by the platform (deployment maximum and the evaluator's minimum)
+    // in the budget service, where those bounds are known.
+    evaluationCallLimit: optionalLimit,
   })
   .strict()
   .superRefine((value, context) => {
@@ -176,6 +345,17 @@ export const budgetSettingsSchema = z
         code: "custom",
         path: ["reservePerEvaluation"],
         message: "Set an amount to reserve for each evaluation while the budget is enforced",
+      });
+    }
+    if (
+      value.dailyEvaluationLimit !== null &&
+      value.weeklyEvaluationLimit !== null &&
+      value.weeklyEvaluationLimit < value.dailyEvaluationLimit
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["weeklyEvaluationLimit"],
+        message: "The weekly limit cannot be lower than the daily limit",
       });
     }
   });

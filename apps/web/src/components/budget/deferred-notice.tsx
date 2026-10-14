@@ -26,7 +26,9 @@ export function DeferredNotice({
   return (
     <section className="deferred-notice" aria-labelledby="deferred-notice-title" role="region">
       <p className="eyebrow">Evaluation deferred</p>
-      <h3 id="deferred-notice-title">Waiting for AI budget</h3>
+      <h3 id="deferred-notice-title">
+        {deferral.reasonCode === "USAGE_LIMIT_REACHED" ? "Waiting for AI usage limits" : "Waiting for AI budget"}
+      </h3>
       <DeferralReason snapshot={deferral.snapshot} />
       <p className="field-help">
         Requested {formatDateTime(deferral.createdAt)} · last checked {formatDateTime(deferral.lastCheckedAt)}.{" "}

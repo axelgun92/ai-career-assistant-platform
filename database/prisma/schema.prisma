@@ -544,19 +544,31 @@ model EvaluationAdmission {
 
   @@index([opportunityId, createdAt])
   @@index([evaluationId, abandonedAt])
+  @@index([createdAt])
 }
 
 // The user's budget (a single row, id "global"). Editing it never touches
 // usage or cost records.
 model BudgetSetting {
-  id                   String           @id
-  amount               Decimal          @db.Decimal(18, 6)
-  currency             String
-  periodType           BudgetPeriodType @default(CALENDAR_MONTH)
-  timeZone             String           @default("UTC")
-  enforced             Boolean          @default(true)
-  reservePerEvaluation Decimal          @db.Decimal(18, 6)
-  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+  id                      String           @id
+  amount                  Decimal          @db.Decimal(18, 6)
+  currency                String
+  periodType              BudgetPeriodType @default(CALENDAR_MONTH)
+  timeZone                String           @default("UTC")
+  enforced                Boolean          @default(true)
+  reservePerEvaluation    Decimal          @db.Decimal(18, 6)
+  // Percentages of the monthly budget (spent + reserved) that raise a warning.
+  warningThresholds       Int[]            @default([])
+  // Throughput limits; null means no limit. Volume counts admitted
+  // evaluations in the budget time zone's day / ISO week.
+  dailyEvaluationLimit    Int?
+  weeklyEvaluationLimit   Int?
+  // Cap on provider-reported output tokens in the budget period.
+  monthlyOutputTokenLimit Int?
+  // Paid semantic calls allowed per evaluation, persisted on each evaluation
+  // at enqueue. Null uses the deployment maximum (AI_CALL_BUDGET).
+  evaluationCallLimit     Int?
+  updatedAt               DateTime         @updatedAt @db.Timestamptz(3)
 }
 
 // The budget held for an admitted evaluation before its actual cost is

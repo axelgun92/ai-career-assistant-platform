@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { formatMoney, formatPeriodLabel, formatResetDate, pluralize } from "./budget-format";
+import {
+  describeLimitsReached,
+  formatMoney,
+  formatPeriodLabel,
+  formatResetDate,
+  formatUsage,
+  pluralize,
+} from "./budget-format";
 import type { BudgetStatusView } from "./types";
 
 // Dashboard summary of this period's AI budget. Known spend comes from
@@ -43,6 +50,27 @@ export function BudgetCard({ status }: { status: BudgetStatusView }) {
         <div><dt>Remaining (known)</dt><dd>{money(status.remaining)}</dd></div>
         <div><dt>Resets</dt><dd>{formatResetDate(status.period.end, status.period.timeZone)}</dd></div>
       </dl>
+      {status.warning.reached !== null ? (
+        <p className="warning-message" role="status">
+          Budget warning: {status.warning.usedPercent}% of the {formatPeriodLabel(status.period.label)} budget is spent
+          or reserved, past your {status.warning.reached}% warning threshold.
+        </p>
+      ) : null}
+      {status.limits.reached.length ? (
+        <p className="warning-message" role="status">
+          New evaluations {status.settings.enforced ? "are deferred" : "would be deferred if limits were enforced"}:{" "}
+          {describeLimitsReached(status.limits.reached)}.
+        </p>
+      ) : null}
+      {status.settings.dailyEvaluationLimit !== null ||
+      status.settings.weeklyEvaluationLimit !== null ||
+      status.settings.monthlyOutputTokenLimit !== null ? (
+        <dl className="usage-totals-grid">
+          <div><dt>Evaluations today</dt><dd>{formatUsage(status.limits.daily.used, status.limits.daily.limit)}</dd></div>
+          <div><dt>Evaluations this week</dt><dd>{formatUsage(status.limits.weekly.used, status.limits.weekly.limit)}</dd></div>
+          <div><dt>Output tokens this month</dt><dd>{formatUsage(status.limits.outputTokens.used, status.limits.outputTokens.limit)}</dd></div>
+        </dl>
+      ) : null}
       {status.held > 0 ? (
         <p className="usage-note">
           {money(status.held)} is reserved for {pluralize(status.heldEvaluations, "evaluation")} whose final cost

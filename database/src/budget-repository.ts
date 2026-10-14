@@ -1,4 +1,11 @@
-import { holdState, roundMoney, type BudgetPeriod, type HoldState } from "@ai-career/core";
+import {
+  holdState,
+  roundMoney,
+  type BudgetPeriod,
+  type HoldState,
+  type ThroughputUsage,
+  type VolumeWindow,
+} from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
 import type { AdmissionTransaction } from "./evaluation-admission-repository";
@@ -12,7 +19,47 @@ export interface StoredBudgetSettings {
   timeZone: string;
   enforced: boolean;
   reservePerEvaluation: number;
+  warningThresholds: number[];
+  dailyEvaluationLimit: number | null;
+  weeklyEvaluationLimit: number | null;
+  monthlyOutputTokenLimit: number | null;
+  evaluationCallLimit: number | null;
   updatedAt: Date;
+}
+
+export type BudgetSettingsInput = Omit<StoredBudgetSettings, "periodType" | "updatedAt">;
+
+export interface PeriodTokenUsage {
+  attempts: number;
+  // Sums of provider-reported tokens; attempts that did not report a
+  // category are counted separately and never added as zero.
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  attemptsWithoutInputTokens: number;
+  attemptsWithoutOutputTokens: number;
+  attemptsWithoutTotalTokens: number;
+}
+
+export interface SpendBucket {
+  // Local calendar date (YYYY-MM-DD) or month (YYYY-MM) in the budget zone.
+  label: string;
+  knownCost: number;
+  attempts: number;
+  // Attempts with no recorded cost or priced in another currency.
+  unknownCostAttempts: number;
+}
+
+export interface OperationalCountRow {
+  domain: string | null;
+  sourceType: string | null;
+  // Normalized, evaluable, executable-domain opportunities never evaluated
+  // and neither in progress nor deferred.
+  eligibleNotEvaluated: number;
+  evaluated: number;
+  queued: number;
+  running: number;
+  deferred: number;
 }
 
 export interface LedgerHold {
@@ -57,23 +104,27 @@ export class PrismaBudgetRepository {
       timeZone: row.timeZone,
       enforced: row.enforced,
       reservePerEvaluation: row.reservePerEvaluation.toNumber(),
+      warningThresholds: row.warningThresholds,
+      dailyEvaluationLimit: row.dailyEvaluationLimit,
+      weeklyEvaluationLimit: row.weeklyEvaluationLimit,
+      monthlyOutputTokenLimit: row.monthlyOutputTokenLimit,
+      evaluationCallLimit: row.evaluationCallLimit,
       updatedAt: row.updatedAt,
     };
   }
 
-  async saveSettings(input: {
-    amount: number;
-    currency: string;
-    timeZone: string;
-    enforced: boolean;
-    reservePerEvaluation: number;
-  }): Promise<StoredBudgetSettings> {
+  async saveSettings(input: BudgetSettingsInput): Promise<StoredBudgetSettings> {
     const data = {
       amount: new Prisma.Decimal(input.amount.toFixed(6)),
       currency: input.currency,
       timeZone: input.timeZone,
       enforced: input.enforced,
       reservePerEvaluation: new Prisma.Decimal(input.reservePerEvaluation.toFixed(6)),
+      warningThresholds: input.warningThresholds,
+      dailyEvaluationLimit: input.dailyEvaluationLimit,
+      weeklyEvaluationLimit: input.weeklyEvaluationLimit,
+      monthlyOutputTokenLimit: input.monthlyOutputTokenLimit,
+      evaluationCallLimit: input.evaluationCallLimit,
     };
     await this.database.budgetSetting.upsert({
       where: { id: globalBudgetId },
@@ -199,6 +250,194 @@ export class PrismaBudgetRepository {
       otherCurrencyAttempts: Number(totals?.other ?? 0),
       holds,
       held: roundMoney(holds.reduce((total, item) => total + item.hold.remaining, 0)),
+    };
+  }
+
+  // Persisted usage counted against throughput limits. Admissions count
+  // whether still live or already consumed by an evaluation; abandoned ones
+  // never started and do not count. Read inside the admission lock this is
+  // concurrency-safe, and it is restart-safe because it is only persisted rows.
+  async throughputUsage(input: {
+    day: VolumeWindow;
+    week: VolumeWindow;
+    period: BudgetPeriod;
+    transaction?: AdmissionTransaction;
+  }): Promise<ThroughputUsage & { attemptsWithoutOutputTokens: number }> {
+    const client = input.transaction ?? this.database;
+    const [volume] = await client.$queryRaw<Array<{ daily: bigint; weekly: bigint }>>`
+      SELECT
+        COUNT(*) FILTER (WHERE "createdAt" >= ${input.day.start} AND "createdAt" < ${input.day.end}) AS daily,
+        COUNT(*) FILTER (WHERE "createdAt" >= ${input.week.start} AND "createdAt" < ${input.week.end}) AS weekly
+      FROM "EvaluationAdmission"
+      WHERE "abandonedAt" IS NULL
+        AND "createdAt" >= ${input.day.start < input.week.start ? input.day.start : input.week.start}
+    `;
+    const [tokens] = await client.$queryRaw<Array<{ output: bigint | null; unreported: bigint }>>`
+      SELECT
+        SUM("outputTokens") AS output,
+        COUNT(*) FILTER (WHERE "outputTokens" IS NULL) AS unreported
+      FROM "SemanticOperationAttempt"
+      WHERE "createdAt" >= ${input.period.start} AND "createdAt" < ${input.period.end}
+    `;
+    return {
+      dailyEvaluations: Number(volume?.daily ?? 0),
+      weeklyEvaluations: Number(volume?.weekly ?? 0),
+      outputTokens: Number(tokens?.output ?? 0),
+      attemptsWithoutOutputTokens: Number(tokens?.unreported ?? 0),
+    };
+  }
+
+  async periodTokenUsage(period: BudgetPeriod): Promise<PeriodTokenUsage> {
+    const [row] = await this.database.$queryRaw<Array<Record<string, bigint | null>>>`
+      SELECT
+        COUNT(*) AS attempts,
+        SUM("inputTokens") AS "inputTokens",
+        SUM("outputTokens") AS "outputTokens",
+        SUM("totalTokens") AS "totalTokens",
+        COUNT(*) FILTER (WHERE "inputTokens" IS NULL) AS "attemptsWithoutInputTokens",
+        COUNT(*) FILTER (WHERE "outputTokens" IS NULL) AS "attemptsWithoutOutputTokens",
+        COUNT(*) FILTER (WHERE "totalTokens" IS NULL) AS "attemptsWithoutTotalTokens"
+      FROM "SemanticOperationAttempt"
+      WHERE "createdAt" >= ${period.start} AND "createdAt" < ${period.end}
+    `;
+    const value = (key: string) => Number(row?.[key] ?? 0);
+    return {
+      attempts: value("attempts"),
+      inputTokens: value("inputTokens"),
+      outputTokens: value("outputTokens"),
+      totalTokens: value("totalTokens"),
+      attemptsWithoutInputTokens: value("attemptsWithoutInputTokens"),
+      attemptsWithoutOutputTokens: value("attemptsWithoutOutputTokens"),
+      attemptsWithoutTotalTokens: value("attemptsWithoutTotalTokens"),
+    };
+  }
+
+  // Known spend per local day or month in the budget zone, from persisted
+  // attempt costs in the budget currency. Buckets with no attempts are
+  // omitted; callers fill the range.
+  async spendSeries(input: {
+    granularity: "day" | "month";
+    timeZone: string;
+    currency: string;
+    from: Date;
+    to: Date;
+  }): Promise<SpendBucket[]> {
+    const format = input.granularity === "day" ? "YYYY-MM-DD" : "YYYY-MM";
+    const rows = await this.database.$queryRaw<
+      Array<{ label: string; known: Prisma.Decimal | null; attempts: bigint; unknown: bigint }>
+    >`
+      SELECT
+        to_char(a."createdAt" AT TIME ZONE ${input.timeZone}, ${format}) AS label,
+        COALESCE(SUM(a."estimatedCost") FILTER (
+          WHERE a."estimatedCost" IS NOT NULL AND p."currency" = ${input.currency}
+        ), 0) AS known,
+        COUNT(*) AS attempts,
+        COUNT(*) FILTER (
+          WHERE NOT (a."estimatedCost" IS NOT NULL AND p."currency" IS NOT NULL AND p."currency" = ${input.currency})
+        ) AS unknown
+      FROM "SemanticOperationAttempt" a
+      LEFT JOIN "AiModelPricingConfiguration" p ON p."id" = a."pricingConfigurationId"
+      WHERE a."createdAt" >= ${input.from} AND a."createdAt" < ${input.to}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+    return rows.map((row) => ({
+      label: row.label,
+      knownCost: roundMoney(toNumber(row.known)),
+      attempts: Number(row.attempts),
+      unknownCostAttempts: Number(row.unknown),
+    }));
+  }
+
+  // Operational counts per domain and job source type. Each opportunity is
+  // counted once per state it is in: evaluated (has a completed evaluation),
+  // queued/running (its latest task), deferred (an open budget deferral), and
+  // eligible-not-evaluated (evaluable lifecycle, executable domain, no
+  // evaluation, nothing in progress or deferred).
+  async operationalCounts(input: { executableDomains: readonly string[] }): Promise<OperationalCountRow[]> {
+    const domains = input.executableDomains.length ? input.executableDomains : ["__none__"];
+    const rows = await this.database.$queryRaw<
+      Array<{
+        domain: string | null;
+        sourceType: string | null;
+        eligible: bigint;
+        evaluated: bigint;
+        queued: bigint;
+        running: bigint;
+        deferred: bigint;
+      }>
+    >`
+      WITH state AS (
+        SELECT
+          o."id",
+          o."domain",
+          o."sourceType"::text AS "sourceType",
+          o."status"::text AS status,
+          EXISTS (SELECT 1 FROM "Evaluation" e WHERE e."opportunityId" = o."id") AS "hasEvaluation",
+          EXISTS (
+            SELECT 1 FROM "Evaluation" e
+            JOIN "EvaluationTask" t ON t."evaluationId" = e."id"
+            WHERE e."opportunityId" = o."id" AND t."status" = 'COMPLETED'
+          ) AS "hasCompleted",
+          (
+            SELECT t."status"::text FROM "Evaluation" e
+            JOIN "EvaluationTask" t ON t."evaluationId" = e."id"
+            WHERE e."opportunityId" = o."id"
+            ORDER BY e."createdAt" DESC LIMIT 1
+          ) AS "latestTask",
+          EXISTS (
+            SELECT 1 FROM "DeferredEvaluation" d
+            WHERE d."opportunityId" = o."id" AND d."status" = 'DEFERRED'
+          ) AS "deferred"
+        FROM "Opportunity" o
+      )
+      SELECT
+        "domain",
+        "sourceType",
+        COUNT(*) FILTER (
+          WHERE status NOT IN ('DISCOVERED', 'ARCHIVED', 'CLOSED')
+            AND "domain" IN (${Prisma.join(domains)})
+            AND NOT "hasEvaluation" AND NOT "deferred"
+        ) AS eligible,
+        COUNT(*) FILTER (WHERE "hasCompleted") AS evaluated,
+        COUNT(*) FILTER (WHERE "latestTask" = 'PENDING') AS queued,
+        COUNT(*) FILTER (WHERE "latestTask" = 'RUNNING') AS running,
+        COUNT(*) FILTER (WHERE "deferred") AS deferred
+      FROM state
+      GROUP BY "domain", "sourceType"
+      ORDER BY "domain" NULLS LAST, "sourceType" NULLS LAST
+    `;
+    return rows.map((row) => ({
+      domain: row.domain,
+      sourceType: row.sourceType,
+      eligibleNotEvaluated: Number(row.eligible),
+      evaluated: Number(row.evaluated),
+      queued: Number(row.queued),
+      running: Number(row.running),
+      deferred: Number(row.deferred),
+    }));
+  }
+
+  // The estimate basis: known cost of recent completed evaluations whose
+  // every attempt has a known cost in the currency, plus the pricing
+  // versions those costs were estimated with.
+  async recentEvaluationCostBasis(input: { currency: string; limit: number }): Promise<{
+    costs: number[];
+    pricingVersions: string[];
+  }> {
+    const rows = await this.database.$queryRaw<Array<{ cost: Prisma.Decimal; versions: string[] }>>`
+      SELECT SUM(a."estimatedCost") AS cost, array_agg(DISTINCT p."version") AS versions
+      FROM "SemanticOperationAttempt" a
+      JOIN "Evaluation" e ON e."id" = a."evaluationId" AND e."status" = 'COMPLETED'
+      LEFT JOIN "AiModelPricingConfiguration" p ON p."id" = a."pricingConfigurationId"
+      GROUP BY a."evaluationId"
+      HAVING bool_and(a."estimatedCost" IS NOT NULL AND p."currency" IS NOT NULL AND p."currency" = ${input.currency})
+      ORDER BY MAX(a."createdAt") DESC
+      LIMIT ${input.limit}
+    `;
+    return {
+      costs: rows.map((row) => roundMoney(toNumber(row.cost))),
+      pricingVersions: [...new Set(rows.flatMap((row) => row.versions ?? []))].sort(),
     };
   }
 

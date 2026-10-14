@@ -185,13 +185,14 @@ export function EvaluationExperience({
         },
       );
       if (response.status === 200) {
-        const body = (await response.json().catch(() => ({}))) as { outcome?: string; resumed?: boolean };
+        const body = (await response.json().catch(() => ({}))) as { outcome?: string; resumed?: boolean; reason?: string };
         if (body.outcome === "DEFERRED") {
-          // Accepted but not started: the budget has no room right now.
+          // Accepted but not started: the budget or a usage limit has no room.
+          const limit = body.reason === "USAGE_LIMIT_REACHED" ? "an AI usage limit is reached" : "the budget does not have room";
           setNotice(
             body.resumed
-              ? "Checked again: the budget still does not have room, so the evaluation remains deferred."
-              : "Evaluation deferred: the budget does not have room right now. Nothing was spent.",
+              ? `Checked again: ${limit === "the budget does not have room" ? "the budget still does not have room" : "an AI usage limit is still reached"}, so the evaluation remains deferred.`
+              : `Evaluation deferred: ${limit} right now. Nothing was spent.`,
           );
           router.refresh();
           return;
@@ -254,7 +255,7 @@ export function EvaluationExperience({
           <h2 id="evaluation-status-title">
             {loading && !evaluation && !deferral ? "Checking evaluation…" :
               evaluation && !(deferral && !active) ? humanize(latestStatus) :
-              deferral ? "Deferred — waiting for budget" : "Not evaluated"}
+              deferral ? (deferral.reasonCode === "USAGE_LIMIT_REACHED" ? "Deferred — waiting for usage limits" : "Deferred — waiting for budget") : "Not evaluated"}
           </h2>
         </div>
         <div className="evaluation-actions">

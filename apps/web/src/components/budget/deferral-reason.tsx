@@ -1,4 +1,4 @@
-import { formatMoney, formatPeriodLabel, pluralize } from "./budget-format";
+import { describeLimitsReached, formatMoney, formatPeriodLabel, formatUsage, pluralize } from "./budget-format";
 import type { BudgetSnapshotView } from "./types";
 
 // Plain-language explanation of why an evaluation was deferred, from the
@@ -6,6 +6,23 @@ import type { BudgetSnapshotView } from "./types";
 export function DeferralReason({ snapshot }: { snapshot: BudgetSnapshotView | null }) {
   if (!snapshot) return <p>The AI budget did not have room for this evaluation.</p>;
   const money = (value: number) => formatMoney(value, snapshot.currency);
+  const throughput = snapshot.limits?.reached.filter((limit) => limit !== "BUDGET") ?? [];
+  if (snapshot.limits && throughput.length && !snapshot.limits.reached.includes("BUDGET")) {
+    const { daily, weekly, outputTokens } = snapshot.limits;
+    return (
+      <>
+        <p>
+          This evaluation was not started because {describeLimitsReached(throughput)}, so no AI cost was incurred.
+          It is not a judgement on the opportunity.
+        </p>
+        <p className="usage-note">
+          When last checked: evaluations today {formatUsage(daily.used, daily.limit)}; this week{" "}
+          {formatUsage(weekly.used, weekly.limit)}; output tokens this month{" "}
+          {formatUsage(outputTokens.used, outputTokens.limit)}.
+        </p>
+      </>
+    );
+  }
   return (
     <>
       <p>
@@ -13,6 +30,7 @@ export function DeferralReason({ snapshot }: { snapshot: BudgetSnapshotView | nu
         {money(snapshot.knownSpent)} had been spent and {money(snapshot.held)} was reserved for unfinished
         evaluations, leaving {money(Math.max(0, snapshot.available))}. Each evaluation reserves{" "}
         {money(snapshot.reserve)} before it starts, so this one was not started and no AI cost was incurred.
+        {throughput.length ? ` In addition, ${describeLimitsReached(throughput)}.` : ""}
       </p>
       {snapshot.unknownAttempts > 0 ? (
         <p className="usage-note">

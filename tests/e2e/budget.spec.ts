@@ -166,3 +166,51 @@ test("a deferred request can be cancelled from the opportunity", async ({ page, 
   await expect(page.getByRole("region", { name: "Waiting for AI budget" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Not evaluated" })).toBeVisible();
 });
+
+test("a daily evaluation limit defers the next request, and /budget reports usage and capacity", async ({ page, request }) => {
+  const suffix = Date.now();
+  const first = await createOpportunity(request, `Daily limit first ${suffix}`);
+  const secondTitle = `Daily limit second ${suffix}`;
+  const second = await createOpportunity(request, secondTitle);
+
+  await page.goto("/budget");
+  await page.getByLabel("Monthly budget").fill("100");
+  await page.getByLabel("Currency").fill("USD");
+  await page.getByLabel("Time zone").fill("UTC");
+  await page.getByLabel("Reserve per evaluation").fill("0.01");
+  await page.getByLabel("Warning thresholds (% of budget)").fill("50, 80");
+  // Earlier tests may already have started evaluations today, so the limit is
+  // set relative to today's count shown after the first save.
+  await page.getByRole("button", { name: /^(Set|Save) budget$/ }).click();
+  await expect(page.getByText("Budget saved.")).toBeVisible();
+  const current = (await (await request.get("/api/budget")).json()) as { limits: { daily: { used: number } } };
+  await page.getByLabel("Evaluations per day").fill(String(current.limits.daily.used + 1));
+  await page.getByRole("button", { name: /^Save budget$/ }).click();
+  await expect(page.getByText("Budget saved.")).toBeVisible();
+
+  await page.goto(`/opportunities/${first}`);
+  await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  await expect(page.getByText("Evaluation accepted and queued")).toBeVisible();
+
+  await page.goto(`/opportunities/${second}`);
+  await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  await expect(page.getByText("Evaluation deferred: an AI usage limit is reached right now")).toBeVisible();
+  const notice = page.getByRole("region", { name: "Waiting for AI usage limits" });
+  await expect(notice).toContainText("today's evaluation limit is reached");
+  await expect(notice).toContainText("not a judgement on the opportunity");
+
+  await page.goto("/budget");
+  await expect(page.locator("tr", { hasText: secondTitle })).toContainText("Usage limit reached");
+  await expect(page.locator(".budget-card")).toContainText("New evaluations are deferred: today's evaluation limit is reached.");
+  const report = page.getByRole("region", { name: "AI usage and capacity" });
+  await expect(report).toContainText("Deferred (budget or limits)");
+  await expect(report).toContainText("Capacity and backlog (estimates)");
+  await expect(report).toContainText(/Within today's limit\s*0 evaluations/);
+  await expect(report).toContainText("Pricing and configuration basis");
+
+  const api = await request.get("/api/budget/report");
+  expect(api.status()).toBe(200);
+  const body = await api.text();
+  expect(body).not.toContain("providerRequestId");
+  expect(JSON.parse(body)).toMatchObject({ budget: { configured: true, settings: { warningThresholds: [50, 80] } } });
+});

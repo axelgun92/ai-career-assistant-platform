@@ -110,7 +110,15 @@ describe("budget settings validation", () => {
   const valid = { amount: 5, currency: "USD", timeZone: "America/New_York", reservePerEvaluation: 0.5, enforced: true };
 
   it("accepts valid settings and defaults the period type", () => {
-    expect(budgetSettingsSchema.parse(valid)).toEqual({ ...valid, periodType: "CALENDAR_MONTH" });
+    expect(budgetSettingsSchema.parse(valid)).toEqual({
+      ...valid,
+      periodType: "CALENDAR_MONTH",
+      warningThresholds: [],
+      dailyEvaluationLimit: null,
+      weeklyEvaluationLimit: null,
+      monthlyOutputTokenLimit: null,
+      evaluationCallLimit: null,
+    });
   });
 
   it.each([

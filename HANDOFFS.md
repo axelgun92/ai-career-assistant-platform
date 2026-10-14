@@ -442,6 +442,35 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 - Keep lifecycle user actions on the guarded path (Opportunity row lock, then guard, then `applyUserActionInTransaction`). Bypassing it could leave a planned application under an Applied lifecycle.
 
+### Handoff: Task 6 Completion — AI Budget, Throughput, Capacity and Backlog (Awareness)
+
+**Date:** 2026-10-15  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (awareness; one shared-boundary note)  
+**Status:** Completed (product-owned)
+
+#### Completed
+
+- Warning thresholds, daily and weekly evaluation-volume limits, a monthly output-token cap, and a user-lowerable per-evaluation AI call allowance.
+- All are enforced at admission as operational deferrals (`USAGE_LIMIT_REACHED`, or `BUDGET_UNAVAILABLE` when the monetary budget is also reached).
+- `GET /api/budget/report` and the `/budget` "AI usage and capacity" section.
+- Details in `CURRENT_PROGRESS.md`.
+
+#### Shared-Boundary Note
+
+- **Call allowance at enqueue:** the per-evaluation call allowance is written by the product into the existing `executionMetadata.semanticCallBudget` at enqueue, as `min(AI_CALL_BUDGET, user allowance)`.
+  - The allowance is bounded below by `customerSuccessSemanticOperationIds.length`, read from the domain package and not changed.
+  - The processor already honours the persisted value.
+  - No evaluator code changed. If Codex changes the number of semantic operations, the lower bound follows automatically.
+- **Output-token limit:** a monthly cap on provider-reported output tokens that gates new admissions. Per-operation `maximumOutputTokens` (routing) is untouched.
+
+#### Contract Questions (unresolved, not blocking)
+
+1. Already-queued evaluations are not cancelled when the budget or a limit is lowered or reached. Unchanged; still awaiting explicit acceptance (final integration checklist item 2).
+2. The TDD names the deferral reason `AI_BUDGET_LIMIT`; the product persists `BUDGET_UNAVAILABLE` (Task 6) and now `USAGE_LIMIT_REACHED`. Decide whether to rename or update the TDD.
+3. "Terra-eligible under the active model configuration" is reported as eligible for evaluation in an executable domain; there is no per-model eligibility concept.
+4. Source Analytics must exclude budget and limit deferrals when Source Analytics is built. Nothing records a deferral as a negative outcome today.
+
 ### Handoff: Profile Limitations Persistence Boundary (Review Requested)
 
 **Date:** 2026-10-14  

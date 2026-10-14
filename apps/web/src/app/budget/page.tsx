@@ -2,10 +2,11 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { BudgetCard } from "@/components/budget/budget-card";
 import { BudgetSettingsForm } from "@/components/budget/budget-settings-form";
+import { CapacityReport } from "@/components/budget/capacity-report";
 import { DeferredBacklog } from "@/components/budget/deferred-backlog";
 import { toDeferralView } from "@/components/budget/deferral-view";
 import { formatDateTime } from "@/components/budget/budget-format";
-import type { BudgetStatusView, DeferralView } from "@/components/budget/types";
+import type { BudgetReportView, BudgetStatusView, DeferralView } from "@/components/budget/types";
 import { getBudgetService } from "@/server/budget-service";
 import { getProfileService } from "@/server/profile-service";
 
@@ -20,14 +21,25 @@ function pricingCurrency(): string {
   }
 }
 
+// Today's date in the budget time zone, e.g. "2026-10-14".
+function localDate(timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export default async function BudgetPage() {
   await connection();
   const service = getBudgetService();
   let status: BudgetStatusView;
+  let report: BudgetReportView;
   let open: DeferralView[];
   let history: DeferralView[];
   try {
-    status = await service.status();
+    report = await service.report();
+    status = report.budget;
     const all = await service.listDeferred();
     open = all.filter((item) => item.status === "DEFERRED").map(toDeferralView);
     history = all
@@ -58,12 +70,13 @@ export default async function BudgetPage() {
     <main className="budget-page">
       <h1>Budget &amp; deferred evaluations</h1>
       <p>
-        Track AI evaluation spend against a monthly budget. When the budget has no room, evaluations are deferred
-        instead of started, and wait here until you resume them.
+        Track AI evaluation spend and usage against a monthly budget and optional limits. When the budget or a
+        limit has no room, evaluations are deferred instead of started, and wait here until you resume them.
       </p>
       <BudgetCard status={status} />
-      <BudgetSettingsForm status={status} defaultCurrency={pricingCurrency()} />
+      <BudgetSettingsForm status={status} defaultCurrency={pricingCurrency()} callLimitBounds={report.basis.callLimit} />
       <DeferredBacklog deferrals={open} activeProfile={activeProfile} />
+      <CapacityReport report={report} todayLabel={localDate(report.period.timeZone)} />
       {history.length ? (
         <details className="source-details">
           <summary>Recently resumed or cancelled ({history.length})</summary>

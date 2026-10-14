@@ -155,11 +155,15 @@ export class PrismaDeferredEvaluationRepository {
 
   async touchChecked(
     transaction: AdmissionTransaction,
-    input: { id: string; reasonSnapshot: object; now: Date },
+    input: { id: string; reasonSnapshot: object; now: Date; reasonCode?: string },
   ) {
     await transaction.deferredEvaluation.updateMany({
       where: { id: input.id, status: "DEFERRED" },
-      data: { lastCheckedAt: input.now, reasonSnapshot: input.reasonSnapshot as Prisma.InputJsonValue },
+      data: {
+        lastCheckedAt: input.now,
+        reasonSnapshot: input.reasonSnapshot as Prisma.InputJsonValue,
+        ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
+      },
     });
   }
 
