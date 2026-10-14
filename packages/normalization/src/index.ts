@@ -1,6 +1,8 @@
 import {
   manualStatedDetailsSchema,
   normalizedOpportunitySchema,
+  parseGeographyList,
+  residencyRequirementFor,
   type FieldProvenanceInput,
   type ManualStatedDetails,
   type NormalizedOpportunity,
@@ -8,6 +10,7 @@ import {
   type RawOpportunity,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
+import { parseResidency, residencySourceFields } from "./residency";
 import {
   seniorityFromTitle,
   standardizeEmploymentType,
@@ -16,6 +19,7 @@ import {
 
 export { bareDollarCurrencySourceField, parseCompensation, type ParsedCompensation } from "./compensation";
 export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
+export { parseResidency, residencySourceFields, type ParsedResidency, type ResidencyStatement } from "./residency";
 
 function normalizeOptionalText(value: string | null): string | null {
   if (value === null) {
@@ -106,6 +110,27 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const titleSeniority = seniorityFromTitle(title);
       const seniority = details.seniority ?? titleSeniority;
       const compensation = parseCompensation(salaryText, details.compensationCurrency);
+      // Residency: what the user stated wins; otherwise only explicit
+      // statements in the location field or the job text (never currency,
+      // a bare "Remote", a city/country on its own, or nationality).
+      const statedRegions = details.residencyRegions === null ? null : parseGeographyList(details.residencyRegions);
+      if (details.residencyRegions !== null && statedRegions === null) {
+        throw new Error("Manual stated details are invalid");
+      }
+      const stated = details.residencyRequirement !== null || statedRegions !== null;
+      const parsedResidency = stated
+        ? null
+        : parseResidency({ location, rawText: rawOpportunity.description });
+      const residencyRegions = stated
+        ? statedRegions ?? (details.residencyRequirement === "US_REQUIRED" ? ["US"] : [])
+        : parsedResidency!.regions;
+      const residencyRequirement = stated
+        ? details.residencyRequirement ?? residencyRequirementFor(statedRegions!)
+        : parsedResidency!.requirement;
+      if (stated && details.residencyRequirement && statedRegions &&
+        residencyRequirementFor(statedRegions) !== details.residencyRequirement) {
+        throw new Error("Manual stated details are invalid");
+      }
 
       const opportunity: NormalizedOpportunity = normalizedOpportunitySchema.parse({
         domain,
@@ -131,6 +156,8 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         location,
         remoteStatus,
         timeZoneRequirements: null,
+        residencyRequirement,
+        residencyRegions,
         salaryMin: compensation.minimum,
         salaryMax: compensation.maximum,
         salaryText,
@@ -287,6 +314,39 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         }
         if (compensation.maximum !== null) {
           derived("salaryMax", "compensationText", "DETERMINISTIC", compensation.maximum, salaryText);
+        }
+      }
+      if (stated) {
+        if (details.residencyRequirement !== null) {
+          derived("residencyRequirement", "residencyRequirement", "DIRECT", details.residencyRequirement, details.residencyRequirement);
+        } else if (residencyRequirement !== null) {
+          derived("residencyRequirement", "residencyRegions", "DETERMINISTIC", residencyRequirement, details.residencyRegions!);
+        }
+        if (residencyRegions.length) {
+          provenance.push({
+            fieldName: "residencyRegions",
+            sourceField: statedRegions ? "residencyRegions" : "residencyRequirement",
+            kind: "DETERMINISTIC",
+            normalizedValue: residencyRegions,
+            sourceReference: "manual-submission",
+            sourceText: details.residencyRegions ?? details.residencyRequirement,
+            collectedAt: rawOpportunity.discoveredAt,
+          });
+        }
+      } else if (residencyRequirement !== null) {
+        // One pair of rows per explicit statement, with a source marker.
+        for (const statement of parsedResidency!.statements) {
+          const sourceField = residencySourceFields[statement.source];
+          derived("residencyRequirement", sourceField, "DETERMINISTIC", residencyRequirement, statement.sentence);
+          provenance.push({
+            fieldName: "residencyRegions",
+            sourceField,
+            kind: "DETERMINISTIC",
+            normalizedValue: statement.regions,
+            sourceReference: "manual-submission",
+            sourceText: statement.sentence,
+            collectedAt: rawOpportunity.discoveredAt,
+          });
         }
       }
       if (compensation.currency !== null) {

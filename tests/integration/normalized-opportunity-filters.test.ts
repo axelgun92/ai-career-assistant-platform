@@ -164,7 +164,10 @@ describe("normalization persists explicit facts and preserves the source", () =>
 
   it("delivers the evaluator exactly the pre-amendment subject for the newly populated fields", async () => {
     const subject = await new PrismaEvaluationRepository().loadSubject({ opportunityId: ids.director!, userProfileId: null });
-    for (const field of fieldsWithheldFromEvaluator) expect(subject!.opportunity[field]).toBeNull();
+    // Withheld as their pre-amendment empty value: null, or [] for a list.
+    for (const field of fieldsWithheldFromEvaluator) {
+      expect(subject!.opportunity[field]).toEqual(field === "residencyRegions" ? [] : null);
+    }
     expect(subject!.opportunity.salaryText).toBe("£95,000");
     expect(subject!.opportunity.location).toBe("London");
     const delivered = subject!.provenance.map((row) => row.fieldName);

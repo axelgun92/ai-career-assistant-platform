@@ -224,6 +224,18 @@ test("normalized details from manual entry drive work-arrangement and salary fil
   await expect(rows(page).first()).toContainText("Senior Hybrid Customer Success Manager");
   await expect(rows(page).first()).toContainText(/Work arrangement\s*Hybrid/);
 
+  // Residency comes only from explicit statements: the API listing says "Applicants must reside in
+  // the United States"; the Berlin listing states none (a city is not a residency rule).
+  await page.goto(`/?q=${token}&residency=us-required`);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText("Remote Customer Success Manager");
+  await expect(rows(page).first()).toContainText(/Residency\s*U\.S\. residence required/);
+  await page.goto(`/?q=${token}&residency=unknown`);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText("Senior Hybrid Customer Success Manager");
+  await expect(rows(page).first()).toContainText(/Residency\s*Unknown/);
+  await expect(page.getByRole("link", { name: "Remove filter Residency: Unknown (not stated)" })).toBeVisible();
+
   // A salary amount compares one currency only (USD unless chosen) and says what it left out.
   await page.goto(`/?q=${token}&salaryMin=80000`);
   await expect(page).toHaveURL(/currency=USD&salaryMin=80000/);

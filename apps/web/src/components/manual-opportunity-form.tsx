@@ -44,6 +44,8 @@ export function ManualOpportunityForm() {
       department: optionalFormValue(formData, "department"),
       closingDate: optionalFormValue(formData, "closingDate"),
       compensationCurrency: optionalFormValue(formData, "compensationCurrency"),
+      residencyRequirement: optionalFormValue(formData, "residencyRequirement"),
+      residencyRegions: optionalFormValue(formData, "residencyRegions"),
     };
 
     try {

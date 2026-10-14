@@ -1,3 +1,4 @@
+import { residencyRequirement } from "./manual-opportunity-repository";
 import type { NormalizedOpportunity } from "@ai-career/core";
 import {
   evaluationSnapshotSchema,
@@ -17,7 +18,7 @@ function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
 }
 
 // Normalized fields first populated by product normalization in the Task 7
-// completion amendment. Until the evaluator workstream adopts them, the
+// completion amendment (residency / geographic eligibility included). Until the evaluator workstream adopts them, the
 // evaluator subject keeps receiving exactly what it received before (null,
 // and no provenance rows for them): the Customer Success salary hard filter
 // prefers salaryMin/salaryMax over its own parsing and does not compare
@@ -32,7 +33,23 @@ export const fieldsWithheldFromEvaluator = [
   "department",
   "employmentType",
   "closingDate",
+  "residencyRequirement",
+  "residencyRegions",
 ] as const;
+
+// What the evaluator received for each withheld field before it existed.
+const withheldValues = {
+  salaryMin: null,
+  salaryMax: null,
+  currency: null,
+  remoteStatus: null,
+  seniority: null,
+  department: null,
+  employmentType: null,
+  closingDate: null,
+  residencyRequirement: null,
+  residencyRegions: [],
+} satisfies Pick<NormalizedOpportunity, (typeof fieldsWithheldFromEvaluator)[number]>;
 
 const withheldFromEvaluator = new Set<string>(fieldsWithheldFromEvaluator);
 
@@ -41,7 +58,7 @@ function mapOpportunity(
 ): NormalizedOpportunity & { id: string } {
   return {
     ...mapOpportunityFields(record),
-    ...Object.fromEntries(fieldsWithheldFromEvaluator.map((field) => [field, null])),
+    ...withheldValues,
   };
 }
 
@@ -73,6 +90,8 @@ function mapOpportunityFields(
     location: record.location,
     remoteStatus: record.remoteStatus,
     timeZoneRequirements: record.timeZoneRequirements,
+    residencyRequirement: residencyRequirement(record.residencyRequirement),
+    residencyRegions: record.residencyRegions,
     salaryMin: record.salaryMin?.toNumber() ?? null,
     salaryMax: record.salaryMax?.toNumber() ?? null,
     salaryText: record.salaryText,

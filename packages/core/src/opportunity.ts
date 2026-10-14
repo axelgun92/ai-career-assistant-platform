@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { residencyRequirementValues } from "./geography";
 
 export const opportunityLifecycleStateSchema = z.enum([
   "DISCOVERED",
@@ -110,6 +111,10 @@ export const normalizedOpportunitySchema = z.object({
   location: nullableText,
   remoteStatus: nullableText,
   timeZoneRequirements: nullableText,
+  // Explicit residency / geographic eligibility (see geography.ts). Optional
+  // on input so existing producers stay valid; Unknown is null / [].
+  residencyRequirement: z.enum(residencyRequirementValues).nullable().default(null),
+  residencyRegions: z.array(z.string().trim().min(1)).default([]),
 
   salaryMin: nullableAmount,
   salaryMax: nullableAmount,

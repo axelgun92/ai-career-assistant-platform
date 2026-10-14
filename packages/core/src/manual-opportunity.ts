@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseGeographyList, residencyRequirementFor, residencyRequirementValues } from "./geography";
 import {
   compensationCurrencyCodes,
   employmentTypeValues,
@@ -44,13 +45,34 @@ export const manualOpportunitySubmissionSchema = z
     ),
     closingDate: z.iso.date().optional(),
     compensationCurrency: z.enum(compensationCurrencyCodes).optional(),
+    // Where the employee may (or must) reside, as the listing states it.
+    residencyRequirement: z.enum(residencyRequirementValues).optional(),
+    residencyRegions: optionalSuppliedText.refine(
+      (value) => value === undefined || (value.length <= 200 && parseGeographyList(value) !== null),
+      "List countries or regions such as United States, Spain, Canada or EU",
+    ),
     domain: optionalSuppliedText.refine(
       (value) =>
         value === undefined || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value),
       "Domain must be a lowercase slug such as customer-success",
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    // A stated requirement and stated locations must agree.
+    if (!value.residencyRequirement || !value.residencyRegions) return;
+    const regions = parseGeographyList(value.residencyRegions);
+    if (regions && residencyRequirementFor(regions) !== value.residencyRequirement) {
+      context.addIssue({
+        code: "custom",
+        path: ["residencyRegions"],
+        message:
+          value.residencyRequirement === "US_REQUIRED"
+            ? "U.S. residence required conflicts with locations outside the United States"
+            : "Non-U.S. residence conflicts with a United States-only location",
+      });
+    }
+  });
 
 // The explicitly stated details as preserved in the manual SourceRecord's
 // sourceMetadata.details. Older records have none; every value is optional.
@@ -61,6 +83,8 @@ export const manualStatedDetailsSchema = z
     department: z.string().nullable().default(null),
     closingDate: z.string().nullable().default(null),
     compensationCurrency: z.enum(compensationCurrencyCodes).nullable().default(null),
+    residencyRequirement: z.enum(residencyRequirementValues).nullable().default(null),
+    residencyRegions: z.string().nullable().default(null),
   })
   .default({
     workArrangement: null,
@@ -68,6 +92,8 @@ export const manualStatedDetailsSchema = z
     department: null,
     closingDate: null,
     compensationCurrency: null,
+    residencyRequirement: null,
+    residencyRegions: null,
   });
 
 export type ManualStatedDetails = z.infer<typeof manualStatedDetailsSchema>;

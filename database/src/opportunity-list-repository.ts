@@ -29,6 +29,10 @@ export interface OpportunityListItem {
   currency: string | null;
   remoteStatus: string | null;
   seniority: string | null;
+  // Explicit residency requirement (US_REQUIRED / NON_US / null = Unknown)
+  // and the stated eligible geographies (empty when not stated).
+  residencyRequirement: string | null;
+  residencyRegions: string[];
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -75,6 +79,7 @@ export interface OpportunityListFilters {
   sourceTypes?: string[];
   workArrangements?: string[];
   seniorities?: string[];
+  residencyRequirements?: string[];
   source?: string | null;
   companyId?: string | null;
   domain?: string | null;
@@ -240,6 +245,7 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   if (filters.sourceTypes?.length) add(Prisma.sql`o."sourceType"::text IN (${Prisma.join(filters.sourceTypes)})`);
   add(valuesOrMissing(Prisma.sql`o."remoteStatus"`, filters.workArrangements, "UNKNOWN"));
   add(valuesOrMissing(Prisma.sql`o."seniority"`, filters.seniorities, "UNKNOWN"));
+  add(valuesOrMissing(Prisma.sql`o."residencyRequirement"`, filters.residencyRequirements, "UNKNOWN"));
   if (filters.department) add(Prisma.sql`o."department" = ${filters.department}`);
   if (filters.source) add(Prisma.sql`o."source" = ${filters.source}`);
   if (filters.companyId) add(Prisma.sql`o."companyId" = ${filters.companyId}::uuid`);
@@ -301,6 +307,8 @@ type Row = {
   currency: string | null;
   remoteStatus: string | null;
   seniority: string | null;
+  residencyRequirement: string | null;
+  residencyRegions: string[] | null;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -339,6 +347,8 @@ function toItem(row: Row, today: string): OpportunityListItem {
     currency: row.currency,
     remoteStatus: row.remoteStatus,
     seniority: row.seniority,
+    residencyRequirement: row.residencyRequirement,
+    residencyRegions: row.residencyRegions ?? [],
     postingDate: row.postingDate,
     createdAt: row.createdAt,
     discoveredAt: row.discoveredAt,
@@ -429,7 +439,7 @@ export class PrismaOpportunityListRepository {
             o."id", o."domain", o."status"::text AS "status", o."source", o."sourceType"::text AS "sourceType",
             o."title", c."name" AS "companyName", o."location", o."salaryText", o."postingDate",
             o."salaryMin"::float8 AS "salaryMin", o."salaryMax"::float8 AS "salaryMax", o."currency",
-            o."remoteStatus", o."seniority",
+            o."remoteStatus", o."seniority", o."residencyRequirement", o."residencyRegions",
             o."createdAt", o."discoveredAt", o."updatedAt", o."applicationUrl",
             (od."opportunityId" IS NOT NULL) AS "deferred",
             le."id" AS "latestId", le."status" AS "latestStatus",

@@ -91,6 +91,10 @@ export const seniorityOptions = {
   executive: "EXECUTIVE",
   unknown: "UNKNOWN",
 } as const;
+// Explicit residency / geographic eligibility. "non-us" means residence
+// outside the United States is explicitly permitted or required; "unknown"
+// means nothing explicit was stated (never assumed from currency or "Remote").
+export const residencyOptions = { "us-required": "US_REQUIRED", "non-us": "NON_US", unknown: "UNKNOWN" } as const;
 // Salary amounts are only compared within one currency (no conversion).
 export const salaryCurrencyOptions = [
   "USD", "CAD", "AUD", "NZD", "EUR", "GBP", "CHF", "SEK", "NOK", "DKK",
@@ -132,6 +136,7 @@ export interface OpportunityQuery {
   sourceType: Keys<typeof sourceTypeOptions>;
   arrangement: Keys<typeof arrangementOptions>;
   seniority: Keys<typeof seniorityOptions>;
+  residency: Keys<typeof residencyOptions>;
   source: string | null;
   company: string | null;
   domain: string | null;
@@ -248,6 +253,7 @@ export function parseOpportunityQuery(
     sourceType: multi(params, "sourceType", sourceTypeOptions),
     arrangement: multi(params, "arrangement", arrangementOptions),
     seniority: multi(params, "seniority", seniorityOptions),
+    residency: multi(params, "residency", residencyOptions),
     source: text(params, "source"),
     company: company && uuidPattern.test(company) ? company.toLowerCase() : null,
     domain: text(params, "domain"),
@@ -275,7 +281,7 @@ export function serializeOpportunityQuery(
   const params = new URLSearchParams();
   if (query.view !== (options.defaultView ?? defaultView)) params.set("view", query.view);
   if (query.q) params.set("q", query.q);
-  for (const key of ["rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority"] as const) {
+  for (const key of ["rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority", "residency"] as const) {
     for (const value of query[key]) params.append(key, value);
   }
   for (const key of ["source", "company", "domain", "title", "location", "salary", "department", "currency"] as const) {
@@ -315,7 +321,7 @@ export function pageCountFor(total: number, pageSize: number): number {
 }
 
 const filterKeys = [
-  "q", "rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority",
+  "q", "rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority", "residency",
   "source", "company", "domain", "title", "location", "salary", "department", "currency",
   "salaryMin", "salaryMax", "from", "to",
 ] as const;
@@ -334,7 +340,7 @@ export function hasSalaryRange(query: Pick<OpportunityQuery, "salaryMin" | "sala
 
 export function clearFilters(query: OpportunityQuery): OpportunityQuery {
   return withChanges(query, {
-    q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [], arrangement: [], seniority: [],
+    q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [], arrangement: [], seniority: [], residency: [],
     source: null, company: null, domain: null, title: null, location: null, salary: null,
     department: null, currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
   });
@@ -352,6 +358,7 @@ export interface OpportunityListFilters {
   sourceTypes: string[];
   workArrangements: string[];
   seniorities: string[];
+  residencyRequirements: string[];
   source: string | null;
   companyId: string | null;
   domain: string | null;
@@ -380,6 +387,7 @@ export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
     sourceTypes: stored(query.sourceType, sourceTypeOptions),
     workArrangements: stored(query.arrangement, arrangementOptions),
     seniorities: stored(query.seniority, seniorityOptions),
+    residencyRequirements: stored(query.residency, residencyOptions),
     source: query.source,
     companyId: query.company,
     domain: query.domain,

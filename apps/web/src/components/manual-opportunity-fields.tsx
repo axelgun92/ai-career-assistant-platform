@@ -4,6 +4,7 @@
 import { salaryCurrencyOptions } from "../server/opportunity-query";
 import {
   employmentTypeChoices,
+  residencyChoices,
   seniorityChoices,
   workArrangementChoices,
 } from "./opportunity-facts";
@@ -33,6 +34,8 @@ export const manualOpportunityFieldNames = [
   "department",
   "closingDate",
   "compensationCurrency",
+  "residencyRequirement",
+  "residencyRegions",
 ] as const;
 
 export type ManualOpportunityFieldName = (typeof manualOpportunityFieldNames)[number];
@@ -104,6 +107,7 @@ const selectFields = [
   ["seniority", "Seniority", seniorityChoices],
   ["employmentType", "Employment type", employmentTypeChoices],
   ["compensationCurrency", "Salary currency", currencyChoices],
+  ["residencyRequirement", "Residency requirement", residencyChoices],
 ] as const satisfies ReadonlyArray<
   readonly [ManualOpportunityFieldName, string, ReadonlyArray<readonly [string, string]>]
 >;
@@ -157,7 +161,8 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
         <p className="field-help">
           Fill in only what the listing states. Anything left blank stays Unknown; nothing is guessed from the
           job text. Salary amounts are read from the compensation text; a plain “$” is read as US dollars unless
-          you choose a currency here.
+          you choose a currency here. Residency is only recorded when the listing states where you must or may
+          live; a salary currency or “Remote” alone never implies it.
         </p>
         <div className="form-grid">
           {selectFields.map(([name, label, choices]) => (
@@ -178,6 +183,16 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
             Department
             <input name="department" maxLength={120} {...errorProps("department", fieldErrors)} />
             <FieldError name="department" fieldErrors={fieldErrors} />
+          </label>
+          <label>
+            Eligible residence (countries or regions)
+            <input
+              name="residencyRegions"
+              maxLength={200}
+              placeholder="e.g. United States, or Spain, Portugal"
+              {...errorProps("residencyRegions", fieldErrors)}
+            />
+            <FieldError name="residencyRegions" fieldErrors={fieldErrors} />
           </label>
           <label>
             Closing date

@@ -1,6 +1,8 @@
 // Readable labels for normalized position and compensation facts. Display
 // only: stored values are shown as recorded and null always reads Unknown.
 
+import { geographyName } from "@ai-career/core";
+
 export const workArrangementChoices = [
   ["REMOTE", "Remote"],
   ["HYBRID", "Hybrid"],
@@ -51,4 +53,22 @@ export function formatSalaryRange(
     return min === max ? `${amount(min)}${unit}` : `${amount(min)}–${amount(max)}${unit}`;
   }
   return min !== null ? `At least ${amount(min)}${unit}` : `Up to ${amount(max!)}${unit}`;
+}
+
+export const residencyChoices = [
+  ["US_REQUIRED", "U.S. residence required"],
+  ["NON_US", "Non-U.S. residence allowed"],
+] as const;
+
+export const residencyLabel = lookup(residencyChoices);
+
+// "U.S. residence required", "Non-U.S. residence allowed (Spain, Portugal)",
+// or "Unknown". The eligible geographies are shown exactly as stated.
+export function formatResidency(
+  requirement: string | null | undefined,
+  regions: readonly string[] | null | undefined,
+): string {
+  const label = residencyLabel(requirement);
+  if (!requirement || requirement === "US_REQUIRED" || !regions?.length) return label;
+  return `${label} (${regions.map(geographyName).join(", ")})`;
 }

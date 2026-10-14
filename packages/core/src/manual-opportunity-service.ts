@@ -131,6 +131,8 @@ export function createManualOpportunityService(input: {
             department: submission.department ?? null,
             closingDate: submission.closingDate ?? null,
             compensationCurrency: submission.compensationCurrency ?? null,
+            residencyRequirement: submission.residencyRequirement ?? null,
+            residencyRegions: submission.residencyRegions ?? null,
           },
         },
         rawPayload: {
@@ -151,6 +153,8 @@ export function createManualOpportunityService(input: {
           department: submission.department ?? null,
           closingDate: submission.closingDate ?? null,
           compensationCurrency: submission.compensationCurrency ?? null,
+          residencyRequirement: submission.residencyRequirement ?? null,
+          residencyRegions: submission.residencyRegions ?? null,
         },
         discoveredAt,
       });

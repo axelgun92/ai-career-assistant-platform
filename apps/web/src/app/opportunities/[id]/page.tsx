@@ -18,6 +18,7 @@ import { toApplicationView } from "@/components/application/types";
 import { getApplicationStore } from "@/server/application-service";
 import {
   employmentTypeLabel,
+  formatResidency,
   formatSalaryRange,
   seniorityLabel,
   workArrangementLabel,
@@ -135,6 +136,12 @@ export default async function OpportunityPage({
     ["Posting date", detail.opportunity.postingDate],
     ["Closing date", detail.opportunity.closingDate],
     ["Work arrangement", detail.opportunity.remoteStatus ? workArrangementLabel(detail.opportunity.remoteStatus) : null],
+    [
+      "Residency requirement",
+      detail.opportunity.residencyRequirement
+        ? formatResidency(detail.opportunity.residencyRequirement, detail.opportunity.residencyRegions)
+        : null,
+    ],
     ["Seniority (as stated)", detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null],
     ["Department", detail.opportunity.department],
     ["Employment type", detail.opportunity.employmentType ? employmentTypeLabel(detail.opportunity.employmentType) : null],

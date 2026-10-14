@@ -586,7 +586,7 @@ Run these against an isolated test database for the automated checks, and as ope
 6. The `Recommendation.evidenceReferences` default drift decision. `pnpm db:verify-migrations` confirms it is the only schema/migration difference.
 7. Task 9 additions in this handoff (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
 8. Profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`; handoff above) and its post-integration acceptance tests.
-9. Task 7 completion amendment: the evaluator subject withholds the newly normalized fields (`fieldsWithheldFromEvaluator` in `loadSubject()`); decide whether and how the evaluator adopts them (handoff below).
+9. Task 7: the evaluator subject withholds the newly normalized salary, position and residency fields (`fieldsWithheldFromEvaluator` in `loadSubject()`). Milestone 4 adopts them per the "Final Data Contract" in the Task 7 handoff below; migration `20261016090000_opportunity_residency_requirement` is part of the merge.
 10. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
 
 #### Before Scraper Work
@@ -601,7 +601,7 @@ Run these against an isolated test database for the automated checks, and as ope
   - the evaluator reading the oldest `SourceRecord`;
   - the unused `DuplicateReference`, discovery and deduplication packages.
 
-### Handoff: Task 7 Completion Amendment — Normalized Opportunity Fields (Review Requested)
+### Handoff: Task 7 Completion — Normalized Opportunity Fields and the Milestone 4 Data Contract (Review Requested)
 
 **Date:** 2026-10-14  
 **From:** Claude main-product workstream  
@@ -614,20 +614,59 @@ Run these against an isolated test database for the automated checks, and as ope
   - `salaryMin`, `salaryMax`, `currency`;
   - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
 - Every populated value has a `FieldProvenance` row. The original text, the `SourceRecord` and the raw payload are unchanged.
+- Explicit residency / geographic eligibility is now normalized: `residencyRequirement` and `residencyRegions`. Migration `20261016090000_opportunity_residency_requirement` is additive; existing rows read as Unknown and nothing is backfilled.
 - Dashboard filters and sorts use these fields. Details are in `CURRENT_PROGRESS.md` ("Task 7 completion amendment").
-- No migration was needed: the columns already existed.
+
+#### Final Data Contract for Codex Milestone 4 (salary eligibility)
+
+Task 7 stores facts only. It makes no Pass / Review / Skip decision, no FX conversion and no cost-of-living judgement; those belong to Milestone 4.
+
+| Fact | Column | Values | Unknown |
+|---|---|---|---|
+| Salary bounds | `salaryMin`, `salaryMax` (Decimal) | Stated annual amounts, in the stated currency. Open-ended ranges set one bound. | null (also for hourly/monthly pay, OTE, ambiguous figures) |
+| Currency | `currency` | ISO 4217 code. Explicit code or symbol, a user selection, or a bare "$" read as USD. | null (conflicting or ambiguous) |
+| Original compensation text | `salaryText` (+ `SourceRecord.rawSalaryText`) | Verbatim | null |
+| Location | `location` (+ `SourceRecord.rawLocation`) | Verbatim free text | null |
+| Work arrangement | `remoteStatus` | `REMOTE` / `HYBRID` / `ONSITE` | null |
+| Residency requirement | `residencyRequirement` | `US_REQUIRED`: residence must be in the U.S. `NON_US`: residence outside the U.S. explicitly permitted or required (e.g. "must be based in Spain", "EU residents only", "US or Canada", "anywhere in the world") | null |
+| Eligible residence | `residencyRegions` (text[]) | Stated geographies as ISO 3166-1 alpha-2 codes or `WORLDWIDE`, `EU`, `EEA`, `EUROPE`, `EMEA`, `LATAM`, `APAC`, `NORTH_AMERICA`, `AMERICAS` | `[]` |
+
+- **Policy keys on residency, never on currency.** A USD salary does not imply a U.S. job, and "Remote" does not imply U.S.-remote.
+- **Residency sources, in precedence order:**
+  1. The user's stated choice (`FieldProvenance` kind `DIRECT`, `sourceField` `residencyRequirement`; the region list is `DETERMINISTIC` from `residencyRegions`).
+  2. Explicit statements only, each recorded with kind `DETERMINISTIC` and a marker:
+     - `rawText:explicit-residency-statement` for job-text sentences such as "must reside/live/be based/be located in X", "open to candidates in X", "X only", "X residents only", "anywhere in the world";
+     - `location:explicit-eligible-geography` for location fields such as "Remote - X", "Remote (X)", "X Remote", "Remote - Worldwide".
+  - One pair of provenance rows is written per contributing statement, with `sourceText` set to the exact sentence or field.
+- **Stays Unknown:**
+  - currency, company headquarters, nationality or citizenship, work authorization, and time zones;
+  - a bare "Remote", or a city or country on its own (an office location);
+  - US states;
+  - preferred, negated or qualified wording, and conflicting statements.
+- **Mapping to the supplied policy (for Milestone 4 to implement, not done here):**
+  - `US_REQUIRED` → the U.S. policy: $60k+ Pass, below $60k Skip.
+  - `NON_US` → the non-U.S. policy, where `residencyRegions` names the geography for cost viability.
+  - null → residency Unknown; the policy says Unknown stays Unknown.
+  - FX for "USD equivalent" must be supplied by Milestone 4; Task 7 stores no converted amounts.
+
+#### Hand-over steps for Milestone 4
+
+- Remove fields from `fieldsWithheldFromEvaluator` (`database/src/evaluation-repository.ts`) once the evaluator handles them. The salary fields need currency-aware hard filters first.
+- `NormalizedOpportunity` already carries `residencyRequirement` and `residencyRegions`. They default to null / `[]`, so existing producers and fixtures stay valid.
+- Until adoption, the subject receives null / `[]` for them and no residency provenance rows. An integration test asserts this.
 
 #### ⚠ Evaluator boundary: inputs withheld, not changed
 
 - **Why:** the Customer Success extractor (`explicit-facts.ts`) prefers `opportunity.salaryMin` / `salaryMax` / `currency` over its own parsing. The salary hard filter does not compare currencies. Delivering, for example, a parsed "€60,000" would silently change hard-filter results and recommendations.
-- **What:** `PrismaEvaluationRepository.loadSubject()` sets `fieldsWithheldFromEvaluator` to null in the subject and drops their provenance rows:
+- **What:** `PrismaEvaluationRepository.loadSubject()` sets `fieldsWithheldFromEvaluator` to their pre-amendment empty values (null, or `[]` for `residencyRegions`) in the subject and drops their provenance rows:
   - `salaryMin`, `salaryMax`, `currency`;
-  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`;
+  - `residencyRequirement`, `residencyRegions`.
 - **Effect:**
   - The evaluator receives exactly what it received before this amendment, because these fields were always null.
   - `salaryText`, `location`, `jobDescription`, `postingDate` and all other inputs are unchanged.
   - An integration test asserts the withholding.
-- **The evaluator ignores the new raw-payload keys:** the manual raw payload gains `workArrangement`, `seniority`, `employmentType`, `department`, `closingDate` and `compensationCurrency`. The only evaluator reader of `rawPayload` is `ghost-job-risk.ts`, which reads `postingHistory` only.
+- **The evaluator ignores the new raw-payload keys:** the manual raw payload gains `workArrangement`, `seniority`, `employmentType`, `department`, `closingDate`, `compensationCurrency`, `residencyRequirement` and `residencyRegions`. The only evaluator reader of `rawPayload` is `ghost-job-risk.ts`, which reads `postingHistory` only.
 - **Decision for Codex:** whether and how the evaluator adopts these fields. Adopting the salary fields would at least need currency-aware salary hard filters. To adopt, remove a field from the list.
 
 #### Ingestion contract notes
@@ -635,7 +674,8 @@ Run these against an isolated test database for the automated checks, and as ope
 - `RawOpportunity` is unchanged.
   - Manual stated details travel in `sourceMetadata.details` (`manualStatedDetailsSchema` in core).
   - Employment type uses the existing `RawOpportunity.employmentType`.
-- Future source normalizers can reuse the parsers in `packages/normalization`: `parseCompensation`, `workArrangementFromLocation`, `seniorityFromTitle` and `standardizeEmploymentType`.
+- Future source normalizers can reuse the parsers in `packages/normalization`: `parseCompensation`, `workArrangementFromLocation`, `seniorityFromTitle`, `standardizeEmploymentType` and `parseResidency`.
+- The domain-neutral geography vocabulary is in `packages/core/src/geography.ts`.
 - The vocabularies are product-owned constants in `packages/core/src/opportunity.ts`. The shared `normalizedOpportunitySchema` was not narrowed.
 
 #### Contract Questions (not blocking)

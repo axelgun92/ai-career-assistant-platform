@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { DashboardFilterOptions } from "@ai-career/database";
 import {
   arrangementOptions,
+  residencyOptions,
   defaultPageSize,
   defaultSalaryCurrency,
   defaultSort,
@@ -20,6 +21,7 @@ import {
 } from "../../server/opportunity-query";
 import {
   arrangementLabels,
+  residencyFilterLabels,
   evaluationStateLabels,
   priorityLabels,
   recommendationLabels,
@@ -145,6 +147,7 @@ export function OpportunityFilters({
           <CheckboxFilter name="sourceType" legend="Source type" options={sourceTypeOptions} labels={sourceTypeFilterLabels} selected={query.sourceType} />
           <CheckboxFilter name="arrangement" legend="Work arrangement" options={arrangementOptions} labels={arrangementLabels} selected={query.arrangement} />
           <CheckboxFilter name="seniority" legend="Seniority (as stated)" options={seniorityOptions} labels={seniorityLabels} selected={query.seniority} />
+          <CheckboxFilter name="residency" legend="Residency requirement" options={residencyOptions} labels={residencyFilterLabels} selected={query.residency} />
           <fieldset className="filter-group filter-group-details">
             <legend>Details</legend>
             <label>

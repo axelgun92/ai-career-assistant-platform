@@ -29,7 +29,7 @@ describe("query parsing", () => {
   it("defaults to the active view, newest first, page 1, 25 per page, no filters", () => {
     expect(parse("")).toEqual({
       view: "active", q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [],
-      arrangement: [], seniority: [],
+      arrangement: [], seniority: [], residency: [],
       source: null, company: null, domain: null, title: null, location: null, salary: null,
       department: null, currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
       sort: "newest", page: 1, pageSize: 25,

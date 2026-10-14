@@ -342,6 +342,15 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 - **Work arrangement:** a stated choice, or else the location field when it states exactly one of Remote / Hybrid / On-site. A plain place name is never read as on-site, and the job description is never scanned.
 - **Seniority:** a stated choice, or else unambiguous title words only (Junior, Senior/Sr, Principal, Director, VP/Chief). "Lead", "Staff", "Associate", "Head", "Manager" and mixed titles stay Unknown.
 - **Department, employment type and closing date:** only as stated.
+- **Residency / geographic eligibility** (added 2026-10-16; migration `20261016090000_opportunity_residency_requirement`, additive):
+  - `Opportunity.residencyRequirement` is `US_REQUIRED`, `NON_US` (residence outside the U.S. explicitly permitted or required) or null (Unknown).
+  - `Opportunity.residencyRegions` lists the stated geographies (ISO country codes or regions such as `EU`, `EMEA`, `WORLDWIDE`); it is empty when not stated.
+  - **Sources:**
+    - the user's statement on the form ("Residency requirement", "Eligible residence");
+    - otherwise only explicit statements: job text such as "must reside in the United States", "US only", "EU residents only", "must be based in Spain" or "open to candidates in the US or Canada"; or a location field such as "Remote - United States" or "Remote (Spain)".
+  - **Never inferred** from salary currency, "Remote" alone, a city or country on its own, headquarters, nationality, work authorization or time zones. Preferred, negated or conflicting wording stays Unknown.
+  - **Provenance:** stated values are recorded DIRECT. Parsed values are DETERMINISTIC with markers `rawText:explicit-residency-statement` / `location:explicit-eligible-geography` and the exact sentence.
+  - The free-text location and the raw source record are unchanged. Older rows read as Unknown and are not backfilled.
 - **Manual form:** a new optional "Additional details" group (work arrangement, seniority, employment type, salary currency, department, closing date). Blank stays Unknown.
 - **Provenance and preservation:**
   - every populated value gets `FieldProvenance`: DIRECT when stated, DETERMINISTIC when read from text;
@@ -358,6 +367,7 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 **Dashboard (Task 7 completed):**
 - **Filters:**
   - work arrangement and seniority (multi-select, each with "Unknown (not stated)");
+  - residency requirement: U.S. residence required / Non-U.S. residence allowed / Unknown (multi-select, `residency=` in the URL);
   - department (values present in the data);
   - salary currency;
   - salary at least / at most.
@@ -369,26 +379,36 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 - **Semantics kept:** OR within a filter, AND across filters; malformed values are dropped; old URLs are unchanged; the canonical redirect adds `currency=USD` to a bare amount.
 - **Server-side and parameterized:** filtering runs in the existing `buildFilterPredicate` and sorts in the whitelisted orders. All values are bound parameters, and the API returns `salaryExclusions`.
 - **Rows and detail page:**
-  - rows show the work arrangement;
-  - the opportunity page shows salary range, closing date, work arrangement, seniority (as stated), department and employment type, each "Unknown" when not stated.
+  - rows show the work arrangement and residency;
+  - the opportunity page shows salary range, closing date, work arrangement, residency requirement (with eligible geographies), seniority (as stated), department and employment type, each "Unknown" when not stated.
 - **Fixed while verifying:** a filter change made before the page finished hydrating was silently lost. The form now submits such a change on mount. A unit test guards against the form ever submitting itself unprompted.
 
 **Not complete, and why:**
-- **Structured location** (country/region/city): there are no columns for it, and manual entry gives free text. It stays a "location contains" filter, deferred to retrieval and schema work.
+- **Structured location** (office city/region): manual entry gives free text, so it stays a "location contains" filter, deferred to retrieval. Eligible-residence geography is now structured (above).
+- **Residency from US states or cities** ("must reside in California"): not read, so it stays Unknown. Deferred until a geography hierarchy is agreed.
 - **Time-zone requirements, bonus and equity:** not populated from manual input.
 - **Re-normalizing changed listings:** there is no re-observation path yet, so it is blocked on dedup and re-observation in the scraper phase.
 - **Salary analytics:** still deferred.
 
-**No schema change or migration** (the columns already existed).
+**Schema:** only the residency migration above. The salary and position columns already existed.
+
+**Final data contract for Codex Milestone 4** (salary eligibility):
+- Facts stored: salary bounds, currency, original compensation text, location, work arrangement, residency requirement and eligible residence. The full table is in `HANDOFFS.md`.
+- Task 7 implements no salary policy: no Pass/Review/Skip, no FX conversion, no cost-of-living judgement, and no recommendation change.
+- The salary policy keys on residency, not on the quoted currency.
+- The evaluator subject still withholds all newly normalized fields until Milestone 4 adopts them.
 
 **Tests:**
 - unit `opportunity-normalization.test.ts` (39, including the bare-$ rule, explicit-currency precedence and provenance marking), `opportunity-filters-hydration.test.tsx` (5), plus query, UI and handler additions;
+- unit `opportunity-residency.test.ts` (37): the geography vocabulary; explicit U.S.-required and non-U.S. statements; generic Remote, ambiguous, negated and conflicting text staying Unknown; a USD salary for a Spain-located role; a U.S.-required role quoted in EUR; provenance; the stated-precedence rule; submission validation; the query and labels;
+- integration `opportunity-residency.test.ts` (7): persisted facts independent of currency, provenance markers, raw records unchanged, evaluator withholding, residency filters alone and with salary/currency, malformed values, legacy rows;
 - integration `normalized-opportunity-filters.test.ts` (12): persistence and provenance, evaluator withholding, salary boundaries, currencies, exclusions, malformed parameters, arrangement, seniority, department, AND/OR, null legacy rows, sorts and Unknown ordering;
-- E2E: manual entry with details, then the arrangement filter, the salary filter with its exclusion note, and the salary sort.
+- E2E: manual entry with details, then the arrangement filter, residency filters (U.S.-required and Unknown), the salary filter with its exclusion note, and the salary sort.
 
 **Verification** (isolated test database; normal database untouched; no paid calls):
 - typecheck, lint and Prisma validate pass;
-- unit 966/966, integration 168/168, E2E 25/25;
+- unit 1016/1016, integration 175/175, E2E 25/25 (after the residency addition);
+- `db:verify-migrations` passes (14 migrations, known drift only);
 - build passes.
 
 #### Completed — Task 8: Application tracker (October 9, 2026)

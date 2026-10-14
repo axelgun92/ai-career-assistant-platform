@@ -4,6 +4,7 @@
 import { sourceTypeLabel } from "../opportunity-provenance";
 import {
   arrangementOptions,
+  residencyOptions,
   evaluationStateOptions,
   opportunityHref,
   opportunityViews,
@@ -82,6 +83,12 @@ export const seniorityLabels: Record<keyof typeof seniorityOptions, string> = {
   unknown: "Unknown (not stated)",
 };
 
+export const residencyFilterLabels: Record<keyof typeof residencyOptions, string> = {
+  "us-required": "U.S. residence required",
+  "non-us": "Non-U.S. residence allowed",
+  unknown: "Unknown (not stated)",
+};
+
 export const sourceTypeFilterLabels = Object.fromEntries(
   Object.entries(sourceTypeOptions).map(([key, stored]) => [key, sourceTypeLabel(stored)]),
 ) as Record<keyof typeof sourceTypeOptions, string>;
@@ -115,7 +122,8 @@ export interface FilterChip {
   removeHref: string;
 }
 
-type MultiKey = "rec" | "eval" | "priority" | "role" | "segment" | "sourceType" | "arrangement" | "seniority";
+type MultiKey =
+  | "rec" | "eval" | "priority" | "role" | "segment" | "sourceType" | "arrangement" | "seniority" | "residency";
 
 const multiFilters: Array<{ key: MultiKey; name: string; labels: Record<string, string> }> = [
   { key: "rec", name: "Recommendation", labels: recommendationLabels },
@@ -126,6 +134,7 @@ const multiFilters: Array<{ key: MultiKey; name: string; labels: Record<string, 
   { key: "sourceType", name: "Source type", labels: sourceTypeFilterLabels },
   { key: "arrangement", name: "Work arrangement", labels: arrangementLabels },
   { key: "seniority", name: "Seniority", labels: seniorityLabels },
+  { key: "residency", name: "Residency", labels: residencyFilterLabels },
 ];
 
 const formatAmount = (value: number) => value.toLocaleString("en-US");
