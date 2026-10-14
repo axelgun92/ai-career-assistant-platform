@@ -9,6 +9,7 @@ import {
   type RawOpportunity,
 } from "@ai-career/core";
 import {
+  bareDollarCurrencySourceField,
   createManualOpportunityNormalizer,
   parseCompensation,
   seniorityFromTitle,
@@ -88,6 +89,55 @@ describe("compensation parsing", () => {
     expect(parseCompensation("CA$90,000")).toEqual(first);
     expect(parseCompensation("US$70,000")).toMatchObject({ currency: "USD" });
     expect(parseCompensation("US$70,000")).toMatchObject({ currency: "USD" });
+  });
+});
+
+describe("bare $ rule (product decision: read as USD, recorded as derived)", () => {
+  it("normalizes $72,000–$88,000 to 72000–88000 USD", () => {
+    expect(parseCompensation("$72,000–$88,000")).toMatchObject({
+      minimum: 72000, maximum: 88000, currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD",
+    });
+  });
+
+  it.each([
+    ["US$72,000–US$88,000", "USD"],
+    ["USD 72,000–88,000", "USD"],
+    ["CA$72,000–CA$88,000", "CAD"],
+    ["C$72,000", "CAD"],
+    ["$72,000–$88,000 CAD", "CAD"],
+    ["A$72,000–A$88,000", "AUD"],
+    ["AU$72,000", "AUD"],
+    ["$72,000–$88,000 AUD", "AUD"],
+    ["€72,000–€88,000", "EUR"],
+    ["£72,000–£88,000", "GBP"],
+  ])("explicit currency takes precedence: %s → %s", (text, currency) => {
+    expect(parseCompensation(text)).toMatchObject({ currency, currencyBasis: "STATED_CODE_OR_SYMBOL" });
+  });
+
+  it("never overrides an explicitly stated non-USD currency", () => {
+    expect(parseCompensation("$72,000 EUR").currency).toBeNull(); // contradiction: Unknown, not USD
+    expect(parseCompensation("£72,000 ($90,000)").currency).toBeNull();
+    expect(parseCompensation("$72,000", "GBP").currency).toBeNull();
+    expect(parseCompensation("$72,000", "CAD")).toMatchObject({ currency: "CAD", currencyBasis: "SELECTED" });
+  });
+
+  it("records the bare-$ currency as derived with its own marker; stated currencies are distinguishable", async () => {
+    const normalizer = createManualOpportunityNormalizer();
+    const currencyRow = async (salaryText: string, compensationCurrency: string | null = null) =>
+      (await normalizer.normalize(raw({
+        salaryText,
+        sourceMetadata: compensationCurrency ? { details: { compensationCurrency } } : null,
+      }))).provenance.find((row) => row.fieldName === "currency");
+
+    expect(await currencyRow("$72,000–$88,000")).toMatchObject({
+      kind: "DETERMINISTIC", sourceField: bareDollarCurrencySourceField, normalizedValue: "USD", sourceText: "$72,000–$88,000",
+    });
+    expect(await currencyRow("USD 72,000–88,000")).toMatchObject({
+      kind: "DETERMINISTIC", sourceField: "compensationText", normalizedValue: "USD",
+    });
+    expect(await currencyRow("CA$72,000")).toMatchObject({ sourceField: "compensationText", normalizedValue: "CAD" });
+    expect(await currencyRow("$72,000", "CAD")).toMatchObject({ kind: "DIRECT", sourceField: "compensationCurrency", normalizedValue: "CAD" });
+    expect(bareDollarCurrencySourceField).toBe("compensationText:bare-dollar-as-usd");
   });
 });
 

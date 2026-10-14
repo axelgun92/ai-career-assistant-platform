@@ -131,7 +131,10 @@ describe("normalization persists explicit facts and preserves the source", () =>
     const byField = Object.fromEntries(provenance.map((row) => [row.fieldName, row]));
     expect(byField.salaryMin).toMatchObject({ kind: "DETERMINISTIC", sourceField: "compensationText", normalizedValue: 90000, sourceText: "$90,000-$110,000" });
     expect(byField.salaryMax).toMatchObject({ normalizedValue: 110000 });
-    expect(byField.currency).toMatchObject({ kind: "DETERMINISTIC", normalizedValue: "USD", sourceText: "$90,000-$110,000" });
+    // A bare "$" is read as USD and recorded as derived, with its own marker.
+    expect(byField.currency).toMatchObject({
+      kind: "DETERMINISTIC", sourceField: "compensationText:bare-dollar-as-usd", normalizedValue: "USD", sourceText: "$90,000-$110,000",
+    });
     expect(byField.remoteStatus).toMatchObject({ kind: "DETERMINISTIC", sourceField: "location", normalizedValue: "REMOTE" });
     expect(byField.seniority).toMatchObject({ kind: "DETERMINISTIC", sourceField: "title", normalizedValue: "SENIOR" });
     expect(provenance.every((row) => row.sourceRecordId === source!.id)).toBe(true);
@@ -142,7 +145,9 @@ describe("normalization persists explicit facts and preserves the source", () =>
     expect(director).toMatchObject({ currency: "GBP", remoteStatus: "ONSITE", seniority: "DIRECTOR" });
     expect(director.closingDate?.toISOString()).toBe("2026-11-30T00:00:00.000Z");
     const hybrid = await database.opportunity.findUniqueOrThrow({ where: { id: ids.hybrid! } });
-    expect(hybrid).toMatchObject({ remoteStatus: "HYBRID", seniority: null, department: "Customer Success", employmentType: "FULL_TIME" });
+    expect(hybrid).toMatchObject({ remoteStatus: "HYBRID", seniority: null, department: "Customer Success", employmentType: "FULL_TIME", currency: "USD" });
+    const hybridCurrency = await database.fieldProvenance.findFirstOrThrow({ where: { opportunityId: ids.hybrid!, fieldName: "currency" } });
+    expect(hybridCurrency).toMatchObject({ kind: "DETERMINISTIC", sourceField: "compensationText", sourceText: "USD 70,000 - 80,000" });
     const [hybridSource] = await database.sourceRecord.findMany({ where: { opportunityId: ids.hybrid! } });
     expect(hybridSource).toMatchObject({ rawEmploymentType: "FULL_TIME" });
     expect(hybridSource!.sourceMetadata).toMatchObject({ details: { department: "Customer Success" } });

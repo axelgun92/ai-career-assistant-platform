@@ -640,7 +640,10 @@ Run these against an isolated test database for the automated checks, and as ope
 
 #### Contract Questions (not blocking)
 
-1. A bare "$" is read as USD (user decision, 2026-10-14). This matches the evaluator's own `currency ?? "USD"` default.
+1. **Decided (user, 2026-10-14):** a bare "$" is read as USD.
+   - It is recorded as derived: `FieldProvenance` kind `DETERMINISTIC`, `sourceField` `compensationText:bare-dollar-as-usd`. These rows can be found and revisited.
+   - An explicit currency (US$/USD, CA$/CAD, A$/AUD, €, £…) always takes precedence. The rule never overrides an explicit non-USD currency; a contradiction stays Unknown.
+   - This matches the evaluator's own `currency ?? "USD"` default.
 2. Salary range filters use overlap semantics. A range matches when it can reach the amount, and open-ended ranges match on their open side.
 3. A user-stated work arrangement or seniority takes precedence over the value read from location or title.
    - A stated currency that conflicts with an explicit currency in the compensation text leaves the currency Unknown.

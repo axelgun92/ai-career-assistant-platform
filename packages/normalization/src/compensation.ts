@@ -8,6 +8,11 @@ import {
 // numbers or a currency; anything ambiguous stays null (Unknown). The
 // original text is always preserved separately (salaryText, SourceRecord).
 
+// Provenance marker for a currency derived from a bare "$" (read as USD by
+// product decision, not stated by the source), so it stays identifiable
+// and can be revisited.
+export const bareDollarCurrencySourceField = "compensationText:bare-dollar-as-usd";
+
 export interface ParsedCompensation {
   minimum: number | null;
   maximum: number | null;

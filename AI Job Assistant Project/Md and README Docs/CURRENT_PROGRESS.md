@@ -333,7 +333,10 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
     - more than one candidate figure, an inverted range, or an implausible amount.
 - **Currency:**
   - from an explicit code or symbol (USD, US$, CA$, €, £…), or from the user's selection;
-  - a bare "$" is read as USD (user decision);
+  - a bare "$" is read as USD (user decision, confirmed 2026-10-14). Example: "$72,000–$88,000" → 72000–88000 USD.
+    - It is recorded as a derived value (`DETERMINISTIC`, source field `compensationText:bare-dollar-as-usd`), never as a stated currency, so it stays identifiable and can be revisited.
+    - An explicit currency always takes precedence: US$/USD → USD, CA$/C$/CAD → CAD, A$/AU$/AUD → AUD, € → EUR, £ → GBP.
+    - The rule never overrides an explicit non-USD currency. "$72,000 EUR", or a "$" with a selected non-dollar currency, leaves the currency Unknown.
   - conflicting currencies, or a "¥", stay Unknown;
   - no conversion exists.
 - **Work arrangement:** a stated choice, or else the location field when it states exactly one of Remote / Hybrid / On-site. A plain place name is never read as on-site, and the job description is never scanned.
@@ -379,7 +382,7 @@ Remaining non-evaluator product work is being completed in parallel by Claude.
 **No schema change or migration** (the columns already existed).
 
 **Tests:**
-- unit `opportunity-normalization.test.ts` (26), `opportunity-filters-hydration.test.tsx` (5), plus query, UI and handler additions;
+- unit `opportunity-normalization.test.ts` (39, including the bare-$ rule, explicit-currency precedence and provenance marking), `opportunity-filters-hydration.test.tsx` (5), plus query, UI and handler additions;
 - integration `normalized-opportunity-filters.test.ts` (12): persistence and provenance, evaluator withholding, salary boundaries, currencies, exclusions, malformed parameters, arrangement, seniority, department, AND/OR, null legacy rows, sorts and Unknown ordering;
 - E2E: manual entry with details, then the arrangement filter, the salary filter with its exclusion note, and the salary sort.
 

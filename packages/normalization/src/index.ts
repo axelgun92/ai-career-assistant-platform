@@ -7,14 +7,14 @@ import {
   type OpportunityNormalizer,
   type RawOpportunity,
 } from "@ai-career/core";
-import { parseCompensation } from "./compensation";
+import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
 import {
   seniorityFromTitle,
   standardizeEmploymentType,
   workArrangementFromLocation,
 } from "./position";
 
-export { parseCompensation, type ParsedCompensation } from "./compensation";
+export { bareDollarCurrencySourceField, parseCompensation, type ParsedCompensation } from "./compensation";
 export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
 function normalizeOptionalText(value: string | null): string | null {
@@ -293,7 +293,15 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         if (compensation.currencyBasis === "SELECTED") {
           derived("currency", "compensationCurrency", "DIRECT", compensation.currency, compensation.currency);
         } else if (salaryText !== null) {
-          derived("currency", "compensationText", "DETERMINISTIC", compensation.currency, salaryText);
+          // Derived, never direct: an explicit code or symbol in the text, or
+          // the bare-"$" rule, which is marked separately.
+          derived(
+            "currency",
+            compensation.currencyBasis === "BARE_DOLLAR_AS_USD" ? bareDollarCurrencySourceField : "compensationText",
+            "DETERMINISTIC",
+            compensation.currency,
+            salaryText,
+          );
         }
       }
 
