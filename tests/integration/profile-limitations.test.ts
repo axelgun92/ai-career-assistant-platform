@@ -11,6 +11,7 @@ import {
   PrismaUserProfileRepository,
   type VersionedUserProfileData,
 } from "@ai-career/database";
+import { createDoctorReads } from "../../apps/web/src/server/doctor";
 import { createProfileService } from "../../apps/web/src/server/profile-service";
 import { alexandraNugentCustomerSuccessProfile } from "../../apps/web/src/server/profile-import/alexandra-nugent-customer-success-profile";
 import { customerSuccessTestPreferences } from "../fixtures/customer-success";
@@ -175,6 +176,18 @@ describe("evaluation subject delivery and pinning", () => {
     const current = await evaluations.loadSubject({ opportunityId: queuedOpportunity, userProfileId: v2.id });
     expect(current?.userProfile).toMatchObject({ id: v2.id, version: 2 });
     expect((current?.userProfile?.data as { limitations?: unknown }).limitations).toEqual(limitations);
+
+    // The read-only operator check sees the migration state without changing it.
+    const doctor = createDoctorReads(database, {
+      workerConnected: async () => false,
+      queueSnapshot: async () => ({ pending: 0, oldestPendingAt: null, running: 0, expiredReclaimable: 0, expiredExhausted: 0 }),
+    });
+    expect(await doctor.activeCustomerSuccessProfile()).toEqual({ version: 2, storesLimitations: true });
+    const open = await doctor.openDeferrals();
+    expect(open.pinnedToOtherVersion).toBeGreaterThanOrEqual(1);
+    expect(open.open).toBeGreaterThanOrEqual(open.pinnedToOtherVersion);
+    expect(await database.deferredEvaluation.findUniqueOrThrow({ where: { id: deferred.deferredEvaluationId } }))
+      .toMatchObject({ status: "DEFERRED", userProfileId: v1.id });
   });
 });
 

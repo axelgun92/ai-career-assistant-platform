@@ -471,10 +471,28 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
 
 #### Post-Integration Acceptance (required once the evaluator branch is merged)
 
-1. The JSON editor accepts valid limitations and rejects invalid structure per `profileLimitationSchema`. `tests/integration/profile-limitations.test.ts` asserts the product follows whichever contract is installed, so it passes before and after integration.
-2. `pnpm profile:import:customer-success` and "Create from the starting profile" persist the migrated bundled profile, with its `limitations` read back unchanged.
-3. Deterministic Resume Match on a persisted profile with a limitation produces a Genuine Gap end to end.
-4. Operational: re-import and activate the migrated profile; cancel or re-request deferrals pinned to pre-migration versions; then run acceptance.
+Run these against an isolated test database for the automated checks, and as operator steps on the real installation. No paid calls except the explicitly authorized acceptance run.
+
+1. **Policy version:**
+   - Confirm the merged `packages/shared` `customerSuccessProductionSemanticPolicyVersion` is the evaluator's final version (Codex-owned; the product branch no longer pins one).
+   - Remove any `AI_EXECUTION_POLICY_VERSION` line from the real `.env`.
+   - `pnpm app:doctor` must show "Evaluation policy version" with PASS and that version.
+   - Restart the web app and worker together. Evaluations queued under the old policy fail closed with `SEMANTIC_EXECUTION_POLICY_MISMATCH`; request them again.
+2. **Migrated profile import:**
+   - `pnpm profile:import:customer-success` must create a new version from the migrated bundled profile (old versions unchanged).
+   - Read it back: `document.limitations` must equal the bundled limitations.
+   - Repeat for "Create from the starting profile" on an empty isolated database.
+3. **Profile activation:**
+   - `pnpm profile:import:customer-success --activate`, or activate on the Profile page.
+   - `pnpm app:doctor` must show the new version as active and "it stores structured limitations".
+4. **Old deferrals:**
+   - If `pnpm app:doctor` reports deferrals pinned to another profile version, review them on `/budget`. Resume keeps the pinned version; **Cancel request** then **Evaluate** uses the active one.
+   - Never update deferral or evaluation rows in place.
+5. **Limitations and Genuine Gap acceptance tests:**
+   - the JSON editor accepts valid and rejects invalid limitations per `profileLimitationSchema`;
+   - `tests/integration/profile-limitations.test.ts` passes unchanged;
+   - a deterministic (fixture-transport) evaluation of a persisted profile with a limitation produces a Genuine Gap only where the limitation's category and level cover the requirement, and Unknown without it;
+   - then the authorized live acceptance run on the activated migrated profile.
 
 ### Handoff: Task 9 — Operations Hardening and Final Integration Checklist (Review Requested)
 

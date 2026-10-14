@@ -104,9 +104,9 @@ Model routing is treated as an execution detail. It does not change the meaning 
 ### Implemented
 
 - shared Core evaluation framework;
-- manual opportunity ingestion;
+- manual opportunity ingestion with source provenance;
 - PostgreSQL persistence;
-- background evaluation processing;
+- background evaluation processing with a single-worker lock and crash recovery;
 - ordered Customer Success evaluation stages;
 - evidence tracking;
 - Unknown and contradiction handling;
@@ -117,16 +117,18 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - persisted evaluation history;
 - Customer Success results interface;
 - bounded evaluation polling and status handling;
-- safe rendering of untrusted job-description content.
+- safe rendering of untrusted job-description content;
+- opportunity lifecycle (save, apply, dismiss, archive, restore);
+- versioned profile and preferences management with an explicit active version, including persisted structured profile limitations;
+- monthly AI budget with deferral and resume;
+- dashboard search, filters, sorting and summaries;
+- application tracker;
+- setup and operations tooling (`pnpm app:setup`, `pnpm app:doctor`, migration verification).
 
 ### In Progress
 
-- final evaluator cost optimization;
-- JD Reconstruction optimization;
-- Resume Match optimization;
-- combined-path evaluator verification;
-- final mixed-model evaluation;
-- remaining application workflow and integration work outside the evaluator.
+- final evaluator stabilization and acceptance (Codex);
+- integration of the final evaluator into the product branch, followed by whole-product acceptance (see `HANDOFFS.md`, final integration checklist).
 
 ### Planned
 
@@ -254,7 +256,8 @@ pnpm app:doctor               # read-only check of everything above
 | Required to start | `DATABASE_URL` |
 | Required for real AI evaluation | `OPENAI_API_KEY`, `AI_MODEL`, `AI_MAX_OUTPUT_TOKENS`, `AI_RETRY_LIMIT`, `AI_CALL_BUDGET`, `AI_REQUEST_TIMEOUT_MS`, `EVALUATION_JOB_MAX_ATTEMPTS` |
 | Required by the worker | the row above plus `EVALUATION_JOB_LEASE_SECONDS`, `EVALUATION_WORKER_POLL_MS` |
-| Optional (accepted defaults) | `AI_DEFAULT_REASONING_EFFORT`, `AI_EXECUTION_POLICY_VERSION`, `AI_OPERATION_EXECUTION_OVERRIDES_JSON`, `AI_PRICING_*`, `AI_*_COST_PER_MILLION_TOKENS`, `AI_LONG_CONTEXT_*`, `AI_PRICING_EFFECTIVE_FROM` |
+| Optional (accepted defaults) | `AI_DEFAULT_REASONING_EFFORT`, `AI_OPERATION_EXECUTION_OVERRIDES_JSON`, `AI_PRICING_*`, `AI_*_COST_PER_MILLION_TOKENS`, `AI_LONG_CONTEXT_*`, `AI_PRICING_EFFECTIVE_FROM` |
+| Leave unset | `AI_EXECUTION_POLICY_VERSION`: the policy version is built into the evaluator and changes with it. An override goes stale, mislabels evaluations and weakens the worker's queued-policy check; `pnpm app:doctor` warns about one. |
 | Test-only (optional) | `TEST_DATABASE_URL`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE` |
 
 Without an OpenAI key (empty, or the old `YOUR_OPENAI_API_KEY` placeholder) the product still runs: capture, dashboard, profile, budget, applications and existing results all work. Requesting an evaluation returns "AI evaluation is not configured" (nothing is queued), and the worker refuses to start with a clear message. Changing AI settings requires restarting the web app and worker.
@@ -321,8 +324,19 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `/api/health` returns 503 | The database is unreachable. Start PostgreSQL / check `DATABASE_URL`. |
 | `prisma migrate dev` reports a `Recommendation.evidenceReferences` change | Known, documented drift (awaiting a decision); use `pnpm db:migrate` (deploy). `pnpm db:verify-migrations` confirms it is the only difference. |
 | `Cannot find module …/generated/prisma` | Run `pnpm prisma:generate`. |
+| `pnpm app:doctor` warns about the evaluation policy version | `.env` pins `AI_EXECUTION_POLICY_VERSION`. Remove the line and restart the web app and worker. Evaluations already queued under another policy fail safely with `SEMANTIC_EXECUTION_POLICY_MISMATCH`; request them again. |
+| `pnpm app:doctor` warns that deferrals use another profile version | Each deferral resumes with the profile version it was requested with. On `/budget`, resume to keep that version, or cancel and request again to use the active one. |
 
-### 9. Ingestion boundary (before scraper work)
+### 9. Updating the evaluator or the bundled profile
+
+When a new evaluator version or a new bundled Customer Success profile arrives:
+
+1. **Policy version:** keep `AI_EXECUTION_POLICY_VERSION` unset and run `pnpm app:doctor`. The "Evaluation policy version" line must show the evaluator's built-in version with PASS. Restart the web app and the worker together.
+2. **Profile:** run `pnpm profile:import:customer-success --activate`. This appends a new version (old versions are never changed) and makes it active. `pnpm app:doctor` then shows the active version and whether it stores structured limitations.
+3. **Deferred requests:** if `pnpm app:doctor` reports deferrals pinned to another profile version, review them on `/budget`. Resume keeps the pinned version. **Cancel request** followed by **Evaluate** on the opportunity uses the active one. Never edit them in the database.
+4. **Existing evaluations** keep the profile version, policy and pricing they ran with; reevaluate an opportunity to apply the new evaluator and profile.
+
+### 10. Ingestion boundary (before scraper work)
 
 Every source must converge on one pipeline: *source adapter → `RawOpportunity` (`packages/core/src/raw-opportunity.ts`) → preserved `SourceRecord` → normalizer for that source type → `Opportunity` + `FieldProvenance` → evaluation*. Manual entry is the only adapter today. Known manual-only points to generalize in the scraper phase:
 

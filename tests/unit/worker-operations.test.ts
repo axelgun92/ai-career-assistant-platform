@@ -3,6 +3,7 @@ import {
   aiConfigurationStatus,
   describeConfigurationProblem,
 } from "../../apps/web/src/server/ai-configuration";
+import { customerSuccessProductionSemanticPolicyVersion } from "@ai-career/shared";
 import {
   formatDoctorChecks,
   runDoctorChecks,
@@ -261,7 +262,7 @@ describe("pnpm app:doctor checks", () => {
   const reads = (overrides: Partial<DoctorReads> = {}): DoctorReads => ({
     ping: async () => undefined,
     appliedMigrations: async () => [{ name: "001_init", finished: true }],
-    hasActiveCustomerSuccessProfile: async () => false,
+    activeCustomerSuccessProfile: async () => null,
     workerConnected: async () => false,
     queueSnapshot: async () => ({
       pending: 2,
@@ -270,7 +271,7 @@ describe("pnpm app:doctor checks", () => {
       expiredReclaimable: 0,
       expiredExhausted: 1,
     }),
-    openDeferrals: async () => 1,
+    openDeferrals: async () => ({ open: 1, pinnedToOtherVersion: 0 }),
     ...overrides,
   });
 
@@ -291,6 +292,33 @@ describe("pnpm app:doctor checks", () => {
     expect(text).toMatch(/Stale evaluations: 1 evaluation\(s\) exceeded their worker lease .* does not prove the worker stopped/);
     expect(text).toContain("it recovers them on startup");
     for (const secret of ["secret-password", "YOUR_OPENAI_API_KEY", "localhost:5432"]) expect(text).not.toContain(secret);
+  });
+
+  it("reports the evaluator's built-in policy version and warns on a stale override", async () => {
+    const run = (overrides: Record<string, string | undefined>) =>
+      runDoctorChecks({ environment: { ...environment, ...overrides }, nodeVersion: "22.1.0", migrationFolders: [], prismaClientGenerated: true, reads: null, now });
+    const policy = async (overrides: Record<string, string | undefined>) =>
+      (await run(overrides)).find((check) => check.label === "Evaluation policy version");
+
+    expect(await policy({})).toMatchObject({ level: "PASS", detail: expect.stringContaining(customerSuccessProductionSemanticPolicyVersion) });
+    expect(await policy({ AI_EXECUTION_POLICY_VERSION: customerSuccessProductionSemanticPolicyVersion })).toMatchObject({ level: "PASS" });
+    const stale = await policy({ AI_EXECUTION_POLICY_VERSION: "an-older-policy-label" });
+    expect(stale).toMatchObject({ level: "WARN" });
+    expect(stale?.detail).toContain("Remove it from .env");
+  });
+
+  it("shows the active version, whether it stores limitations, and deferrals pinned to another version", async () => {
+    const checks = await runDoctorChecks({
+      environment, nodeVersion: "22.1.0", migrationFolders: ["001_init"], prismaClientGenerated: true, now,
+      reads: reads({
+        activeCustomerSuccessProfile: async () => ({ version: 4, storesLimitations: true }),
+        openDeferrals: async () => ({ open: 3, pinnedToOtherVersion: 2 }),
+      }),
+    });
+    const text = formatDoctorChecks(checks);
+    expect(text).toContain("PASS  Active profile: version 4 is active for Customer Success; it stores structured limitations");
+    expect(text).toMatch(/WARN {2}Deferred evaluations: 3 waiting for budget; 2 will run with a profile version other than the active one/);
+    expect(text).toContain("cancel and request again to use the active one");
   });
 
   it("stops at an unreachable database and fails missing basics", async () => {

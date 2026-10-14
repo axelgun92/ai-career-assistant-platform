@@ -470,6 +470,28 @@ The product persistence boundary can now carry structured profile `limitations`,
   3. a persisted profile with a limitation lets deterministic Resume Match produce a Genuine Gap end to end;
   4. re-import and activate the migrated profile before any acceptance run.
 
+#### Completed — Policy and profile integration readiness (main-product completion, task 2; October 14, 2026)
+
+The audit found no change that would require evaluator semantics to change.
+
+- **Stale policy pin removed:**
+  - `.env.example` no longer sets `AI_EXECUTION_POLICY_VERSION=customer-success-semantic-policy-v3-mixed-terra-luna`. It now explains why the variable stays unset.
+  - The policy version comes only from the evaluator's built-in `customerSuccessProductionSemanticPolicyVersion` (`packages/shared`, evaluator-owned, unchanged), so the integrated evaluator supplies its own version.
+  - No policy identifier was invented.
+  - The worker's fail-closed policy-mismatch check, and the policy and pricing metadata stored on evaluations, are unchanged.
+- **`pnpm app:doctor` (still read-only)** now reports:
+  - the effective policy version, with a WARN when `.env` overrides it;
+  - the active profile version and whether it stores structured limitations;
+  - open deferrals pinned to a profile version other than the active one, with guidance to resume or cancel and request again through the existing UI.
+- **Profile resolution audit:** explicit ID → active version → newest fallback (only when nothing was ever activated). Evaluation and deferral pinning are unchanged. No product code resolves "newest" where the active version applies.
+- **Docs:**
+  - README environment table, troubleshooting, a new "Updating the evaluator or the bundled profile" operator section, and the current development status;
+  - `PRODUCT_STATUS.md` main-product status.
+- **Tests:**
+  - unit: doctor policy, active-profile and deferral reporting;
+  - integration: doctor reads against a migrated profile and a deferral pinned to the older version, on the isolated test database.
+- **Verification:** see the commit for this task. No paid calls; normal database untouched.
+
 #### Remaining main-product order
 
 Revised roadmap:

@@ -111,11 +111,19 @@ Accepted Customer Success routing:
 
 ### Main Product Completion
 
-The evaluator is not the only remaining work. The rest of the application still needs to be completed and integrated around the evaluator.
+The main product around the evaluator is implemented on `claude/gallant-pasteur-y1ou3i`:
 
-This work includes the remaining application logic, UI, workflow completion, and integration required for a stable and usable first product.
+- the opportunity lifecycle;
+- versioned profile and preferences management with an explicit active version and persisted structured limitations;
+- the monthly AI budget with deferral and resume;
+- the dashboard;
+- the application tracker;
+- setup and operations tooling;
+- whole-product acceptance tests.
 
-Exact remaining items should be confirmed against the current repository before this section is expanded into a task-level checklist.
+`CURRENT_PROGRESS.md` records each task.
+
+What remains before the first stable product is the deliberate integration of the final evaluator and the post-integration acceptance steps in `HANDOFFS.md`.
 
 ## Planned After the Usable Product Is Complete
 
