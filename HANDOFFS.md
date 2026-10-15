@@ -693,3 +693,173 @@ Task 7 stores facts only. It makes no Pass / Review / Skip decision, no FX conve
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.
+
+---
+
+## Current-State Addendum — October 15, 2026
+
+Older handoffs above remain historical records. When a current-state statement below conflicts with an older handoff, use the newer handoff for active work and preserve the older entry as history.
+
+### Handoff: Task 7 normalized facts → Customer Success Milestone 4
+
+**Date:** 2026-10-15  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Consumed / Completed
+
+#### Completed
+
+- Task 7 completed deterministic normalization, persistence, provenance, dashboard filtering/sorting, and compatibility handling for salary/currency and residency facts.
+- Final Task 7 commit: `754f956dc0860149760936a61bdace0489404b9a` on `claude/gallant-pasteur-y1ou3i`.
+- The normalized evaluator-facing contract established:
+  - `salaryMin: number | null`
+  - `salaryMax: number | null`
+  - `currency: string | null`
+  - `residencyRequirement: "US_REQUIRED" | "NON_US" | null`
+  - `residencyRegions: string[]`
+  - original salary/location text and provenance remain preserved.
+- Salary amounts remain as stated; they are not annualized or FX-converted in persistence.
+- Residency is derived only from explicit where-you-may-live eligibility/restriction evidence, never from salary currency, company HQ, nationality, work authorization, time zone, or ordinary city/location text.
+
+#### Current Contract / Assumptions
+
+- Empty or ambiguous residency remains Unknown.
+- `US_REQUIRED` means all supported stated residency geography is U.S. geography.
+- `NON_US` means residence outside the U.S. is explicitly allowed or required; mixed U.S. + non-U.S. eligibility is `NON_US`.
+- Open salary ranges preserve the stated bound. A single disclosed figure may populate both bounds.
+- Non-annual compensation, OTE, conflicting currencies, unsupported currency symbols, or other ambiguous compensation remains Unknown.
+- Explicit structured residency fields take precedence over deterministic parsing.
+- Older opportunities are not backfilled and therefore retain Unknown for newly introduced facts.
+
+#### Verification Completed
+
+- Final Task 7 verification passed typecheck, lint, Prisma validation, 1036 unit tests, 176 integration tests, 25 E2E tests, and build on the isolated test database.
+- No paid provider calls were made and the normal application database was not used.
+
+#### Next Task
+
+- Milestone 4 was required to adopt the salary/currency/residency facts only after its deterministic salary policy became currency- and residency-aware.
+
+#### Do Not Change Without Coordination
+
+- Do not infer residency from currency or general location.
+- Do not persist converted salary values.
+- Do not move Customer Success salary thresholds into Core/normalization.
+- Core owns factual normalization; the Customer Success domain owns salary decision policy.
+
+### Handoff: Milestone 4 Task 7 salary-policy alignment → Claude Task 8
+
+**Date:** 2026-10-15  
+**From:** Codex evaluator workstream  
+**To:** Claude main-product workstream  
+**Status:** Ready
+
+#### Completed
+
+- Customer Success Milestone 4 now consumes the Task 7 salary/currency/residency contract.
+- Commit `267124f` (`fix(cs): align Milestone 4 salary policy with Task 7`) is pushed to `origin/codex/evaluator-live-diagnostic`.
+- U.S.-residency-required roles use a hard `$60,000 USD-equivalent` minimum with no Review band and no maximum.
+- Non-U.S.-eligible roles use the accepted `$60k+` Pass, `$55k–$59,999.99` Review, `$50k–$54,999.99` conditional Review/Unknown, and `<$50k` Fail/Skip policy.
+- Residency requirement chooses the policy. Currency never chooses the residency policy.
+- Versioned FX policy: `cs-salary-policy-v2-ecb-2026-10-14`.
+- Released to evaluator with provenance: `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions`.
+- Still withheld from evaluator: `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
+- Current evaluator identifiers for this correction: evaluation `cs-evaluation-v1.2-m9`; domain `customer-success-v1.2`; rules `cs-rules-v1.2`; Hard Filters `cs-hard-filters-v2`.
+
+#### Current Contract / Assumptions
+
+- A disclosed minimum is the salary gate.
+- A max-only disclosure stays Unknown unless even the maximum is below the applicable floor.
+- Missing/unsupported currency remains Unknown; raw foreign-currency amounts are never compared directly to USD thresholds.
+- The `$50k–$54,999.99` non-U.S. band becomes Review only when explicit supported geography matches configured viable cost context; insufficient context remains Unknown.
+- No regional cost stereotypes or invented mappings are permitted.
+- Customer Success owns salary thresholds, affordability policy, and eligibility decisions. Core remains domain-neutral.
+- Final routing policy is locked as:
+  - deterministic — Hard Filters; Ghost Job Risk when posting history is unavailable; Final Recommendation;
+  - GPT-5.6 Terra — JD Reconstruction, Resume Match;
+  - GPT-5.6 Luna — Job Evaluation, Organizational Maturity, Alex Fit, Opportunity Priority;
+  - GPT-6 Luna — Company Alignment, Burnout Risk.
+
+#### Verification Completed
+
+- Milestone 4 correction passed 24 focused offline tests, workspace typecheck, changed-file ESLint, Prisma client generation/schema validation, and `git diff --check`.
+- No provider calls, normal-database connections/writes, migrations, or paid acceptance runs were performed during the correction.
+
+#### Known Issues / Blockers
+
+- DB-backed integration, migrations against a database, full evaluator/whole-product tests, web build, E2E, live provider calls, and final Task 7→evaluator acceptance were intentionally deferred.
+- Those checks belong to the final whole-product integration/acceptance pass after all intended main-product work is complete.
+
+#### Next Task
+
+- Claude Task 8 — Application Tracker completion pass on `claude/gallant-pasteur-y1ou3i`.
+- Audit the existing Task 8 implementation first; add only missing/incomplete requirements rather than redesigning working application-tracker code.
+- Task 9 completion pass follows Task 8, then any genuinely missing main-product features through feature 18.
+
+#### Do Not Change Without Coordination
+
+- Do not redesign evaluator stages, schemas, semantic contracts, prompts, routing, salary-policy semantics, evidence behavior, or recommendation logic merely to complete Task 8.
+- Do not move Customer Success salary thresholds into Core/shared normalization.
+- Do not run paid provider calls or use the normal application database for Task 8 testing.
+- Final evaluator/product integration, whole-product acceptance, evaluator freeze, and main merge occur only after all intended main-product work is complete.
+
+### Current-State Annotations — October 15, 2026 (Claude main-product workstream)
+
+**Date:** 2026-10-15  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream / final integration  
+**Status:** Ready (annotations only; the historical entries above are preserved verbatim)
+
+These annotations record current state against the preserved historical entries without editing them.
+
+#### Branch state of the Milestone 4 release
+
+- The Milestone 4 field release, the GPT-6 Luna routing for Company Alignment and Burnout Risk, and the version identifiers `cs-evaluation-v1.2-m9`, `customer-success-v1.2`, `cs-rules-v1.2` and `cs-hard-filters-v2` exist on `codex/evaluator-live-diagnostic` (`267124f`). They are not merged into `claude/gallant-pasteur-y1ou3i`.
+- On `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` in `database/src/evaluation-repository.ts` still withholds all ten Task 7 fields:
+  - `salaryMin`, `salaryMax`, `currency`;
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`;
+  - `residencyRequirement`, `residencyRegions`.
+- The Claude branch also still runs the earlier routing and version identifiers until the branches are combined.
+
+#### Final Integration Checklist (historical, above) — current status
+
+- **Item 2 (already-queued evaluations are not cancelled when the budget is lowered) has since been accepted** as a product decision. Recorded in the October 15 CHANGELOG, CURRENT_PROGRESS and PRODUCT_STATUS. The historical checklist text is left unchanged.
+- Every other item remains open as written.
+
+#### Additional final-integration requirements
+
+1. When the branches are combined, remove the five Codex-released fields from `fieldsWithheldFromEvaluator`:
+   - `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions`.
+   - Update the tests that assert withholding:
+     - `tests/integration/normalized-opportunity-filters.test.ts` ("delivers the evaluator exactly the pre-amendment subject…");
+     - `tests/integration/opportunity-residency.test.ts` ("withholds residency from the evaluator subject…").
+   - Keep `remoteStatus`, `seniority`, `department`, `employmentType` and `closingDate` withheld until a separately coordinated adoption.
+2. Whenever evaluator contracts change, re-run the full DB-backed integration and E2E suites, as well as unit tests, on the isolated test database. The historical "Evaluator Test-Harness Drift Repaired" handoff above records the same lesson.
+
+3. **Carry the evaluator branch's progress records into the canonical documentation.**
+   - The Codex branches keep their evaluator progress in a root-level `Md and README Docs/CURRENT_PROGRESS.md`. That path differs from this repository's `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`, and those branches predate the `AI Job Assistant Project/` documentation folder.
+   - The file's October 10–15 records are:
+     - Organizational Maturity mixed-state stabilization;
+     - Resume Match evidence-partition stabilization;
+     - Provider-prose semantic closure;
+     - Structured requirement specialization and real-artifact replay;
+     - JD Reconstruction specialization category binding;
+     - Requirement-relative evidence relevance;
+     - Statement groups, reconciliation and requirement-relative INDUSTRY;
+     - Milestone 4 salary-policy contract update.
+   - At branch combination, merge these records into the canonical `CURRENT_PROGRESS.md` and `EVALUATOR_STATUS.md` (§19 already lists them).
+   - Neither file's records may be dropped or silently overwritten.
+
+#### Documentation preservation notes (October 15, 2026)
+
+- **PRD/TDD archive:**
+  - The complete formal PRD/TDD history (23 versions, plus the new Core AI Framework PRD v1.4) is in git.
+  - Superseded versions are frozen in `AI Job Assistant Project/Product Recommendation Documents/Archive/` and `AI Job Assistant Project/Technical Design Documents/Archive/`.
+  - The current authoritative versions are listed in the `AGENTS.md` "Documentation Locations" table: Core AI Framework PRD v1.4, Core Platform TDD v1.5, Customer Success PRD v1.3, Customer Success TDD v1.3, and Semantic Evaluation Playbook v1.2 (v1.1 kept beside it).
+- **Task 6 contract questions, original wording.** The historical Task 6 handoff above shows Contract Questions 2 and 3 only in their resolved form; the 2026-10-14 naming cleanup replaced the question text in place. The original wording, as committed in `267138a` under "Contract Questions (unresolved, not blocking)", is preserved here alongside the resolutions:
+  - Question 2 (original):
+    > The TDD names the deferral reason `AI_BUDGET_LIMIT`; the product persists `BUDGET_UNAVAILABLE` (Task 6) and now `USAGE_LIMIT_REACHED`. Decide whether to rename or update the TDD.
+    - Resolution: the dollar budget defers with `AI_BUDGET_LIMIT`; legacy `BUDGET_UNAVAILABLE` rows are mapped at read time.
+  - Question 3 (original):
+    > "Terra-eligible under the active model configuration" is reported as eligible for evaluation in an executable domain; there is no per-model eligibility concept.
+    - Resolution: neutral "eligible for evaluation" wording, adopted in Core Platform TDD v1.5 and Core AI Framework PRD v1.4.

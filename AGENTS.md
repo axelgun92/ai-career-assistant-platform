@@ -10,11 +10,11 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.3.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.4.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.2.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.2.docx`
-5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.4.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.5.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.3.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.3.docx`
+5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.2.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
 8. `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md`
@@ -27,11 +27,11 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.3.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.2.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.4.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.2.docx` |
-| Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.4.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.3.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.5.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.3.docx` |
+| Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.2.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
 | `CURRENT_PROGRESS.md` | `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` |
@@ -45,6 +45,16 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 | Repository README | `README.md` (repository root) |
 
 Freelance Writing PRD/TDD documents also live in the PRD and TDD folders above; they are not current implementation targets.
+
+### Version Retention
+
+Older formal PRD/TDD versions are intentionally kept for history and are not authoritative:
+
+- Superseded PRDs: `AI Job Assistant Project/Product Recommendation Documents/Archive/`
+- Superseded TDDs: `AI Job Assistant Project/Technical Design Documents/Archive/`
+- The earlier Semantic Evaluation Playbook (`AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md`) stays beside v1.2 in `Md and README Docs/`.
+
+The table above identifies the authoritative current versions. Do not edit, rename, or delete archived versions; they are frozen historical records.
 
 ## Core Rules
 
@@ -62,20 +72,26 @@ Freelance Writing PRD/TDD documents also live in the PRD and TDD folders above; 
 
 ## Evaluator Rules
 
-Accepted routing:
+Locked routing (October 15, 2026):
 
 | Operation | Execution |
 | --- | --- |
+| Hard Filters | Deterministic |
 | JD Reconstruction | GPT-5.6 Terra |
 | Job Evaluation | GPT-5.6 Luna |
-| Company Alignment | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
 | Organizational Maturity | GPT-5.6 Luna |
 | Alex Fit | GPT-5.6 Luna |
-| Burnout Risk | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
 | Resume Match | GPT-5.6 Terra |
 | Opportunity Priority | GPT-5.6 Luna |
-| Ghost Job Risk | Deterministic when evidence is insufficient |
+| Ghost Job Risk | Deterministic when posting-history evidence is insufficient |
 | Final Recommendation | Deterministic application logic |
+
+Branch state:
+
+- The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on the Codex evaluator branch, `codex/evaluator-live-diagnostic`.
+- They are not merged into `main` or into the main-product branch `claude/gallant-pasteur-y1ou3i`. That branch keeps the earlier GPT-5.6 Luna routes for those two stages until the final evaluator/product integration.
 
 Do not change routing casually. Model changes require quality/cost comparison against the last known-good route.
 
@@ -104,18 +120,18 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order:
+Current order (October 15, 2026). The intended main product is features 1–18:
 
 ```text
-Finish Evaluator
-+
-Finish Remaining Main Product
-→ Stable Usable Product
-→ Retrieval / Scraper
-→ Later Expansion
+Task 1–9 completion pass (features 1–10; Task 8 Application Tracker next, then Task 9)
+→ remaining main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence,
+  browser extension companion, source intelligence, market analytics, personal job-search analytics,
+  company intelligence)
+→ final evaluator/product integration, whole-product acceptance, evaluator freeze, deliberate merge
+→ later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)
 ```
 
-Do not let retrieval work delay the first usable product.
+Retrieval and intelligence are main-product work, not a post-product phase. Keep the evaluator stable while they are built, and do not let retrieval destabilize the working manual workflow. See `DEVELOPMENT_PLAN.md`.
 
 ## Agent Coordination
 

@@ -1,5 +1,7 @@
 # AI Career Platform
 
+**Last updated:** October 15, 2026
+
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
 The platform is designed to support multiple domain-specific assistants on top of a shared Core AI Framework. The first implemented domain is the **Customer Success AI Assistant**.
@@ -78,6 +80,26 @@ The evaluator follows several core rules:
 - **Preserve contradictions.** Conflicting signals are surfaced rather than silently resolved.
 - **Transparent recommendations.** Apply / Review / Skip should be explainable from the underlying evidence and rules.
 
+## Normalized Opportunity and Evaluator Boundary
+
+Core owns factual collection, normalization, persistence, and provenance. Domain modules decide how those facts affect recommendations.
+
+The normalized Opportunity contract now supports factual fields including:
+
+- salary minimum and maximum as stated;
+- currency;
+- original salary text;
+- location and work arrangement;
+- employment type, seniority, department, and closing date;
+- `residencyRequirement` (`US_REQUIRED`, `NON_US`, or Unknown);
+- `residencyRegions` using supported country/subdivision/region codes.
+
+Normalization never persists FX-converted salary amounts and never derives residency from currency, company headquarters, citizenship, work authorization, time zone, or ordinary city text. Missing or ambiguous information remains Unknown. Field provenance remains attached to normalized facts.
+
+Customer Success salary thresholds, affordability policy, and recommendation consequences remain inside `domains/customer-success`; they are not Core rules. With Customer Success Milestone 4 (`267124f` on `codex/evaluator-live-diagnostic`), the evaluator consumes salary minimum/maximum, currency, residency requirement, and residency regions. Work arrangement, seniority, department, employment type, and closing date remain withheld from the evaluator until separately adopted through a coordinated contract change.
+
+**Branch state:** that release is not yet merged. On `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` in `loadSubject()` still withholds all ten Task 7 fields; the five released fields are removed from that list (and its tests updated) at final branch combination.
+
 ## Current Evaluator Architecture
 
 The Customer Success evaluator uses ordered semantic and deterministic stages.
@@ -86,12 +108,13 @@ Current accepted semantic model routing:
 
 | Operation | Execution |
 | --- | --- |
+| Hard Filters | Deterministic |
 | JD Reconstruction | GPT-5.6 Terra |
 | Job Evaluation | GPT-5.6 Luna |
-| Company Alignment | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
 | Organizational Maturity | GPT-5.6 Luna |
 | Alex Fit | GPT-5.6 Luna |
-| Burnout Risk | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
 | Resume Match | GPT-5.6 Terra |
 | Opportunity Priority | GPT-5.6 Luna |
 | Ghost Job Risk | Deterministic Unknown when posting-history evidence is insufficient |
@@ -99,45 +122,54 @@ Current accepted semantic model routing:
 
 Model routing is treated as an execution detail. It does not change the meaning of the domain schemas, stage outputs, evidence rules, Unknown handling, contradictions, or recommendation behavior.
 
+The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on `codex/evaluator-live-diagnostic`; `claude/gallant-pasteur-y1ou3i` keeps the earlier accepted GPT-5.6 Luna routes for both until final branch combination.
+
 ## Current Development Status
 
-### Implemented
+### Implemented / established
 
-- shared Core evaluation framework;
-- manual opportunity ingestion;
-- PostgreSQL persistence;
-- background evaluation processing;
-- ordered Customer Success evaluation stages;
-- evidence tracking;
-- Unknown and contradiction handling;
-- structured semantic outputs and validation;
+- shared Core evaluation framework and PostgreSQL-backed product foundation;
+- background evaluation processing and persisted evaluation history;
+- ordered Customer Success evaluation stages with evidence tracking, Unknown and contradiction handling, and structured semantic outputs and validation;
 - deterministic recommendation logic;
 - semantic usage and estimated-cost accounting;
 - per-operation model routing;
-- persisted evaluation history;
-- Customer Success results interface;
-- bounded evaluation polling and status handling;
-- safe rendering of untrusted job-description content.
+- Customer Success results interface with bounded evaluation polling and status handling and safe rendering of untrusted job-description content;
+- manual opportunity ingestion with raw-source preservation, deterministic normalization, and provenance;
+- opportunity dashboard, search/sort/filter, lifecycle actions, evaluation history, profile/version management, AI usage/cost display, budget controls, and application-tracking foundation;
+- persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
+- Task 7 normalized salary/currency/position/residency contract;
+- Customer Success nine-stage evaluator plus deterministic Final Recommendation;
+- Resume Match Optimization #2 and JD Reconstruction State2 accepted;
+- final routing policy locked (GPT-6 Luna routes on `codex/evaluator-live-diagnostic`; not yet merged);
+- Customer Success Milestone 4 aligned to Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged).
 
-### In Progress
+### In progress
 
-- final evaluator cost optimization;
-- JD Reconstruction optimization;
-- Resume Match optimization;
-- combined-path evaluator verification;
-- final mixed-model evaluation;
-- remaining application workflow and integration work outside the evaluator.
+- Claude Task 8 — Application Tracker completion pass.
 
-### Planned
+### Main-product work still required before final acceptance
 
-- automated job retrieval / scraping;
-- source normalization and ingestion;
-- deduplication across sources;
-- broader source integrations;
-- stronger posting-history support for Ghost Job Risk;
-- source analytics;
+- Task 9 completion pass and any remaining gaps in features 1–10;
+- automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
+- source health and conservative retrieval;
+- posting-history/ghost-job intelligence;
+- browser extension companion;
+- source intelligence;
+- job-market analytics;
+- personal job-search analytics;
+- company intelligence;
+- final evaluator/product integration and whole-product acceptance after all main-product features 1–18 are complete.
+
+### Later add-ons only
+
 - company watchlists;
-- additional domain assistants.
+- proactive notifications/follow-ups;
+- calendar integration;
+- email integration;
+- application-assistance features such as resume tailoring, cover letters, application questions, interview preparation, and learning recommendations.
+
+Beyond these add-ons, additional domain assistants remain planned on the same Core platform.
 
 ## Architecture
 
@@ -200,7 +232,7 @@ Authoritative product and technical documentation includes:
 - **Customer Success Assistant TDD** — defines the executable Customer Success technical design.
 - **AI Career Assistant Semantic Evaluation Implementation Playbook** — preserves evaluator implementation safeguards, testing lessons, routing guidance, and optimization rules.
 
-Additional repository documentation will cover:
+The following repository documentation also exists (paths are listed in the "Documentation Locations" table in `AGENTS.md`):
 
 - Milestones 1–10;
 - current product status;
@@ -214,23 +246,50 @@ Additional repository documentation will cover:
 
 The current development order is:
 
-1. finish and verify the evaluator;
-2. complete the remaining main-product work;
-3. integrate both into a stable, usable product;
-4. then add automated job retrieval and source ingestion;
-5. expand discovery, analytics, and additional domain capabilities afterward.
+1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
+2. complete the Task 1–9 product completion pass (Task 8 next, then Task 9);
+3. build any still-missing main-product features through feature 18, including retrieval and analytics/intelligence;
+4. only then perform final evaluator/product integration, whole-product acceptance, evaluator freeze, and deliberate merge;
+5. add features 19–23 later.
 
-The retrieval layer should feed the existing evaluator rather than redesign it.
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension is a companion client to the same backend/data/evaluator/dashboard, not a separate product.
 
 ## Local Development
 
-The authoritative setup and operations guide is the repository root `README.md` ("Local Development"): prerequisites, first-time setup (`pnpm app:setup`), the read-only `pnpm app:doctor` check, environment variables, starting the web app and exactly one worker, worker and queue states, the deterministic test workflow, and troubleshooting.
+The repository-root `README.md` ("Local Development") is the authoritative operator guide for prerequisites, first-time setup, environment variables, normal startup (the web app and exactly one worker), test-only setup and the deterministic test workflow, worker/queue behavior, troubleshooting, and health checks.
 
-Corrections to earlier notes kept here:
+Use the repository scripts documented there, including `pnpm app:setup` for setup and `pnpm app:doctor` for the read-only environment/health diagnostic. Do not duplicate machine-specific WSL paths or credentials in this architecture document.
+
+Testing rules:
+
+- unit tests may use deterministic/fake transports;
+- DB-backed integration/E2E work must use the designated isolated test database/environment;
+- never use, reset, seed, migrate, clean up, or otherwise modify the normal application database for experiments or tests without explicit authorization;
+- real semantic evaluations can incur provider charges and require explicit authorization for paid diagnostic/acceptance work.
+
+Operational notes:
 
 - Playwright starts its own Next.js dev server **unless one is already running on port 3000** (`reuseExistingServer` outside CI); stop your own `pnpm dev` before E2E runs.
 - Migrations are applied with `pnpm db:migrate` (`prisma migrate deploy`); `pnpm db:verify-migrations` checks a clean apply against a temporary database.
 - No machine-specific paths are required (earlier notes referenced a personal WSL path).
+
+### Historical development-environment notes (Windows/WSL, August 2026)
+
+Restored from the earlier version of this document (removed in the Task 9 operations update on October 7, 2026). These are permanent implementation lessons, not setup requirements. The personal WSL path from the original notes is intentionally omitted.
+
+- Development was performed through Ubuntu/WSL against a Windows-mounted repository.
+- WSL is not established as a repository requirement.
+- The worker was corrected to use an async `main()` rather than top-level `await`, allowing it to load under the project’s Node.js 24, Windows, pnpm, and `tsx` configuration.
+- A machine-specific Node.js 24/`tsx` error was occasionally encountered with temporary one-off test harnesses:
+
+```text
+uv_os_get_passwd returned ENOMEM
+```
+
+This was handled with a temporary preload workaround. It has not been established as a requirement for the normal web or worker commands and should not be presented as standard setup.
+
+- Playwright previously timed out while launching its web server. The current configuration fixes this by launching Next.js directly from `apps/web` on `127.0.0.1`. Do not reintroduce the old `pnpm dev` Playwright child-process configuration without retesting it.
+- Run shell commands on separate lines. Combining commands accidentally produced invalid commands such as `HEADgit` and `statusgit`.
 
 ## Repository Structure
 
@@ -270,7 +329,7 @@ tests/
 - Semantic results use strict structured outputs, schema validation, evidence-reference validation, Unknown preservation, contradiction preservation, and bounded retry/call budgets.
 - Provider calls and retries persist model, prompt version, token usage, pricing version, estimated cost, status, and duration.
 - Production supports per-operation model routing with no automatic Luna-to-Terra fallback.
-- Current mixed routing uses Terra for JD Reconstruction and Resume Match, and Luna for several bounded Customer Success interpretation stages.
+- Current routing uses GPT-5.6 Terra for JD Reconstruction and Resume Match; GPT-5.6 Luna for Job Evaluation, Organizational Maturity, Alex Fit, and Opportunity Priority; and GPT-6 Luna for Company Alignment and Burnout Risk (the GPT-6 Luna routes are on `codex/evaluator-live-diagnostic` until final integration).
 - Ghost Job Risk remains deterministic `UNKNOWN` when objective posting-history evidence is unavailable.
 - Final Apply/Review/Skip recommendation logic is deterministic.
 - Unit tests and normal fake-provider integration flows do not require live OpenAI calls.
@@ -281,4 +340,4 @@ tests/
 
 **Active development**
 
-The Customer Success evaluator is close to completion, and the current focus is finishing evaluator optimization while completing the remaining product workflow in parallel.
+Task 7 and the corresponding Customer Success Milestone 4 salary-policy alignment are complete. The current product task is Claude Task 8 — Application Tracker completion pass, followed by the Task 9 completion pass and the remaining main-product features through feature 18. Final integration/freeze is intentionally deferred until the entire intended main product is complete.

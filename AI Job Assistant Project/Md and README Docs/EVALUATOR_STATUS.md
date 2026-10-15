@@ -3,6 +3,7 @@
 **Domain:** Customer Success  
 **Status:** Final optimization and verification  
 **Last updated:** October 5, 2026
+**Addendum:** §19 (October 15, 2026) records the October 10–15 evaluator state: routing lock, GPT-6 Luna outcomes, and branch-specific work. §1–18 are preserved as written for October 5, 2026.
 
 ## Purpose
 
@@ -669,3 +670,83 @@ Evaluation:
 `437dcca0-f299-4066-b8d3-fe949c124ce3`
 
 This remains the live semantic-quality control while final model benchmarking is completed.
+
+---
+
+## 19. Status Addendum — October 10–15, 2026
+
+This addendum records evaluator work after §1–18 (October 5, 2026). Earlier sections are preserved as written. In particular, the §3 and §5 routing and the §13 cost state describe the evaluator at that time, and the GPT-6 Luna routes below did not exist then.
+
+### Model benchmarking and routing lock
+
+Following the §17 sequence, step 1 (stage-by-stage GPT model benchmarking):
+
+- **Job Evaluation:** GPT-6 Luna was **rejected**. The isolated benchmark changed Strategic Bridge Value from `HIGH` to `MODERATE` and omitted established process-development evidence. This is a classification and evidence regression, so it fails the same-or-better quality requirement. GPT-5.6 Luna remains the Job Evaluation route.
+- **Company Alignment and Burnout Risk:** routed to **GPT-6 Luna**.
+- **Remaining GPT-6 stage benchmarks:** intentionally **skipped by product decision**. The routing policy was locked rather than continuing paid experimentation.
+
+§17 step 2 is complete: **routing is locked.**
+
+| Operation | Locked execution |
+| --- | --- |
+| Hard Filters | Deterministic |
+| JD Reconstruction | GPT-5.6 Terra |
+| Job Evaluation | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
+| Organizational Maturity | GPT-5.6 Luna |
+| Alex Fit | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
+| Resume Match | GPT-5.6 Terra |
+| Opportunity Priority | GPT-5.6 Luna |
+| Ghost Job Risk | Deterministic when posting-history evidence is insufficient |
+| Final Recommendation | Deterministic application logic |
+
+§17 steps 3–4 are **deferred**: the final full evaluator run, final whole-product/live acceptance, and the evaluator baseline freeze happen at the final evaluator/product integration, after all main-product features 1–18 are complete.
+
+### Branch state
+
+- The routing lock (the GPT-6 Luna routes) and the evaluator work below are on the Codex evaluator branch, `codex/evaluator-live-diagnostic`. They are **not merged** into `main` or into the main-product branch `claude/gallant-pasteur-y1ou3i`.
+- The main-product branch keeps the earlier accepted routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) until final branch combination.
+
+### Evaluator records on the Codex evaluator branch (October 10–15, 2026)
+
+These records live in the Codex branches' root-level `Md and README Docs/CURRENT_PROGRESS.md`, a different path from this repository's documentation folder. They must be carried into the canonical documents at final branch combination; see `HANDOFFS.md`, October 15 annotations. Titles are as recorded there:
+
+- Organizational Maturity mixed-state stabilization — October 10, 2026
+- Resume Match evidence-partition stabilization — October 11, 2026
+- Provider-prose semantic closure — October 11, 2026 (Claude)
+- Structured requirement specialization and real-artifact replay — October 11, 2026 (Claude)
+- JD Reconstruction specialization category binding — October 12, 2026 (Claude)
+- Requirement-relative evidence relevance — October 12, 2026 (Claude, committed `f29530c`)
+- Statement groups, reconciliation and requirement-relative INDUSTRY — October 13, 2026 (Claude; recorded there as uncommitted pending review)
+- Milestone 4 salary-policy contract update — October 15, 2026 (Codex)
+
+Related evaluator-branch commits:
+
+- `ba95d76` wip: hand off current evaluator stabilization (Oct 11)
+- `04611af` fix: close evaluator prose-semantic contract gaps (Oct 11)
+- `1c09924` fix: finish evaluator semantic closure and artifact replay (Oct 11)
+- `7149563` fix: bind JD specialization flags to experience requirements (Oct 12)
+- `f29530c` fix: repair requirement-relative evidence relevance (Oct 12)
+- `067c5dc` fix: reconcile JD statement groups and requirement-relative industry evidence (Oct 13)
+- `267124f` fix(cs): align Milestone 4 salary policy with Task 7 (Oct 15)
+
+### Milestone 4 salary-policy alignment (`267124f`, Codex evaluator branch)
+
+- The Customer Success Hard Filters consume the Task 7 salary/currency/residency contract.
+- U.S.-residency-required roles use a hard `$60,000 USD-equivalent` minimum.
+- Non-U.S. roles use the Pass / Review / conditional Review / Fail bands.
+- FX policy is versioned as `cs-salary-policy-v2-ecb-2026-10-14`.
+- `salaryMin`, `salaryMax`, `currency`, `residencyRequirement` and `residencyRegions` are released to evaluator input.
+- Version identifiers: `cs-evaluation-v1.2-m9`, `customer-success-v1.2`, `cs-rules-v1.2`, `cs-hard-filters-v2`.
+- Focused offline verification passed. DB-backed integration, E2E and live acceptance are deferred to final integration.
+
+### Lessons recorded (see Semantic Evaluation Playbook v1.2, §13)
+
+- A newer or cheaper model is not adopted when it regresses an established classification or omits established evidence.
+- Debugging and acceptance validate the whole affected contract or path, not only the latest observed symptom.
+- Settled model benchmarks are not rerun without a substantive reason.
+
+### Semantic-quality control
+
+Evaluation `437dcca0-f299-4066-b8d3-fe949c124ce3` (§18) remains the recorded accepted semantic baseline until the final integration acceptance run establishes the post-integration baseline.

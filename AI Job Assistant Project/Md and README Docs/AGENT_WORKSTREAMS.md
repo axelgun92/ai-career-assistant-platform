@@ -1,7 +1,7 @@
 # Agent Workstreams
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 5, 2026
+**Last updated:** October 15, 2026
 
 ## Purpose
 
@@ -9,7 +9,43 @@ This document defines current ownership boundaries for coding agents so parallel
 
 It is a coordination document, not a product specification.
 
-## Current Workstream Split
+## Current Workstream Split (October 15, 2026)
+
+Ownership as defined in `DEVELOPMENT_PLAN.md` (October 15, 2026):
+
+### Codex
+
+Primary ownership:
+
+- evaluator internals;
+- evaluator-sensitive contract changes;
+- model routing and pricing policy;
+- deep evaluator debugging/audits;
+- paid/live diagnostics and final live acceptance when explicitly authorized.
+
+The evaluator routing policy is locked. Codex's evaluator work, including the GPT-6 Luna routes for Company Alignment and Burnout Risk and the Milestone 4 salary-policy alignment, lives on the evaluator branch (`codex/evaluator-live-diagnostic`). It is combined with the main-product branch only at the final integration checkpoint.
+
+### Claude / Claude Code
+
+Primary ownership:
+
+- product/UI/workflow completion;
+- application logic;
+- profile/budget/dashboard/tracker behavior;
+- retrieval architecture and most main-product implementation outside evaluator internals, including main-product features 11–18;
+- isolated product integration tests.
+
+Claude treats the evaluator as an existing boundary unless a genuine integration defect requires coordinated change. Current Claude work is on `claude/gallant-pasteur-y1ou3i`: the Task 1–9 completion pass, with Task 8 — Application Tracker next.
+
+### Shared rules (October 15, 2026)
+
+- The builder gets the first opportunity to debug its own code; the other agent may provide a second opinion.
+- Neither agent auto-merges `main`.
+- Shared schemas, persistence contracts, evaluator orchestration, queue/worker behavior, and ingestion/evaluator boundaries require explicit coordination.
+- Retrieval work may be split once ownership can be cleanly separated, but both agents must use one shared ingestion contract.
+- Agents should not edit the same files at the same time.
+
+## Earlier Workstream Split (October 5, 2026; superseded, kept as history)
 
 ### Codex
 
@@ -70,7 +106,20 @@ If both agents need the same area, one agent should finish and hand off before t
 
 ## Retrieval / Scraper Phase
 
-Retrieval begins after the evaluator and usable product are complete.
+**Current (October 15, 2026):** retrieval and intelligence are **main-product features 11–18**, not a later post-product phase:
+
+- automated retrieval/scraping;
+- source health and conservative retrieval;
+- posting-history/ghost-job intelligence;
+- the browser extension companion;
+- source intelligence;
+- job-market analytics;
+- personal job-search analytics;
+- company intelligence.
+
+They are built after the Task 1–9 completion pass and must be complete before final evaluator/product integration and acceptance. Only features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
+
+*Earlier wording (October 5, 2026; superseded):* Retrieval begins after the evaluator and usable product are complete.
 
 At that point, work may be split between agents.
 
@@ -102,5 +151,5 @@ The exact division can change, but both agents must use one shared ingestion con
 Whenever ownership changes:
 
 1. update this file if the workstream split materially changes;
-2. add a handoff entry to `docs/HANDOFFS.md` when work is actively transferred;
-3. update `docs/CURRENT_PROGRESS.md` with the new current owner and next task.
+2. add a handoff entry to `HANDOFFS.md` (repository root) when work is actively transferred;
+3. update `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` with the new current owner and next task.

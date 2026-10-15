@@ -1,135 +1,206 @@
 # Development Plan
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 5, 2026
+**Last updated:** October 15, 2026
 
 ## Goal
 
-Reach a stable, usable AI Job Assistant as quickly as possible without allowing the later retrieval/scraper work to block the first functioning product.
+Complete the full intended main product while preserving a usable manual workflow throughout development. Automated retrieval is part of the main product, not a later optional add-on, and final product acceptance occurs only after main-product features 1–18 are complete.
 
-## Development Order
+The manual workflow does not depend on automated retrieval: a user can enter an opportunity manually, evaluate it, review the persisted recommendation and evidence, and use the product meaningfully. Retrieval work must not destabilize that foundation.
 
-The accepted development sequence is:
+## Current Development State
+
+- The Customer Success evaluator architecture, optimizations, and routing policy are established.
+- Final routing is locked; Company Alignment and Burnout Risk use GPT-6 Luna, while the remaining accepted routes stay unchanged.
+- Claude completion-pass work has reached Task 7.
+- Task 7 normalized salary/currency/residency facts are complete at `754f956dc0860149760936a61bdace0489404b9a`.
+- Codex Milestone 4 has consumed that contract and aligned the Customer Success salary policy at `267124f`.
+- The next Claude task is Task 8 — Application Tracker completion pass.
+- Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
+
+**Branch state:** the routing lock and Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Task 7) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
+
+*(Earlier development order, superseded on October 15, 2026: Finish Evaluator + Finish Remaining Main Product → Integrate into a Stable Usable Product → Build Retrieval / Scraper → Expand Discovery, Analytics, and Domains. Retrieval and intelligence are now main-product features 11–18, completed before final acceptance.)*
+
+## Accepted Development Order
 
 ```text
-1. Finish Evaluator
+1. Finish evaluator implementation / corrections
         +
-2. Finish Remaining Main Product
+2. Finish core main-product completion pass (features 1–10)
         ↓
-3. Integrate into Stable Usable Product
+3. Build remaining main-product retrieval and intelligence (features 11–18)
         ↓
-4. Build Retrieval / Scraper
+4. Final evaluator + product integration, acceptance, freeze, and deliberate merge
         ↓
-5. Expand Discovery, Analytics, and Domains
+5. Later add-ons (features 19–23)
 ```
 
-The evaluator and the remaining main product can progress in parallel as long as their boundaries remain clear.
+The evaluator and main-product workstreams may progress in parallel as long as ownership boundaries remain explicit.
 
-## Phase 1 — Finish the Evaluator
+## Phase 1 — Evaluator Implementation and Corrections
 
-The evaluator is close to complete.
+The evaluator should remain stable while only demonstrated correctness/contract issues are addressed.
 
-Current remaining evaluator sequence:
+### Current state
 
-```text
-JD Reconstruction optimization #2
-→ Resume Match optimization #2
-→ combined-path integration
-→ final mixed-model evaluation
-```
+- Resume Match Optimization #2 is the accepted Resume Match baseline.
+- JD Reconstruction State2 remains the accepted JD Reconstruction baseline.
+- Final routing policy is locked:
+  - **Deterministic:** Hard Filters; Ghost Job Risk when objective posting-history evidence is unavailable; Final Recommendation.
+  - **GPT-5.6 Terra:** JD Reconstruction; Resume Match.
+  - **GPT-5.6 Luna:** Job Evaluation; Organizational Maturity; Alex Fit; Opportunity Priority.
+  - **GPT-6 Luna:** Company Alignment; Burnout Risk.
+- Milestone 4 now consumes the Task 7 salary/currency/residency contract.
+- Both the GPT-6 Luna routes and the Milestone 4 alignment are on `codex/evaluator-live-diagnostic` and reach the product only at final integration.
 
-### Evaluator Rules
+### Evaluator rules
 
-- Preserve the existing architecture, schemas, evidence behavior, and recommendation semantics.
-- Optimize for the quality/cost sweet spot offline before spending on live verification.
+- Preserve established architecture, schemas, evidence behavior, Unknown handling, contradictions, and recommendation semantics.
+- Do not fix only the latest observed symptom; treat an affected evaluator path as one contract from provider response through transport, conversion, validation, persistence, and downstream consumption.
+- Optimize for the quality/cost sweet spot offline before paid verification.
 - Never reduce required semantic quality merely to lower cost.
 - Compare every candidate against the last known-good implementation as **BETTER / SAME / WORSE** on required quality and structural cost.
 - Accept a candidate when it provides the same or better required quality at the same or lower total cost.
 - Do not accept higher cost unless the additional quality is genuinely required.
-- Keep every paid provider action explicitly authorized.
-- Keep isolated verification single-stage, zero-retry, no-fallback, and free from unrelated semantic calls.
+- Keep paid provider actions explicitly authorized.
+- Preserve isolated live-test safeguards: fresh checkpoint, at-most-once operation, single-stage scope free from unrelated semantic calls, zero retry, zero fallback, no normal-database mutation.
+- Do not rerun already-settled model benchmarks without a demonstrated reason.
+- Final full live acceptance belongs to the later whole-product integration phase.
 
-## Phase 2 — Finish the Remaining Main Product
+## Phase 2 — Complete Main-Product Features 1–10
 
-While evaluator internals are being finalized, complete the rest of the product outside evaluator internals.
+The completion pass audits existing work against the authoritative PRDs/TDDs and adds only missing, incomplete, or newly established requirements. It is not a redesign pass.
 
-This includes:
+### Core main-product scope
 
-- application logic;
-- remaining UI;
-- workflow completion;
-- integration;
-- any required product-level persistence/API work;
-- usability work needed for the first functioning product.
+1. Full opportunity dashboard.
+2. Search, sorting, and filtering.
+3. Evaluation history.
+4. Application tracker.
+5. Saved/rejected/archived organization.
+6. Manual job capture.
+7. AI usage and cost dashboard.
+8. Job source/provenance preservation.
+9. Deduplication with provenance retention.
+10. Persistent backlog plus budget-aware evaluation.
 
-This work should consume the evaluator as an existing product boundary rather than redesign it.
+### Current sequence
 
-## Phase 3 — Produce a Stable Usable Product
+- Tasks 1–7 have completed their current completion work.
+- **Next:** Task 8 — Application Tracker completion pass.
+- **Then:** Task 9 — operational-hardening/completion pass.
+- After Task 9, audit features 1–10 for any genuine remaining gaps before moving on.
 
-Once the evaluator and remaining application work are complete, combine them into a coherent first usable product.
+### Completion-pass rule
 
-The first usable product does not depend on automated retrieval.
+For each task:
 
-A user should be able to enter an opportunity manually, evaluate it, review the persisted recommendation and evidence, and use the product meaningfully.
+- classify requirements as complete, partial, missing, inconsistent, or intentionally out of scope;
+- preserve working implementation when it already satisfies the requirement;
+- update the current implementation directly when a final requirement changed;
+- do not bolt a parallel “amendment subsystem” onto obsolete behavior;
+- use only isolated/offline testing unless a paid/live action is explicitly authorized;
+- never use the normal application database for experiments or test validation;
+- consume the evaluator as an existing product boundary rather than redesign it.
 
-## Phase 4 — Build Retrieval / Scraping
+## Phase 3 — Build Main-Product Features 11–18
 
-Only after the evaluator and main product are complete should automated job retrieval become the primary focus.
+These features are part of the intended main product and must be complete before final product acceptance.
 
-Target architecture:
+11. Automated job discovery/retrieval/scraping.
+12. Source health monitoring and conservative retrieval: pacing, backoff, failure isolation, freshness checks, and expiry/removal detection.
+13. Ghost-job/posting-history intelligence.
+14. Browser extension companion using the same backend, account, data, evaluator, lifecycle, provenance, budget, and dashboard as the main app.
+15. Source intelligence: source quality, duplicate rates, reliability, cost per useful job, and outcomes by source.
+16. Job-market analytics: salary, role, location, skills/requirements, seniority, and recommendation trends.
+17. Personal job-search analytics: best-fit roles, recurring gaps, application-to-interview outcomes, strongest sources, and wasted effort.
+18. Company intelligence: repost/frequency patterns, hiring speed, remote friendliness, response patterns, and recurring roles.
 
-```text
-Job Sources
-→ Retrieval / Scraping
-→ Normalization
-→ Deduplication
-→ Existing Evaluator
-→ Apply / Review / Skip
-```
+### Retrieval principles
 
-### Retrieval Principles
-
-- Do not create a second evaluator.
+- No second evaluator.
+- Retrieval feeds the existing `RawOpportunity → Normalization → Deduplication → Domain Evaluation` boundary.
 - Preserve one clear ingestion contract between retrieval and the existing Core Platform.
 - Keep source retrieval separate from normalization and evaluation logic.
-- Preserve source provenance.
-- Avoid duplicate paid evaluations.
+- Preserve every source and source provenance.
+- Prefer the strongest verified collection interface for each source.
 - Verify retrieval methods by evidence, not assumptions.
 - Once a source is sufficiently classified under the established source/retrieval categories, stop unnecessary reverse-engineering unless additional detail is actually required.
+- Use browser-assisted collection only where browser/session access is genuinely required.
+- The extension is a companion client, not a separate product or dashboard.
+- Do not mutate an evaluated opportunity's canonical JD/raw description in place; append observations/source records and preserve history.
+- Keep deduplication upstream of paid evaluation to avoid duplicate spend.
+- Source health must be conservative and respectful of each source.
 
-## Phase 5 — Expand the Platform
+## Phase 4 — Final Integration, Acceptance, and Freeze
 
-After the core product and retrieval system are stable:
+This phase begins only after main-product features 1–18 and the evaluator implementation are complete.
 
-- expand source coverage;
-- improve posting-history support;
-- build source analytics;
-- add company watchlists;
+The final pass should:
+
+- deliberately combine the Claude product work and Codex evaluator work;
+- resolve recorded handoffs and shared-contract differences, including the evaluator release of the Task 7 fields (`fieldsWithheldFromEvaluator` and its tests; see the October 15 annotations in `HANDOFFS.md`);
+- review persisted attempts/resume behavior and pre-send/in-flight accounting risks;
+- verify profile limitations and active/pinned profile behavior;
+- run the full isolated test suite, typecheck, lint, build, Prisma/migration checks, and E2E acceptance, and re-run the full DB-backed integration and E2E suites whenever evaluator contracts change;
+- perform any explicitly authorized final live evaluator verification;
+- confirm recommendation/evidence contracts and the final routing policy;
+- freeze the evaluator baseline only after acceptance;
+- merge to main deliberately rather than automatically.
+
+Final integration is not the first time known requirements should become correct. Each task should already satisfy its own final product contract before reaching this phase.
+
+## Phase 5 — Later Add-ons Only
+
+The following are the only currently designated later add-ons:
+
+19. Company watchlists.
+20. Notifications and proactive follow-ups.
+21. Calendar integration.
+22. Email integration.
+23. Application assistance, including resume tailoring, cover letters, application-question help, interview preparation, and skills-gap/learning assistance.
+
+These are not required for completion of main-product features 1–18.
+
+Beyond these add-ons, the platform may later:
+
 - add additional domain assistants;
-- revisit deferred product features as justified.
+- revisit other deferred product features defined in the authoritative PRDs/TDDs as justified.
 
 ## Parallel Agent Strategy
 
-Codex and Claude may work in parallel when ownership is clean.
+### Codex
 
-Current intended split:
+Primary ownership:
 
-- **Codex:** evaluator completion, evaluator-sensitive implementation, deep code audits, bugs, verification.
-- **Claude:** remaining main-product work outside evaluator internals.
+- evaluator internals;
+- evaluator-sensitive contract changes;
+- model routing and pricing policy;
+- deep evaluator debugging/audits;
+- paid/live diagnostics and final live acceptance when explicitly authorized.
 
-After both are complete, either or both may work on retrieval, but they should not edit the same files at the same time.
+### Claude / Claude Code
 
-A later retrieval split may use:
+Primary ownership:
 
-- one agent for source retrieval/adapters;
-- one agent for normalization, ingestion, deduplication, evaluator handoff, testing, and error handling.
+- product/UI/workflow completion;
+- application logic;
+- profile/budget/dashboard/tracker behavior;
+- retrieval architecture and most main-product implementation outside evaluator internals;
+- isolated product integration tests.
 
-The exact split may change, but ownership must remain explicit.
+### Shared rules
+
+- The builder gets the first opportunity to debug its own code; the other agent may provide a second opinion.
+- Neither agent auto-merges main.
+- Shared schemas, persistence contracts, evaluator orchestration, queue/worker behavior, and ingestion/evaluator boundaries require explicit coordination.
+- Agents should not edit the same files at the same time.
+- Retrieval work may be split once ownership can be cleanly separated, but both agents must use one shared ingestion contract. A possible split: one agent for source retrieval/adapters; one for normalization, ingestion, deduplication, evaluator handoff, testing, and error handling. The exact split may change, but ownership must remain explicit.
 
 ## Completion Principle
 
-Do not let retrieval work delay Version 1.
+The priority is not merely to make an early manual demo usable. The priority is to finish the complete intended main product without letting retrieval work destabilize the already-working evaluator/product foundation.
 
-The priority is:
-
-**Evaluator → Remaining Product → Usable Product → Retrieval**
+**Evaluator stability + features 1–10 → features 11–18 → final integration/acceptance → later add-ons 19–23**

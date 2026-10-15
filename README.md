@@ -86,16 +86,21 @@ Current accepted semantic model routing:
 
 | Operation | Execution |
 | --- | --- |
+| Hard Filters | Deterministic |
 | JD Reconstruction | GPT-5.6 Terra |
 | Job Evaluation | GPT-5.6 Luna |
-| Company Alignment | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
 | Organizational Maturity | GPT-5.6 Luna |
 | Alex Fit | GPT-5.6 Luna |
-| Burnout Risk | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
 | Resume Match | GPT-5.6 Terra |
 | Opportunity Priority | GPT-5.6 Luna |
 | Ghost Job Risk | Deterministic Unknown when posting-history evidence is insufficient |
 | Final Recommendation | Deterministic application logic |
+
+The routing policy is locked (October 15, 2026). A GPT-6 Luna Job Evaluation benchmark was rejected because it regressed an established classification and omitted established evidence; the remaining GPT-6 benchmarks were skipped by product decision.
+
+**Branch state:** the GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on the Codex evaluator branch (`codex/evaluator-live-diagnostic`). The main-product branch (`claude/gallant-pasteur-y1ou3i`) keeps the earlier accepted GPT-5.6 Luna routes for both until the final evaluator/product integration. Neither branch is merged into `main` yet.
 
 Model routing is treated as an execution detail. It does not change the meaning of the domain schemas, stage outputs, evidence rules, Unknown handling, contradictions, or recommendation behavior.
 
@@ -122,24 +127,38 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - versioned profile and preferences management with an explicit active version, including persisted structured profile limitations;
 - monthly AI budget with deferral and resume;
 - dashboard search, filters, sorting and summaries;
-- application tracker;
+- Task 7 normalized opportunity facts: salary minimum/maximum and currency, work arrangement, seniority, department, employment type, closing date, and residency requirement/regions, with provenance and Unknown preserved;
+- application-tracking foundation (completion pass in progress);
 - setup and operations tooling (`pnpm app:setup`, `pnpm app:doctor`, migration verification).
 
 ### In Progress
 
-- final evaluator stabilization and acceptance (Codex);
-- integration of the final evaluator into the product branch, followed by whole-product acceptance (see `HANDOFFS.md`, final integration checklist).
+- Claude Task 8 — Application Tracker completion pass (main-product branch).
 
-### Planned
+### Main-product work still required before final acceptance
 
-- automated job retrieval / scraping;
-- source normalization and ingestion;
-- deduplication across sources;
-- broader source integrations;
-- stronger posting-history support for Ghost Job Risk;
-- source analytics;
+- Task 9 completion pass and any remaining gaps in features 1–10;
+- feature 11 — automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
+- feature 12 — source health and conservative retrieval;
+- feature 13 — posting-history/ghost-job intelligence;
+- feature 14 — browser extension companion;
+- feature 15 — source intelligence;
+- feature 16 — job-market analytics;
+- feature 17 — personal job-search analytics;
+- feature 18 — company intelligence;
+- final evaluator/product integration and whole-product acceptance after all main-product features 1–18 are complete.
+
+### Later add-ons only (features 19–23)
+
 - company watchlists;
-- additional domain assistants.
+- proactive notifications/follow-ups;
+- calendar integration;
+- email integration;
+- application assistance such as resume tailoring, cover letters, application questions, interview preparation, and learning recommendations.
+
+Beyond these add-ons, additional domain assistants remain planned on the same Core platform.
+
+The evaluator branch (Codex) holds the locked routing and the Milestone 4 salary-policy alignment; they reach the product at the final integration checkpoint (see `HANDOFFS.md`, final integration checklist and the October 15 annotations).
 
 ## Architecture
 
@@ -202,27 +221,32 @@ Authoritative product and technical documentation includes:
 - **Customer Success Assistant TDD** — defines the executable Customer Success technical design.
 - **AI Career Assistant Semantic Evaluation Implementation Playbook** — preserves evaluator implementation safeguards, testing lessons, routing guidance, and optimization rules.
 
-Additional repository documentation will cover:
+Additional project documentation (paths are listed in the "Documentation Locations" table in `AGENTS.md`):
 
-- Milestones 1–10;
-- current product status;
-- evaluator status;
-- development plan;
-- active workstreams;
-- current progress;
-- future agent handoffs.
+- `MILESTONES_1_10.md` — Milestones 1–10 implementation history;
+- `PRODUCT_STATUS.md` — current product status;
+- `EVALUATOR_STATUS.md` — evaluator routing, optimization, and status history;
+- `DEVELOPMENT_PLAN.md` — development plan and feature scope (main-product features 1–18; later add-ons 19–23);
+- `AGENT_WORKSTREAMS.md` — active workstreams and ownership;
+- `CURRENT_PROGRESS.md` — current progress and task records;
+- `HANDOFFS.md` — agent handoffs;
+- `CHANGELOG.md` — notable project changes.
+
+Superseded PRD/TDD versions are kept for history in the `Archive/` folders beside the current PRDs and TDDs.
 
 ## Development Priorities
 
-The current development order is:
+The current development order (October 15, 2026) is:
 
-1. finish and verify the evaluator;
-2. complete the remaining main-product work;
-3. integrate both into a stable, usable product;
-4. then add automated job retrieval and source ingestion;
-5. expand discovery, analytics, and additional domain capabilities afterward.
+1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
+2. complete the Task 1–9 product completion pass (Task 8 — Application Tracker next, then Task 9) and close any remaining gaps in features 1–10;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
+4. only then perform final evaluator/product integration, whole-product acceptance, evaluator freeze, and deliberate merge;
+5. add the later add-ons (features 19–23) afterward.
 
-The retrieval layer should feed the existing evaluator rather than redesign it.
+*(Earlier order, superseded on October 15, 2026: finish the evaluator, complete the remaining main-product work, integrate into a usable product, then add retrieval, then expand discovery and analytics.)*
+
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension is a companion client to the same backend, data, evaluator and dashboard, not a separate product.
 
 ## Local Development
 
@@ -349,4 +373,4 @@ Every source must converge on one pipeline: *source adapter → `RawOpportunity`
 
 **Active development**
 
-The Customer Success evaluator is close to completion, and the current focus is finishing evaluator optimization while completing the remaining product workflow in parallel.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The current product task is Claude Task 8 — Application Tracker completion pass, followed by the Task 9 completion pass and the remaining main-product features through feature 18. Final integration, whole-product acceptance and the evaluator freeze are deferred until the entire intended main product (features 1–18) is complete.

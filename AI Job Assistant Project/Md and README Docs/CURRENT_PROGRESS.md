@@ -5,7 +5,87 @@
 
 ## Current Objective
 
-Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins.
+Complete Claude Task 8 — Application Tracker as the next completion-pass task while preserving the now-aligned Task 7 → Customer Success Milestone 4 contract. Final evaluator/product integration and acceptance remain deferred until all intended main-product features 1–18 are complete.
+
+*(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
+
+## Recently Completed (October 14–15, 2026)
+
+### Documentation preservation and correction pass (October 15, 2026)
+
+- Reconciled the October 15 project documents preserve-first.
+- Completed a repository-wide documentation preservation audit (five revisions).
+- Recovered the full formal PRD/TDD history:
+  - 23 versions, placed under `Archive/` folders, plus Core AI Framework PRD v1.4;
+  - Core Platform TDD v1.0 and v1.1 confirmed as separate versions.
+- Corrected stale current-state documents:
+  - `AGENT_WORKSTREAMS.md`, both READMEs, `AI_Architecture_README.md` (restored Windows/WSL environment lessons), `EVALUATOR_STATUS.md` (§19 addendum), `HANDOFFS.md` (integration and preservation notes), `AGENTS.md` (version retention);
+  - Semantic Evaluation Playbook v1.2.
+- No application, evaluator, schema or database changes.
+
+### Profile and policy readiness
+
+- Product-side profile limitations persistence and transport completed.
+- Active-profile resolution and pinned-version behavior clarified.
+- Policy/version override diagnostics and stale-environment warnings added.
+- Final integration still must verify the stored limitation → deterministic Genuine Gap path after branch combination.
+
+Detailed records: "Profile limitations persistence" and "Policy and profile integration readiness" below.
+
+### Task 6 — AI budget and usage controls
+
+- Persistent monthly budget ledger.
+- Atomic reservation/reconciliation.
+- Warning thresholds.
+- Daily/weekly evaluation limits.
+- Monthly output-token limit.
+- Per-evaluation call limit within the system maximum.
+- Budget/usage/capacity reporting.
+- Persistent budget deferral, resume, and cancel behavior.
+- `AI_BUDGET_LIMIT` for dollar-budget deferral.
+- `USAGE_LIMIT_REACHED` for throughput/token limits.
+- Unknown provider usage remains Unknown.
+- Accepted decision: already-admitted queued/running evaluations are not retroactively cancelled when limits are lowered.
+- Completion checkpoints: `267138a`, `8d3993a`.
+
+Detailed records: "Task 6 completion" and "Task 6 naming cleanup" below.
+
+### Task 7 — normalized opportunity facts and dashboard completion
+
+Final commit: `754f956dc0860149760936a61bdace0489404b9a` on `claude/gallant-pasteur-y1ou3i`.
+
+Completed:
+
+- salary minimum/maximum and currency normalization;
+- open-range/single-value salary handling;
+- bare-`$` USD provenance marker;
+- work arrangement, seniority, department, employment type, and closing-date normalization;
+- residency requirement and residency-region normalization across countries, U.S. subdivisions, Canadian subdivisions, UK nations, and broad regions;
+- explicit precedence/provenance rules;
+- numeric salary filters/sort and additional dashboard filters;
+- compatibility for older records without backfilling Unknown facts.
+
+Task 7 verification passed typecheck/lint/Prisma, 1036 unit tests, 176 integration tests, 25 E2E tests, and build using only the isolated test database.
+
+Detailed record: "Task 7 completion amendment" below.
+
+### Customer Success Milestone 4 — Task 7 salary-policy alignment
+
+Commit: `267124f fix(cs): align Milestone 4 salary policy with Task 7` on `codex/evaluator-live-diagnostic`, pushed to origin.
+
+**Branch state:** this commit is on the Codex evaluator branch and is **not merged** into `main` or `claude/gallant-pasteur-y1ou3i`. On `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` still withholds all ten Task 7 fields, and the earlier version identifiers remain. The release is reconciled at final branch combination (see the October 15 addenda in `HANDOFFS.md`).
+
+Completed (on `codex/evaluator-live-diagnostic`):
+
+- currency- and residency-aware deterministic salary Hard Filter;
+- U.S. hard minimum of `$60,000 USD-equivalent` with no Review band;
+- non-U.S. `$60k+` Pass, `$55k–$59,999.99` Review, `$50k–$54,999.99` conditional Review/Unknown, `<$50k` Fail/Skip;
+- versioned FX policy `cs-salary-policy-v2-ecb-2026-10-14`;
+- disclosed-minimum gate and max-only conservative handling;
+- evaluator release of salary min/max, currency, residency requirement, and residency regions with provenance;
+- preservation of Customer Success policy inside the domain rather than Core.
+
+Focused offline verification passed. Broader DB-backed integration, E2E, build, live provider calls, and final acceptance were intentionally deferred.
 
 ## Completed
 
@@ -54,38 +134,60 @@ Finish the evaluator and remaining main-product work in parallel so they can be 
 - Accepted mixed Terra/Luna routing.
 - Resume Match optimization #1.
 - JD Reconstruction optimization #1.
+- Resume Match optimization #2 (accepted Resume Match baseline).
+- JD Reconstruction optimization #2 (State2 retained; more aggressive sparse-omission candidates rejected).
+- Final model-routing lock (October 15, 2026; see below).
+- Milestone 4 salary-policy alignment with the Task 7 contract (on `codex/evaluator-live-diagnostic`; not merged).
 
 ## Current Accepted Model Routing
 
 | Operation | Execution |
 | --- | --- |
+| Hard Filters | Deterministic |
 | JD Reconstruction | GPT-5.6 Terra |
 | Job Evaluation | GPT-5.6 Luna |
-| Company Alignment | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
 | Organizational Maturity | GPT-5.6 Luna |
 | Alex Fit | GPT-5.6 Luna |
-| Burnout Risk | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
 | Resume Match | GPT-5.6 Terra |
 | Opportunity Priority | GPT-5.6 Luna |
-| Ghost Job Risk | Deterministic when evidence is insufficient |
+| Ghost Job Risk | Deterministic when posting-history evidence is insufficient |
 | Final Recommendation | Deterministic application logic |
+
+The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected because it regressed Strategic Bridge Value and omitted established evidence. Remaining GPT-6 benchmarks were intentionally skipped by product decision.
+
+**Branch state:** the GPT-6 Luna routing for Company Alignment and Burnout Risk is implemented on `codex/evaluator-live-diagnostic`. `claude/gallant-pasteur-y1ou3i` still carries the earlier accepted routing (GPT-5.6 Luna for both operations) until final branch combination. Routing is an execution detail and does not change product semantics.
 
 ## In Progress
 
+### Claude Task 8 — Application Tracker completion pass
+
+Next work is to audit the existing tracker against current requirements and add only missing/incomplete behavior.
+
+Focus areas:
+
+- persistent application state/stage;
+- application and follow-up dates;
+- notes;
+- contacts/interviews where already part of the established design;
+- outcomes;
+- next action and due/overdue/due-today visibility;
+- `/applications` usability;
+- guarded lifecycle interaction;
+- stale-write/concurrency behavior;
+- persistence across refresh/restart;
+- application data surviving reevaluation unchanged.
+
+Do not add push/email/browser notifications, calendar integration, email integration, or evaluator redesign as part of Task 8.
+
 ### Evaluator
 
-Next accepted sequence:
-
-```text
-JD Reconstruction optimization #2
-→ Resume Match optimization #2
-→ combined-path integration
-→ final mixed-model evaluation
-```
+The earlier accepted sequence (JD Reconstruction optimization #2 → Resume Match optimization #2 → combined-path integration → final mixed-model evaluation) has been worked through: Resume Match optimization #2 was accepted, JD Reconstruction State2 was retained, and the routing was locked on October 15, 2026 (Codex workstream, `codex/evaluator-live-diagnostic`). The final live / whole-product evaluation is deferred to the final integration pass after main-product features 1–18 are complete.
 
 ### Main Product
 
-Remaining non-evaluator product work is being completed in parallel by Claude.
+Remaining non-evaluator product work is being completed in parallel by Claude. The task records below are cumulative and preserved as written; earlier records describe the state at their own date.
 
 #### Completed — Opportunity dashboard and Domain default (October 6, 2026)
 
@@ -686,6 +788,8 @@ Revised roadmap:
 - Next: freeze the evaluator, then the deliberate final integration checkpoint (see the final integration checklist in `HANDOFFS.md`), then retrieval/scraper work.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 
+**Current order (October 15, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass continues — Task 8 completion pass (in progress), then the Task 9 completion pass — then an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
+
 #### Known issues found during main-product work
 
 - **Resolved (test-only): evaluator test-harness drift.** On `main` (`ebd5911`), 11 integration tests and both E2E evaluation flows failed because test harnesses lagged accepted evaluator contract changes:
@@ -698,19 +802,21 @@ Revised roadmap:
 
 ## Planned Next
 
-After evaluator and main product completion:
+1. Complete Task 8 and checkpoint it on `claude/gallant-pasteur-y1ou3i`.
+2. Complete the Task 9 completion pass.
+3. Audit any remaining main-product gaps in features 1–10.
+4. Build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+5. Only after all main-product work is complete, perform deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
-1. integrate both into the first stable usable product;
-2. verify the end-to-end manual workflow;
-3. begin automated retrieval/scraping;
-4. connect retrieval to normalization and deduplication;
-5. feed normalized opportunities into the existing evaluator;
-6. expand source coverage and analytics later.
+Retrieval must connect to the existing normalization and deduplication pipeline and feed normalized opportunities into the existing evaluator; source coverage expands within features 11–18.
 
 ## Settled Decisions
 
 - Customer Success is the first implemented domain.
 - The Core Platform remains domain-agnostic.
+- Customer Success salary thresholds and affordability policy remain domain-owned.
+- Residency requirement selects salary policy; currency never selects residency policy.
+- No salary maximum is imposed by the Customer Success hard filter.
 - The evaluator should not be redesigned merely to accommodate model/provider quirks.
 - Provider transport schemas may differ from persisted domain schemas.
 - Authoritative application data should be restored deterministically rather than regenerated by a model.
@@ -718,19 +824,59 @@ After evaluator and main product completion:
 - Unknowns remain Unknown.
 - Final Apply / Review / Skip is deterministic application logic.
 - Model routing is an execution detail, not a product-semantic change.
-- Retrieval/scraping comes after the first usable product and must feed the existing evaluator.
+- Retrieval must feed the existing normalization/dedup/evaluator architecture. *(Earlier wording: "Retrieval/scraping comes after the first usable product and must feed the existing evaluator." Since October 15, 2026 retrieval is main-product work in features 11–18, built after the Task 1–9 completion pass and before final acceptance.)*
+- Main-product scope is features 1–18; only features 19–23 are later add-ons.
 - Codex and Claude may work in parallel only with clear ownership boundaries.
 - Paid provider calls require explicit authorization.
+- Normal application database use for experiments/tests is prohibited unless explicitly authorized.
 - Optimization candidates are judged against the last known-good implementation as BETTER / SAME / WORSE.
+- Do not fix evaluator issues as isolated one-off symptoms; validate the whole affected contract/path.
+- Already-admitted queued/running evaluations are not retroactively cancelled when limits are lowered (accepted; recorded in the October 15 annotations in `HANDOFFS.md`).
 
-## Open Items
+## Open Integration Items
 
-- Exact remaining non-evaluator product task list.
-- Exact current local setup/run commands for README.
-- Complete Milestones 1–10 historical documentation.
-- Complete evaluator-history/status document.
-- Final evaluator benchmark after remaining optimization work.
+These are intentionally not Task 8 work:
+
+- final branch combination and handoff resolution;
+- DB-backed acceptance of the Task 7 → Milestone 4 contract, including removing the five released fields from `fieldsWithheldFromEvaluator` on this branch and updating its withholding tests (see the October 15 annotations in `HANDOFFS.md`);
+- profile limitation end-to-end acceptance after branch integration (the four post-integration acceptance tests in "Profile limitations persistence" below);
+- persisted-attempt seeding / pre-send marker decisions for crash recovery;
+- Recommendation evidence-reference schema drift decision;
+- full migrations/typecheck/lint/build/integration/E2E acceptance, re-run in full whenever evaluator contracts change;
+- any final live provider acceptance run;
+- evaluator freeze and deliberate main merge;
+- carry the evaluator branch's October 10–15 records into the canonical documentation. They currently live in the Codex branches' root-level `Md and README Docs/CURRENT_PROGRESS.md`, a different path from this file. At branch combination, merge them into this file and `EVALUATOR_STATUS.md` (§19 lists them) without dropping either side (see `HANDOFFS.md`, October 15 annotations, item 3).
+
+Codex reviews still open from the `HANDOFFS.md` Final Integration Checklist:
+
+- the Task 6 `enqueueAdmitted()` shared-persistence change;
+- the Task 7 dashboard read dependency on persisted Customer Success result fields;
+- the Task 8 guarded lifecycle path (`pendingUserActions`, `applyUserActionInTransaction`, `applyLifecycleActionGuarded`);
+- the Core executor lifecycle guard (`isNormalizedLifecycleState`);
+- the Task 9 additions (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape);
+- the profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`).
+
+Main-product follow-up (not an integration blocker):
+
+- Source Analytics must exclude budget/usage-limit deferrals once Source Analytics exists (features 11–18).
+
+Documentation items carried from the earlier Open Items list, with their status after the October 15 documentation preservation audit and correction pass:
+
+- exact current local setup/run commands for README: **resolved**. The root `README.md` "Local Development" section is the authoritative operator guide (Task 9 setup tooling).
+- complete Milestones 1–10 historical documentation: **resolved**. `MILESTONES_1_10.md` contains all ten milestones.
+- complete evaluator-history/status document: **resolved**. `EVALUATOR_STATUS.md` §1–18 are preserved, and §19 adds the October 10–15 state.
+- final evaluator benchmark: superseded by the October 15 routing lock. The final live / whole-product evaluation is part of final integration.
+
+Documentation status (October 15, 2026):
+
+- **PRD/TDD archive complete.**
+  - All 23 recovered formal PRD/TDD versions, August 2026 → October 15, are in git and hash-verified.
+  - Superseded versions are frozen in the `Archive/` folders beside the current PRDs and TDDs.
+  - Core AI Framework PRD v1.4 is the new current Core PRD; v1.3 is archived unchanged.
+  - Current authoritative versions are listed in `AGENTS.md`.
+- **Semantic Evaluation Playbook v1.2** is current; v1.1 is preserved unchanged beside it.
+- **P13 (specification version index in `CHANGELOG.md`): intentionally deferred.** It was an optional proposal in the documentation preservation audit, never an approved required item, and is not required for the Task 8 documentation gate. The specification history remains recorded in each document's own revision table and in the archived versions.
 
 ## Known-Good Principle
 
-When a change introduces instability or semantic regression, revert to the last known-good implementation rather than forcing the optimization through.
+When a change introduces instability or semantic regression, revert to the last known-good implementation rather than forcing the change through.
