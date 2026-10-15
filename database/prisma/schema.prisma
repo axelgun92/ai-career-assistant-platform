@@ -116,6 +116,8 @@ model Opportunity {
   location             String?
   remoteStatus         String?
   timeZoneRequirements String?
+  residencyRequirement String?
+  residencyRegions     String[] @default([])
 
   salaryMin         Decimal? @db.Decimal(12, 2)
   salaryMax         Decimal? @db.Decimal(12, 2)

@@ -8,6 +8,7 @@ import {
   createEvaluationExecutor,
   StageExecutionError,
 } from "@ai-career/evaluation";
+import { parseCompensation, parseResidency } from "@ai-career/normalization";
 import { describe, expect, it } from "vitest";
 import {
   createCustomerSuccessFixtureOperations,
@@ -30,6 +31,13 @@ function createSubject(input: {
   subject.opportunity.companyName = "Example Technology";
   subject.opportunity.jobDescription = input.rawText;
   subject.opportunity.salaryText = input.salaryText ?? null;
+  const compensation = parseCompensation(subject.opportunity.salaryText);
+  subject.opportunity.salaryMin = compensation.minimum;
+  subject.opportunity.salaryMax = compensation.maximum;
+  subject.opportunity.currency = compensation.currency;
+  const residency = parseResidency({ location: null, rawText: input.rawText });
+  subject.opportunity.residencyRequirement = residency.requirement;
+  subject.opportunity.residencyRegions = residency.regions;
   subject.rawSources[0]!.rawDescription = input.rawText;
   subject.rawSources[0]!.rawPayload = { rawText: input.rawText };
   subject.provenance[0]!.normalizedValue = input.rawText;
@@ -139,8 +147,8 @@ describe("Customer Success domain foundation", () => {
 
   it.each([
     ["$60,000", "PASS"],
-    ["$59,999", "REVIEW"],
-    ["$55,000", "REVIEW"],
+    ["$59,999", "FAIL"],
+    ["$55,000", "FAIL"],
     ["$54,999", "FAIL"],
   ] as const)("applies the salary boundary %s as %s", async (salary, expected) => {
     const { result } = await run({
@@ -150,12 +158,12 @@ describe("Customer Success domain foundation", () => {
     expect(result.domainResult!.hardFilters.salary.result).toBe(expected);
   });
 
-  it("allows sub-threshold evaluation only for explicitly permitted lower-cost residence", async () => {
+  it("reviews the conditional non-US band only for configured viable residence", async () => {
     const { result } = await run({
       salaryText: "$50,000",
-      rawText: "Remote. Candidates may reside in Mexico. Salary $50,000.",
+      rawText: "Remote. Candidates must reside in Mexico. Salary $50,000.",
     });
-    expect(result.domainResult!.hardFilters.salary.result).toBe("PASS");
+    expect(result.domainResult!.hardFilters.salary.result).toBe("REVIEW");
   });
 
   it.each([

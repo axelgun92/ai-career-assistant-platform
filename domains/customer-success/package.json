@@ -11,6 +11,7 @@
     "@ai-career/core": "workspace:*",
     "@ai-career/evaluation": "workspace:*",
     "@ai-career/evidence": "workspace:*",
+    "@ai-career/normalization": "workspace:*",
     "zod": "4.4.3"
   }
 }

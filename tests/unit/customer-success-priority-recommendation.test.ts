@@ -13,6 +13,7 @@ import {
   type CustomerSuccessSemanticOperations,
 } from "@ai-career/customer-success";
 import { createEvaluationExecutor } from "@ai-career/evaluation";
+import { parseCompensation, parseResidency } from "@ai-career/normalization";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
@@ -128,6 +129,16 @@ async function run(input?: {
   subject.opportunity.industry = "Software";
   subject.opportunity.salaryText = input?.salaryText ?? "$70,000-$90,000";
   subject.opportunity.jobDescription = input?.rawText ?? defaultJobDescription;
+  const compensation = parseCompensation(subject.opportunity.salaryText);
+  subject.opportunity.salaryMin = compensation.minimum;
+  subject.opportunity.salaryMax = compensation.maximum;
+  subject.opportunity.currency = compensation.currency;
+  const residency = parseResidency({
+    location: null,
+    rawText: subject.opportunity.jobDescription,
+  });
+  subject.opportunity.residencyRequirement = residency.requirement;
+  subject.opportunity.residencyRegions = residency.regions;
   subject.opportunity.postingDate = input?.postingDate ?? null;
   subject.rawSources[0]!.source = input?.sourceName ?? "manual-input";
   subject.rawSources[0]!.rawDescription = subject.opportunity.jobDescription;

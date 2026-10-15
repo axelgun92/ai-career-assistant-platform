@@ -1,3 +1,7 @@
+import {
+  residencyRequirementValues,
+  type ResidencyRequirement,
+} from "@ai-career/core";
 import type {
   ManualOpportunityDetail,
   ManualOpportunityRepository,
@@ -18,6 +22,14 @@ type OpportunityDetailRecord = Prisma.OpportunityGetPayload<{
     fieldProvenance: true;
   };
 }>;
+
+export function residencyRequirement(
+  value: string | null,
+): ResidencyRequirement | null {
+  return (residencyRequirementValues as readonly string[]).includes(value ?? "")
+    ? (value as ResidencyRequirement)
+    : null;
+}
 
 function mapOpportunityDetail(
   record: OpportunityDetailRecord,
@@ -48,6 +60,8 @@ function mapOpportunityDetail(
       location: record.location,
       remoteStatus: record.remoteStatus,
       timeZoneRequirements: record.timeZoneRequirements,
+      residencyRequirement: residencyRequirement(record.residencyRequirement),
+      residencyRegions: record.residencyRegions,
       salaryMin: record.salaryMin?.toNumber() ?? null,
       salaryMax: record.salaryMax?.toNumber() ?? null,
       salaryText: record.salaryText,
@@ -191,6 +205,8 @@ export class PrismaManualOpportunityRepository
           location: input.opportunity.location,
           remoteStatus: input.opportunity.remoteStatus,
           timeZoneRequirements: input.opportunity.timeZoneRequirements,
+          residencyRequirement: input.opportunity.residencyRequirement ?? null,
+          residencyRegions: input.opportunity.residencyRegions ?? [],
           salaryMin: input.opportunity.salaryMin,
           salaryMax: input.opportunity.salaryMax,
           salaryText: input.opportunity.salaryText,

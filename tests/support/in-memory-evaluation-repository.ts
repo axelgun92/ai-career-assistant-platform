@@ -40,6 +40,8 @@ export function createNeutralEvaluationSubject(): EvaluationSubject {
       location: null,
       remoteStatus: null,
       timeZoneRequirements: null,
+      residencyRequirement: null,
+      residencyRegions: [],
       salaryMin: null,
       salaryMax: null,
       salaryText: null,

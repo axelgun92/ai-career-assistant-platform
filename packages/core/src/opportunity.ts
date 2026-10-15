@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { residencyRequirementValues } from "./geography";
 
 export const opportunityLifecycleStateSchema = z.enum([
   "DISCOVERED",
@@ -21,6 +22,49 @@ export const opportunitySourceTypeSchema = z.enum([
   "COMPANY_WATCHLIST",
   "OTHER",
 ]);
+
+export const workArrangementValues = ["REMOTE", "HYBRID", "ONSITE"] as const;
+export const seniorityValues = [
+  "ENTRY",
+  "MID",
+  "SENIOR",
+  "LEAD",
+  "PRINCIPAL",
+  "DIRECTOR",
+  "EXECUTIVE",
+] as const;
+export const employmentTypeValues = [
+  "FULL_TIME",
+  "PART_TIME",
+  "CONTRACT",
+  "TEMPORARY",
+  "INTERNSHIP",
+] as const;
+export const compensationCurrencyCodes = [
+  "USD",
+  "CAD",
+  "AUD",
+  "NZD",
+  "EUR",
+  "GBP",
+  "CHF",
+  "SEK",
+  "NOK",
+  "DKK",
+  "PLN",
+  "INR",
+  "SGD",
+  "JPY",
+  "MXN",
+  "BRL",
+  "ZAR",
+] as const;
+export const dollarCurrencyCodes = ["USD", "CAD", "AUD", "NZD", "SGD", "MXN"] as const;
+
+export type WorkArrangement = (typeof workArrangementValues)[number];
+export type Seniority = (typeof seniorityValues)[number];
+export type EmploymentType = (typeof employmentTypeValues)[number];
+export type CompensationCurrency = (typeof compensationCurrencyCodes)[number];
 
 const nullableText = z.string().trim().min(1).nullable();
 const nullablePreservedText = z
@@ -60,6 +104,8 @@ export const normalizedOpportunitySchema = z.object({
   location: nullableText,
   remoteStatus: nullableText,
   timeZoneRequirements: nullableText,
+  residencyRequirement: z.enum(residencyRequirementValues).nullable().default(null),
+  residencyRegions: z.array(z.string().trim().min(1)).default([]),
 
   salaryMin: nullableAmount,
   salaryMax: nullableAmount,

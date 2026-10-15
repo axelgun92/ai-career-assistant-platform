@@ -1,4 +1,8 @@
-import type { NormalizedOpportunity } from "@ai-career/core";
+import {
+  residencyRequirementValues,
+  type NormalizedOpportunity,
+  type ResidencyRequirement,
+} from "@ai-career/core";
 import {
   evaluationSnapshotSchema,
   persistedStageResultSchema,
@@ -16,7 +20,42 @@ function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+export const fieldsWithheldFromEvaluator = [
+  "remoteStatus",
+  "seniority",
+  "department",
+  "employmentType",
+  "closingDate",
+] as const;
+
+const withheldValues = {
+  remoteStatus: null,
+  seniority: null,
+  department: null,
+  employmentType: null,
+  closingDate: null,
+} satisfies Pick<NormalizedOpportunity, (typeof fieldsWithheldFromEvaluator)[number]>;
+
+const withheldFromEvaluator = new Set<string>(fieldsWithheldFromEvaluator);
+
+function residencyRequirement(
+  value: string | null,
+): ResidencyRequirement | null {
+  return (residencyRequirementValues as readonly string[]).includes(value ?? "")
+    ? (value as ResidencyRequirement)
+    : null;
+}
+
 function mapOpportunity(
+  record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
+): NormalizedOpportunity & { id: string } {
+  return {
+    ...mapOpportunityFields(record),
+    ...withheldValues,
+  };
+}
+
+function mapOpportunityFields(
   record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
 ): NormalizedOpportunity & { id: string } {
   return {
@@ -44,6 +83,8 @@ function mapOpportunity(
     location: record.location,
     remoteStatus: record.remoteStatus,
     timeZoneRequirements: record.timeZoneRequirements,
+    residencyRequirement: residencyRequirement(record.residencyRequirement),
+    residencyRegions: record.residencyRegions,
     salaryMin: record.salaryMin?.toNumber() ?? null,
     salaryMax: record.salaryMax?.toNumber() ?? null,
     salaryText: record.salaryText,
@@ -196,16 +237,18 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
         rawDescription: source.rawDescription,
         rawPayload: source.rawPayload,
       })),
-      provenance: opportunity.fieldProvenance.map((provenance) => ({
-        id: provenance.id,
-        sourceRecordId: provenance.sourceRecordId,
-        fieldName: provenance.fieldName,
-        sourceField: provenance.sourceField,
-        kind: provenance.kind,
-        normalizedValue: provenance.normalizedValue,
-        sourceReference: provenance.sourceReference,
-        sourceText: provenance.sourceText,
-      })),
+      provenance: opportunity.fieldProvenance
+        .filter((provenance) => !withheldFromEvaluator.has(provenance.fieldName))
+        .map((provenance) => ({
+          id: provenance.id,
+          sourceRecordId: provenance.sourceRecordId,
+          fieldName: provenance.fieldName,
+          sourceField: provenance.sourceField,
+          kind: provenance.kind,
+          normalizedValue: provenance.normalizedValue,
+          sourceReference: provenance.sourceReference,
+          sourceText: provenance.sourceText,
+        })),
       userProfile: userProfile
         ? {
             id: userProfile.id,

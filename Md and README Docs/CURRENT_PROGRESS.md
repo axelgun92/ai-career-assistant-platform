@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 11, 2026
+**Last updated:** October 15, 2026
 
 ## Current Objective
 
@@ -54,6 +54,16 @@ Finish the evaluator and remaining main-product work in parallel so they can be 
 - Accepted mixed Terra/Luna routing.
 - Resume Match optimization #1.
 - JD Reconstruction optimization #1.
+
+#### Milestone 4 salary-policy contract update — October 15, 2026 (Codex)
+
+- Ported the authoritative Task 7 normalized salary, currency, residency, geography, persistence, migration, and provenance contract needed by Milestone 4.
+- Released only `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, and `residencyRegions` (plus their provenance) to evaluator subjects; unrelated Task 7 fields remain withheld.
+- Replaced the obsolete salary bands with the final Customer Success policy: U.S.-required roles pass at a USD-equivalent minimum of $60,000 and otherwise fail; non-U.S. roles use the pass/review/conditional-review/fail bands defined by the final Milestone 4 requirements.
+- Added deterministic, versioned ECB reference-rate conversion (`cs-salary-policy-v2-ecb-2026-10-14`) and retained Customer Success thresholds/affordability policy inside the Customer Success domain.
+- The conditional $50,000–$54,999 non-U.S. band uses the existing configured `substantiallyLowerCostCountries` preference plus explicit normalized residency geography; insufficient context remains Unknown.
+- Added focused offline coverage for threshold boundaries, currency/residency separation, normalization/provenance, conflict handling, and the evaluator withholding boundary. No provider calls or database migrations/writes were performed.
+- Final Task 7 → evaluator integration, database-backed migration assertions, and full evaluator/product acceptance remain deferred until the main product and evaluator are both complete.
 
 #### Organizational Maturity mixed-state stabilization — October 10, 2026
 

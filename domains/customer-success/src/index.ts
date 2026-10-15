@@ -1,4 +1,5 @@
 export * from "./config/preferences";
+export * from "./config/salary-policy";
 export * from "./evaluator";
 export * from "./extraction/extractor";
 export * from "./schemas/maps";

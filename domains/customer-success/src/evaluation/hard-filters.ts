@@ -1,5 +1,11 @@
-import { defineEvaluationStage } from "@ai-career/evaluation";
+import {
+  defineEvaluationStage,
+  type CoreEvaluationContext,
+} from "@ai-career/evaluation";
 import type { CustomerSuccessDomainData } from "../evaluator";
+import {
+  evaluateSalaryPolicy,
+} from "../config/salary-policy";
 import { reconstructCustomerSuccessJob } from "../extraction/extractor";
 import {
   hardFiltersDataSchema,
@@ -8,9 +14,11 @@ import {
 
 type Criterion = HardFiltersData["salary"];
 
-function salaryResult(data: CustomerSuccessDomainData): Criterion {
+function salaryResult(
+  context: CoreEvaluationContext<CustomerSuccessDomainData>,
+): Criterion {
+  const data = context.domainData;
   const salary = data.reconstruction!.salary;
-  const preferences = data.preferences.salary;
   if (salary.disclosure === "UNDISCLOSED") {
     return {
       result: "UNKNOWN",
@@ -25,68 +33,49 @@ function salaryResult(data: CustomerSuccessDomainData): Criterion {
       evidenceReferences: salary.evidenceReferences,
     };
   }
-  const minimum = salary.minimum!;
-  const maximum = salary.maximum ?? minimum;
-  if (minimum >= preferences.passMinimum) {
-    return {
-      result: "PASS",
-      explanation: `The disclosed minimum meets the ${preferences.passMinimum} pass threshold.`,
-      evidenceReferences: salary.evidenceReferences,
-    };
-  }
-  if (minimum >= preferences.reviewMinimum) {
-    return {
-      result: "REVIEW",
-      explanation: `The disclosed minimum is between ${preferences.reviewMinimum} and ${preferences.passMinimum}.`,
-      evidenceReferences: salary.evidenceReferences,
-    };
-  }
-  if (maximum >= preferences.reviewMinimum) {
-    return {
-      result: "REVIEW",
-      explanation: "The disclosed range crosses a configured salary boundary.",
-      evidenceReferences: salary.evidenceReferences,
-    };
-  }
-  const location = data.reconstruction!.location;
-  const requiresUnitedStates = location.countryRestrictions.some((country) =>
-    /^(united states|us|u\.s\.)$/i.test(country),
-  );
-  if (requiresUnitedStates) {
-    return {
-      result: "FAIL",
-      explanation:
-        "Salary below the review threshold fails when United States residency is required.",
-      evidenceReferences: [
-        ...salary.evidenceReferences,
-        ...location.evidenceReferences,
-      ],
-    };
-  }
-  const lowerCostCountryAllowed =
-    location.internationalEligibility === "EXPLICITLY_ALLOWED" &&
-    preferences.substantiallyLowerCostCountries.length > 0;
-  const namedLowerCostCountry = location.countryRestrictions.some((country) =>
-    preferences.substantiallyLowerCostCountries.some(
-      (allowed) => allowed.toLowerCase() === country.toLowerCase(),
-    ),
-  );
-  if (lowerCostCountryAllowed || namedLowerCostCountry) {
-    return {
-      result: "PASS",
-      explanation:
-        "The role explicitly permits residence in a configured substantially lower-cost country, so evaluation may continue.",
-      evidenceReferences: [
-        ...salary.evidenceReferences,
-        ...location.evidenceReferences,
-      ],
-    };
-  }
+  const residencyEvidence = data.reconstruction!.evidence
+    .filter((item) => item.criterionId === "residency")
+    .map((item) => item.referenceId);
+  const decision = evaluateSalaryPolicy({
+    minimum: salary.minimum,
+    maximum: salary.maximum,
+    currency: salary.currency,
+    residencyRequirement: context.opportunity.residencyRequirement,
+    residencyRegions: context.opportunity.residencyRegions,
+    substantiallyLowerCostCountries:
+      data.preferences.salary.substantiallyLowerCostCountries,
+  });
+  const converted = [decision.minimumUsd, decision.maximumUsd]
+    .filter((amount): amount is number => amount !== null)
+    .map((amount) => `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`)
+    .join("–");
+  const explanations: Record<typeof decision.reason, string> = {
+    UNKNOWN_SALARY: "Annual salary is not normalized and remains Unknown.",
+    UNKNOWN_CURRENCY:
+      "Salary currency is Unknown or unsupported, so no raw amount was compared with USD thresholds.",
+    UNKNOWN_RESIDENCY:
+      "Residency eligibility is Unknown, so the U.S. or non-U.S. salary policy cannot be selected.",
+    CONFLICTING_SALARY:
+      "The normalized salary bounds conflict, so salary eligibility remains Unknown.",
+    CONFLICTING_RESIDENCY:
+      "The normalized residency requirement and eligible regions conflict, so salary-policy selection remains Unknown.",
+    US_THRESHOLD:
+      decision.result === "PASS"
+        ? `The USD-equivalent salary (${converted}) meets the $60,000 U.S.-residency threshold.`
+        : `The USD-equivalent salary (${converted}) is below the $60,000 U.S.-residency threshold.`,
+    NON_US_PASS: `The USD-equivalent salary (${converted}) meets the $60,000 non-U.S. pass threshold.`,
+    NON_US_REVIEW: `The USD-equivalent salary (${converted}) is in the $55,000–$59,999 non-U.S. review band.`,
+    NON_US_CONDITIONAL_REVIEW: `The USD-equivalent salary (${converted}) is in the conditional $50,000–$54,999 non-U.S. band and the eligible geography matches a configured viable location.`,
+    NON_US_CONDITIONAL_UNKNOWN: `The USD-equivalent salary (${converted}) is in the conditional $50,000–$54,999 non-U.S. band, but location-cost viability is not established and remains Unknown.`,
+    BELOW_NON_US_MINIMUM: `The USD-equivalent salary (${converted}) is below the $50,000 non-U.S. minimum.`,
+    OPEN_MAXIMUM_UNKNOWN: `Only a maximum USD-equivalent salary (${converted}) is known, so threshold eligibility remains Unknown.`,
+  };
   return {
-    result: "REVIEW",
-    explanation:
-      "Salary is below the review threshold and residency flexibility is unclear.",
-    evidenceReferences: salary.evidenceReferences,
+    result: decision.result,
+    explanation: `${explanations[decision.reason]} Policy ${decision.policyVersion}.`,
+    evidenceReferences: [
+      ...new Set([...salary.evidenceReferences, ...residencyEvidence]),
+    ],
   };
 }
 
@@ -229,8 +218,8 @@ function travelResult(data: CustomerSuccessDomainData): Criterion {
 export function createHardFiltersStage() {
   return defineEvaluationStage<CustomerSuccessDomainData, HardFiltersData>({
     id: "hard-filters",
-    version: "cs-hard-filters-v1",
-    ruleVersion: "cs-rules-v1.1",
+    version: "cs-hard-filters-v2",
+    ruleVersion: "cs-rules-v1.2",
     promptVersion: "cs-jd-reconstruction-v1",
     onFailure: "STOP",
     maxAttempts: 2,
@@ -249,7 +238,7 @@ export function createHardFiltersStage() {
             : "The reconstructed role remains eligible for substantive evaluation.",
         evidenceReferences: reconstruction.roleMetadata.evidenceReferences,
       };
-      const salary = salaryResult(context.domainData);
+      const salary = salaryResult(context);
       const location = locationResult(context.domainData);
       const workArrangement = workArrangementResult(context.domainData);
       const travel = travelResult(context.domainData);

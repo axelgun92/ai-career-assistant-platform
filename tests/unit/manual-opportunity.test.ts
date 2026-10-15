@@ -155,6 +155,90 @@ describe("manual opportunity ingestion", () => {
     );
   });
 
+  it("normalizes annual compensation and explicit residency with traceable provenance", async () => {
+    const raw = rawOpportunitySchema.parse({
+      source: "manual-input",
+      sourceType: "MANUAL",
+      sourceUrl: null,
+      applicationUrl: null,
+      domain: "customer-success",
+      externalId: null,
+      requisitionId: null,
+      title: "Customer Success Manager",
+      company: "Example",
+      location: "Remote - Spain",
+      description: "Applicants must be based in Spain.",
+      salaryText: "$72,000-$88,000",
+      employmentType: null,
+      postingDate: null,
+      sourceMetadata: null,
+      rawPayload: null,
+      discoveredAt: timestamp,
+    });
+
+    const result = await createManualOpportunityNormalizer().normalize(raw);
+
+    expect(result.opportunity).toMatchObject({
+      salaryMin: 72_000,
+      salaryMax: 88_000,
+      currency: "USD",
+      residencyRequirement: "NON_US",
+      residencyRegions: ["ES"],
+    });
+    expect(result.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: "currency",
+          sourceField: "compensationText:bare-dollar-as-usd",
+          kind: "DETERMINISTIC",
+        }),
+        expect.objectContaining({
+          fieldName: "residencyRequirement",
+          sourceField: "location:explicit-eligible-geography",
+          kind: "DETERMINISTIC",
+          sourceText: "Remote - Spain",
+        }),
+      ]),
+    );
+  });
+
+  it("preserves Unknown for non-annual pay and qualified residency wording", async () => {
+    const raw = rawOpportunitySchema.parse({
+      source: "manual-input",
+      sourceType: "MANUAL",
+      sourceUrl: null,
+      applicationUrl: null,
+      domain: "customer-success",
+      externalId: null,
+      requisitionId: null,
+      title: "Customer Success Manager",
+      company: "Example",
+      location: "Remote",
+      description: "Candidates may reside in Mexico.",
+      salaryText: "$45 per hour",
+      employmentType: null,
+      postingDate: null,
+      sourceMetadata: null,
+      rawPayload: null,
+      discoveredAt: timestamp,
+    });
+
+    const result = await createManualOpportunityNormalizer().normalize(raw);
+
+    expect(result.opportunity).toMatchObject({
+      salaryMin: null,
+      salaryMax: null,
+      currency: "USD",
+      residencyRequirement: null,
+      residencyRegions: [],
+    });
+    expect(
+      result.provenance.some((item) =>
+        ["residencyRequirement", "residencyRegions"].includes(item.fieldName),
+      ),
+    ).toBe(false);
+  });
+
   it("preserves SourceRecord before normalization and reaches NORMALIZED", async () => {
     const calls: string[] = [];
     const normalizer = createManualOpportunityNormalizer();
