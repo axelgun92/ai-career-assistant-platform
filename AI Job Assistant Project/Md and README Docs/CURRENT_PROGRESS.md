@@ -1,17 +1,74 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 15, 2026
+**Last updated:** October 16, 2026
 
 ## Current Objective
 
-The Claude Task 8 — Application Tracker completion pass is implemented on `claude/gallant-pasteur-y1ou3i` and awaiting user review before its checkpoint commit (see "Completed — Task 8 completion pass" below). The Task 9 completion pass follows after that review. The Task 7 → Customer Success Milestone 4 contract is preserved. Final evaluator/product integration and acceptance remain deferred until all intended main-product features 1–18 are complete.
+The Task 1–9 completion pass is complete on `claude/gallant-pasteur-y1ou3i`:
+
+- Task 8 — Application Tracker completion pass: complete (`534a4c7`);
+- Task 9 — Operations hardening completion pass: complete (commit `feat: complete operational hardening`, October 16, 2026).
+
+In order, what follows:
+
+1. Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
+2. After that: audit any remaining gaps in main-product features 1–10.
+3. Then: main-product features 11–18.
+4. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier objective, superseded on October 16, 2026 when the Task 9 completion pass was committed: "The current task is Claude Task 9 — Operations hardening completion pass on `claude/gallant-pasteur-y1ou3i`. It is open: implementation and isolated verification are complete; the documentation synchronization is under review; it closes with the review and then the checkpoint commit.")*
+
+*(Earlier objective, superseded on October 16, 2026 when the Task 8 completion pass was committed: "The Claude Task 8 — Application Tracker completion pass is implemented on `claude/gallant-pasteur-y1ou3i` and awaiting user review before its checkpoint commit. The Task 9 completion pass follows after that review.")*
 
 *(Earlier objective, superseded on October 15, 2026 when the completion pass was implemented: "Complete Claude Task 8 — Application Tracker as the next completion-pass task while preserving the now-aligned Task 7 → Customer Success Milestone 4 contract.")*
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–15, 2026)
+## Recently Completed (October 14–16, 2026)
+
+### Claude Task 9 — Operations hardening completion pass (committed October 16, 2026)
+
+**Status (October 16, 2026):** reviewed, approved and committed as `feat: complete operational hardening`, pushed to `origin/claude/gallant-pasteur-y1ou3i`. The audit, changes and verification are recorded under "Completed — Task 9 completion pass" below.
+
+*(Status earlier on October 16, 2026: "open. Planned and approved, implemented, and verified offline on the isolated test database. The documentation synchronization is done and awaiting user review. It closes with the review and then the checkpoint commit. Not committed or pushed yet.")*
+
+The pass audited the October 10 Task 9 operations work and added only what was missing:
+
+- error-name-only logging in the opportunity API routes;
+- `pnpm app:doctor` reporting budget deferrals and usage-limit deferrals separately;
+- health-endpoint failure tests;
+- a deterministic, non-live AI credential for every E2E run;
+- documentation of the single-worker lock's connection-loss caveat.
+
+It added no migration and changed no queue, worker, lease or evaluator code.
+
+### Claude Task 8 — Application Tracker completion pass (committed `534a4c7`, October 16, 2026)
+
+**Status (October 16, 2026):** reviewed and committed as `534a4c7` (`feat: complete application tracker`), pushed to `origin/claude/gallant-pasteur-y1ou3i`. The audit, changes and verification are recorded under "Completed — Task 8 completion pass" below.
+
+*(Status on October 15, 2026: "implemented and verified offline; awaiting user review, then the checkpoint commit.")*
+
+The pass audited the existing tracker against current requirements and added only missing/incomplete behavior.
+
+Focus areas:
+
+- persistent application state/stage;
+- application and follow-up dates;
+- notes;
+- contacts/interviews where already part of the established design;
+- outcomes;
+- next action and due/overdue/due-today visibility;
+- `/applications` usability;
+- guarded lifecycle interaction;
+- stale-write/concurrency behavior;
+- persistence across refresh/restart;
+- application data surviving reevaluation unchanged.
+
+Do not add push/email/browser notifications, calendar integration, email integration, or evaluator redesign as part of Task 8.
+
 
 ### Documentation preservation and correction pass (October 15, 2026)
 
@@ -114,6 +171,14 @@ Focused offline verification passed. Broader DB-backed integration, E2E, build, 
 - Bounded evaluation polling.
 - Polling cleanup when leaving the page.
 - Recommendation is read from persisted results rather than recalculated in the browser.
+- Opportunity dashboard with search, filters, sorting, pagination and summaries (Task 7).
+- Opportunity lifecycle and user actions with guarded transitions.
+- Profile and preferences management with explicit active versions and structured limitations (Task 5 and the limitations persistence).
+- AI budget ledger, deferral, throughput limits, capacity and backlog reporting (Task 6).
+- Application tracker (Task 8, including the October 15–16 completion pass).
+- Setup, operations hardening, single-worker evaluation processing and whole-product acceptance tests (Task 9, including the October 16 completion pass).
+
+Details for each are in the task records under "Main Product" below.
 
 ### Evaluator
 
@@ -137,9 +202,31 @@ Focused offline verification passed. Broader DB-backed integration, E2E, build, 
 - Resume Match optimization #1.
 - JD Reconstruction optimization #1.
 - Resume Match optimization #2 (accepted Resume Match baseline).
-- JD Reconstruction optimization #2 (State2 retained; more aggressive sparse-omission candidates rejected).
+- JD Reconstruction optimization #2 evaluated and rejected (its v6 and v7 candidates; State2 from optimization #1 retained).
 - Final model-routing lock (October 15, 2026; see below).
 - Milestone 4 salary-policy alignment with the Task 7 contract (on `codex/evaluator-live-diagnostic`; not merged).
+- Evaluator semantic-contract repairs, October 10–13 (on `codex/evaluator-live-diagnostic`; not merged; see below).
+
+#### Evaluator-branch progress (October 10–15, 2026; `codex/evaluator-live-diagnostic`, not merged)
+
+These records come from the evaluator branch's own `Md and README Docs/CURRENT_PROGRESS.md` and its commits. The full records are carried into this document at final branch combination (`HANDOFFS.md`, October 15 annotations). Contract details, residual risks and outstanding verification are in `EVALUATOR_STATUS.md` §20.
+
+- **Organizational Maturity mixed-state stabilization** (October 10): two over-broad guards corrected; preserved outputs replayed offline.
+- **Resume Match evidence-partition stabilization** (October 11): one single-purpose evidence assignment collection; fail-closed integrity checks kept.
+- **Provider-prose semantic closure** (October 11; `04611af`, `1c09924`): provider prose became display-only. Genuine Gap proof moved to a structured `gapEvidence` collection. A static guard pins the remaining text dependencies.
+- **Structured requirement specialization and real-artifact replay** (October 11; `1c09924`, `cs-jd-reconstruction-v4`): preserved live request/response pairs are replayed offline from outside the repository.
+- **JD Reconstruction specialization category binding** (October 12; `7149563`, `cs-jd-reconstruction-v5`).
+- **Requirement-relative evidence relevance** (October 12; `f29530c`, `cs-jd-reconstruction-v6`, `cs-resume-match-v3`):
+  - EXPERIENCE requirements get ladder levels;
+  - structured profile limitations become the only gap proof;
+  - Resume Match fails closed with `RESUME_MATCH_PREREQUISITE_OUTDATED` on an outdated map.
+- **Statement groups, reconciliation and requirement-relative INDUSTRY** (October 13; `067c5dc`, `cs-jd-reconstruction-v7`, `cs-resume-match-v4`):
+  - structured `requirementStatements`;
+  - deterministic reconciliation of statement quotes against deterministic requirement lines;
+  - INDUSTRY matches only from actual work experience;
+  - Unknown without supported or unsupported portions.
+  - The branch record calls this work "uncommitted pending review", but Git shows commit `067c5dc` on October 13.
+- **Milestone 4 salary-policy contract update** (October 15; `267124f`).
 
 ## Current Accepted Model Routing
 
@@ -163,31 +250,21 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ## In Progress
 
-### Claude Task 8 — Application Tracker completion pass
+### Main-product tasks
 
-**Status (October 15, 2026):** implemented and verified offline; awaiting user review, then the checkpoint commit. Not committed or pushed yet. The audit, changes and verification are recorded under "Completed — Task 8 completion pass" below.
-
-The pass audited the existing tracker against current requirements and added only missing/incomplete behavior.
-
-Focus areas:
-
-- persistent application state/stage;
-- application and follow-up dates;
-- notes;
-- contacts/interviews where already part of the established design;
-- outcomes;
-- next action and due/overdue/due-today visibility;
-- `/applications` usability;
-- guarded lifecycle interaction;
-- stale-write/concurrency behavior;
-- persistence across refresh/restart;
-- application data surviving reevaluation unchanged.
-
-Do not add push/email/browser notifications, calendar integration, email integration, or evaluator redesign as part of Task 8.
+No main-product implementation task is open. Task 9 is complete (see "Recently Completed"). Next is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update.
 
 ### Evaluator
 
 The earlier accepted sequence (JD Reconstruction optimization #2 → Resume Match optimization #2 → combined-path integration → final mixed-model evaluation) has been worked through: Resume Match optimization #2 was accepted, JD Reconstruction State2 was retained, and the routing was locked on October 15, 2026 (Codex workstream, `codex/evaluator-live-diagnostic`). The final live / whole-product evaluation is deferred to the final integration pass after main-product features 1–18 are complete.
+
+Outstanding evaluator items (October 16, 2026) — none of them is authorized to run now:
+
+- the final paid acceptance run of the integrated evaluator;
+- measurement of the current-contract cost (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, with the GPT-6 Luna routes);
+- the replay items recorded on the evaluator branch.
+
+See "Evaluator-branch progress" below and `EVALUATOR_STATUS.md` §20.
 
 ### Main Product
 
@@ -573,7 +650,9 @@ An application-tracking layer beside the opportunity lifecycle. The evaluator, r
   - E2E: `applications.spec.ts`;
   - three racing waits fixed in `evaluation-results.spec.ts` (test-only).
 
-#### Completed — Task 8 completion pass (October 15, 2026; awaiting review, not yet committed)
+#### Completed — Task 8 completion pass (implemented October 15, 2026; committed as `534a4c7` on October 16, 2026)
+
+*(Recorded on October 15, 2026 as "awaiting review, not yet committed"; reviewed, committed and pushed on October 16, 2026.)*
 
 An audit-first pass over the October 9 tracker. The established model is unchanged: the same seven stages and six outcomes, "Interested" = Saved, "Applying" = Planning to apply, and assessment/case study as an interview type. No evaluator, routing, prompt, provider-schema, recommendation, Resume Match/JD Reconstruction, evidence or pricing code was touched.
 
@@ -695,6 +774,43 @@ The manual-input product is ready to use as one product. It is ready for the eva
   - build and a `next start` health smoke check pass;
   - E2E 23/23;
   - `pnpm app:doctor` reports no blocking problems.
+
+#### Completed — Task 9 completion pass (October 16, 2026; committed as `feat: complete operational hardening`)
+
+*(Heading before the commit, October 16, 2026: "In progress — Task 9 completion pass (October 16, 2026; implementation verified; documentation synchronized; awaiting review; not committed)".)*
+
+An audit-first pass over the October 10 Task 9 operations work, planned and approved before implementation. The worker loop, single-worker lock, task claiming, recovery, error classification, backoff, shutdown, lifecycle sweep, queue states, AI-configuration handling, health behavior, public evaluation API, navigation and acceptance tests were audited as complete and left unchanged. No evaluator, routing, prompt, queue, lease or shared-persistence code changed, and there is no migration.
+
+- **Audit result.**
+  - Complete: setup, migrations and their verification, health behavior, AI configuration, worker startup and shutdown, single-worker enforcement, claiming and recovery, exhausted leases, error classification and backoff, queue-state truthfulness, the Prisma/process model, navigation, and acceptance coverage (which tracks applications through the Task 8 tracker).
+  - Inconsistent or partial, fixed below: two API routes logged raw error objects; the doctor's deferral line predated usage-limit deferrals; the health endpoint's failure path had no unit test; and the README omitted usage-limit deferrals.
+- **The three documented queue limitations** (`HANDOFFS.md`, Task 9 handoff) remain accurately described and acceptable for the one-worker product:
+  - no lease heartbeat or claim ownership;
+  - `Evaluation.status` lag (every product read uses task status first);
+  - task-level retries unused (provider-call retries and user reevaluation cover retryable AI failures).
+  - They stay for the final-integration/Codex review.
+- **Log hygiene.** `POST /api/opportunities` and `GET /api/opportunities/[id]` now log only the error name, like every other route. A raw error could carry submitted job text or database details. Response bodies are unchanged.
+- **`pnpm app:doctor`.** The deferral line now separates requests waiting for the AI budget (including legacy `BUDGET_UNAVAILABLE` rows) from those waiting for usage limits (`USAGE_LIMIT_REACHED`). The query is still a single SELECT; the doctor stays read-only.
+- **E2E credential.** `playwright.config.ts` and `e2eEnvironment()` always use the deterministic, non-live `OPENAI_API_KEY`, so the test runner, its helpers and the web server never inherit a real key from `.env`. Other AI settings still follow `.env`. Production AI configuration is unchanged.
+- **Worker-lock caveat (documented, not changed).** The single-worker lock lives on the worker's own database connection and is not a heartbeat. If that connection drops during a run and a second worker starts, the second worker's recovery can fail a still-running task whose lease expired on its final attempt. The README now states this and the one-worker rule; the October 10 record above is left as written.
+- **README.** Usage-limit deferral in §5, §7 and troubleshooting; the E2E credential note in §6; the lock caveat in §5.
+- **Documentation synchronization (October 16, 2026).** This follows a separate documentation audit.
+  - Current-state documents now show Task 8 complete and Task 9 current: `AGENTS.md`, `AGENT_WORKSTREAMS.md`, `PRODUCT_STATUS.md`, `DEVELOPMENT_PLAN.md`, the root `README.md`, `AI_Career_Platform_README.md`, and the status sections of `AI_Architecture_README.md`.
+  - Additions:
+    - `EVALUATOR_STATUS.md` §20: evaluator-branch contract history, residual risks, outstanding verification;
+    - dated annotations in `HANDOFFS.md`;
+    - Task 8 and Git-recorded history in `CHANGELOG.md`;
+    - a Git-record addendum to `MILESTONES_1_10.md`.
+  - PRDs, TDDs and the Semantic Evaluation Playbook are unchanged; their next versions follow Task 9.
+- **Test infrastructure.** `vitest.config.ts` resolves the web app's `@/` alias, so route handlers can be unit-tested.
+- **Tests.**
+  - unit: `operations-hardening.test.ts` (new): health 200/503 with no detail leakage; error-name-only logging in both routes (these tests fail on the previous route code); the deterministic E2E key. `worker-operations.test.ts`: the deferral breakdown.
+  - integration: `worker-recovery.test.ts` gained a test checking the doctor's per-reason counts against independent counts.
+- **Verification** (isolated test database only; no paid provider calls; normal database transaction count 0):
+  - typecheck and lint clean; Prisma schema valid; `db:verify-migrations` 15/15 (only the documented `Recommendation.evidenceReferences` drift);
+  - unit 42 files / 1,086 tests; integration 21 files / 192 tests; production build succeeds; E2E 27/27.
+- **Closure (October 16, 2026).** The user reviewed and approved the pass. The current-state documents were then updated from "Task 9 current" to "Task 9 complete", a Task 9 entry was added to `CHANGELOG.md` and a closure note to `HANDOFFS.md`. The pass was committed as `feat: complete operational hardening` and pushed to `origin/claude/gallant-pasteur-y1ou3i`; `main` was not merged. The full suites were not rerun for the documentation-only closure edits; the implementation and tests are byte-identical to the verified state above.
+  - Operational checks on the test database: `pnpm app:doctor` (no blocking problems); `pnpm db:status` (up to date); `pnpm app:setup` (no pending migrations); `pnpm worker:evaluations:once` refuses the placeholder key and exits 1; `next start` `/api/health` returns 200 on the test database and 503 `degraded` on an unreachable one, with no URL in the response or log.
 
 #### Completed — Profile limitations persistence (main-product completion, task 1; October 14, 2026)
 
@@ -838,7 +954,7 @@ Revised roadmap:
 - Next: freeze the evaluator, then the deliberate final integration checkpoint (see the final integration checklist in `HANDOFFS.md`), then retrieval/scraper work.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 
-**Current order (October 15, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass continues — Task 8 completion pass (implemented October 15, 2026; awaiting review), then the Task 9 completion pass — then an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
+**Current order (updated October 16, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass is complete: Task 8 completion pass committed (`534a4c7`, October 16, 2026); Task 9 completion pass committed (`feat: complete operational hardening`, October 16, 2026). Next comes the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in main-product features 1–10. Then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
 
 #### Known issues found during main-product work
 
@@ -852,11 +968,14 @@ Revised roadmap:
 
 ## Planned Next
 
-1. Review the Task 8 completion pass, then checkpoint it on `claude/gallant-pasteur-y1ou3i`.
-2. Complete the Task 9 completion pass.
-3. Audit any remaining main-product gaps in features 1–10.
-4. Build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
-5. Only after all main-product work is complete, perform deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
+Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
+
+1. Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update: new PRD/TDD versions and Semantic Evaluation Playbook v1.3, which needs the evaluator rules accepted after v1.2.
+2. After that: audit any remaining main-product gaps in features 1–10.
+3. Then: build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+4. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons.
 
 Retrieval must connect to the existing normalization and deduplication pipeline and feed normalized opportunities into the existing evaluator; source coverage expands within features 11–18.
 
@@ -885,7 +1004,7 @@ Retrieval must connect to the existing normalization and deduplication pipeline 
 
 ## Open Integration Items
 
-These are intentionally not Task 8 work:
+These are intentionally not Task 9 work:
 
 - final branch combination and handoff resolution;
 - DB-backed acceptance of the Task 7 → Milestone 4 contract, including removing the five released fields from `fieldsWithheldFromEvaluator` on this branch and updating its withholding tests (see the October 15 annotations in `HANDOFFS.md`);

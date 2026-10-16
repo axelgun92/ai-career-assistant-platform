@@ -271,7 +271,7 @@ describe("pnpm app:doctor checks", () => {
       expiredReclaimable: 0,
       expiredExhausted: 1,
     }),
-    openDeferrals: async () => ({ open: 1, pinnedToOtherVersion: 0 }),
+    openDeferrals: async () => ({ open: 1, waitingForUsageLimits: 0, pinnedToOtherVersion: 0 }),
     ...overrides,
   });
 
@@ -312,13 +312,32 @@ describe("pnpm app:doctor checks", () => {
       environment, nodeVersion: "22.1.0", migrationFolders: ["001_init"], prismaClientGenerated: true, now,
       reads: reads({
         activeCustomerSuccessProfile: async () => ({ version: 4, storesLimitations: true }),
-        openDeferrals: async () => ({ open: 3, pinnedToOtherVersion: 2 }),
+        openDeferrals: async () => ({ open: 3, waitingForUsageLimits: 1, pinnedToOtherVersion: 2 }),
       }),
     });
     const text = formatDoctorChecks(checks);
     expect(text).toContain("PASS  Active profile: version 4 is active for Customer Success; it stores structured limitations");
-    expect(text).toMatch(/WARN {2}Deferred evaluations: 3 waiting for budget; 2 will run with a profile version other than the active one/);
+    expect(text).toMatch(
+      /WARN {2}Deferred evaluations: 3 waiting \(2 for the AI budget, 1 for usage limits\); 2 will run with a profile version other than the active one/,
+    );
     expect(text).toContain("cancel and request again to use the active one");
+  });
+
+  it("separates deferrals waiting for the AI budget from those waiting for usage limits", async () => {
+    const run = async (deferrals: { open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }) =>
+      (await runDoctorChecks({
+        environment, nodeVersion: "22.1.0", migrationFolders: ["001_init"], prismaClientGenerated: true, now,
+        reads: reads({ openDeferrals: async () => deferrals }),
+      })).find((check) => check.label === "Deferred evaluations");
+    expect(await run({ open: 2, waitingForUsageLimits: 2, pinnedToOtherVersion: 0 })).toEqual({
+      level: "PASS",
+      label: "Deferred evaluations",
+      detail: "2 waiting (0 for the AI budget, 2 for usage limits)",
+    });
+    expect(await run({ open: 0, waitingForUsageLimits: 0, pinnedToOtherVersion: 0 })).toMatchObject({
+      level: "PASS",
+      detail: "0 waiting (0 for the AI budget, 0 for usage limits)",
+    });
   });
 
   it("stops at an unreachable database and fails missing basics", async () => {

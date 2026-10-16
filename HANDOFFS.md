@@ -863,3 +863,50 @@ These annotations record current state against the preserved historical entries 
   - Question 3 (original):
     > "Terra-eligible under the active model configuration" is reported as eligible for evaluation in an executable domain; there is no per-model eligibility concept.
     - Resolution: neutral "eligible for evaluation" wording, adopted in Core Platform TDD v1.5 and Core AI Framework PRD v1.4.
+
+### Current-State Annotations — October 16, 2026 (Claude main-product workstream)
+
+**Date:** 2026-10-16\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Ready (annotations only; every entry above is preserved verbatim)
+
+#### Closure: "Milestone 4 Task 7 salary-policy alignment → Claude Task 8"
+
+- Consumed. Its "Next Task", the Task 8 Application Tracker completion pass, was completed and committed as `534a4c7` (`feat: complete application tracker`) on `claude/gallant-pasteur-y1ou3i` on October 16, 2026.
+- Its "Do Not Change Without Coordination" constraints were honored: no change to evaluator stages, schemas, semantic contracts, prompts, routing, salary policy, evidence behavior or recommendation logic; no paid calls; no normal-database use.
+- The entry's own "Status: Ready" line is left as written.
+
+#### Task 8 completion pass and the shared boundary
+
+- The Task 8 guarded lifecycle path is unchanged (Final Integration Checklist item 4 stays open as written): `pendingUserActions`, `applyUserActionInTransaction`, `applyLifecycleActionGuarded`.
+- The pass added one additive product migration, `20261017090000_application_follow_up_updated` (`ALTER TYPE "ApplicationEventType" ADD VALUE 'FOLLOW_UP_UPDATED'`). It contains no `Recommendation.evidenceReferences` change.
+
+#### Task 9 completion pass (in progress)
+
+- Status: implementation and isolated verification are complete; the documentation synchronization is under review; not yet committed.
+- All changes are product-only. There is no migration and no change to `claimNext`, `failExpiredExhaustedTasks`, `complete`, `fail`, `enqueue`, `enqueueAdmitted`, the worker lock, leases or evaluator code.
+- **Clarification for checklist item 7 (Task 9 additions)**, stated for the Codex review. The Task 9 handoff above says recovery runs only while the worker holds the single-worker lock and is idle, so it never touches a live run. That holds only while the lock's dedicated database connection stays up.
+  - If that connection drops during a run and a second worker starts, the second worker can take the lock.
+  - Its recovery can then fail a still-running task whose lease expired on its final attempt.
+  - This is the documented lack of lease renewal and claim ownership ("Documented, Not Fixed").
+  - The root `README.md` now states it, together with the one-worker rule. No code change is made before final integration.
+
+#### Final integration gates (unchanged)
+
+The historical checklist (with item 2 accepted) and the October 15 additional requirements stay open as written. The evaluator-branch contract history, residual risks and outstanding verification are recorded in `EVALUATOR_STATUS.md` §20. That includes the current-contract cost, which is still unmeasured.
+
+When that branch's progress records are carried into the canonical documents (October 15 requirement 3), note that its own routing table still shows GPT-5.6 Luna for Company Alignment and Burnout Risk; it predates the routing lock.
+
+### Closure Annotation — October 16, 2026: Task 9 completion pass (Claude main-product workstream)
+
+**Date:** 2026-10-16\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Closed (annotation only; every entry above, including the "Task 9 completion pass (in progress)" annotation, is preserved as written)
+
+- The Task 9 completion pass recorded above as in progress was reviewed and approved by the user, then committed as `feat: complete operational hardening` on `claude/gallant-pasteur-y1ou3i` and pushed to `origin`. `main` was not merged.
+- Its scope is unchanged from the annotation above: product-only changes, no migration, and no change to `claimNext`, `failExpiredExhaustedTasks`, `complete`, `fail`, `enqueue`, `enqueueAdmitted`, the worker lock, leases or evaluator code.
+- The checklist item 7 clarification (the single-worker lock's connection-loss caveat) stays open for the Codex review at final integration. The final integration gates are unchanged.
+- Evaluator routing and contracts remain branch-specific: the main-product branch runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2`, `cs-organizational-maturity-v6` with GPT-5.6 Luna for Company Alignment and Burnout Risk and all ten Task 7 fields withheld; `codex/evaluator-live-diagnostic` carries v7/v4/v7, the GPT-6 Luna routes and the five-field release (`267124f`). See `EVALUATOR_STATUS.md` §20.
+- Next on the main-product workstream: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then features 11–18.

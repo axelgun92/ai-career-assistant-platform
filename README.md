@@ -125,19 +125,20 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - safe rendering of untrusted job-description content;
 - opportunity lifecycle (save, apply, dismiss, archive, restore);
 - versioned profile and preferences management with an explicit active version, including persisted structured profile limitations;
-- monthly AI budget with deferral and resume;
+- monthly AI budget with reservation/reconciliation, warnings, daily/weekly evaluation and monthly output-token limits, and deferral, resume and cancel;
 - dashboard search, filters, sorting and summaries;
 - Task 7 normalized opportunity facts: salary minimum/maximum and currency, work arrangement, seniority, department, employment type, closing date, and residency requirement/regions, with provenance and Unknown preserved;
-- application-tracking foundation (completion pass in progress);
-- setup and operations tooling (`pnpm app:setup`, `pnpm app:doctor`, migration verification).
+- application tracker (Task 8 completion pass complete): stages and outcomes with calendar-date rules, rescheduling follow-ups, interviews, contacts, notes, next-action and due visibility, and stale-write protection;
+- setup and operations tooling (Task 9 completion pass complete): `pnpm app:setup`, `pnpm app:doctor`, migration verification, `/api/health`, the single-worker lock, honest queue states, error-name-only API logging, and whole-product acceptance tests with a deterministic, non-live E2E credential.
 
 ### In Progress
 
-- Claude Task 8 — Application Tracker completion pass (main-product branch).
+- No main-product implementation task is open. Task 8 and Task 9 are complete.
+- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
 
 ### Main-product work still required before final acceptance
 
-- Task 9 completion pass and any remaining gaps in features 1–10;
+- after the versioned-document update: an audit of any remaining gaps in features 1–10;
 - feature 11 — automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
 - feature 12 — source health and conservative retrieval;
 - feature 13 — posting-history/ghost-job intelligence;
@@ -146,7 +147,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
 - feature 18 — company intelligence;
-- final evaluator/product integration and whole-product acceptance after all main-product features 1–18 are complete.
+- only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 ### Later add-ons only (features 19–23)
 
@@ -158,7 +159,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 Beyond these add-ons, additional domain assistants remain planned on the same Core platform.
 
-The evaluator branch (Codex) holds the locked routing and the Milestone 4 salary-policy alignment; they reach the product at the final integration checkpoint (see `HANDOFFS.md`, final integration checklist and the October 15 annotations).
+The evaluator branch (Codex) holds the locked routing, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 salary-policy alignment; they reach the product at the final integration checkpoint (see `HANDOFFS.md`, final integration checklist and the October 15 annotations).
 
 ## Architecture
 
@@ -236,12 +237,12 @@ Superseded PRD/TDD versions are kept for history in the `Archive/` folders besid
 
 ## Development Priorities
 
-The current development order (October 15, 2026) is:
+The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. complete the Task 1–9 product completion pass (Task 8 — Application Tracker next, then Task 9) and close any remaining gaps in features 1–10;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); next comes the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10;
 3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
-4. only then perform final evaluator/product integration, whole-product acceptance, evaluator freeze, and deliberate merge;
+4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 
 *(Earlier order, superseded on October 15, 2026: finish the evaluator, complete the remaining main-product work, integrate into a usable product, then add retrieval, then expand discovery and analytics.)*
@@ -298,13 +299,14 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
 ### 5. The evaluation worker and queue
 
 - **One worker.** The worker takes a database lock when it starts; a second worker exits with "another evaluation worker is already running". `pnpm worker:evaluations:once` processes at most one task and exits.
+  - The lock lives on the worker's own database connection and is not a heartbeat. If that connection drops while a task is running, the worker keeps running the task, and a second worker started meanwhile can take the lock. That second worker's recovery fails any task whose lease expired on its final attempt (`EVALUATION_LEASE_EXPIRED`), even if the first worker is still running it. Leases are not renewed, and claims are not owned by a worker, so this cannot be detected. Run exactly one worker, and stop the old one before starting another.
 - **States shown on an opportunity:**
   - *Queued* — waiting for the worker. After a minute: "If the evaluation worker isn't running, start it".
   - *Running*.
   - *Running past its lease* (`RUNNING_STALE`) — the run has exceeded its worker lease (300 s by default; leases are not renewed, and a full evaluation can legitimately take longer). The run may still be in progress, or the worker may have stopped; this is **not** proof the worker stopped.
-  - *Deferred — waiting for budget* — never queued; resume it from the page or `/budget`.
+  - *Deferred — waiting for budget* or *Deferred — waiting for usage limits* — never queued. The first means the monthly AI budget has no room; the second means a daily or weekly evaluation limit, or the monthly output-token limit, is reached. Resume it from the page or `/budget`.
   - *Failed* — with a safe message and failure code; the last completed result stays visible.
-- **Recovery.** If a worker dies mid-run, the task is retried automatically when attempts remain. If it died on the final attempt, the next worker start (or its idle loop) marks it failed (`EVALUATION_LEASE_EXPIRED`), which releases its budget hold and allows reevaluation. Recovery only runs in the worker that holds the lock, and only while it is not running a task, so it never fails a live run.
+- **Recovery.** If a worker dies mid-run, the task is retried automatically when attempts remain. If it died on the final attempt, the next worker start (or its idle loop) marks it failed (`EVALUATION_LEASE_EXPIRED`), which releases its budget hold and allows reevaluation. Recovery only runs in the worker that holds the lock, and only while it is not running a task, so it never fails a live run while that lock connection stays up (see the caveat under **One worker**).
 - **Errors.** Temporary infrastructure problems (database unreachable or restarting, dropped connections, timeouts) are logged without details and retried with backoff (capped at 30 s). Configuration problems and unexpected errors stop the worker with a non-zero exit code instead of looping. Evaluation failures are recorded on the evaluation and the worker continues.
 - **Shutdown.** Ctrl-C stops after the current task; a second Ctrl-C exits immediately (the task is then recovered as above).
 
@@ -327,12 +329,13 @@ Test-only startup notes:
 
 - Integration and E2E tests use `DATABASE_URL` unless `TEST_DATABASE_URL` is set. They clean up what they create and restore the budget and active profile, but a separate database is recommended.
 - Stop any `pnpm dev` you started yourself before `pnpm test:e2e`, or Playwright reuses it with your environment. Do **not** run a real worker during E2E (the tests run their own deterministic worker).
+- E2E always uses a deterministic, non-live `OPENAI_API_KEY`, even when `.env` holds a real key: `playwright.config.ts` replaces it for the test runner, its helpers and the web server. Other AI settings in `.env` still apply. No E2E path calls a provider.
 - If Playwright's bundled Chromium is unavailable, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a local Chrome/Chromium.
 - E2E projects run in order: `chromium` → `profile-management` → `budget` → `dashboard` → `acceptance` (later projects change global profile/budget state).
 
 ### 7. Real-evaluation workflow
 
-Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the web app and one worker, capture an opportunity, and select **Evaluate**. Each evaluation makes paid provider calls; usage and estimated cost appear on the opportunity and in the dashboard totals. Set a monthly budget on `/budget` to defer evaluations that would not fit.
+Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the web app and one worker, capture an opportunity, and select **Evaluate**. Each evaluation makes paid provider calls; usage and estimated cost appear on the opportunity and in the dashboard totals. Set a monthly budget on `/budget` to defer evaluations that would not fit, and optional daily or weekly evaluation limits or a monthly output-token limit to defer evaluations beyond them.
 
 ### 8. Troubleshooting
 
@@ -345,6 +348,7 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | Worker exits: "another evaluation worker is already running" | Only one worker may run. Stop the other one. |
 | Worker exits with a configuration error | Fix the named variables (see `pnpm app:doctor`). |
 | "An evaluation is already queued or running" but none shows | A request crashed between admission and queueing; it is released automatically after 10 minutes. |
+| "Deferred — waiting for usage limits" | A daily or weekly evaluation limit, or the monthly output-token limit, set on `/budget` is reached. Raise the limit or wait for its window to reset, then resume the request from the page or `/budget`. `pnpm app:doctor` shows how many deferrals wait for the budget and how many for usage limits. |
 | `/api/health` returns 503 | The database is unreachable. Start PostgreSQL / check `DATABASE_URL`. |
 | `prisma migrate dev` reports a `Recommendation.evidenceReferences` change | Known, documented drift (awaiting a decision); use `pnpm db:migrate` (deploy). `pnpm db:verify-migrations` confirms it is the only difference. |
 | `Cannot find module …/generated/prisma` | Run `pnpm prisma:generate`. |
@@ -373,4 +377,4 @@ Every source must converge on one pipeline: *source adapter → `RawOpportunity`
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The current product task is Claude Task 8 — Application Tracker completion pass, followed by the Task 9 completion pass and the remaining main-product features through feature 18. Final integration, whole-product acceptance and the evaluator freeze are deferred until the entire intended main product (features 1–18) is complete.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. Next is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

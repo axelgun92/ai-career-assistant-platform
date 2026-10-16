@@ -1,6 +1,6 @@
 # AI Career Platform
 
-**Last updated:** October 15, 2026
+**Last updated:** October 16, 2026
 
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
@@ -136,21 +136,25 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 - per-operation model routing;
 - Customer Success results interface with bounded evaluation polling and status handling and safe rendering of untrusted job-description content;
 - manual opportunity ingestion with raw-source preservation, deterministic normalization, and provenance;
-- opportunity dashboard, search/sort/filter, lifecycle actions, evaluation history, profile/version management, AI usage/cost display, budget controls, and application-tracking foundation;
+- opportunity dashboard, search/sort/filter, lifecycle actions, evaluation history, profile/version management, AI usage/cost display, and budget controls;
+- application tracker, complete after the Task 8 completion pass (`534a4c7`);
+- setup and operations tooling, single-worker evaluation processing, honest queue states, and whole-product acceptance tests (original Task 9 work), complete after the Task 9 completion pass (October 16, 2026);
 - persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
 - Task 7 normalized salary/currency/position/residency contract;
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
 - Resume Match Optimization #2 and JD Reconstruction State2 accepted;
 - final routing policy locked (GPT-6 Luna routes on `codex/evaluator-live-diagnostic`; not yet merged);
-- Customer Success Milestone 4 aligned to Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged).
+- Customer Success Milestone 4 aligned to Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged);
+- evaluator semantic-contract repairs of October 10–13 (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) on `codex/evaluator-live-diagnostic` (not yet merged; the main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`).
 
 ### In progress
 
-- Claude Task 8 — Application Tracker completion pass.
+- No main-product implementation task is open. Task 8 and Task 9 are complete.
+- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
 
 ### Main-product work still required before final acceptance
 
-- Task 9 completion pass and any remaining gaps in features 1–10;
+- after the versioned-document update: an audit of any remaining gaps in features 1–10;
 - automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
 - source health and conservative retrieval;
 - posting-history/ghost-job intelligence;
@@ -159,7 +163,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 - job-market analytics;
 - personal job-search analytics;
 - company intelligence;
-- final evaluator/product integration and whole-product acceptance after all main-product features 1–18 are complete.
+- only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 ### Later add-ons only
 
@@ -247,9 +251,9 @@ The following repository documentation also exists (paths are listed in the "Doc
 The current development order is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. complete the Task 1–9 product completion pass (Task 8 next, then Task 9);
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); next comes the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10;
 3. build any still-missing main-product features through feature 18, including retrieval and analytics/intelligence;
-4. only then perform final evaluator/product integration, whole-product acceptance, evaluator freeze, and deliberate merge;
+4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add features 19–23 later.
 
 The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension is a companion client to the same backend/data/evaluator/dashboard, not a separate product.
@@ -340,4 +344,4 @@ tests/
 
 **Active development**
 
-Task 7 and the corresponding Customer Success Milestone 4 salary-policy alignment are complete. The current product task is Claude Task 8 — Application Tracker completion pass, followed by the Task 9 completion pass and the remaining main-product features through feature 18. Final integration/freeze is intentionally deferred until the entire intended main product is complete.
+Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. Next is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

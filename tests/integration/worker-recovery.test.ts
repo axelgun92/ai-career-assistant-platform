@@ -192,6 +192,46 @@ describe("pnpm app:doctor", () => {
     }
     expect(await snapshot()).toBe(before);
   });
+
+  it("counts open deferrals by what they wait for: the AI budget (including legacy rows) or usage limits", async () => {
+    const profile = await createProfile(cleanup);
+    await setBudget({ amount: 0.01, reservePerEvaluation: 0.6 });
+    const deferredIds: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const opportunityId = await captureOpportunity(cleanup);
+      const result = await harness.service.requestEvaluation(opportunityId, { userProfileId: profile.id });
+      expect(result.outcome).toBe("DEFERRED");
+      deferredIds.push((await database.deferredEvaluation.findFirstOrThrow({ where: { opportunityId } })).id);
+    }
+    // Seed the other reasons on this suite's own rows (isolated test database).
+    await database.deferredEvaluation.update({ where: { id: deferredIds[1]! }, data: { reasonCode: "USAGE_LIMIT_REACHED" } });
+    await database.deferredEvaluation.update({ where: { id: deferredIds[2]! }, data: { reasonCode: "BUDGET_UNAVAILABLE" } });
+
+    const client = getDatabaseClient();
+    const reads = createDoctorReads(client, {
+      workerConnected: () => isEvaluationWorkerConnected(client),
+      queueSnapshot: (now) => readQueueSnapshot(client, now),
+    });
+    const counts = await reads.openDeferrals();
+    // The query agrees with independent counts over the whole database.
+    const open = await database.deferredEvaluation.count({ where: { status: "DEFERRED" } });
+    const usage = await database.deferredEvaluation.count({ where: { status: "DEFERRED", reasonCode: "USAGE_LIMIT_REACHED" } });
+    expect(counts).toMatchObject({ open, waitingForUsageLimits: usage });
+    expect(usage).toBeGreaterThanOrEqual(1);
+    expect(open - usage).toBeGreaterThanOrEqual(2);
+
+    const checks = await runDoctorChecks({
+      environment: process.env,
+      nodeVersion: process.versions.node,
+      migrationFolders: [],
+      prismaClientGenerated: true,
+      reads,
+      now: new Date(),
+    });
+    expect(checks.find((check) => check.label === "Deferred evaluations")?.detail).toContain(
+      `${open} waiting (${open - usage} for the AI budget, ${usage} for usage limits)`,
+    );
+  });
 });
 
 describe("evaluation reads and the public API shape", () => {

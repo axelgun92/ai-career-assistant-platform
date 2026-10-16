@@ -1,7 +1,7 @@
 # Agent Workstreams
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 15, 2026
+**Last updated:** October 16, 2026
 
 ## Purpose
 
@@ -9,7 +9,7 @@ This document defines current ownership boundaries for coding agents so parallel
 
 It is a coordination document, not a product specification.
 
-## Current Workstream Split (October 15, 2026)
+## Current Workstream Split (October 15, 2026; status updated October 16, 2026)
 
 Ownership as defined in `DEVELOPMENT_PLAN.md` (October 15, 2026):
 
@@ -23,7 +23,9 @@ Primary ownership:
 - deep evaluator debugging/audits;
 - paid/live diagnostics and final live acceptance when explicitly authorized.
 
-The evaluator routing policy is locked. Codex's evaluator work, including the GPT-6 Luna routes for Company Alignment and Burnout Risk and the Milestone 4 salary-policy alignment, lives on the evaluator branch (`codex/evaluator-live-diagnostic`). It is combined with the main-product branch only at the final integration checkpoint.
+The evaluator routing policy is locked. Codex's evaluator work lives on the evaluator branch (`codex/evaluator-live-diagnostic`). That includes the GPT-6 Luna routes for Company Alignment and Burnout Risk, the October 10–13 semantic-contract repairs (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) and the Milestone 4 salary-policy alignment (`267124f`). It is combined with the main-product branch only at the final integration checkpoint.
+
+Outstanding evaluator work (October 16, 2026): final live acceptance of the integrated evaluator and measurement of the current-contract cost. Both belong to the final integration pass and need explicit paid-call authorization. No evaluator-branch commits after `267124f` (October 15) are recorded, and the repository does not record any newer Codex activity.
 
 ### Claude / Claude Code
 
@@ -35,7 +37,13 @@ Primary ownership:
 - retrieval architecture and most main-product implementation outside evaluator internals, including main-product features 11–18;
 - isolated product integration tests.
 
-Claude treats the evaluator as an existing boundary unless a genuine integration defect requires coordinated change. Current Claude work is on `claude/gallant-pasteur-y1ou3i`: the Task 1–9 completion pass, with Task 8 — Application Tracker next.
+Claude treats the evaluator as an existing boundary unless a genuine integration defect requires coordinated change. Current Claude work is on `claude/gallant-pasteur-y1ou3i`: the Task 1–9 completion pass.
+
+- Task 8 — Application Tracker completion pass: complete (`534a4c7`, October 16, 2026).
+- Task 9 — Operations hardening completion pass: complete (commit `feat: complete operational hardening`, October 16, 2026).
+- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
+- After that: an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18.
+- Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze and merge. Features 19–23 remain later add-ons.
 
 ### Shared rules (October 15, 2026)
 

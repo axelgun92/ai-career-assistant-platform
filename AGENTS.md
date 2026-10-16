@@ -92,6 +92,8 @@ Branch state:
 
 - The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on the Codex evaluator branch, `codex/evaluator-live-diagnostic`.
 - They are not merged into `main` or into the main-product branch `claude/gallant-pasteur-y1ou3i`. That branch keeps the earlier GPT-5.6 Luna routes for those two stages until the final evaluator/product integration.
+- The evaluator branch also carries the October 10–13 semantic-contract repairs (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) and the Milestone 4 salary-policy alignment (`267124f`). The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`. See `EVALUATOR_STATUS.md` §20.
+- Final live acceptance and measurement of the current-contract cost remain outstanding until final integration; no paid calls are authorized before then.
 
 Do not change routing casually. Model changes require quality/cost comparison against the last known-good route.
 
@@ -120,14 +122,18 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order (October 15, 2026). The intended main product is features 1–18:
+Current order (October 16, 2026). The intended main product is features 1–18:
 
 ```text
-Task 1–9 completion pass (features 1–10; Task 8 Application Tracker next, then Task 9)
+Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
+→ next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update
+  (new PRD/TDD versions, Semantic Evaluation Playbook v1.3)
+→ then: an audit of any remaining gaps in main-product features 1–10
 → remaining main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence,
   browser extension companion, source intelligence, market analytics, personal job-search analytics,
   company intelligence)
-→ final evaluator/product integration, whole-product acceptance, evaluator freeze, deliberate merge
+→ only after features 1–18: deliberate evaluator/product integration, full isolated verification,
+  evaluator freeze, deliberate merge
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)
 ```
 

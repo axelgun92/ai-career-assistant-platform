@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development  
-**Last updated:** October 15, 2026
+**Last updated:** October 16, 2026
 
 ## Purpose
 
@@ -33,7 +33,13 @@ Manual Opportunity
 
 Automated discovery is not yet complete, but the manual workflow remains the stable product foundation that later retrieval will feed. The current product can evaluate a manually entered job without automated retrieval.
 
-**Branch note:** the main-product work described here is implemented on `claude/gallant-pasteur-y1ou3i`. The October 15 evaluator routing lock and the Milestone 4 salary-policy alignment are implemented on `codex/evaluator-live-diagnostic`. Neither branch is merged into `main` yet; they are combined at the deliberate final integration pass.
+**Branch note:** the main-product work described here is implemented on `claude/gallant-pasteur-y1ou3i`. The evaluator branch `codex/evaluator-live-diagnostic` carries three things not on the main-product branch:
+
+- the October 15 evaluator routing lock;
+- the October 10–13 evaluator semantic-contract repairs;
+- the Milestone 4 salary-policy alignment.
+
+Neither branch is merged into `main` yet; they are combined at the deliberate final integration pass.
 
 ## Complete or Substantially Implemented
 
@@ -56,8 +62,22 @@ Automated discovery is not yet complete, but the manual workflow remains the sta
 - Semantic-operation usage and estimated-cost accounting, with AI usage/cost display.
 - Restart-safe per-evaluation semantic-call budgeting.
 - Persistent monthly budget ledger, reservation/reconciliation, warning thresholds, throughput/token limits, budget deferral/resume/cancel, and backlog/capacity reporting.
-- Application-tracking foundation, including application states, follow-ups, interviews, and `/applications`; Task 8 is now receiving a completion pass rather than being built from zero.
-- Operational hardening and product-acceptance infrastructure exist from the original Task 9 work; Task 9 will receive its own completion pass after Task 8.
+- Application tracker, complete after the Task 8 completion pass (`534a4c7`, October 16, 2026):
+  - stages and outcomes, with applied and closed dates checked as calendar dates;
+  - follow-ups that can be rescheduled or reworded;
+  - interviews with full editing, plus contacts and notes;
+  - next-action and due/overdue/due-today visibility for open, non-archived applications;
+  - `/applications` views, filters and in-tracker recovery from empty results;
+  - stale-write protection that keeps typed input;
+  - guarded lifecycle interaction.
+- Operational hardening and product-acceptance infrastructure, complete after the Task 9 completion pass (October 16, 2026):
+  - setup, migration verification and the read-only `pnpm app:doctor`, which reports budget deferrals and usage-limit deferrals separately;
+  - `/api/health`, with tested failure handling that returns no error detail;
+  - a single-worker lock with idle-only recovery; the guarantee holds while the lock's database connection stays up;
+  - honest queue states and safe public errors, with the opportunity API routes logging only the error name;
+  - whole-product acceptance tests, whose E2E runs always use a deterministic, non-live AI credential.
+
+  Task 9 added no migration and changed no queue, worker, lease or evaluator code.
 
 `CURRENT_PROGRESS.md` records each task in detail.
 
@@ -145,26 +165,45 @@ Milestone 4 now consumes the Task 7 salary/currency/residency contract at commit
 - Released to evaluator (on the Codex branch): salary minimum/maximum, currency, residency requirement, residency regions.
 - Still withheld pending later coordinated adoption: work arrangement, seniority, department, employment type, closing date.
 
+### Evaluator semantic-contract repairs (evaluator branch, not merged)
+
+Between October 10 and 13, 2026, the evaluator branch repaired several semantic contracts.
+
+- Provider-authored prose became display-only, so no acceptance decision depends on it.
+- Requirement statements, experience levels and Genuine Gap evidence became structured fields.
+- Structured profile limitations became the only proof of a Genuine Gap.
+- INDUSTRY evidence became requirement-relative.
+- A Resume Match run fails closed on an outdated JD Reconstruction map.
+- Current prompt identifiers on that branch:
+  - `cs-jd-reconstruction-v7`
+  - `cs-resume-match-v4`
+  - `cs-organizational-maturity-v7`
+
+The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`. Details, residual risks and outstanding verification are in `EVALUATOR_STATUS.md` §20.
+
 ## In Progress Now
 
-### Claude Task 8 — Application Tracker completion pass
+### Main-product tasks
 
-Task 8 is the immediate product task.
-
-The completion pass should audit and close only genuine gaps in the existing application tracker, including persistent stage/state, dates, follow-ups, notes, contacts/interviews where supported, outcomes, due/overdue/due-today visibility, stale-write protection, guarded lifecycle interaction, and survival across reevaluation.
-
-Task 8 does not include a proactive notification engine, calendar integration, or email integration.
+No main-product implementation task is open. The Task 1–9 completion pass is complete: Task 8 (`534a4c7`) and Task 9 (October 16, 2026) both closed. The next step is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (see below).
 
 ### Evaluator acceptance state
 
-The evaluator routing policy is locked. Broader DB-backed integration, E2E, whole-product acceptance, and any final live provider verification remain intentionally deferred until all intended main-product work is complete.
+The evaluator routing policy is locked on the evaluator branch.
+
+The main-product branch runs its own unit, DB-backed integration and E2E suites with deterministic fixtures on every task. What stays deferred until all intended main-product work is complete:
+
+- DB-backed and E2E acceptance of the merged evaluator contracts;
+- whole-product acceptance;
+- any final live provider verification;
+- measurement of the current-contract evaluation cost.
 
 ## Next Main-Product Work
 
-After Task 8:
+Task 8 and Task 9 are complete. In order:
 
-1. Task 9 completion pass.
-2. Audit/close any remaining gaps in features 1–10.
+1. Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions and Semantic Evaluation Playbook v1.3).
+2. After that: audit and close any remaining gaps in main-product features 1–10.
 3. Build main-product features 11–18:
    - automated discovery/retrieval/scraping;
    - source health and conservative retrieval;
@@ -174,7 +213,9 @@ After Task 8:
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-4. Perform final evaluator/product integration, whole-product acceptance, evaluator freeze, and deliberate merge only after features 1–18 are complete.
+4. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons (see below).
 
 Retrieval flow:
 
@@ -188,6 +229,18 @@ Job Sources
 ```
 
 The retrieval layer should feed the existing evaluator rather than redesign it.
+
+## Awaiting Final Integration or Acceptance
+
+These happen only at the final evaluator/product integration, after features 1–18 are complete:
+
+- merging the evaluator branch: routing lock, October 10–13 contract repairs, Milestone 4 alignment;
+- removing the five released Task 7 fields from `fieldsWithheldFromEvaluator`;
+- the open Codex reviews listed in `HANDOFFS.md`;
+- the `Recommendation.evidenceReferences` drift decision;
+- full DB-backed, E2E and live acceptance of the integrated evaluator;
+- current-contract cost measurement;
+- the evaluator freeze and the deliberate merge.
 
 ## Later Add-ons Only
 

@@ -22,7 +22,10 @@ export async function GET(
       );
     }
 
-    console.error("Opportunity retrieval failed", error);
+    // The error name only, as for every other route.
+    console.error("Opportunity retrieval failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
     return Response.json(
       { error: "The opportunity could not be retrieved" },
       { status: 500 },

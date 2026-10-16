@@ -1,7 +1,7 @@
 # Development Plan
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 15, 2026
+**Last updated:** October 16, 2026
 
 ## Goal
 
@@ -13,13 +13,14 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 
 - The Customer Success evaluator architecture, optimizations, and routing policy are established.
 - Final routing is locked; Company Alignment and Burnout Risk use GPT-6 Luna, while the remaining accepted routes stay unchanged.
-- Claude completion-pass work has reached Task 7.
 - Task 7 normalized salary/currency/residency facts are complete at `754f956dc0860149760936a61bdace0489404b9a`.
 - Codex Milestone 4 has consumed that contract and aligned the Customer Success salary policy at `267124f`.
-- The next Claude task is Task 8 — Application Tracker completion pass.
+- Task 8 — Application Tracker completion pass is complete at `534a4c718b21086d9419c0b0d18b0c907c15b3f9`.
+- Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
+- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update. After that: an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
-**Branch state:** the routing lock and Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Task 7) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
+**Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
 
 *(Earlier development order, superseded on October 15, 2026: Finish Evaluator + Finish Remaining Main Product → Integrate into a Stable Usable Product → Build Retrieval / Scraper → Expand Discovery, Analytics, and Domains. Retrieval and intelligence are now main-product features 11–18, completed before final acceptance.)*
 
@@ -45,8 +46,9 @@ The evaluator should remain stable while only demonstrated correctness/contract 
 
 ### Current state
 
-- Resume Match Optimization #2 is the accepted Resume Match baseline.
-- JD Reconstruction State2 remains the accepted JD Reconstruction baseline.
+- Resume Match Optimization #2 is the accepted Resume Match optimization baseline.
+- JD Reconstruction State2 remains the accepted JD Reconstruction optimization baseline.
+- The accepted cost figures (`EVALUATOR_STATUS.md` §13) belong to those baselines. The evaluator branch has since changed the JD Reconstruction and Resume Match contracts (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`). The cost of the current contracts is unmeasured until an authorized run at final integration.
 - Final routing policy is locked:
   - **Deterministic:** Hard Filters; Ghost Job Risk when objective posting-history evidence is unavailable; Final Recommendation.
   - **GPT-5.6 Terra:** JD Reconstruction; Resume Match.
@@ -88,10 +90,9 @@ The completion pass audits existing work against the authoritative PRDs/TDDs and
 
 ### Current sequence
 
-- Tasks 1–7 have completed their current completion work.
-- **Next:** Task 8 — Application Tracker completion pass.
-- **Then:** Task 9 — operational-hardening/completion pass.
-- After Task 9, audit features 1–10 for any genuine remaining gaps before moving on.
+- Tasks 1–9 have completed their current completion work (Task 8 at `534a4c7`; Task 9 on October 16, 2026).
+- **Next:** the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions and Semantic Evaluation Playbook v1.3).
+- **After that:** an audit of features 1–10 for any genuine remaining gaps, before moving on to features 11–18.
 
 ### Completion-pass rule
 

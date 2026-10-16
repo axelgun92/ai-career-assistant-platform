@@ -26,7 +26,9 @@ export interface DoctorReads {
   activeCustomerSuccessProfile(): Promise<{ version: number; storesLimitations: boolean } | null>;
   workerConnected(): Promise<boolean>;
   queueSnapshot(now: Date): Promise<QueueSnapshot>;
-  openDeferrals(): Promise<{ open: number; pinnedToOtherVersion: number }>;
+  // Open deferrals; those not waiting for a usage limit wait for the AI budget
+  // (including legacy BUDGET_UNAVAILABLE rows).
+  openDeferrals(): Promise<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
 }
 
 export interface DoctorInputs {
@@ -164,10 +166,11 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
   }
 
   const deferrals = await reads.openDeferrals();
+  const waitingForBudget = deferrals.open - deferrals.waitingForUsageLimits;
   add(
     deferrals.pinnedToOtherVersion > 0 ? "WARN" : "PASS",
     "Deferred evaluations",
-    `${deferrals.open} waiting for budget` +
+    `${deferrals.open} waiting (${waitingForBudget} for the AI budget, ${deferrals.waitingForUsageLimits} for usage limits)` +
       (deferrals.pinnedToOtherVersion > 0
         ? `; ${deferrals.pinnedToOtherVersion} will run with a profile version other than the active one. ` +
           "Review them on /budget: resume keeps the pinned version; cancel and request again to use the active one."
@@ -212,11 +215,12 @@ export function createDoctorReads(client: {
       // open ones whose version is not the active one (or no longer exists).
       const rows = (await client.$queryRaw`
         SELECT COUNT(*)::int AS "open",
+          COUNT(*) FILTER (WHERE d."reasonCode" = 'USAGE_LIMIT_REACHED')::int AS "waitingForUsageLimits",
           COUNT(*) FILTER (WHERE d."userProfileId" IS DISTINCT FROM a."userProfileId")::int AS "pinnedToOtherVersion"
         FROM "DeferredEvaluation" d
         LEFT JOIN "ActiveUserProfile" a ON a."domain" = d."domain"
-        WHERE d."status" = 'DEFERRED'`) as Array<{ open: number; pinnedToOtherVersion: number }>;
-      return rows[0] ?? { open: 0, pinnedToOtherVersion: 0 };
+        WHERE d."status" = 'DEFERRED'`) as Array<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
+      return rows[0] ?? { open: 0, waitingForUsageLimits: 0, pinnedToOtherVersion: 0 };
     },
   };
 }

@@ -1,5 +1,7 @@
 # AI Career Platform
 
+**Last updated:** October 16, 2026
+
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
 The platform is designed to support multiple domain-specific assistants on top of a shared Core AI Framework. The first implemented domain is the **Customer Success AI Assistant**.
@@ -116,21 +118,25 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - semantic usage and estimated-cost accounting;
 - per-operation model routing;
 - Customer Success results interface with bounded evaluation polling and status handling and safe rendering of untrusted job-description content;
-- opportunity dashboard, search/sort/filter, lifecycle actions, profile/version management, AI usage/cost display, and application-tracking foundation;
+- opportunity dashboard, search/sort/filter, lifecycle actions, profile/version management, and AI usage/cost display;
+- application tracker, complete after the Task 8 completion pass (`534a4c7`);
+- setup and operations tooling, single-worker evaluation processing, honest queue states, and whole-product acceptance tests (original Task 9 work), complete after the Task 9 completion pass (October 16, 2026);
 - persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
 - Task 7 normalized salary/currency/position/residency contract (main-product branch);
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
 - Resume Match Optimization #2 and JD Reconstruction State2 accepted;
 - final routing policy locked (GPT-6 Luna routes on `codex/evaluator-live-diagnostic`; not yet merged);
-- Customer Success Milestone 4 aligned to the Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged).
+- Customer Success Milestone 4 aligned to the Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged);
+- evaluator semantic-contract repairs of October 10–13 (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) on `codex/evaluator-live-diagnostic` (not yet merged; the main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`).
 
 ### In progress
 
-- Claude Task 8 — Application Tracker completion pass.
+- No main-product implementation task is open. Task 8 and Task 9 are complete.
+- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
 
 ### Main-product work still required before final acceptance
 
-- Task 9 completion pass and any remaining gaps in features 1–10;
+- after the versioned-document update: an audit of any remaining gaps in features 1–10;
 - feature 11 — automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
 - feature 12 — source health and conservative retrieval;
 - feature 13 — posting-history/ghost-job intelligence;
@@ -139,7 +145,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
 - feature 18 — company intelligence;
-- final evaluator/product integration and whole-product acceptance after all main-product features 1–18 are complete.
+- only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 ### Later add-ons only (features 19–23)
 
@@ -227,12 +233,12 @@ Superseded PRD/TDD versions are kept for history in the `Archive/` folders besid
 
 ## Development Priorities
 
-The current development order (October 15, 2026) is:
+The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. complete the Task 1–9 product completion pass (Task 8 — Application Tracker next, then Task 9) and close any remaining gaps in features 1–10;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); next comes the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10;
 3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
-4. only then perform final evaluator/product integration, whole-product acceptance, evaluator freeze, and deliberate merge;
+4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 
 *(Earlier order, superseded on October 15, 2026: finish the evaluator, complete the remaining main-product work, integrate into a usable product, then add retrieval, then expand discovery and analytics.)*
@@ -247,4 +253,4 @@ Setup, startup, worker operations, deterministic testing and troubleshooting are
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The current product task is Claude Task 8 — Application Tracker completion pass, followed by the Task 9 completion pass and the remaining main-product features through feature 18. Final integration, whole-product acceptance and the evaluator freeze are deferred until the entire intended main product (features 1–18) is complete.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. Next is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

@@ -2,8 +2,15 @@
 // E2E worker helper, so both build the same semantic execution policy. Values
 // already set in the process environment take precedence, as before; an
 // empty value or the old example placeholder counts as unset.
+//
+// The one exception is OPENAI_API_KEY: E2E always uses the deterministic,
+// non-live key below, whatever .env or the shell provides. No E2E path calls
+// a provider (the web server only queues, and the E2E worker uses the fixture
+// transport), so a real credential is never needed and must not be inherited.
+export const e2eDeterministicOpenAiKey = "deterministic-e2e-key";
+
 export const e2eEnvironmentDefaults = {
-  OPENAI_API_KEY: "deterministic-e2e-key",
+  OPENAI_API_KEY: e2eDeterministicOpenAiKey,
   AI_MODEL: "gpt-5.6-terra",
   AI_MAX_OUTPUT_TOKENS: "12000",
   AI_RETRY_LIMIT: "1",
@@ -20,7 +27,9 @@ export function e2eEnvironment(
   return Object.fromEntries(
     Object.entries(e2eEnvironmentDefaults).map(([name, value]) => [
       name,
-      environment[name] && environment[name] !== "YOUR_OPENAI_API_KEY" ? environment[name] : value,
+      name !== "OPENAI_API_KEY" && environment[name] && environment[name] !== "YOUR_OPENAI_API_KEY"
+        ? environment[name]
+        : value,
     ]),
   ) as Record<keyof typeof e2eEnvironmentDefaults, string>;
 }

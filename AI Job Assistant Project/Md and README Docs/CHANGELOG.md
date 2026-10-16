@@ -8,7 +8,41 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 ## Unreleased
 
-### Final evaluator routing lock
+Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026.
+
+### Task 9 completion — operational hardening (October 16, 2026)
+
+- Completed the audit-first completion pass over the October 10 Task 9 operations work. The worker loop, single-worker lock, task claiming, recovery, error classification, backoff, shutdown, queue states, AI-configuration handling, health behavior, public evaluation API, navigation and acceptance tests were audited as complete and left unchanged.
+- `POST /api/opportunities` and `GET /api/opportunities/[id]` now log only the error name, like every other route; response bodies are unchanged.
+- `pnpm app:doctor` reports requests waiting for the AI budget (including legacy `BUDGET_UNAVAILABLE` rows) separately from those waiting for usage limits (`USAGE_LIMIT_REACHED`). It remains a single read-only query.
+- E2E runs always use a deterministic, non-live `OPENAI_API_KEY` (`playwright.config.ts`, `e2eEnvironment()`), so the runner, its helpers and the web server never inherit a real key from `.env`.
+- New unit tests cover `/api/health` (200 and 503 with no error detail), error-name-only logging in both routes, and the E2E credential; the integration suite checks the doctor's per-reason deferral counts. `vitest.config.ts` resolves the web app's `@/` alias.
+- The root `README.md` documents usage-limit deferrals, the E2E credential, and the single-worker lock's connection-loss caveat (the lock holds only while its database connection stays up; documented, not changed).
+- No migration; no queue, worker, lease, routing, prompt or evaluator change. Verified on an isolated test database with no paid calls: unit 1,086, integration 192, E2E 27/27.
+- Commit: `feat: complete operational hardening` on `claude/gallant-pasteur-y1ou3i`.
+
+### Task 8 completion — application tracker (October 16, 2026)
+
+- Completed the audit-first completion pass over the October tracker; the stages, outcomes and lifecycle model are unchanged.
+- Calendar dates:
+  - applied and closed dates cannot be later than the current UTC date;
+  - a close cannot precede the applied date;
+  - an applied-date correction cannot follow the closed date;
+  - refusals return `APPLICATION_DATE_INVALID` (400) with no trace.
+- Follow-ups can be rescheduled and reworded through the versioned `updateFollowUp` command, recorded as a `FOLLOW_UP_UPDATED` event. Additive migration: `20261017090000_application_follow_up_updated`.
+- Interviews have full editing; the status can be chosen when adding; "Move to Interviewing?" appears only for a non-cancelled interview.
+- Only open applications of non-archived opportunities have a next action. The rule applies consistently to follow-up filters, tracker tiles, the next-action sort, dashboard badges and the "Follow-ups due" count.
+- `/applications`:
+  - an outcome or Closed filter under Active widens the view to All;
+  - empty results recover inside the tracker.
+- Stale writes:
+  - typed input is kept on every refusal;
+  - "Load latest" is offered only for state and concurrency conflicts.
+- Tracking refusals name the opportunity's state; the opportunity page shows a load-error notice.
+- The guarded lifecycle path and the evaluator are unchanged. Verified on an isolated test database with no paid calls (E2E 27/27).
+- Commit: `534a4c7` on `claude/gallant-pasteur-y1ou3i`.
+
+### Final evaluator routing lock (October 15, 2026)
 
 - Kept deterministic execution for Hard Filters, Ghost Job Risk when objective posting-history evidence is unavailable, and Final Recommendation.
 - Kept GPT-5.6 Terra for JD Reconstruction and Resume Match.
@@ -19,7 +53,7 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 - Final live/whole-product acceptance remains deferred until the evaluator and all intended main-product work are integrated.
 - Branch state: the GPT-6 Luna routes are implemented on `codex/evaluator-live-diagnostic`; `claude/gallant-pasteur-y1ou3i` keeps the earlier accepted routing until final integration.
 
-### Task 6 completion — AI budget and usage controls
+### Task 6 completion — AI budget and usage controls (October 14, 2026)
 
 - Completed the persistent monthly AI budget ledger, atomic reservation/reconciliation, configurable warning thresholds, daily/weekly evaluation-volume limits, monthly output-token limits, budget deferral/resume/cancel flow, usage reporting, and dashboard capacity/cost visibility.
 - Standardized dollar-budget deferrals on `AI_BUDGET_LIMIT`; throughput/token limits use `USAGE_LIMIT_REACHED`.
@@ -27,7 +61,7 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 - Accepted the product decision that already-admitted queued/running evaluations are not retroactively cancelled when limits are lowered.
 - Checkpoints: `267138a` and naming cleanup `8d3993a`.
 
-### Task 7 completion — normalized opportunity facts
+### Task 7 completion — normalized opportunity facts (October 14, 2026)
 
 - Added deterministic normalization and persistence for salary minimum/maximum, currency, work arrangement, seniority, department, employment type, closing date, residency requirement, and residency regions while preserving raw text and field provenance.
 - Added supported residency geography codes for countries, U.S. states/DC/Puerto Rico, Canadian provinces/territories, UK nations, and broad regions such as EU, EEA, EMEA, APAC, LATAM, and WORLDWIDE.
@@ -36,7 +70,7 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 - Added dashboard salary/filter/sort support and residency-aware persisted data without silently changing evaluator behavior during Task 7.
 - Final Task 7 checkpoint: `754f956dc0860149760936a61bdace0489404b9a` on `claude/gallant-pasteur-y1ou3i`.
 
-### Milestone 4 completion alignment — salary policy and Task 7 contract
+### Milestone 4 completion alignment — salary policy and Task 7 contract (October 15, 2026)
 
 - Updated Customer Success Hard Filters to consume the Task 7 salary/currency/residency contract.
 - U.S.-residency-required roles now use a hard `$60,000 USD-equivalent` minimum: `$60,000+` Pass; below `$60,000` Fail/Skip; no U.S. Review band and no salary maximum.
@@ -49,13 +83,57 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 - Focused offline verification passed without provider calls or normal-database use. Broader DB-backed integration, E2E, web build, live calls, and final Task 7→evaluator acceptance remain intentionally deferred to the later whole-product integration pass.
 - Commit: `267124f fix(cs): align Milestone 4 salary policy with Task 7` on `codex/evaluator-live-diagnostic`. Not yet merged: on `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` still withholds all ten Task 7 fields and the earlier version identifiers remain until final branch combination.
 
-### Product completion planning
+### Product completion planning (October 15, 2026)
 
 - Main-product scope is features 1–18. Retrieval, source health, posting-history intelligence, the browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence are part of the intended main product rather than optional post-product add-ons.
 - Only features 19–23 remain later add-ons: company watchlists, proactive notifications/follow-ups, calendar integration, email integration, and application-assistance features.
 - The current sequence is: finish the Task 1–9 completion pass (Task 8 next, then Task 9), build any still-missing main-product features 1–18, then perform final evaluator/product integration, whole-product acceptance, and deliberate freeze/merge.
 - Retrieval work may begin after the evaluator and manual product are stable enough to support it, but final product acceptance does not occur until all intended main-product features are complete.
 - Kept evaluator and main-product workstreams separated to reduce architectural drift.
+
+### Profile limitations and policy readiness (October 14, 2026; added October 16, 2026 from Git)
+
+- Persisted optional structured profile `limitations` (`UserProfile.limitations`) and delivered them to the evaluator subject without loosening the installed profile contract. Commit `96c6eb1`.
+- Removed a stale execution-policy pin and prepared the profile/policy integration; `pnpm app:doctor` reports the evaluator's built-in policy version. Commit `35b8265`.
+
+### Evaluator semantic-contract stabilization (October 10–13, 2026; evaluator branch, not merged; added October 16, 2026 from Git)
+
+- Recorded on `codex/evaluator-live-diagnostic`; not part of the main-product branch until final integration.
+- Changes:
+  - provider prose is display-only;
+  - Genuine Gap proof uses structured `gapEvidence` and structured profile limitations;
+  - requirement-relative experience levels;
+  - structured `requirementStatements` with deterministic reconciliation;
+  - requirement-relative INDUSTRY evidence;
+  - Unknown without supported or unsupported portions;
+  - a fail-closed `RESUME_MATCH_PREREQUISITE_OUTDATED` gate.
+- Contract identifiers on that branch: `cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`.
+- Commits:
+  - `ba95d76` (Oct 11, work-in-progress handoff; introduces the GPT-6 Luna policy code);
+  - `04611af` and `1c09924` (Oct 11);
+  - `7149563` and `f29530c` (Oct 12);
+  - `067c5dc` (Oct 13).
+- Offline verification only. Final paid acceptance and current-contract cost measurement remain outstanding. See `EVALUATOR_STATUS.md` §20.
+
+### Main-product Tasks 1–9: initial implementation (October 6–7, 2026; added October 16, 2026 from Git)
+
+Commit dates are from Git. The task records in `CURRENT_PROGRESS.md` and `HANDOFFS.md` carry dates from October 6 to October 10; those record dates are preserved as written.
+
+- October 6:
+  - opportunity dashboard and Domain default (`ccd3761`);
+  - evaluator test-harness repair (`a0e225c`);
+  - evaluation-experience correctness under failure and delay (`0639785`);
+  - evaluation of any normalized opportunity (`27c897e`);
+  - opportunity lifecycle and user actions (`f129d40`);
+  - AI usage and estimated-cost display (`440306a`);
+  - job provenance foundation (`26dbdb5`);
+  - agent-guide documentation paths (`e3e6d5e`).
+- October 7:
+  - Task 5, profile and preferences management with an explicit active version (`68f25c9`);
+  - Task 6, AI budget ledger with deferral and request-integrity admissions (`ccd80c9`);
+  - Task 7, dashboard search, filters, sorting, pagination and summaries (`a0d99a5`);
+  - Task 8, application tracker beside the opportunity lifecycle (`f884b72`);
+  - Task 9, final setup, operations hardening and whole-product acceptance (`b7f7e87`).
 
 ---
 

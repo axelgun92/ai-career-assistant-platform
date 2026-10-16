@@ -44,7 +44,11 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("Manual opportunity submission failed", error);
+    // The error name only: a raw error can carry submitted job text or
+    // database details, which must not reach the logs.
+    console.error("Manual opportunity submission failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
     return Response.json(
       { error: "The opportunity could not be stored" },
       { status: 500 },

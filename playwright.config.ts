@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
-import { e2eEnvironment } from "./tests/support/e2e-environment";
+import { e2eDeterministicOpenAiKey, e2eEnvironment } from "./tests/support/e2e-environment";
+
+// E2E never uses a real provider credential: replace whatever .env loaded, so
+// the test runner, its workers, helper processes and the web server all see
+// only the deterministic, non-live key.
+process.env.OPENAI_API_KEY = e2eDeterministicOpenAiKey;
 
 // Opt-in: run E2E (web server and helpers) against a separate database.
 if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
