@@ -41,8 +41,9 @@ Claude treats the evaluator as an existing boundary unless a genuine integration
 
 - Task 8 — Application Tracker completion pass: complete (`534a4c7`, October 16, 2026).
 - Task 9 — Operations hardening completion pass: complete (commit `feat: complete operational hardening`, October 16, 2026).
-- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
-- After that: an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18.
+- The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
+- Next: an audit of any remaining gaps in main-product features 1–10.
+- After that: main-product features 11–18.
 - Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze and merge. Features 19–23 remain later add-ons.
 
 ### Shared rules (October 15, 2026)

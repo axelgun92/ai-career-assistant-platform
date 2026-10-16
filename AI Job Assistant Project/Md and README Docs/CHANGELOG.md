@@ -10,6 +10,19 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026.
 
+### Post-Task-9 versioned specification update (October 16, 2026)
+
+- New current versions: Core AI Framework PRD v1.5, Customer Success AI Assistant PRD v1.4, Core Platform TDD v1.6, Customer Success Assistant TDD v1.4 and Semantic Evaluation Playbook v1.3.
+- The previous current PRD/TDD versions moved unchanged into the `Archive/` folders; Playbooks v1.1 and v1.2 stay beside v1.3.
+- Core AI Framework PRD v1.5 and Customer Success PRD v1.4: current status after the Task 1–9 completion pass, and the evaluator-branch semantic-contract repairs noted as effective at final integration. Product requirements are unchanged.
+- Core Platform TDD v1.6:
+  - documents the `USAGE_LIMIT_REACHED` deferral reason and the legacy `BUDGET_UNAVAILABLE` mapping;
+  - completes the neutral "eligible for evaluation" wording;
+  - adds implementation-status summaries for the application tracker and for the operations and worker model.
+- Customer Success TDD v1.4: a per-branch table of evaluator contract versions and the October 10–13 evaluator-branch rules, effective at final integration. The evaluation design body is unchanged until then.
+- Semantic Evaluation Playbook v1.3 adds §14 with the October 10–13 semantic-contract rules (on `codex/evaluator-live-diagnostic`), plus dated notes in §11 and §13.
+- `AGENTS.md` and `CLAUDE.md` point to the new versions. Documentation only; no code, test, database or provider activity.
+
 ### Task 9 completion — operational hardening (October 16, 2026)
 
 - Completed the audit-first completion pass over the October 10 Task 9 operations work. The worker loop, single-worker lock, task claiming, recovery, error classification, backoff, shutdown, queue states, AI-configuration handling, health behavior, public evaluation API, navigation and acceptance tests were audited as complete and left unchanged.

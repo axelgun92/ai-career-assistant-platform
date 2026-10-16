@@ -132,11 +132,12 @@ Model routing is treated as an execution detail. It does not change the meaning 
 ### In progress
 
 - No main-product implementation task is open. Task 8 and Task 9 are complete.
-- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
+- The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
+- Next: an audit of any remaining gaps in main-product features 1–10.
 
 ### Main-product work still required before final acceptance
 
-- after the versioned-document update: an audit of any remaining gaps in features 1–10;
+- next: an audit of any remaining gaps in features 1–10;
 - feature 11 — automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
 - feature 12 — source health and conservative retrieval;
 - feature 13 — posting-history/ghost-job intelligence;
@@ -236,7 +237,7 @@ Superseded PRD/TDD versions are kept for history in the `Archive/` folders besid
 The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); next comes the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; next comes an audit of any remaining gaps in features 1–10;
 3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
@@ -253,4 +254,4 @@ Setup, startup, worker operations, deterministic testing and troubleshooting are
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. Next is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. Next is an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

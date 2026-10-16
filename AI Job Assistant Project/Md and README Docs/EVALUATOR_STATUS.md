@@ -5,6 +5,7 @@
 **Last updated:** October 5, 2026
 **Addendum:** §19 (October 15, 2026) records the October 10–15 evaluator state: routing lock, GPT-6 Luna outcomes, and branch-specific work. §1–18 are preserved as written for October 5, 2026.
 **Addendum:** §20 (October 16, 2026) records the evaluator-branch semantic-contract history of October 10–13. It also covers current versus superseded contracts, residual risks and outstanding verification.
+**Playbook:** the §20 rules are in Semantic Evaluation Playbook v1.3 §14 (October 16, 2026).
 **Current status (October 16, 2026):**
 
 - Routing is locked and the semantic contracts were repaired on `codex/evaluator-live-diagnostic`; neither is merged.
@@ -801,6 +802,8 @@ The evaluator-branch column is the current evaluator contract. It reaches the pr
 - **Replay methodology.** Preserved live request/response pairs are replayed offline from outside Git (`LIVE_REPLAY_DIR`), with fidelity checks against the original request.
 
 These rules are not yet in Semantic Evaluation Playbook v1.2. They are planned for v1.3 after Task 9.
+
+*(Update, October 16, 2026: they are now in Semantic Evaluation Playbook v1.3 §14, created after Task 9 closed.)*
 
 ### Naming: "v6" and "v7"
 

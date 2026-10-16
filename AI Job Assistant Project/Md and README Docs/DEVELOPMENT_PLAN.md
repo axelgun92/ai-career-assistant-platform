@@ -17,7 +17,8 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Codex Milestone 4 has consumed that contract and aligned the Customer Success salary policy at `267124f`.
 - Task 8 — Application Tracker completion pass is complete at `534a4c718b21086d9419c0b0d18b0c907c15b3f9`.
 - Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
-- Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update. After that: an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18.
+- The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
+- Next: an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
 **Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
@@ -91,8 +92,8 @@ The completion pass audits existing work against the authoritative PRDs/TDDs and
 ### Current sequence
 
 - Tasks 1–9 have completed their current completion work (Task 8 at `534a4c7`; Task 9 on October 16, 2026).
-- **Next:** the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions and Semantic Evaluation Playbook v1.3).
-- **After that:** an audit of features 1–10 for any genuine remaining gaps, before moving on to features 11–18.
+- **Done:** the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
+- **Next:** an audit of features 1–10 for any genuine remaining gaps, before moving on to features 11–18.
 
 ### Completion-pass rule
 

@@ -10,11 +10,11 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.4.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.5.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.3.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.3.docx`
-5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.2.md`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.5.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.6.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.4.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.4.docx`
+5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
 8. `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md`
@@ -27,11 +27,11 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.4.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.3.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.5.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.3.docx` |
-| Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.2.md` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.5.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.4.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.6.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.4.docx` |
+| Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
 | `CURRENT_PROGRESS.md` | `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` |
@@ -52,7 +52,7 @@ Older formal PRD/TDD versions are intentionally kept for history and are not aut
 
 - Superseded PRDs: `AI Job Assistant Project/Product Recommendation Documents/Archive/`
 - Superseded TDDs: `AI Job Assistant Project/Technical Design Documents/Archive/`
-- The earlier Semantic Evaluation Playbook (`AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md`) stays beside v1.2 in `Md and README Docs/`.
+- The earlier Semantic Evaluation Playbooks (`AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md` and `AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.2.md`) stay beside v1.3 in `Md and README Docs/`.
 
 The table above identifies the authoritative current versions. Do not edit, rename, or delete archived versions; they are frozen historical records.
 
@@ -126,9 +126,10 @@ Current order (October 16, 2026). The intended main product is features 1–18:
 
 ```text
 Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
-→ next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update
-  (new PRD/TDD versions, Semantic Evaluation Playbook v1.3)
-→ then: an audit of any remaining gaps in main-product features 1–10
+→ post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update: complete (Core AI Framework
+  PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4,
+  Semantic Evaluation Playbook v1.3)
+→ next: an audit of any remaining gaps in main-product features 1–10
 → remaining main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence,
   browser extension companion, source intelligence, market analytics, personal job-search analytics,
   company intelligence)

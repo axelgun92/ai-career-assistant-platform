@@ -185,7 +185,7 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
-No main-product implementation task is open. The Task 1–9 completion pass is complete: Task 8 (`534a4c7`) and Task 9 (October 16, 2026) both closed. The next step is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (see below).
+No main-product implementation task is open. The Task 1–9 completion pass is complete: Task 8 (`534a4c7`) and Task 9 (October 16, 2026) both closed. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is also complete. The next step is an audit of any remaining gaps in features 1–10 (see below).
 
 ### Evaluator acceptance state
 
@@ -202,8 +202,8 @@ The main-product branch runs its own unit, DB-backed integration and E2E suites 
 
 Task 8 and Task 9 are complete. In order:
 
-1. Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions and Semantic Evaluation Playbook v1.3).
-2. After that: audit and close any remaining gaps in main-product features 1–10.
+1. Done: the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
+2. Next: audit and close any remaining gaps in main-product features 1–10.
 3. Build main-product features 11–18:
    - automated discovery/retrieval/scraping;
    - source health and conservative retrieval;

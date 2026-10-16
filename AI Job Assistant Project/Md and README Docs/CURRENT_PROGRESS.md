@@ -10,14 +10,17 @@ The Task 1–9 completion pass is complete on `claude/gallant-pasteur-y1ou3i`:
 - Task 8 — Application Tracker completion pass: complete (`534a4c7`);
 - Task 9 — Operations hardening completion pass: complete (commit `feat: complete operational hardening`, October 16, 2026).
 
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is also complete (October 16, 2026): Core AI Framework PRD v1.5, Customer Success AI Assistant PRD v1.4, Core Platform TDD v1.6, Customer Success Assistant TDD v1.4 and Semantic Evaluation Playbook v1.3 are the current authoritative versions.
+
 In order, what follows:
 
-1. Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).
-2. After that: audit any remaining gaps in main-product features 1–10.
-3. Then: main-product features 11–18.
-4. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+1. Next: audit any remaining gaps in main-product features 1–10.
+2. Then: main-product features 11–18.
+3. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier next step, superseded on October 16, 2026 when the versioned-document update was committed: "Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (new PRD/TDD versions, Semantic Evaluation Playbook v1.3).")*
 
 *(Earlier objective, superseded on October 16, 2026 when the Task 9 completion pass was committed: "The current task is Claude Task 9 — Operations hardening completion pass on `claude/gallant-pasteur-y1ou3i`. It is open: implementation and isolated verification are complete; the documentation synchronization is under review; it closes with the review and then the checkpoint commit.")*
 
@@ -28,6 +31,30 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
 ## Recently Completed (October 14–16, 2026)
+
+### Post-Task-9 versioned-document update (committed October 16, 2026)
+
+The specification update deferred until Task 9 closed. Planned, reviewed and approved before editing. Documentation only: no code, test, schema or database change, and no provider calls.
+
+- **New current versions:** Core AI Framework PRD v1.5, Customer Success AI Assistant PRD v1.4, Core Platform TDD v1.6, Customer Success Assistant TDD v1.4 and Semantic Evaluation Playbook v1.3.
+  - Each new PRD/TDD was built from its previous current version. Each adds a newest-first revision-history entry and keeps every earlier entry and all other content unchanged.
+  - The previous current versions (Core AI Framework PRD v1.4, Customer Success AI Assistant PRD v1.3, Core Platform TDD v1.5, Customer Success Assistant TDD v1.3) moved unchanged into the `Archive/` folders.
+  - Playbook v1.2 and v1.1 stay unchanged beside v1.3.
+- **Core AI Framework PRD v1.5:** §31 status and planned work after the Task 1–9 completion pass; a note on the evaluator-branch semantic-contract repairs.
+- **Customer Success PRD v1.4:** §23 status; an evaluator-branch contract note; dependency on Core AI Framework PRD v1.5.
+- **Core Platform TDD v1.6:**
+  - the `USAGE_LIMIT_REACHED` deferral reason and the legacy `BUDGET_UNAVAILABLE` → `AI_BUDGET_LIMIT` mapping (§33, §38, §39 and their tests);
+  - "eligible-for-evaluation" in place of the last "model-eligible";
+  - §51 "Application Tracker" and "Operations and Worker Model" status subsections;
+  - the updated sequence and the dependency on Core AI Framework PRD v1.5.
+- **Customer Success TDD v1.4:** a §49 per-branch contract-version table and the October 10–13 evaluator-branch rules, marked effective at final integration. The evaluation design body sections are unchanged until final integration.
+- **Semantic Evaluation Playbook v1.3:** keeps all of v1.2 and adds §14 (semantic closure, structured authority, deterministic reconciliation, evidence and gap rules, Unknown behavior, fail-closed prerequisites, replay methodology, residual risks, outstanding verification), plus dated notes in §11 and §13. Every §14 rule was checked against the evaluator branch's code.
+- **References and status:** `AGENTS.md` and `CLAUDE.md` spec paths; `EVALUATOR_STATUS.md` pointer to Playbook v1.3; current-state documents now show the features 1–10 gap audit as next; a `CHANGELOG.md` entry.
+- **Verification:**
+  - each new `.docx` passes schema validation against its source;
+  - a text comparison against each source shows only the intended changes;
+  - archived and historical versions are byte-identical to their committed blobs;
+  - no code or test file changed; `git diff --check` is clean.
 
 ### Claude Task 9 — Operations hardening completion pass (committed October 16, 2026)
 
@@ -252,7 +279,7 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-No main-product implementation task is open. Task 9 is complete (see "Recently Completed"). Next is the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update.
+No main-product implementation task is open. Task 9 and the post-Task-9 versioned-document update are complete (see "Recently Completed"). Next is the audit of any remaining gaps in main-product features 1–10.
 
 ### Evaluator
 
@@ -954,7 +981,7 @@ Revised roadmap:
 - Next: freeze the evaluator, then the deliberate final integration checkpoint (see the final integration checklist in `HANDOFFS.md`), then retrieval/scraper work.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 
-**Current order (updated October 16, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass is complete: Task 8 completion pass committed (`534a4c7`, October 16, 2026); Task 9 completion pass committed (`feat: complete operational hardening`, October 16, 2026). Next comes the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in main-product features 1–10. Then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
+**Current order (updated October 16, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass is complete: Task 8 completion pass committed (`534a4c7`, October 16, 2026); Task 9 completion pass committed (`feat: complete operational hardening`, October 16, 2026). The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). Next comes an audit of any remaining gaps in main-product features 1–10. Then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
 
 #### Known issues found during main-product work
 
@@ -970,10 +997,11 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-1. Next: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update: new PRD/TDD versions and Semantic Evaluation Playbook v1.3, which needs the evaluator rules accepted after v1.2.
-2. After that: audit any remaining main-product gaps in features 1–10.
-3. Then: build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
-4. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
+
+1. Next: audit any remaining main-product gaps in features 1–10.
+2. Then: build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.
 
@@ -1044,6 +1072,7 @@ Documentation status (October 15, 2026):
   - Core AI Framework PRD v1.4 is the new current Core PRD; v1.3 is archived unchanged.
   - Current authoritative versions are listed in `AGENTS.md`.
 - **Semantic Evaluation Playbook v1.2** is current; v1.1 is preserved unchanged beside it.
+- **Update (October 16, 2026):** the post-Task-9 versioned-document update made Core AI Framework PRD v1.5, Customer Success AI Assistant PRD v1.4, Core Platform TDD v1.6, Customer Success Assistant TDD v1.4 and Semantic Evaluation Playbook v1.3 current. The previous PRD/TDD versions are archived unchanged; Playbooks v1.1 and v1.2 stay beside v1.3. `AGENTS.md` lists the current versions.
 - **P13 (specification version index in `CHANGELOG.md`): intentionally deferred.** It was an optional proposal in the documentation preservation audit, never an approved required item, and is not required for the Task 8 documentation gate. The specification history remains recorded in each document's own revision table and in the archived versions.
 
 ## Known-Good Principle
