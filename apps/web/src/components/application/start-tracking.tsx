@@ -73,6 +73,7 @@ export function StartTracking({
             <input
               type="date"
               required
+              max={today}
               value={appliedOn}
               aria-invalid={dateError ? true : undefined}
               aria-describedby={dateError ? "start-applied-on-error" : undefined}

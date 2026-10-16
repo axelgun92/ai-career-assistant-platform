@@ -233,6 +233,7 @@ describe("input validation", () => {
       correctAppliedOn: { appliedOn: "2026-10-01" },
       editNote: { noteId: uuid, body: "Edited" },
       updateContact: { contactId: uuid, name: "Dana", role: "RECRUITER" },
+      updateFollowUp: { followUpId: uuid, description: "Ping again", dueOn: "2026-10-12" },
       completeFollowUp: { followUpId: uuid },
       reopenFollowUp: { followUpId: uuid },
       updateInterview: { interviewId: uuid, kind: "PANEL", status: "COMPLETED" },
@@ -241,7 +242,7 @@ describe("input validation", () => {
       addFollowUp: { description: "Ping", dueOn: "2026-10-09" },
       addInterview: { kind: "PANEL" },
     };
-    expect(versionedApplicationCommands).toHaveLength(10);
+    expect(versionedApplicationCommands).toHaveLength(11);
     for (const command of versionedApplicationCommands) {
       const body = { command, ...bodies[command] };
       expect(applicationCommandSchema.safeParse(body).success, `${command} without version`).toBe(false);
@@ -302,6 +303,7 @@ describe("application API handlers", () => {
     ["APPLICATION_NOT_FOUND", 404],
     ["APPLICATION_ITEM_NOT_FOUND", 404],
     ["CONTACT_NOT_IN_APPLICATION", 400],
+    ["APPLICATION_DATE_INVALID", 400],
   ] as const)("maps %s to %i", async (code, status) => {
     const error = new ApplicationError(code, "Readable message", code === "APPLICATION_CHANGED" ? { entity: "note", id: uuid } : {});
     const response = await handlers(storeWith({ editNote: vi.fn().mockRejectedValue(error) })).command(

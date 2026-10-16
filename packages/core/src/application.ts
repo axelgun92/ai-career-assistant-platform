@@ -62,6 +62,7 @@ export const applicationEventTypeSchema = z.enum([
   "FOLLOW_UP_ADDED",
   "FOLLOW_UP_COMPLETED",
   "FOLLOW_UP_REOPENED",
+  "FOLLOW_UP_UPDATED",
   "INTERVIEW_ADDED",
   "INTERVIEW_UPDATED",
   "DETAILS_UPDATED",
@@ -124,6 +125,25 @@ export function addDays(isoDate: string, days: number): string {
   return toIsoDate(date);
 }
 
+// Applied and closed dates record what already happened, so they cannot be
+// later than today, and an application cannot close before it was applied.
+// All comparisons are on calendar dates; no day of tolerance is added.
+export function applicationDatesRefusal(
+  input: { appliedOn: string | null; closedOn: string | null },
+  today: string,
+): string | null {
+  if (input.appliedOn !== null && input.appliedOn > today) {
+    return "The applied date cannot be in the future";
+  }
+  if (input.closedOn !== null && input.closedOn > today) {
+    return "The closed date cannot be in the future";
+  }
+  if (input.appliedOn !== null && input.closedOn !== null && input.closedOn < input.appliedOn) {
+    return "The closed date cannot be earlier than the applied date";
+  }
+  return null;
+}
+
 // ---- Stage and outcome rules ---------------------------------------------
 
 export function isSubmittedActiveStage(stage: ApplicationStage): stage is SubmittedActiveStage {
@@ -142,6 +162,13 @@ export function isSubmitted(stage: ApplicationStage, outcome: ApplicationOutcome
 
 export function isActiveApplication(stage: ApplicationStage): boolean {
   return stage !== "CLOSED";
+}
+
+// Whether the application can still have due work: it is open and its
+// Opportunity is not archived (archived applications are read-only). Only
+// actionable applications surface follow-ups as next actions or due counts.
+export function isActionableApplication(stage: ApplicationStage, opportunityStatus: OpportunityLifecycleState): boolean {
+  return isActiveApplication(stage) && opportunityStatus !== "ARCHIVED";
 }
 
 // Whether appliedOn must be set (true) or must be empty (false). Mirrors the
@@ -226,6 +253,33 @@ export function creationRefusal(
 ): ApplicationRefusalCode | null {
   if (applicationCreationModes(status).includes(mode)) return null;
   return status === "APPLIED" && mode === "plan" ? "APPLICATION_ALREADY_SUBMITTED" : "OPPORTUNITY_NOT_TRACKABLE";
+}
+
+// The user-facing explanation for a refusal, naming what the user can do
+// about this lifecycle state.
+export function trackingRefusalMessage(
+  code: ApplicationRefusalCode,
+  status: OpportunityLifecycleState,
+  action: "track" | "reopen" = "track",
+): string {
+  if (code === "APPLICATION_ALREADY_SUBMITTED") {
+    return action === "reopen"
+      ? "This opportunity is already marked as applied, so this plan cannot be reopened"
+      : "This opportunity is already marked as applied, so it can only be tracked as a submitted application";
+  }
+  const verb = action === "reopen" ? "reopening this plan" : "tracking an application for it";
+  switch (status) {
+    case "REJECTED_BY_USER":
+      return `This opportunity is dismissed. Restore it before ${verb}`;
+    case "ARCHIVED":
+      return `This opportunity is archived. Restore it before ${verb}`;
+    case "CLOSED":
+      return "This posting is closed, so a new application cannot be tracked for it";
+    case "DISCOVERED":
+      return "This opportunity has not been processed yet, so an application cannot be tracked for it";
+    default:
+      return "An application cannot be tracked for this opportunity in its current state";
+  }
 }
 
 // Reopening to PLANNED re-creates a planned application, so it needs the
@@ -384,6 +438,9 @@ export const applicationCommandSchema = z.discriminatedUnion("command", [
     .extend({ command: z.literal("updateContact"), contactId: z.uuid(), expectedVersion: expectedVersionSchema })
     .strict(),
   followUpFieldsSchema.extend({ command: z.literal("addFollowUp") }).strict(),
+  followUpFieldsSchema
+    .extend({ command: z.literal("updateFollowUp"), followUpId: z.uuid(), expectedVersion: expectedVersionSchema })
+    .strict(),
   z.object({ command: z.literal("completeFollowUp"), followUpId: z.uuid(), expectedVersion: expectedVersionSchema }).strict(),
   z.object({ command: z.literal("reopenFollowUp"), followUpId: z.uuid(), expectedVersion: expectedVersionSchema }).strict(),
   interviewFieldsSchema.extend({ command: z.literal("addInterview") }).strict(),
@@ -402,6 +459,7 @@ export const versionedApplicationCommands = [
   "correctAppliedOn",
   "editNote",
   "updateContact",
+  "updateFollowUp",
   "completeFollowUp",
   "reopenFollowUp",
   "updateInterview",

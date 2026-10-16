@@ -35,6 +35,10 @@ export interface ApplicationStore {
   addContact(id: string, input: Extract<ApplicationCommand, { command: "addContact" }>): Promise<ApplicationDetail>;
   updateContact(id: string, input: Extract<ApplicationCommand, { command: "updateContact" }>): Promise<ApplicationDetail>;
   addFollowUp(id: string, input: { description: string; dueOn: string }): Promise<ApplicationDetail>;
+  updateFollowUp(
+    id: string,
+    input: { followUpId: string; expectedVersion: number; description: string; dueOn: string },
+  ): Promise<ApplicationDetail>;
   completeFollowUp(id: string, input: { followUpId: string; expectedVersion: number }): Promise<ApplicationDetail>;
   reopenFollowUp(id: string, input: { followUpId: string; expectedVersion: number }): Promise<ApplicationDetail>;
   addInterview(id: string, input: Extract<ApplicationCommand, { command: "addInterview" }>): Promise<ApplicationDetail>;
@@ -63,6 +67,7 @@ const errorStatus: Record<ApplicationErrorCode, number> = {
   APPLICATION_NOT_FOUND: 404,
   APPLICATION_ITEM_NOT_FOUND: 404,
   CONTACT_NOT_IN_APPLICATION: 400,
+  APPLICATION_DATE_INVALID: 400,
   APPLICATION_EXISTS: 409,
   APPLICATION_ALREADY_SUBMITTED: 409,
   OPPORTUNITY_NOT_TRACKABLE: 409,
@@ -135,6 +140,8 @@ export function runApplicationCommand(target: ApplicationStore, applicationId: s
       return target.updateContact(applicationId, command);
     case "addFollowUp":
       return target.addFollowUp(applicationId, command);
+    case "updateFollowUp":
+      return target.updateFollowUp(applicationId, command);
     case "completeFollowUp":
       return target.completeFollowUp(applicationId, command);
     case "reopenFollowUp":

@@ -5,7 +5,9 @@
 
 ## Current Objective
 
-Complete Claude Task 8 — Application Tracker as the next completion-pass task while preserving the now-aligned Task 7 → Customer Success Milestone 4 contract. Final evaluator/product integration and acceptance remain deferred until all intended main-product features 1–18 are complete.
+The Claude Task 8 — Application Tracker completion pass is implemented on `claude/gallant-pasteur-y1ou3i` and awaiting user review before its checkpoint commit (see "Completed — Task 8 completion pass" below). The Task 9 completion pass follows after that review. The Task 7 → Customer Success Milestone 4 contract is preserved. Final evaluator/product integration and acceptance remain deferred until all intended main-product features 1–18 are complete.
+
+*(Earlier objective, superseded on October 15, 2026 when the completion pass was implemented: "Complete Claude Task 8 — Application Tracker as the next completion-pass task while preserving the now-aligned Task 7 → Customer Success Milestone 4 contract.")*
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
@@ -163,7 +165,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Claude Task 8 — Application Tracker completion pass
 
-Next work is to audit the existing tracker against current requirements and add only missing/incomplete behavior.
+**Status (October 15, 2026):** implemented and verified offline; awaiting user review, then the checkpoint commit. Not committed or pushed yet. The audit, changes and verification are recorded under "Completed — Task 8 completion pass" below.
+
+The pass audited the existing tracker against current requirements and added only missing/incomplete behavior.
 
 Focus areas:
 
@@ -569,6 +573,52 @@ An application-tracking layer beside the opportunity lifecycle. The evaluator, r
   - E2E: `applications.spec.ts`;
   - three racing waits fixed in `evaluation-results.spec.ts` (test-only).
 
+#### Completed — Task 8 completion pass (October 15, 2026; awaiting review, not yet committed)
+
+An audit-first pass over the October 9 tracker. The established model is unchanged: the same seven stages and six outcomes, "Interested" = Saved, "Applying" = Planning to apply, and assessment/case study as an interview type. No evaluator, routing, prompt, provider-schema, recommendation, Resume Match/JD Reconstruction, evidence or pricing code was touched.
+
+- **Audit result.**
+  - Complete, kept as is: persistent stages and outcomes, notes, contacts, the guarded lifecycle path, persistence across refresh/restart, and separation from evaluation.
+  - Partial or inconsistent, fixed below: date rules, follow-up editing, interview editing, due-work visibility for closed/archived applications, `/applications` filter/view combinations and empty states, conflict recovery, refusal text, and the opportunity-page load failure.
+  - Out of scope (later add-ons 20–23): notifications, proactive follow-ups, calendar, email, application assistance.
+- **Calendar dates.**
+  - Applied and closed dates cannot be later than the current UTC calendar date. A close cannot be earlier than the applied date, and an applied-date correction cannot be later than the closed date. There is no day of tolerance.
+  - Refusals return 400 `APPLICATION_DATE_INVALID` and leave no trace; a submission refused for its date also leaves the lifecycle unchanged.
+  - The date pickers carry the same limits. Date-only values round-trip unchanged (browser → API → `DATE` column → API → browser), verified in several process time zones and in a UTC+14 browser.
+- **Follow-ups.**
+  - New versioned `updateFollowUp` command (description and due date). It records a `FOLLOW_UP_UPDATED` event holding the previous values; the timeline shows "rescheduled from … to …".
+  - Each follow-up has an edit form.
+- **Actionable next actions.**
+  - Only actionable applications (not closed, opportunity not archived) have a next action. This rule now drives the follow-up filters, the tracker tiles, the next-action sort, the dashboard row badge and the "Follow-ups due" count, so each tile still equals its linked view.
+  - The follow-up rows themselves are kept; reopening or restoring makes them due again.
+  - The existing Next-action cell and the panel state "closed" or "archived" instead.
+- **Interviews.**
+  - A full edit form (type, round, date/time, status, interviewer, notes). An untouched time is kept exactly.
+  - The status is selectable when adding.
+  - The quick status control follows a status saved elsewhere.
+  - "Move to Interviewing?" appears only when an interview is not cancelled.
+- **`/applications`.**
+  - An outcome or the Closed stage chosen under the default Active view widens the view to All (canonical redirect).
+  - Empty results recover inside the tracker: "Clear all filters", "Search all applications" or "View all applications", with the count in the other view. Only when nothing is tracked at all is the dashboard linked.
+  - The "No open follow-up" filter is relabelled "No next action".
+- **Stale writes.**
+  - Typed input is kept on every refusal: the destructive remount keys on the stage, close and applied-date forms are removed, and an untouched applied-date form follows the persisted value.
+  - "Load latest" is offered for `APPLICATION_CHANGED`, `OPPORTUNITY_ARCHIVED`, `APPLICATION_EXISTS`, `APPLICATION_ALREADY_SUBMITTED` and `OPPORTUNITY_NOT_TRACKABLE`. Validation and transition refusals show only their message.
+  - The version is checked before the dates, so a stale form gets the conflict first.
+- **Other.**
+  - Tracking/reopen refusals name the opportunity's own state (dismissed, archived, closed posting, not yet processed).
+  - The opportunity page shows a load-error notice instead of silently omitting the Application section.
+- **Migration.** `20261017090000_application_follow_up_updated`, additive only: `ALTER TYPE "ApplicationEventType" ADD VALUE 'FOLLOW_UP_UPDATED'`. It was applied and verified on the isolated test database only.
+- **Lifecycle.** The guarded path (`pendingUserActions` → `applyUserActionInTransaction` → `applyLifecycleActionGuarded`) is unchanged. New tests cover the 409 `APPLICATION_BLOCKS_ACTION` mapping, the route's use of the guarded writer, and reevaluation, sync and sweep never downgrading Applied or touching application rows.
+- **Later analytics (features 15/17).** No analytics were built. A test asserts that the dated, gap-free history yields submission → stages → interview → outcome with dates.
+- **Tests.**
+  - unit: `application-completion.test.ts` and `application-completion-ui.test.tsx` (new); `application-rules.test.ts` updated for the eleventh versioned command and the 400 mapping;
+  - integration: `application-tracker-completion.test.ts` (new, 15 tests);
+  - E2E: two tests added to `applications.spec.ts`, running in a UTC+14 browser.
+- **Verification** (isolated test database only; no paid provider calls; normal database transaction count 0): typecheck and lint clean; Prisma schema valid; `db:verify-migrations` 15/15 migrations in order (only the documented `Recommendation.evidenceReferences` drift); unit 41 files / 1,077 tests; integration 21 files / 191 tests; production build succeeds; E2E 27/27 across all five projects.
+  - Two earlier E2E runs failed on wrong assertions in the new tests, which were then fixed; the product behaved correctly both times.
+  - The second of those runs also failed the existing `opportunity-dashboard.spec.ts` cleanup, because its compiled helper was deleted by another worker. This is a latent race in that spec when Playwright splits the file across workers after a worker restart. It was not changed in Task 8 and passes in normal runs.
+
 #### Completed — Task 9: Final setup, operations, integration and acceptance (October 10, 2026)
 
 The manual-input product is ready to use as one product. It is ready for the evaluator freeze and the final integration checkpoint; scraper/retrieval work has not started. No evaluator semantics, stages, routing, prompts or recommendation logic changed.
@@ -788,7 +838,7 @@ Revised roadmap:
 - Next: freeze the evaluator, then the deliberate final integration checkpoint (see the final integration checklist in `HANDOFFS.md`), then retrieval/scraper work.
 - Then retrieval/scraper; then source, job-market and posting-history intelligence; later ecosystem features.
 
-**Current order (October 15, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass continues — Task 8 completion pass (in progress), then the Task 9 completion pass — then an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
+**Current order (October 15, 2026; supersedes the "Next" line above):** the Task 1–9 completion pass continues — Task 8 completion pass (implemented October 15, 2026; awaiting review), then the Task 9 completion pass — then an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, company intelligence). Only after all of that: deliberate evaluator/product integration, full isolated verification, E2E acceptance, evaluator freeze and merge. Features 19–23 are later add-ons. See `DEVELOPMENT_PLAN.md`.
 
 #### Known issues found during main-product work
 
@@ -802,7 +852,7 @@ Revised roadmap:
 
 ## Planned Next
 
-1. Complete Task 8 and checkpoint it on `claude/gallant-pasteur-y1ou3i`.
+1. Review the Task 8 completion pass, then checkpoint it on `claude/gallant-pasteur-y1ou3i`.
 2. Complete the Task 9 completion pass.
 3. Audit any remaining main-product gaps in features 1–10.
 4. Build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.

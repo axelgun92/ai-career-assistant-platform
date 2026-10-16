@@ -11,6 +11,17 @@ export interface CommandError {
 
 export const conflictCode = "APPLICATION_CHANGED";
 
+// Refusals caused by state that changed since the page loaded: loading the
+// latest data resolves or explains them. Validation and transition refusals
+// (for example APPLICATION_DATE_INVALID) only show their message.
+export const reloadableErrorCodes: ReadonlySet<string> = new Set([
+  conflictCode,
+  "OPPORTUNITY_ARCHIVED",
+  "APPLICATION_EXISTS",
+  "APPLICATION_ALREADY_SUBMITTED",
+  "OPPORTUNITY_NOT_TRACKABLE",
+]);
+
 async function readError(response: Response): Promise<CommandError> {
   const body = (await response.json().catch(() => ({}))) as {
     code?: string;

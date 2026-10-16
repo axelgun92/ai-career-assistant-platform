@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { followUpState } from "@ai-career/core";
+import { followUpState, isActionableApplication, type OpportunityLifecycleState } from "@ai-career/core";
 import { CommandFeedback, FieldError } from "./command-feedback";
 import { followUpStateLabels, relativeDays } from "./labels";
 import type { ApplicationView } from "./types";
@@ -9,10 +9,84 @@ import { fieldError, useApplicationCommand } from "./use-application-command";
 
 type FollowUp = ApplicationView["followUps"][number];
 
+function EditFollowUp({
+  applicationId,
+  followUp,
+  onDone,
+}: {
+  applicationId: string;
+  followUp: FollowUp;
+  onDone: () => void;
+}) {
+  const command = useApplicationCommand(applicationId);
+  const [description, setDescription] = useState(followUp.description);
+  const [dueOn, setDueOn] = useState(followUp.dueOn);
+  const descriptionError = fieldError(command.error, "description");
+  return (
+    <form
+      aria-label="Edit follow-up"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const saved = await command.run({
+          command: "updateFollowUp",
+          followUpId: followUp.id,
+          expectedVersion: followUp.version,
+          description,
+          dueOn,
+        });
+        if (saved) onDone();
+      }}
+    >
+      <div className="form-grid">
+        <label>
+          Next action
+          <input
+            value={description}
+            maxLength={500}
+            required
+            aria-invalid={descriptionError ? true : undefined}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+          <FieldError message={descriptionError} id={`follow-up-${followUp.id}-description-error`} />
+        </label>
+        <label>
+          Due (UTC date)
+          <input type="date" required value={dueOn} onChange={(event) => setDueOn(event.target.value)} />
+          <FieldError message={fieldError(command.error, "dueOn")} id={`follow-up-${followUp.id}-due-error`} />
+        </label>
+      </div>
+      <div className="evaluation-actions">
+        <button type="submit" disabled={command.pending}>
+          Save follow-up
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => {
+            command.clearError();
+            onDone();
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+      <CommandFeedback error={command.error} onReload={command.reload} />
+    </form>
+  );
+}
+
 function FollowUpItem({ applicationId, followUp, today, readOnly }: { applicationId: string; followUp: FollowUp; today: string; readOnly: boolean }) {
   const command = useApplicationCommand(applicationId);
+  const [editing, setEditing] = useState(false);
   const state = followUpState(followUp.dueOn, followUp.completedAt, today);
   const done = state === "COMPLETED";
+  if (editing && !readOnly) {
+    return (
+      <li className="follow-up">
+        <EditFollowUp applicationId={applicationId} followUp={followUp} onDone={() => setEditing(false)} />
+      </li>
+    );
+  }
   return (
     <li className={`follow-up follow-up-${state.toLowerCase().replace("_", "-")}`}>
       <span className="follow-up-text">{followUp.description}</span>
@@ -20,20 +94,33 @@ function FollowUpItem({ applicationId, followUp, today, readOnly }: { applicatio
         {followUpStateLabels[state]} · due {followUp.dueOn}
       </span>
       {readOnly ? null : (
-        <button
-          type="button"
-          className="link-button"
-          disabled={command.pending}
-          onClick={() =>
-            void command.run({
-              command: done ? "reopenFollowUp" : "completeFollowUp",
-              followUpId: followUp.id,
-              expectedVersion: followUp.version,
-            })
-          }
-        >
-          {done ? "Reopen" : "Mark done"}
-        </button>
+        <>
+          <button
+            type="button"
+            className="link-button"
+            disabled={command.pending}
+            onClick={() =>
+              void command.run({
+                command: done ? "reopenFollowUp" : "completeFollowUp",
+                followUpId: followUp.id,
+                expectedVersion: followUp.version,
+              })
+            }
+          >
+            {done ? "Reopen" : "Mark done"}
+          </button>
+          <button
+            type="button"
+            className="link-button"
+            aria-label={`Edit follow-up: ${followUp.description}`}
+            onClick={() => {
+              command.clearError();
+              setEditing(true);
+            }}
+          >
+            Edit
+          </button>
+        </>
       )}
       <CommandFeedback error={command.error} onReload={command.reload} />
       {!done && state !== "OVERDUE" ? <span className="field-help">{relativeDays(followUp.dueOn, today)}</span> : null}
@@ -80,14 +167,33 @@ function AddFollowUp({ applicationId, today }: { applicationId: string; today: s
   );
 }
 
-export function FollowUps({ application, today, readOnly }: { application: ApplicationView; today: string; readOnly: boolean }) {
+export function FollowUps({
+  application,
+  today,
+  readOnly,
+  opportunityStatus,
+}: {
+  application: ApplicationView;
+  today: string;
+  readOnly: boolean;
+  opportunityStatus: OpportunityLifecycleState;
+}) {
   const open = application.followUps.filter((followUp) => !followUp.completedAt);
-  const next = open[0] ?? null; // ordered by due date
+  // Same rule as /applications and the dashboard: a closed application, or
+  // one whose opportunity is archived, has no next action.
+  const actionable = isActionableApplication(application.stage, opportunityStatus);
+  const next = actionable ? (open[0] ?? null) : null; // ordered by due date
   const nextState = next ? followUpState(next.dueOn, null, today) : null;
   return (
     <section className="application-section" aria-labelledby="follow-ups-title">
       <h3 id="follow-ups-title">Follow-ups</h3>
-      {next ? (
+      {!actionable ? (
+        <p className="status-note">
+          {application.stage === "CLOSED"
+            ? "This application is closed, so it has no next action. Reopen it to make follow-ups due again."
+            : "This opportunity is archived, so its follow-ups are not due. Restore it to make them due again."}
+        </p>
+      ) : next ? (
         <p className={nextState === "OVERDUE" ? "next-action next-action-overdue" : "next-action"}>
           <strong>Next action:</strong> {next.description} — {nextState === "OVERDUE" ? "overdue since" : "due"}{" "}
           {next.dueOn} ({relativeDays(next.dueOn, today)})

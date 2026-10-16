@@ -1,4 +1,5 @@
 import {
+  applicationDatesRefusal,
   applicationShapeIsValid,
   canChangeStage,
   canClose,
@@ -9,6 +10,7 @@ import {
   reopenRefusal,
   reopenTarget,
   toIsoDate,
+  trackingRefusalMessage,
   utcToday,
   type ApplicationContactRole,
   type ApplicationEventType,
@@ -42,6 +44,7 @@ export type ApplicationErrorCode =
   | "OPPORTUNITY_ARCHIVED"
   | "APPLICATION_CHANGED"
   | "APPLIED_DATE_NOT_APPLICABLE"
+  | "APPLICATION_DATE_INVALID"
   | "APPLICATION_TRANSITION_NOT_ALLOWED"
   | "APPLICATION_ITEM_NOT_FOUND"
   | "CONTACT_NOT_IN_APPLICATION";
@@ -281,6 +284,13 @@ function assertShape(input: {
 
 const notAllowed = (reason: string) => new ApplicationError("APPLICATION_TRANSITION_NOT_ALLOWED", reason);
 
+// Refuses applied/closed dates in the future or out of order (calendar dates,
+// compared against the UTC "today" the command runs with).
+function assertDates(input: { appliedOn: string | null; closedOn: string | null }, today: string) {
+  const reason = applicationDatesRefusal(input, today);
+  if (reason) throw new ApplicationError("APPLICATION_DATE_INVALID", reason);
+}
+
 // Only the persisted fields, whatever else the caller's object carries.
 function contactFields(input: ContactFields): ContactFields {
   return {
@@ -360,15 +370,8 @@ export class PrismaApplicationRepository {
           });
         }
         const refusal = creationRefusal(status, input.mode);
-        if (refusal === "APPLICATION_ALREADY_SUBMITTED") {
-          throw new ApplicationError(
-            refusal,
-            "This opportunity is already marked as applied. Track it as a submitted application.",
-          );
-        }
-        if (refusal) {
-          throw new ApplicationError(refusal, "Restore the opportunity before tracking an application for it");
-        }
+        if (refusal) throw new ApplicationError(refusal, trackingRefusalMessage(refusal, status));
+        if (input.mode === "submitted" && input.appliedOn) assertDates({ appliedOn: input.appliedOn, closedOn: null }, today);
 
         if (input.mode === "plan") {
           assertShape({ stage: "PLANNED", outcome: null, appliedOn: null, closedOn: null });
@@ -479,10 +482,15 @@ export class PrismaApplicationRepository {
     if (result.count !== 1) throw changed("application", applicationId);
   }
 
-  async submit(applicationId: string, input: { expectedVersion: number; appliedOn: string }) {
+  async submit(
+    applicationId: string,
+    input: { expectedVersion: number; appliedOn: string },
+    today: string = utcToday(),
+  ) {
     return this.command(applicationId, async ({ transaction, application, status }) => {
       if (application.version !== input.expectedVersion) throw changed("application", applicationId);
       if (application.stage !== "PLANNED") throw notAllowed("This application has already been submitted or closed");
+      assertDates({ appliedOn: input.appliedOn, closedOn: null }, today);
       let lifecycleAction: OpportunityUserAction | null = null;
       if (status !== "APPLIED") {
         const opportunity = await transaction.application.findUniqueOrThrow({
@@ -538,6 +546,9 @@ export class PrismaApplicationRepository {
       const rule = canClose(application.stage, input.outcome);
       if (!rule.allowed) throw notAllowed(rule.reason);
       const closedOn = input.closedOn ?? today;
+      // A default closedOn of today is still refused when the recorded applied
+      // date is later, so the user corrects one of the two dates.
+      assertDates({ appliedOn: application.appliedOn, closedOn }, today);
       // appliedOn is never touched by closing.
       assertShape({ stage: "CLOSED", outcome: input.outcome, appliedOn: application.appliedOn, closedOn });
       await this.updateApplication(transaction, applicationId, input.expectedVersion, {
@@ -567,13 +578,7 @@ export class PrismaApplicationRepository {
       const target = reopenTarget(events);
       if (!target) throw notAllowed("The application history does not identify a stage to reopen to");
       const refusal = reopenRefusal(target, status);
-      if (refusal === "APPLICATION_ALREADY_SUBMITTED") {
-        throw new ApplicationError(
-          refusal,
-          "This opportunity is already marked as applied, so the application cannot return to planning",
-        );
-      }
-      if (refusal) throw new ApplicationError(refusal, "Restore the opportunity before reopening this plan");
+      if (refusal) throw new ApplicationError(refusal, trackingRefusalMessage(refusal, status, "reopen"));
       // appliedOn is never touched by reopening: NULL for a plan, the original
       // submission date otherwise.
       assertShape({ stage: target, outcome: null, appliedOn: application.appliedOn, closedOn: null });
@@ -591,7 +596,11 @@ export class PrismaApplicationRepository {
     });
   }
 
-  async correctAppliedOn(applicationId: string, input: { expectedVersion: number; appliedOn: string }) {
+  async correctAppliedOn(
+    applicationId: string,
+    input: { expectedVersion: number; appliedOn: string },
+    today: string = utcToday(),
+  ) {
     return this.command(applicationId, async ({ transaction, application }) => {
       if (application.version !== input.expectedVersion) throw changed("application", applicationId);
       if (!isSubmitted(application.stage, application.outcome)) {
@@ -601,6 +610,7 @@ export class PrismaApplicationRepository {
         );
       }
       if (application.appliedOn === input.appliedOn) throw notAllowed("The applied date is already set to that day");
+      assertDates({ appliedOn: input.appliedOn, closedOn: application.closedOn }, today);
       assertShape({ ...application, appliedOn: input.appliedOn });
       await this.updateApplication(transaction, applicationId, input.expectedVersion, {
         appliedOn: toDbDate(input.appliedOn),
@@ -691,6 +701,44 @@ export class PrismaApplicationRepository {
         type: "FOLLOW_UP_ADDED",
         occurredOn: input.dueOn,
         payload: { followUpId: followUp.id, description: input.description },
+      });
+    });
+  }
+
+  // Reschedules or rewords an open or completed follow-up. The previous values
+  // are kept in the event so the history shows what changed.
+  async updateFollowUp(
+    applicationId: string,
+    input: { followUpId: string; expectedVersion: number; description: string; dueOn: string },
+  ) {
+    return this.command(applicationId, async ({ transaction }) => {
+      const followUp = await transaction.applicationFollowUp.findFirst({
+        where: { id: input.followUpId, applicationId },
+        select: { description: true, dueOn: true, version: true },
+      });
+      if (!followUp) throw new ApplicationError("APPLICATION_ITEM_NOT_FOUND", "Follow-up not found");
+      if (followUp.version !== input.expectedVersion) throw changed("followUp", input.followUpId);
+      const previousDueOn = toIsoDate(followUp.dueOn);
+      const changedFields = [
+        ...(followUp.description !== input.description ? ["description"] : []),
+        ...(previousDueOn !== input.dueOn ? ["dueOn"] : []),
+      ];
+      if (changedFields.length === 0) throw notAllowed("The follow-up is unchanged");
+      const result = await transaction.applicationFollowUp.updateMany({
+        where: { id: input.followUpId, applicationId, version: input.expectedVersion },
+        data: { description: input.description, dueOn: toDbDate(input.dueOn), version: { increment: 1 } },
+      });
+      if (result.count !== 1) throw changed("followUp", input.followUpId);
+      await appendEvent(transaction, applicationId, {
+        type: "FOLLOW_UP_UPDATED",
+        occurredOn: input.dueOn,
+        payload: {
+          followUpId: input.followUpId,
+          description: input.description,
+          changedFields,
+          previousDescription: followUp.description,
+          previousDueOn,
+        },
       });
     });
   }

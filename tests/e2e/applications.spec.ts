@@ -182,3 +182,133 @@ test("an opportunity already marked as applied can only be tracked as submitted"
   await page.goto(`/?view=applied&q=${token}`);
   await expect(page.getByRole("list", { name: "Opportunities" }).getByRole("listitem").first()).toContainText("Applied");
 });
+
+// Task 8 completion pass. The browser runs far ahead of UTC (UTC+14), where a
+// local/UTC date shift would show up first: every date typed must come back
+// as exactly the same calendar date after the API, database, and a reload.
+test.describe("tracker completion", () => {
+  test.use({ timezoneId: "Pacific/Kiritimati" });
+
+  test("reschedule a follow-up, edit an interview, close and reopen; everything survives reload", async ({ page, request }) => {
+    const token = `C${Date.now()}`;
+    const opportunityId = await createOpportunity(request, `Completion Renewal Manager ${token}`, `Completionco ${token}`);
+    expect((await request.post(`/api/opportunities/${opportunityId}/action`, { data: { action: "SAVE" } })).status()).toBe(200);
+
+    await page.goto(`/opportunities/${opportunityId}`);
+    await panel(page).getByRole("button", { name: "I've applied" }).click();
+    await panel(page).getByLabel("Applied on (UTC date)").fill(utcDate(-6));
+    await panel(page).getByRole("button", { name: "Save as applied" }).click();
+    await expect(stageBadge(page)).toHaveText("Applied");
+    await expect(panel(page).getByText(`${utcDate(-6)} (6 days ago)`)).toBeVisible();
+
+    // Overdue follow-up, then rescheduled out of overdue.
+    const add = panel(page).getByRole("form", { name: "Add follow-up" });
+    await add.getByLabel("Next action").fill("Ask about the timeline");
+    await add.getByLabel("Due (UTC date)").fill(utcDate(-2));
+    await add.getByRole("button", { name: "Add follow-up" }).click();
+    await expect(panel(page).getByText(`Next action: Ask about the timeline — overdue since ${utcDate(-2)}`)).toBeVisible();
+    await panel(page).getByRole("button", { name: "Edit follow-up: Ask about the timeline" }).click();
+    const edit = panel(page).getByRole("form", { name: "Edit follow-up" });
+    await edit.getByLabel("Due (UTC date)").fill(utcDate(3));
+    await edit.getByRole("button", { name: "Save follow-up" }).click();
+    await expect(panel(page).getByText(`Next action: Ask about the timeline — due ${utcDate(3)} (in 3 days)`)).toBeVisible();
+    await page.goto(`/applications?followUp=overdue&q=${token}`);
+    await expect(page.getByText("No applications match these filters.")).toBeVisible();
+    await page.goto(`/applications?followUp=upcoming&q=${token}`);
+    await expect(page.getByRole("table", { name: "Applications" })).toContainText(`Upcoming · ${utcDate(3)}`);
+
+    // Interviews: a cancelled one does not suggest Interviewing; a completed one does.
+    await page.goto(`/opportunities/${opportunityId}`);
+    await panel(page).getByText("Add interview", { exact: true }).click();
+    const interviewForm = panel(page).getByRole("form", { name: "Add interview" });
+    await interviewForm.getByLabel("Type").selectOption({ label: "Case study / assessment" });
+    await interviewForm.getByLabel("Status").selectOption({ label: "Cancelled" });
+    await interviewForm.getByRole("button", { name: "Save interview" }).click();
+    const interviews = panel(page).getByRole("list", { name: "Interviews" });
+    await expect(interviews).toContainText("Cancelled");
+    await expect(panel(page).getByRole("button", { name: "Move to Interviewing" })).toHaveCount(0);
+    await interviews.getByRole("button", { name: "Edit details" }).click();
+    const editInterview = panel(page).getByRole("form", { name: "Edit interview Case study / assessment" });
+    await editInterview.getByLabel("Round (optional)").fill("Take-home review");
+    await editInterview.getByLabel("Status").selectOption({ label: "Completed" });
+    await editInterview.getByRole("button", { name: "Save interview" }).click();
+    await expect(interviews).toContainText("Take-home review");
+    await panel(page).getByRole("button", { name: "Move to Interviewing" }).click();
+    await expect(stageBadge(page)).toHaveText("Interviewing");
+
+    // Close as withdrawn on a chosen date, check it after reload, then reopen.
+    await panel(page).getByText("Close application", { exact: true }).first().click();
+    const closeForm = panel(page).getByRole("form", { name: "Close application" });
+    await closeForm.getByLabel("Outcome").selectOption({ label: "Withdrew application" });
+    await closeForm.getByLabel("Closed on (UTC date)").fill(utcDate(-1));
+    await closeForm.getByRole("button", { name: "Close application" }).click();
+    await expect(stageBadge(page)).toHaveText("Withdrew application");
+    await expect(panel(page).getByText("This application is closed, so it has no next action.")).toBeVisible();
+    await page.reload();
+    await expect(panel(page).getByText(`Withdrew application · closed ${utcDate(-1)}`)).toBeVisible();
+    await expect(panel(page).getByText(`${utcDate(-6)} (6 days ago)`)).toBeVisible();
+    await page.goto(`/applications?view=all&q=${token}`);
+    await expect(page.getByRole("table", { name: "Applications" })).toContainText("None · closed");
+
+    await page.goto(`/opportunities/${opportunityId}`);
+    await panel(page).getByRole("button", { name: "Reopen application" }).click();
+    await expect(stageBadge(page)).toHaveText("Interviewing");
+    await expect(panel(page).getByText(`Next action: Ask about the timeline — due ${utcDate(3)} (in 3 days)`)).toBeVisible();
+    await expect(lifecycleHeading(page)).toHaveText("Applied");
+
+    const history = panel(page).getByRole("list", { name: "Application history" });
+    await expect(history).toContainText(`Follow-up updated: Ask about the timeline (rescheduled from ${utcDate(-2)} to ${utcDate(3)})`);
+    await page.reload();
+    await expect(stageBadge(page)).toHaveText("Interviewing");
+    await expect(interviews).toContainText("Take-home review");
+    await expect(interviews).toContainText("Completed");
+    await expect(panel(page).getByText(`${utcDate(-6)} (6 days ago)`)).toBeVisible();
+
+    // The server refuses a future applied date even without the picker limit.
+    const { application } = (await (await request.get(`/api/opportunities/${opportunityId}/application`)).json()) as {
+      application: { id: string; version: number; appliedOn: string };
+    };
+    expect(application.appliedOn).toBe(utcDate(-6));
+    const refused = await request.post(`/api/applications/${application.id}`, {
+      data: { command: "correctAppliedOn", expectedVersion: application.version, appliedOn: utcDate(1) },
+    });
+    expect(refused.status()).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: "APPLICATION_DATE_INVALID" });
+  });
+
+  test("a blocked lifecycle action is explained, and tracker views recover from empty results", async ({ page, request }) => {
+    const token = `D${Date.now()}`;
+    const title = `Completion Onboarding Specialist ${token}`;
+    const opportunityId = await createOpportunity(request, title, `Recoverco ${token}`);
+    expect((await request.post(`/api/opportunities/${opportunityId}/action`, { data: { action: "SAVE" } })).status()).toBe(200);
+    const created = await request.post(`/api/opportunities/${opportunityId}/application`, { data: { mode: "plan" } });
+    expect(created.status()).toBe(201);
+    const { application } = (await created.json()) as { application: { id: string; version: number } };
+
+    // Dismissing would contradict the active plan: refused, and the card says why.
+    const dismiss = await request.post(`/api/opportunities/${opportunityId}/action`, { data: { action: "DISMISS" } });
+    expect(dismiss.status()).toBe(409);
+    expect(await dismiss.json()).toMatchObject({ code: "APPLICATION_BLOCKS_ACTION" });
+    await page.goto(`/opportunities/${opportunityId}`);
+    await expect(page.getByText("Dismiss — Close the application first, for example as 'Decided not to apply'")).toBeVisible();
+    await expect(lifecycleHeading(page)).toHaveText("Saved");
+
+    const closed = await request.post(`/api/applications/${application.id}`, {
+      data: { command: "close", expectedVersion: application.version, outcome: "NOT_SUBMITTED" },
+    });
+    expect(closed.status()).toBe(200);
+
+    // An outcome filter chosen under the default Active view shows what it names.
+    await page.goto(`/applications?outcome=not-submitted&q=${token}`);
+    // The tracker search is normalized to lower case in the canonical URL.
+    await expect(page).toHaveURL(new RegExp(`/applications\\?view=all&q=${token.toLowerCase()}&outcome=not-submitted$`));
+    await expect(page.getByRole("table", { name: "Applications" })).toContainText(title);
+
+    // An empty Active result recovers inside the tracker.
+    await page.goto(`/applications?q=${token}`);
+    await expect(page.getByText("No applications match these filters.")).toBeVisible();
+    await page.getByRole("link", { name: "Search all applications" }).click();
+    await expect(page).toHaveURL(new RegExp(`/applications\\?view=all&q=${token.toLowerCase()}$`));
+    await expect(page.getByRole("table", { name: "Applications" })).toContainText("Decided not to apply");
+  });
+});

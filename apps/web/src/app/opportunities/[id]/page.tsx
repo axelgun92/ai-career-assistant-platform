@@ -13,7 +13,7 @@ import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
 import { getProfileService } from "@/server/profile-service";
 import { getBudgetService } from "@/server/budget-service";
 import { toDeferralView } from "@/components/budget/deferral-view";
-import { ApplicationPanel } from "@/components/application/application-panel";
+import { ApplicationLoadError, ApplicationPanel } from "@/components/application/application-panel";
 import { toApplicationView } from "@/components/application/types";
 import { getApplicationStore } from "@/server/application-service";
 import {
@@ -27,6 +27,7 @@ import {
   applicationCreationModes,
   reopenRefusal,
   reopenTarget,
+  trackingRefusalMessage,
   utcToday,
 } from "@ai-career/core";
 
@@ -116,11 +117,9 @@ export default async function OpportunityPage({
   const [application, trackingContext] = tracking ?? [null, null];
   const reopenTo = application?.stage === "CLOSED" ? reopenTarget(application.events) : null;
   const reopenRefused = reopenTo && trackingContext ? reopenRefusal(reopenTo, trackingContext.opportunityStatus) : null;
-  const reopenBlockedReason = reopenRefused === "APPLICATION_ALREADY_SUBMITTED"
-    ? "This opportunity is already marked as applied, so this plan cannot be reopened."
-    : reopenRefused
-      ? "Restore the opportunity before reopening this plan."
-      : null;
+  const reopenBlockedReason = reopenRefused && trackingContext
+    ? trackingRefusalMessage(reopenRefused, trackingContext.opportunityStatus, "reopen")
+    : null;
 
   const normalizedFields = [
     ["Lifecycle", formatLifecycle(detail.opportunity.status)],
@@ -195,6 +194,8 @@ export default async function OpportunityPage({
           reopenBlockedReason={reopenBlockedReason}
           today={utcToday()}
         />
+      ) : tracking === null ? (
+        <ApplicationLoadError />
       ) : null}
 
       <ProfileVersionHint hint={profileHint} />

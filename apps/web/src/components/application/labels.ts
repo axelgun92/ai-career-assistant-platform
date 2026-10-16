@@ -140,6 +140,17 @@ export function timelineSentence(
       return `Follow-up completed: ${text(payload.description)}`;
     case "FOLLOW_UP_REOPENED":
       return `Follow-up reopened: ${text(payload.description)}`;
+    case "FOLLOW_UP_UPDATED": {
+      const fields = Array.isArray(payload.changedFields) ? payload.changedFields : [];
+      const previousDueOn = text(payload.previousDueOn);
+      const rescheduled = fields.includes("dueOn") && previousDueOn
+        ? ` (rescheduled from ${previousDueOn} to ${event.occurredOn ?? "unknown"})`
+        : "";
+      const reworded = fields.includes("description") && text(payload.previousDescription)
+        ? ` (was: ${text(payload.previousDescription)})`
+        : "";
+      return `Follow-up updated: ${text(payload.description)}${rescheduled}${reworded}`;
+    }
     case "INTERVIEW_ADDED": {
       const kind = interviewKindLabels[payload.kind as ApplicationInterviewKind] ?? "Interview";
       return `Interview added: ${kind}`;

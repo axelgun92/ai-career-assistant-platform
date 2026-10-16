@@ -1,16 +1,22 @@
 "use client";
 
-import { conflictCode, type CommandError } from "./use-application-command";
+import { conflictCode, reloadableErrorCodes, type CommandError } from "./use-application-command";
 
-// A stale-version conflict keeps the form as typed and offers to load the
-// latest data; resubmitting then uses the new version. Other errors show
-// their message (field problems are shown next to the fields).
+// Every refusal keeps the form as typed. A stale-version conflict, or a
+// refusal caused by state that changed elsewhere, offers to load the latest
+// data; resubmitting then uses the new version. Validation and transition
+// refusals show only their message (field problems are shown next to the
+// fields).
 export function CommandFeedback({ error, onReload }: { error: CommandError | null; onReload: () => void }) {
   if (!error) return null;
-  if (error.code === conflictCode) {
+  if (reloadableErrorCodes.has(error.code)) {
     return (
       <div className="warning-message conflict-notice" role="alert">
-        <p>This application changed elsewhere. Your changes are still here.</p>
+        <p>
+          {error.code === conflictCode
+            ? "This application changed elsewhere. Your changes are still here."
+            : `${error.message.replace(/[.!?]?$/, ".")} Your changes are still here.`}
+        </p>
         <button type="button" className="secondary-button" onClick={onReload}>
           Load latest
         </button>

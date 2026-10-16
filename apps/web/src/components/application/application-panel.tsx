@@ -20,6 +20,23 @@ export interface ApplicationPanelProps {
   today: string;
 }
 
+// Shown in place of the tracker when its data could not be read, so the
+// section never silently disappears. Nothing is changed.
+export function ApplicationLoadError() {
+  return (
+    <section className="application-panel" aria-labelledby="application-title">
+      <p className="eyebrow">Application tracker</p>
+      <h2 id="application-title">Application</h2>
+      <p className="error-message" role="alert">
+        The application for this opportunity could not be loaded. Reload the page to try again; nothing was changed.
+      </p>
+      <p>
+        <Link href="/applications">View all applications</Link>
+      </p>
+    </section>
+  );
+}
+
 // The application tracker section of the opportunity page. It sits beside
 // the opportunity's lifecycle and evaluation, and never changes either on
 // its own (recording a submission marks the opportunity applied).
@@ -75,7 +92,12 @@ export function ApplicationPanel(props: ApplicationPanelProps) {
           {readOnly ? null : (
             <StageControls application={application} today={today} reopenBlockedReason={props.reopenBlockedReason} />
           )}
-          <FollowUps application={application} today={today} readOnly={readOnly} />
+          <FollowUps
+            application={application}
+            today={today}
+            readOnly={readOnly}
+            opportunityStatus={props.opportunityStatus}
+          />
           <Interviews application={application} readOnly={readOnly} />
           <Contacts application={application} readOnly={readOnly} />
           <Notes application={application} readOnly={readOnly} />

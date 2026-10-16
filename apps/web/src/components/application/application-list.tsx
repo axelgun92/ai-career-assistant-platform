@@ -1,6 +1,12 @@
 import Link from "next/link";
 import type { ApplicationListItem, ApplicationTrackerSummary } from "@ai-career/database";
-import { applicationsHref, type ApplicationQuery } from "../../server/application-query";
+import {
+  applicationViews,
+  applicationsHref,
+  clearApplicationFilters,
+  withApplicationChanges,
+  type ApplicationQuery,
+} from "../../server/application-query";
 import { applicationStatusLabel, followUpStateLabels, outcomeLabels } from "./labels";
 
 // Each count links to the view it counts (interviews are informational).
@@ -71,7 +77,11 @@ export function ApplicationTable({ items }: { items: ApplicationListItem[] }) {
               </td>
               <td>{item.appliedOn ?? "Not submitted"}</td>
               <td>
-                {item.nextFollowUp ? (
+                {item.stage === "CLOSED" ? (
+                  <span className="field-help">None · closed</span>
+                ) : item.opportunityStatus === "ARCHIVED" ? (
+                  <span className="field-help">None · opportunity archived (read-only)</span>
+                ) : item.nextFollowUp ? (
                   <>
                     {item.nextFollowUp.description}
                     <br />
@@ -93,6 +103,51 @@ export function ApplicationTable({ items }: { items: ApplicationListItem[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Recovery from an empty list stays inside the tracker: clear the filters,
+// widen the view to All, or (only when nothing is tracked yet) go find an
+// opportunity to track.
+export function ApplicationEmptyState({
+  query,
+  filtered,
+  summary,
+}: {
+  query: ApplicationQuery;
+  filtered: boolean;
+  summary: ApplicationTrackerSummary | null;
+}) {
+  const tracked = summary ? summary.active + summary.closed : null;
+  const allHref = applicationsHref(withApplicationChanges(query, { view: "all" }));
+  if (tracked === 0) {
+    return (
+      <div className="empty-state" role="status">
+        <p>You are not tracking any applications yet. Start tracking one from an opportunity&apos;s page.</p>
+        <Link href="/">Go to the dashboard</Link>
+      </div>
+    );
+  }
+  if (filtered) {
+    return (
+      <div className="empty-state" role="status">
+        <p>No applications match these filters.</p>
+        <p className="evaluation-actions">
+          <Link href={applicationsHref(clearApplicationFilters(query))}>Clear all filters</Link>
+          {query.view !== "all" ? <Link href={allHref}>Search all applications</Link> : null}
+        </p>
+      </div>
+    );
+  }
+  const others = summary && query.view === "active" ? summary.closed : summary && query.view === "closed" ? summary.active : null;
+  return (
+    <div className="empty-state" role="status">
+      <p>
+        No {applicationViews[query.view].toLowerCase()} applications.
+        {others ? ` ${others} ${query.view === "active" ? "closed" : "active"} application${others === 1 ? " is" : "s are"} in the other view.` : ""}
+      </p>
+      {query.view !== "all" ? <Link href={allHref}>View all applications</Link> : null}
     </div>
   );
 }

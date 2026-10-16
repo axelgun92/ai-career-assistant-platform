@@ -60,7 +60,9 @@ export interface ApplicationTrackerSummary {
 }
 
 // The earliest open follow-up per application (its "next action") and the
-// latest history event (its "last activity").
+// latest history event (its "last activity"). Only actionable applications
+// (not closed, Opportunity not archived) have a next action; the join below
+// applies that, so every follow-up filter, count, and sort agrees.
 const withClause = Prisma.sql`
   WITH next_follow_up AS (
     SELECT DISTINCT ON (f."applicationId")
@@ -81,6 +83,7 @@ const joins = Prisma.sql`
   JOIN "Opportunity" o ON o."id" = a."opportunityId"
   LEFT JOIN "Company" c ON c."id" = o."companyId"
   LEFT JOIN next_follow_up nf ON nf."applicationId" = a."id"
+    AND a."stage" <> 'CLOSED' AND o."status" <> 'ARCHIVED'
   LEFT JOIN last_event le ON le."applicationId" = a."id"
 `;
 

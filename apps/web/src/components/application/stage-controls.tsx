@@ -31,7 +31,13 @@ function SubmitForm({ application, today }: Props) {
     >
       <label>
         Applied on (UTC date)
-        <input type="date" required value={appliedOn} onChange={(event) => setAppliedOn(event.target.value)} />
+        <input
+          type="date"
+          required
+          max={today}
+          value={appliedOn}
+          onChange={(event) => setAppliedOn(event.target.value)}
+        />
         <FieldError message={error} id="submit-applied-on-error" />
       </label>
       <button type="submit" disabled={command.pending}>
@@ -42,10 +48,14 @@ function SubmitForm({ application, today }: Props) {
   );
 }
 
+// Forms are not remounted when the application changes, so a refusal or a
+// change made elsewhere never discards what the user chose; a choice that is
+// no longer valid for the current stage falls back to the first valid one.
 function StageForm({ application }: Props) {
   const command = useApplicationCommand(application.id);
   const options = submittedActiveStages.filter((stage) => stage !== application.stage);
-  const [stage, setStage] = useState<SubmittedActiveStage>(options[0]!);
+  const [chosen, setStage] = useState<SubmittedActiveStage>(options[0]!);
+  const stage = options.includes(chosen) ? chosen : options[0]!;
   return (
     <form
       className="inline-form"
@@ -76,7 +86,8 @@ function StageForm({ application }: Props) {
 function CloseForm({ application, today }: Props) {
   const command = useApplicationCommand(application.id);
   const outcomes = applicationOutcomeSchema.options.filter((outcome) => canClose(application.stage, outcome).allowed);
-  const [outcome, setOutcome] = useState<ApplicationOutcome>(outcomes[0]!);
+  const [chosen, setOutcome] = useState<ApplicationOutcome>(outcomes[0]!);
+  const outcome = outcomes.includes(chosen) ? chosen : outcomes[0]!;
   const [closedOn, setClosedOn] = useState(today);
   const [reason, setReason] = useState("");
   return (
@@ -102,7 +113,14 @@ function CloseForm({ application, today }: Props) {
           </label>
           <label>
             Closed on (UTC date)
-            <input type="date" required value={closedOn} onChange={(event) => setClosedOn(event.target.value)} />
+            <input
+              type="date"
+              required
+              min={application.appliedOn ?? undefined}
+              max={today}
+              value={closedOn}
+              onChange={(event) => setClosedOn(event.target.value)}
+            />
           </label>
         </div>
         <label>
@@ -137,9 +155,12 @@ function ReopenButton({ application, reopenBlockedReason }: Props) {
   );
 }
 
-function AppliedDateForm({ application }: Props) {
+function AppliedDateForm({ application, today }: Props) {
   const command = useApplicationCommand(application.id);
-  const [appliedOn, setAppliedOn] = useState(application.appliedOn ?? "");
+  // Shows the persisted date until the user types; their draft then wins
+  // until it is saved.
+  const [draft, setAppliedOn] = useState<string | null>(null);
+  const appliedOn = draft ?? application.appliedOn ?? "";
   return (
     <details className="correct-applied-date">
       <summary>Correct the applied date</summary>
@@ -148,12 +169,22 @@ function AppliedDateForm({ application }: Props) {
         aria-label="Correct the applied date"
         onSubmit={(event) => {
           event.preventDefault();
-          void command.run({ command: "correctAppliedOn", expectedVersion: application.version, appliedOn });
+          void command
+            .run({ command: "correctAppliedOn", expectedVersion: application.version, appliedOn })
+            .then((saved) => {
+              if (saved) setAppliedOn(null);
+            });
         }}
       >
         <label>
           Applied on (UTC date)
-          <input type="date" required value={appliedOn} onChange={(event) => setAppliedOn(event.target.value)} />
+          <input
+            type="date"
+            required
+            max={application.closedOn ?? today}
+            value={appliedOn}
+            onChange={(event) => setAppliedOn(event.target.value)}
+          />
         </label>
         <button type="submit" className="secondary-button" disabled={command.pending}>
           Save date
@@ -171,21 +202,16 @@ export function StageControls(props: Props) {
       <div className="stage-controls">
         <ReopenButton {...props} />
         {isSubmitted(application.stage, application.outcome) ? (
-          <AppliedDateForm key={application.appliedOn} {...props} />
+          <AppliedDateForm {...props} />
         ) : null}
       </div>
     );
   }
   return (
     <div className="stage-controls">
-      {/* Keyed by stage: the choices depend on the current stage. */}
-      {application.stage === "PLANNED" ? (
-        <SubmitForm {...props} />
-      ) : (
-        <StageForm key={application.stage} {...props} />
-      )}
-      <CloseForm key={`close-${application.stage}`} {...props} />
-      {application.stage !== "PLANNED" ? <AppliedDateForm key={application.appliedOn} {...props} /> : null}
+      {application.stage === "PLANNED" ? <SubmitForm {...props} /> : <StageForm {...props} />}
+      <CloseForm {...props} />
+      {application.stage !== "PLANNED" ? <AppliedDateForm {...props} /> : null}
     </div>
   );
 }

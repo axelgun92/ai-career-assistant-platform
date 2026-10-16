@@ -39,7 +39,7 @@ export const followUpFilterOptions = {
   due: "Due now (overdue or today)",
   today: "Due today",
   upcoming: "Due in the next 7 days",
-  none: "No open follow-up",
+  none: "No next action",
 } as const;
 export type FollowUpFilter = keyof typeof followUpFilterOptions;
 
@@ -83,6 +83,18 @@ function oneOf<T extends Record<string, string>>(params: SearchParamsInput, key:
   return value && Object.hasOwn(options, value) ? (value as keyof T & string) : null;
 }
 
+// An outcome or the Closed stage can only match closed applications, so
+// choosing one under the default Active view widens the view to All and the
+// filter shows what it names instead of an empty list.
+export function normalizedApplicationView(
+  view: ApplicationView,
+  stage: Keys<typeof applicationStageOptions>,
+  outcome: Keys<typeof applicationOutcomeOptions>,
+): ApplicationView {
+  if (view === "active" && (outcome.length > 0 || stage.includes("closed"))) return "all";
+  return view;
+}
+
 export function parseApplicationQuery(params: SearchParamsInput): ApplicationQuery {
   let from = isoDate(firstValue(params, "from"));
   let to = isoDate(firstValue(params, "to"));
@@ -90,11 +102,13 @@ export function parseApplicationQuery(params: SearchParamsInput): ApplicationQue
     from = null;
     to = null;
   }
+  const stage = multi(params, "stage", applicationStageOptions);
+  const outcome = multi(params, "outcome", applicationOutcomeOptions);
   return {
-    view: oneOf(params, "view", applicationViews) ?? defaultApplicationView,
+    view: normalizedApplicationView(oneOf(params, "view", applicationViews) ?? defaultApplicationView, stage, outcome),
     q: normalizeSearch(firstValue(params, "q")).text,
-    stage: multi(params, "stage", applicationStageOptions),
-    outcome: multi(params, "outcome", applicationOutcomeOptions),
+    stage,
+    outcome,
     followUp: oneOf(params, "followUp", followUpFilterOptions),
     from,
     to,

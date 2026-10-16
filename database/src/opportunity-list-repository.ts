@@ -159,6 +159,8 @@ const joins = Prisma.sql`
   LEFT JOIN LATERAL (
     SELECT MIN(f."dueOn") AS "dueOn" FROM "ApplicationFollowUp" f
     WHERE f."applicationId" = app."id" AND f."completedAt" IS NULL
+      -- Same "actionable" rule as the tracker's next action.
+      AND app."stage" <> 'CLOSED' AND o."status" <> 'ARCHIVED'
   ) app_next ON TRUE
 `;
 

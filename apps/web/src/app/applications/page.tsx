@@ -8,14 +8,18 @@ import {
   type ApplicationTrackerSummary,
 } from "@ai-career/database";
 import { ApplicationFilters } from "@/components/application/application-filters";
-import { ApplicationPagination, ApplicationTable, TrackerSummary } from "@/components/application/application-list";
+import {
+  ApplicationEmptyState,
+  ApplicationPagination,
+  ApplicationTable,
+  TrackerSummary,
+} from "@/components/application/application-list";
 import { getApplicationLister } from "@/server/application-service";
 import {
   applicationCanonicalRedirect,
   applicationPageSize,
   applicationViews,
   applicationsHref,
-  clearApplicationFilters,
   hasApplicationFilters,
   parseApplicationQuery,
   toApplicationListFilters,
@@ -92,14 +96,7 @@ export default async function ApplicationsPage({
             Applications could not be loaded. Check the database connection and try again.
           </p>
         ) : result.total === 0 ? (
-          <div className="empty-state" role="status">
-            <p>
-              {filtered
-                ? "No applications match these filters."
-                : "No applications in this view. Start tracking one from an opportunity's page."}
-            </p>
-            {filtered ? <Link href={applicationsHref(clearApplicationFilters(query))}>Clear all filters</Link> : null}
-          </div>
+          <ApplicationEmptyState query={query} filtered={filtered} summary={summary} />
         ) : (
           <>
             <p className="result-count" role="status">
