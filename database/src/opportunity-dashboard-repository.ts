@@ -37,7 +37,10 @@ export interface DashboardSummary {
 export interface DashboardFilterOptions {
   sources: Array<{ value: string; count: number }>;
   domains: Array<{ value: string; count: number }>;
-  companies: Array<{ id: string; name: string; count: number }>;
+  // One entry per logical company: companies sharing a normalized name are
+  // grouped (value = that name); a company not yet backfilled stands alone
+  // (value = its id). The display name is the group's oldest company name.
+  companies: Array<{ value: string; name: string; count: number; companyIds: string[] }>;
   departments: Array<{ value: string; count: number }>;
   // Currencies of opportunities with a stated salary amount.
   currencies: Array<{ value: string; count: number }>;
@@ -157,10 +160,16 @@ export class PrismaOpportunityDashboardRepository {
         SELECT o."domain" AS "value", COUNT(*)::int AS "count" FROM "Opportunity" o
         WHERE o."domain" IS NOT NULL GROUP BY o."domain" ORDER BY o."domain" ASC LIMIT 200
       `,
-      this.database.$queryRaw<Array<{ id: string; name: string; count: number }>>`
-        SELECT c."id" AS "id", c."name" AS "name", COUNT(o."id")::int AS "count"
+      this.database.$queryRaw<Array<{ value: string; name: string; count: number; companyIds: string[] }>>`
+        SELECT COALESCE(c."normalizedName", c."id"::text) AS "value",
+               (array_agg(c."name" ORDER BY c."createdAt" ASC, c."id" ASC))[1] AS "name",
+               COUNT(o."id")::int AS "count",
+               array_agg(DISTINCT c."id"::text) AS "companyIds"
         FROM "Company" c JOIN "Opportunity" o ON o."companyId" = c."id"
-        GROUP BY c."id", c."name" ORDER BY lower(c."name") ASC, c."id" ASC LIMIT 200
+        GROUP BY COALESCE(c."normalizedName", c."id"::text)
+        ORDER BY lower((array_agg(c."name" ORDER BY c."createdAt" ASC, c."id" ASC))[1]) ASC,
+                 COALESCE(c."normalizedName", c."id"::text) ASC
+        LIMIT 200
       `,
       this.database.$queryRaw<Array<{ value: string; count: number }>>`
         SELECT o."department" AS "value", COUNT(*)::int AS "count" FROM "Opportunity" o

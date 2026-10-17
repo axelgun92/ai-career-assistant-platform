@@ -16,6 +16,8 @@ import { toDeferralView } from "@/components/budget/deferral-view";
 import { ApplicationLoadError, ApplicationPanel } from "@/components/application/application-panel";
 import { toApplicationView } from "@/components/application/types";
 import { getApplicationStore } from "@/server/application-service";
+import { getDuplicateStore } from "@/server/duplicate-service";
+import { DuplicateNotices } from "@/components/duplicate-notices";
 import {
   employmentTypeLabel,
   formatResidency,
@@ -62,10 +64,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function OpportunityPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const { capture: captureParam } = await searchParams;
+  const capture = captureParam === "attached" || captureParam === "probable" ? captureParam : null;
   const detail = await loadOpportunity(id);
 
   if (!detail) {
@@ -104,6 +110,15 @@ export default async function OpportunityPage({
         .then(({ active }) => (active ? { id: active.userProfileId, version: active.version } : null))
         .catch(() => null)
     : null;
+
+  const duplicates = await getDuplicateStore()
+    .relationships(detail.opportunity.id)
+    .catch((error: unknown) => {
+      console.error("Duplicate relationships could not be loaded", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return [];
+    });
 
   const tracking = await Promise.all([
     getApplicationStore().getByOpportunity(detail.opportunity.id),
@@ -174,6 +189,21 @@ export default async function OpportunityPage({
           ) : null}
         </nav>
       ) : null}
+
+      <DuplicateNotices
+        opportunityId={detail.opportunity.id}
+        capture={capture}
+        relationships={duplicates.map((relationship) => ({
+          otherOpportunityId: relationship.otherOpportunityId,
+          otherTitle: relationship.otherTitle,
+          otherCompanyName: relationship.otherCompanyName,
+          decision: relationship.decision,
+          confidence: relationship.confidence,
+          matchedOn: relationship.matchedOn,
+          conflicts: relationship.conflicts,
+          resolution: relationship.resolution,
+        }))}
+      />
 
       {lifecycle ? (
         <OpportunityActions

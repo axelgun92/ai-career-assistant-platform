@@ -395,7 +395,7 @@ export function createBudgetService(dependencies: BudgetServiceDependencies = {}
         new Date(Date.UTC(Number(period.label.slice(0, 4)), Number(period.label.slice(5, 7)) - 6, 15)),
         timeZone,
       );
-      const [tokens, counts, costBasis, daily, monthly] = await Promise.all([
+      const [tokens, counts, costBasis, daily, monthly, usageBreakdown] = await Promise.all([
         budgets.periodTokenUsage(period),
         budgets.operationalCounts({ executableDomains: dependencies.executableDomains ?? [] }),
         currency ? budgets.recentEvaluationCostBasis({ currency, limit: 10 }) : Promise.resolve(null),
@@ -405,6 +405,7 @@ export function createBudgetService(dependencies: BudgetServiceDependencies = {}
         currency
           ? budgets.spendSeries({ granularity: "month", timeZone, currency, from: sixMonthsAgo.start, to: period.end })
           : Promise.resolve([]),
+        budgets.periodUsageBreakdown({ period, currency }),
       ]);
       const totals = counts.reduce(
         (sum, row) => ({
@@ -434,6 +435,7 @@ export function createBudgetService(dependencies: BudgetServiceDependencies = {}
         period: { label: period.label, start: period.start.toISOString(), end: period.end.toISOString(), timeZone },
         budget: status,
         tokens,
+        usageBreakdown,
         counts: { totals, breakdown: counts },
         capacity,
         basis: {

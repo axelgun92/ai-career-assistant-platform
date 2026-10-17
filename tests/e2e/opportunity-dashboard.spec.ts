@@ -85,13 +85,16 @@ test("manual entry shows server validation errors next to the field", async ({ p
 });
 
 test("source and application URLs are clickable on the opportunity page", async ({ page, request }) => {
+  // A unique listing per run: an identical URL would be attached as a
+  // duplicate of an earlier run's opportunity.
+  const job = `https://example.com/jobs/${Date.now()}`;
   const response = await request.post("/api/opportunities", {
     data: {
       rawText: "Customer Success Manager. Remote.",
       title: "Link E2E Customer Success Manager",
       domain: "customer-success",
-      sourceUrl: "https://example.com/jobs/123",
-      applicationUrl: "https://example.com/jobs/123/apply",
+      sourceUrl: job,
+      applicationUrl: `${job}/apply`,
     },
   });
   expect(response.status()).toBe(201);
@@ -100,26 +103,27 @@ test("source and application URLs are clickable on the opportunity page", async 
 
   await page.goto(`/opportunities/${opportunity.id}`);
   const apply = page.getByRole("link", { name: "Open application page" });
-  await expect(apply).toHaveAttribute("href", "https://example.com/jobs/123/apply");
+  await expect(apply).toHaveAttribute("href", `${job}/apply`);
   await expect(apply).toHaveAttribute("target", "_blank");
   await expect(apply).toHaveAttribute("rel", "noopener noreferrer");
   await expect(page.getByRole("link", { name: "Open source posting" }))
-    .toHaveAttribute("href", "https://example.com/jobs/123");
+    .toHaveAttribute("href", job);
 
   await page.getByText("Normalized opportunity and source details").click();
   await expect(
-    page.locator("details.source-details").getByRole("link", { name: "https://example.com/jobs/123/apply" }),
+    page.locator("details.source-details").getByRole("link", { name: `${job}/apply` }),
   ).toBeVisible();
 });
 
 test("manual entry preserves and shows source provenance", async ({ page }) => {
-  const title = `Provenance E2E Customer Success Manager ${Date.now()}`;
+  const token = Date.now();
+  const title = `Provenance E2E Customer Success Manager ${token}`;
   await page.goto("/opportunities/new");
   await page.getByLabel("Raw opportunity or job-description text").fill("Customer Success Manager. Remote.");
   await page.getByLabel("Title (optional)").fill(title);
-  await page.getByLabel("Source URL (optional)").fill("https://www.linkedin.com/jobs/view/777");
-  await page.getByLabel("Application URL (optional)").fill("https://jobs.example.com/apply/777");
-  await page.getByLabel("Source job ID (optional)").fill("REQ-777");
+  await page.getByLabel("Source URL (optional)").fill(`https://www.linkedin.com/jobs/view/777${token}`);
+  await page.getByLabel("Application URL (optional)").fill(`https://jobs.example.com/apply/777${token}`);
+  await page.getByLabel("Source job ID (optional)").fill(`REQ-777${token}`);
   await page.getByLabel(/Where you found it/).fill("LinkedIn");
   await page.getByRole("button", { name: "Save opportunity" }).click();
 
@@ -133,9 +137,9 @@ test("manual entry preserves and shows source provenance", async ({ page }) => {
   await expect(provenance).toContainText("manual-input");
   await expect(provenance).toContainText("Reported by you: found on LinkedIn");
   await expect(provenance).toContainText("REQ-777");
-  await expect(provenance.getByRole("link", { name: "https://jobs.example.com/apply/777" }))
+  await expect(provenance.getByRole("link", { name: `https://jobs.example.com/apply/777${token}` }))
     .toHaveAttribute("rel", "noopener noreferrer");
-  await expect(provenance.getByRole("link", { name: "https://www.linkedin.com/jobs/view/777" })).toBeVisible();
+  await expect(provenance.getByRole("link", { name: `https://www.linkedin.com/jobs/view/777${token}` })).toBeVisible();
 
   await page.goto("/");
   await expect(page.locator(`li:has(a[href="/opportunities/${opportunityId}"])`)).toContainText("Manual entry");

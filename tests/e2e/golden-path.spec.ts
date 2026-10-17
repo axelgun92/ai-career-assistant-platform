@@ -105,6 +105,9 @@ test("golden path: capture, evaluate, decide, apply, track", async ({ page }) =>
   await runHelper("run-worker");
   await expect(page.getByRole("heading", { name: "Apply" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Evaluation history (1)")).toBeVisible();
+  // Each history row names the versions that produced it.
+  await page.getByText("Evaluation history (1)").click();
+  await expect(page.locator(".history-panel .history-versions")).toContainText(/Profile v\d+ · Evaluation \S+/);
   await expect(page.locator("#opportunity-status-title")).toHaveText("Recommendation ready", { timeout: 15_000 });
 
   // Back on the dashboard, the row shows the result.

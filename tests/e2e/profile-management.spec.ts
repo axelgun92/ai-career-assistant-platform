@@ -184,3 +184,11 @@ test("an opportunity evaluated under an older version shows a reevaluation hint"
     "last evaluated with profile version 1; new evaluations use version 2",
   );
 });
+
+test("the version history fits a phone screen without sideways scrolling", async ({ page }) => {
+  await createActiveV1();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/profile");
+  await expect(page.getByRole("heading", { name: "Version history" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

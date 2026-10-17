@@ -43,6 +43,12 @@ enum DuplicateDecision {
   NO_MATCH
 }
 
+// A user's decision about an engine-detected pair. Reversible: clearing it
+// reopens the pair.
+enum DuplicateResolution {
+  DISTINCT
+}
+
 enum EvaluationStatus {
   PENDING
   RUNNING
@@ -198,6 +204,10 @@ model SourceRecord {
   rawPostingDate     String?
   sourceMetadata     Json?
   rawPayload         Json?
+  // Set only when this record was attached to an existing opportunity as an
+  // exact duplicate (MATCH), with the engine's evidence.
+  duplicateDecision  DuplicateDecision?
+  duplicateEvidence  Json?
   discoveredAt       DateTime                   @default(now()) @db.Timestamptz(3)
   lastObservedAt     DateTime                   @default(now()) @db.Timestamptz(3)
   normalizedAt       DateTime?                  @db.Timestamptz(3)
@@ -233,16 +243,18 @@ model FieldProvenance {
 }
 
 model DuplicateReference {
-  id                   String            @id @default(uuid()) @db.Uuid
-  opportunityId        String            @db.Uuid
-  opportunity          Opportunity       @relation("DuplicateReferenceSource", fields: [opportunityId], references: [id], onDelete: Cascade)
-  relatedOpportunityId String            @db.Uuid
-  relatedOpportunity   Opportunity       @relation("DuplicateReferenceTarget", fields: [relatedOpportunityId], references: [id], onDelete: Cascade)
+  id                   String               @id @default(uuid()) @db.Uuid
+  opportunityId        String               @db.Uuid
+  opportunity          Opportunity          @relation("DuplicateReferenceSource", fields: [opportunityId], references: [id], onDelete: Cascade)
+  relatedOpportunityId String               @db.Uuid
+  relatedOpportunity   Opportunity          @relation("DuplicateReferenceTarget", fields: [relatedOpportunityId], references: [id], onDelete: Cascade)
   decision             DuplicateDecision
-  confidence           Decimal?          @db.Decimal(5, 4)
+  confidence           Decimal?             @db.Decimal(5, 4)
   evidence             Json?
-  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+  resolution           DuplicateResolution?
+  resolvedAt           DateTime?            @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @db.Timestamptz(3)
 
   @@unique([opportunityId, relatedOpportunityId])
   @@index([relatedOpportunityId])

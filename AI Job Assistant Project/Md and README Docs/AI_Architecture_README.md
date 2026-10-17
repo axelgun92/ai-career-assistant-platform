@@ -1,6 +1,6 @@
 # AI Career Platform
 
-**Last updated:** October 16, 2026
+**Last updated:** October 17, 2026
 
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
@@ -139,6 +139,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 - opportunity dashboard, search/sort/filter, lifecycle actions, evaluation history, profile/version management, AI usage/cost display, and budget controls;
 - application tracker, complete after the Task 8 completion pass (`534a4c7`);
 - setup and operations tooling, single-worker evaluation processing, honest queue states, and whole-product acceptance tests (original Task 9 work), complete after the Task 9 completion pass (October 16, 2026);
+- deduplication with provenance retention for captured listings (an exact duplicate is added to the saved opportunity as another source; a possible duplicate is flagged and never merged), a serialized guard against paying twice for one listing, and normalized company names (Features 1–10 Gap Closure: implemented and verified, awaiting review);
 - persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
 - Task 7 normalized salary/currency/position/residency contract;
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
@@ -149,13 +150,12 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### In progress
 
-- No main-product implementation task is open. Task 8 and Task 9 are complete.
-- The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
-- Next: an audit of any remaining gaps in main-product features 1–10.
+- The Features 1–10 Gap Closure is implemented and verified and awaiting review (not committed): deduplication with provenance retention and a duplicate-spend guard, company normalization, versions on evaluation history, a stated time-zone requirement, AI usage by domain and source, and phone-width fixes.
+- The features 1–10 gap audit, Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
 
 ### Main-product work still required before final acceptance
 
-- next: an audit of any remaining gaps in features 1–10;
+- close the Features 1–10 Gap Closure (review, then commit);
 - automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
 - source health and conservative retrieval;
 - posting-history/ghost-job intelligence;
@@ -252,7 +252,7 @@ The following repository documentation also exists (paths are listed in the "Doc
 The current development order is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; next comes an audit of any remaining gaps in features 1–10;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit is complete and the Features 1–10 Gap Closure is implemented and under review;
 3. build any still-missing main-product features through feature 18, including retrieval and analytics/intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add features 19–23 later.
@@ -345,4 +345,4 @@ tests/
 
 **Active development**
 
-Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. Next is an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is implemented and verified and awaiting review. Main-product features 11–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

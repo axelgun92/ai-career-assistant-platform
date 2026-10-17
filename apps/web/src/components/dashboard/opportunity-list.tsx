@@ -10,7 +10,7 @@ import { formatResidency, workArrangementLabel } from "../opportunity-facts";
 type Optional =
   | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
   | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority"
-  | "residencyRequirement" | "residencyRegions";
+  | "residencyRequirement" | "residencyRegions" | "duplicate";
 type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
 
 // The application tracker's state, kept to one badge plus the next follow-up.
@@ -124,6 +124,11 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
               </span>
               <ApplicationBadges opportunity={opportunity} />
               <EvaluationBadges opportunity={opportunity} />
+              {opportunity.duplicate ? (
+                <span className="status-label status-label-duplicate">
+                  {opportunity.duplicate === "MATCH" ? "Duplicate listing" : "Possible duplicate"}
+                </span>
+              ) : null}
               {applicationUrl ? (
                 <ExternalLink href={applicationUrl}>Application page</ExternalLink>
               ) : null}

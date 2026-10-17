@@ -1,3 +1,4 @@
+import { normalizeCompanyName } from "@ai-career/deduplication";
 import type { QueueSnapshot } from "@ai-career/database";
 import {
   customerSuccessProductionSemanticPolicyVersion,
@@ -29,6 +30,8 @@ export interface DoctorReads {
   // Open deferrals; those not waiting for a usage limit wait for the AI budget
   // (including legacy BUDGET_UNAVAILABLE rows).
   openDeferrals(): Promise<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
+  // Companies `pnpm db:backfill-dedup` would give a normalized name.
+  companiesNeedingBackfill(): Promise<number>;
 }
 
 export interface DoctorInputs {
@@ -176,6 +179,19 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
           "Review them on /budget: resume keeps the pinned version; cancel and request again to use the active one."
         : ""),
   );
+
+  // Reported only: the backfill changes data, so it is always run
+  // deliberately, never by the doctor or setup.
+  const companiesNeedingBackfill = await reads.companiesNeedingBackfill();
+  add(
+    companiesNeedingBackfill > 0 ? "WARN" : "PASS",
+    "Company names",
+    companiesNeedingBackfill > 0
+      ? `${companiesNeedingBackfill} compan${companiesNeedingBackfill === 1 ? "y has" : "ies have"} no normalized name, so the ` +
+          "company filter cannot group them yet. Run pnpm db:backfill-dedup --dry-run, then pnpm db:backfill-dedup, " +
+          "against this database when you choose (it also records duplicates among existing opportunities)."
+      : "normalized",
+  );
   return checks;
 }
 
@@ -209,6 +225,11 @@ export function createDoctorReads(client: {
       return rows[0] ?? null;
     },
     workerConnected: () => helpers.workerConnected(),
+    async companiesNeedingBackfill() {
+      const rows = (await client.$queryRaw`
+        SELECT "name" FROM "Company" WHERE "normalizedName" IS NULL`) as Array<{ name: string }>;
+      return rows.filter((row) => normalizeCompanyName(row.name) !== null).length;
+    },
     queueSnapshot: (now) => helpers.queueSnapshot(now),
     async openDeferrals() {
       // A deferral resumes with the version it was requested with; count the

@@ -6,7 +6,7 @@ import { getEvaluationService } from "./evaluation-service";
 function safeError(error: unknown) {
   if (error instanceof EvaluationApiError) {
     return Response.json(
-      { error: error.message, code: error.code },
+      { error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },
       { status: error.status },
     );
   }

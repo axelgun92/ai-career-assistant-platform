@@ -1,3 +1,4 @@
+export * from "./deduplication";
 export * from "./field-provenance";
 export * from "./geography";
 export * from "./manual-opportunity";

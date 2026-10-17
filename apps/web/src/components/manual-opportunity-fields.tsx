@@ -33,6 +33,7 @@ export const manualOpportunityFieldNames = [
   "employmentType",
   "department",
   "closingDate",
+  "timeZoneRequirements",
   "compensationCurrency",
   "residencyRequirement",
   "residencyRegions",
@@ -198,6 +199,16 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
             Closing date
             <input name="closingDate" type="date" {...errorProps("closingDate", fieldErrors)} />
             <FieldError name="closingDate" fieldErrors={fieldErrors} />
+          </label>
+          <label>
+            Time-zone requirements
+            <input
+              name="timeZoneRequirements"
+              maxLength={120}
+              placeholder="e.g. US Eastern business hours"
+              {...errorProps("timeZoneRequirements", fieldErrors)}
+            />
+            <FieldError name="timeZoneRequirements" fieldErrors={fieldErrors} />
           </label>
         </div>
       </fieldset>

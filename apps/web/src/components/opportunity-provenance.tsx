@@ -1,4 +1,5 @@
 import type { ManualOpportunityDetail } from "@ai-career/core";
+import { describeMatchedOn } from "./duplicate-labels";
 import { ExternalLink } from "./external-link";
 
 // Domain-neutral display of where an opportunity came from. Every preserved
@@ -40,6 +41,12 @@ export function reportedSource(sourceMetadata: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function matchedOn(evidence: unknown): string[] {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return [];
+  const value = (evidence as Record<string, unknown>).matchedOn;
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 // Readable names for known source slugs; the slug is still shown.
 const sourceNames: Record<string, string> = { "manual-input": "Manual entry" };
 
@@ -79,6 +86,12 @@ export function OpportunityProvenance({
                 <strong>{sourceTypeLabel(record.sourceType)}</strong> · {record.source}
                 {reported ? <> · <span>Reported by you: found on {reported}</span></> : null}
               </p>
+              {record.duplicateDecision === "MATCH" ? (
+                <p className="source-record-duplicate">
+                  Added as another source on {timestamp(record.discoveredAt)}: an exact duplicate of this opportunity
+                  {matchedOn(record.duplicateEvidence).length ? ` (${describeMatchedOn(matchedOn(record.duplicateEvidence))})` : ""}.
+                </p>
+              ) : null}
               <dl>
                 <div><dt>Source URL</dt><dd><ExternalLink href={record.sourceUrl} /></dd></div>
                 <div><dt>Application URL</dt><dd><ExternalLink href={record.applicationUrl} /></dd></div>

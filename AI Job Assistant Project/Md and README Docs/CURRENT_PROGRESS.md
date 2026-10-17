@@ -1,9 +1,21 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 16, 2026
+**Last updated:** October 17, 2026
 
 ## Current Objective
+
+The **Features 1–10 Gap Closure** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. It closes with the review, the check of the versioned PRDs/TDDs against what changed, and then the checkpoint commit. The read-only gap audit that defined it is complete (October 17, 2026). The work package has deliberately not been given a task number.
+
+In order, what follows:
+
+1. Next: user review of the gap closure, the versioned-specification check, and the checkpoint commit.
+2. Then: main-product features 11–18.
+3. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier objective, superseded on October 17, 2026 when the gap audit was completed and the gap closure implemented. It read as follows.)*
 
 The Task 1–9 completion pass is complete on `claude/gallant-pasteur-y1ou3i`:
 
@@ -30,7 +42,118 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–16, 2026)
+## Recently Completed (October 14–17, 2026)
+
+### Features 1–10 Gap Closure (implemented and verified October 17, 2026; implementation and verification approved by the user; awaiting the commit approval)
+
+**Audit (read-only, approved October 17, 2026).** Features 1–10 were checked against Core AI Framework PRD v1.5, Core Platform TDD v1.6, Customer Success PRD v1.4 and Customer Success TDD v1.4, in code, with targeted tests and in a browser walkthrough on the isolated test database.
+
+- Complete: feature 1 (dashboard), feature 4 (application tracker), feature 5 (saved/rejected/archived), feature 8 (source/provenance, for manual capture) and feature 10 (backlog and budget-aware evaluation).
+- Gaps found and approved for closure:
+  - **G1**, feature 9: deduplication was missing. The package was an interface stub and `DuplicateReference` was unused, so an identical re-capture became a second opportunity that could be evaluated, and paid for, again.
+  - **G2/G3**, features 2 and 8: every capture created its own `Company` row and `normalizedName` was never filled. The company filter therefore listed one company once per opportunity, and choosing one entry showed one job.
+  - **G4**, feature 3: history rows did not show the versions behind each evaluation.
+  - **G5**, feature 6: the time-zone requirement could never be anything but Unknown.
+  - **G6**, feature 7: AI usage and spend were not broken down by domain and job source (Core PRD §20, Core TDD §38).
+  - **G7**: horizontal overflow at phone width on the opportunity page and `/profile`.
+- Boundaries accepted:
+  - to feature 11: structured location, posting history, retrieval/source-specific metadata, cross-source deduplication and the merging of opportunities that already have history;
+  - to features 15–17: the analytics event stream and opportunity-view events;
+  - evaluator-internal changes: out of scope, recorded only.
+
+**What changed.**
+
+- **Deduplication engine** (`packages/deduplication`, version `core-dedup-v1`). Pure and deterministic; it holds no product data.
+  - **MATCH:** the same listing URL with nothing conflicting, or the same source job or requisition ID at the same company. URL keys ignore case, `www.`, trailing slashes, tracking parameters and parameter order. A shared URL with a different title, company or job ID drops to a probable match.
+  - **PROBABLE_MATCH:** the same normalized company, scored as 0.5 × title + 0.2 × location + 0.3 × description token similarity, minus 0.1 for non-overlapping salary ranges in one currency; threshold 0.6. A shared ID without both companies known also counts.
+  - **Canonical opportunity:** the earliest-seen exact match.
+- **Capture.**
+  - **Transaction:** normalization runs in memory first. One transaction then holds a capture advisory lock and writes the raw `SourceRecord` first, then the duplicate decision and either a new `NORMALIZED` opportunity (with field provenance and any duplicate references) or the attachment of that `SourceRecord` to the existing opportunity.
+  - **On failure:** a failure rolls back everything, so nothing is half-processed or orphaned. A capture whose normalization fails still preserves its raw `SourceRecord` unlinked, as before (Core TDD §11).
+  - **Exact duplicates are attached by default.** The canonical opportunity's fields, lifecycle, evaluations and application do not change; only `lastSeenAt` moves. `POST /api/opportunities` returns 200 with that opportunity.
+  - **The form asks first,** through the read-only `POST /api/opportunities/duplicate-check`. "Save as a separate opportunity" creates the opportunity and records the pair as `DISTINCT`.
+  - **Probable matches** create the opportunity and record up to three warnings. Nothing is ever merged on a probable match.
+- **Company reuse.** A capture links to the oldest company with the same normalized name. Companies that have not been backfilled are compared without being changed. Stored names are never rewritten; the spelling the user typed stays in `SourceRecord.rawCompany` and the `company.name` field provenance.
+  - Normalization ignores case, width, punctuation, `&` and one recognized trailing legal-entity suffix (Inc, LLC, Ltd, Limited, Corp, Corporation, GmbH, PLC, LLP, LP, AG, SA, BV, NV, Pty Ltd, Pvt Ltd, Private Limited). Business words are never removed.
+- **Dashboard company filter.** There is one entry per normalized company, with the combined count; orphan companies are excluded. The `company=` parameter takes the normalized name. An older company-id link selects that company's whole group, and a company not yet backfilled still filters by its id.
+- **Backfill.** `pnpm db:backfill-dedup [--dry-run]` is explicit, additive and idempotent.
+  - It fills only empty `Company.normalizedName` values and records missing `DuplicateReference` rows among existing opportunities.
+  - It never renames, merges, deletes or re-links anything, and never changes an existing relationship.
+  - It is not part of `pnpm app:setup`. `pnpm app:doctor` stays read-only and reports how many companies still need it.
+  - Orphan companies (left only by test cleanup; the product has no delete path) are kept, excluded from views, and reused by later captures.
+- **Duplicate-spend guard** (feature 10, Core TDD §33). A paid evaluation request, or a deferred resume, is refused with 409 `DUPLICATE_LISTING_ALREADY_EVALUATED` when all of the following hold:
+  - the opportunity has never completed an evaluation;
+  - an unresolved exact duplicate (detected live, or stored and not `DISTINCT`) already has a completed, queued or running evaluation, a live admission or an open deferred request.
+
+  Behavior around the guard:
+  - A refused resume leaves the deferral open and writes nothing.
+  - Probable matches and pairs marked `DISTINCT` are never blocked, and an opportunity's own reevaluation is never blocked.
+  - **The race is closed:** the check and the admission, evaluation or deferral it allows run under a session advisory lock on a dedicated connection (`withDuplicateSpendLock`). The Task 6 admission gate is unchanged. Without the lock, a test of simultaneous requests for two duplicates admitted both; with it, exactly one is admitted in every round.
+  - The existing stale-state checks (archived or closed, missing pinned profile, already active) are unchanged.
+- **"Not the same job" is reversible.** `POST /api/opportunities/[id]/duplicates` sets `DuplicateReference.resolution` to `DISTINCT` or clears it (Undo). A detected pair without a stored row is stored with the engine's decision.
+- **UI.**
+  - the capture form's match panel;
+  - a "Duplicates" section on the opportunity page (the attached-capture notice, exact and probable duplicates, "Not the same job" and Undo);
+  - attached sources labelled under "Source records";
+  - "Duplicate listing" and "Possible duplicate" dashboard badges.
+- **G4.** Each history row shows "Profile vN · Evaluation … · Prompt …", from fields the API already returned. No comparison view was built.
+- **G5.** Optional "Time-zone requirements" field, recorded only as stated (DIRECT provenance; never read from the job text). It is added to `fieldsWithheldFromEvaluator`, so the evaluator's input is unchanged.
+- **G6.** `/budget` adds "Usage and spend by domain and source" for the budget period (domain × source type × job source): evaluations, attempts, provider-reported tokens with unreported attempts counted, known spend in the report currency, and attempts whose cost is unknown or in another currency. Per-evaluation operation usage is unchanged; no operation/model analytics were added.
+- **G7.** The audit attributed the opportunity-page overflow to the usage table. The actual causes were these, and both are now fixed:
+  - **opportunity page:** long unbroken listing URLs in the provenance lists, which now wrap;
+  - **`/profile`:** an absolutely positioned visually-hidden label escaping the table's scroll container, which is now contained.
+
+  Every main page measures 390 px wide at a 390 px viewport, with all sections expanded.
+- **Migration.** `20261017120000_deduplication`, additive only: enum `DuplicateResolution`, `DuplicateReference.resolution`/`resolvedAt`, `SourceRecord.duplicateDecision`/`duplicateEvidence`. The known `Recommendation.evidenceReferences` drift is excluded.
+- **Shared-boundary impact** (recorded in `HANDOFFS.md` for the Codex review at final integration):
+  - the core `ManualOpportunityRepository` port;
+  - `loadSubject()` may now return attached duplicate sources after the original one;
+  - `fieldsWithheldFromEvaluator` gains `timeZoneRequirements`;
+  - reused companies give the evaluator the stored company spelling;
+  - the new request/resume refusal.
+
+**Tests.**
+
+- **Unit:**
+  - `deduplication-engine.test.ts` (21), `deduplication-ui.test.tsx` (11) and `gap-closure-ui.test.tsx` (3);
+  - additions to `manual-opportunity.test.ts`, `opportunity-normalization.test.ts` and `worker-operations.test.ts`;
+  - repository fakes updated to the new port.
+- **Integration:**
+  - `deduplication-capture.test.ts` (12);
+  - `deduplication-backfill.test.ts` (7, including the company filter);
+  - `duplicate-spend-guard.test.ts` (9, including the race);
+  - `time-zone-requirement.test.ts` (2) and `usage-breakdown.test.ts` (1).
+- **E2E:**
+  - `deduplication.spec.ts` (4);
+  - a 390 px `/profile` check in `profile-management.spec.ts`;
+  - a history-version assertion in `golden-path.spec.ts`.
+- **Fixture updates:** fixed listing URLs in `opportunity-dashboard.spec.ts` now carry a per-run token, and two fixtures were updated to the grouped company-option shape.
+
+**Verification** (isolated test database only; no paid provider calls; no live worker; no normal application database exists in this environment):
+
+- typecheck and lint clean; Prisma schema valid; `db:verify-migrations` 16/16 (only the documented drift);
+- unit 45 files / 1,128 tests; integration 26 files / 223 tests; E2E 32/32 across all five projects; production build succeeds; `git diff --check` clean;
+- `pnpm db:backfill-dedup`: the dry run wrote nothing, the first run filled the seeded companies and the second changed nothing. `pnpm app:doctor` reported no blocking problems.
+- A browser walkthrough repeated the audit scenario: the re-capture opened the original opportunity, the company group listed three opportunities, history showed versions, and `/budget` showed the breakdown.
+
+**Versioned specifications** (checked after verification, as the workflow requires). The implementation made their current-status sections stale, so new versions were built from the current ones; only status, revision history, metadata and dependency lines changed.
+
+- **Core AI Framework PRD v1.6:** §31 records deduplication with provenance retention; the requirements are unchanged.
+- **Customer Success AI Assistant PRD v1.5:** §23 records duplicate detection; depends on Core PRD v1.6.
+- **Core Platform TDD v1.7:** §51 gains a "Deduplication and Provenance Retention" summary, plus the stated time-zone rule and usage by domain and source; depends on Core PRD v1.6.
+  - After review, a substantive-spec check confirmed §51 also documents: the reversible "not the same job" decision for any detected pair; that existing opportunities with history are never merged retroactively; the attached source record's provenance; the explicit, idempotent backfill outside setup; the duplicate recheck alongside the existing release rechecks; and the lock that prevents duplicate paid admission.
+- **Customer Success Assistant TDD v1.5:** §49 status, the attached-source note and the withheld time-zone field; §40 now lists the user-stated time-zone requirement beside the other withheld evaluator-input fields; updated dependencies.
+- The previous versions (PRD v1.5 and v1.4, TDD v1.6 and v1.4) moved unchanged into the `Archive/` folders; the blobs are identical.
+- Each new `.docx` passes the docx validator against its source, and a text comparison shows only the intended changes.
+- The Semantic Evaluation Playbook is unchanged (no evaluator semantics changed).
+- `AGENTS.md` and `CLAUDE.md` point to the new versions.
+
+**Known issues and observations.**
+
+- A pg deprecation warning ("client.query() when the client is already executing a query") appears once per E2E web-server run. It was traced to Prisma's query interpreter inside existing application-tracker transactions: `applications.spec.ts` alone produces it. It is not caused by this work; the two new in-transaction parallel reads were made sequential. It is harmless today; it matters only for a future pg 9 upgrade.
+- The new E2E spec bundles its helper per Playwright worker. The existing specs' shared-bundle race (noted in the Task 8 record) is unchanged.
+- The duplicate-spend lock holds only while its dedicated connection stays up, like the single-worker lock.
+
 
 ### Post-Task-9 versioned-document update (committed October 16, 2026)
 
@@ -279,7 +402,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-No main-product implementation task is open. Task 9 and the post-Task-9 versioned-document update are complete (see "Recently Completed"). Next is the audit of any remaining gaps in main-product features 1–10.
+The Features 1–10 Gap Closure is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+
+*(Earlier status, superseded on October 17, 2026: "No main-product implementation task is open. Task 9 and the post-Task-9 versioned-document update are complete (see "Recently Completed"). Next is the audit of any remaining gaps in main-product features 1–10.")*
 
 ### Evaluator
 
@@ -997,9 +1122,9 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is implemented and verified (October 17, 2026).
 
-1. Next: audit any remaining main-product gaps in features 1–10.
+1. Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit. *(Earlier step, superseded on October 17, 2026: "Next: audit any remaining main-product gaps in features 1–10.")*
 2. Then: build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
@@ -1051,11 +1176,19 @@ Codex reviews still open from the `HANDOFFS.md` Final Integration Checklist:
 - the Task 8 guarded lifecycle path (`pendingUserActions`, `applyUserActionInTransaction`, `applyLifecycleActionGuarded`);
 - the Core executor lifecycle guard (`isNormalizedLifecycleState`);
 - the Task 9 additions (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape);
-- the profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`).
+- the profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`);
+- the Features 1–10 Gap Closure shared-boundary changes (October 17, 2026; see `HANDOFFS.md`):
+  - the capture transaction and the `ManualOpportunityRepository` port;
+  - attached duplicate sources in `loadSubject()`;
+  - `timeZoneRequirements` added to `fieldsWithheldFromEvaluator`;
+  - the reused-company spelling;
+  - the duplicate-spend refusal and its lock.
 
 Main-product follow-up (not an integration blocker):
 
 - Source Analytics must exclude budget/usage-limit deferrals once Source Analytics exists (features 11–18).
+- Feature 11 must reuse the capture transaction and the deduplication engine for retrieved sources. It must add cross-source matching, canonical-source selection by source type, posting history and any merging of opportunities that already have history (not done in the gap closure, by decision).
+- Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, on the normal application database. Only when the user chooses to; it changes data.
 
 Documentation items carried from the earlier Open Items list, with their status after the October 15 documentation preservation audit and correction pass:
 

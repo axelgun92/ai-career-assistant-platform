@@ -9,6 +9,7 @@ import { StatusNotices } from "./status-notices";
 import { UsageSummary } from "./usage-summary";
 import { ClassificationBadge, humanize } from "./shared-results";
 import type {
+  EvaluationHistoryPresentation,
   EvaluationPresentation,
   OpportunityPresentation,
 } from "./types";
@@ -49,6 +50,18 @@ function activeStatus(status: string | undefined) {
 
 function formatTimestamp(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString() : null;
+}
+
+// Which versions produced an evaluation, so history rows can be told apart
+// when the profile, evaluator or prompts changed between them.
+export function historyVersionLabel(
+  item: Pick<EvaluationHistoryPresentation, "userProfileVersion" | "evaluationVersion" | "promptVersion">,
+): string {
+  return [
+    item.userProfileVersion === null ? "Profile unknown" : `Profile v${item.userProfileVersion}`,
+    `Evaluation ${item.evaluationVersion}`,
+    item.promptVersion ? `Prompt ${item.promptVersion}` : null,
+  ].filter(Boolean).join(" · ");
 }
 
 export function EvaluationExperience({
@@ -311,6 +324,7 @@ export function EvaluationExperience({
                   {item.isLatest ? "Latest · " : ""}
                   {item.decision ? <><ClassificationBadge value={item.decision} /> · </> : null}
                   {humanize(item.status)} · {item.completedAt ? new Date(item.completedAt).toLocaleString() : "In progress"}
+                  <span className="history-versions"> · {historyVersionLabel(item)}</span>
                 </button>
               </li>
             ))}

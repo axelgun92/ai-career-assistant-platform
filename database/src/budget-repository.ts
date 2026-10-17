@@ -50,6 +50,24 @@ export interface SpendBucket {
   unknownCostAttempts: number;
 }
 
+// Provider-reported usage and known spend in one period for one domain and
+// job source (Core PRD §20, Core TDD §38). Unreported tokens and costs that
+// are unknown or in another currency are counted, never added as zero.
+export interface UsageBreakdownRow {
+  domain: string;
+  sourceType: string | null;
+  source: string | null;
+  attempts: number;
+  evaluations: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  attemptsWithoutTotalTokens: number;
+  // Null without a currency to report in.
+  knownCost: number | null;
+  unknownCostAttempts: number;
+}
+
 export interface OperationalCountRow {
   domain: string | null;
   sourceType: string | null;
@@ -310,6 +328,61 @@ export class PrismaBudgetRepository {
       attemptsWithoutOutputTokens: value("attemptsWithoutOutputTokens"),
       attemptsWithoutTotalTokens: value("attemptsWithoutTotalTokens"),
     };
+  }
+
+  async periodUsageBreakdown(input: { period: BudgetPeriod; currency: string | null }): Promise<UsageBreakdownRow[]> {
+    const currency = input.currency ?? "";
+    const rows = await this.database.$queryRaw<
+      Array<{
+        domain: string;
+        sourceType: string | null;
+        source: string | null;
+        attempts: bigint;
+        evaluations: bigint;
+        inputTokens: bigint | null;
+        outputTokens: bigint | null;
+        totalTokens: bigint | null;
+        attemptsWithoutTotalTokens: bigint;
+        known: Prisma.Decimal | null;
+        unknown: bigint;
+      }>
+    >`
+      SELECT
+        a."domain",
+        o."sourceType"::text AS "sourceType",
+        COALESCE(a."jobSource", o."source") AS "source",
+        COUNT(*) AS attempts,
+        COUNT(DISTINCT a."evaluationId") AS evaluations,
+        SUM(a."inputTokens") AS "inputTokens",
+        SUM(a."outputTokens") AS "outputTokens",
+        SUM(a."totalTokens") AS "totalTokens",
+        COUNT(*) FILTER (WHERE a."totalTokens" IS NULL) AS "attemptsWithoutTotalTokens",
+        COALESCE(SUM(a."estimatedCost") FILTER (
+          WHERE a."estimatedCost" IS NOT NULL AND p."currency" = ${currency}
+        ), 0) AS known,
+        COUNT(*) FILTER (
+          WHERE NOT (a."estimatedCost" IS NOT NULL AND p."currency" IS NOT NULL AND p."currency" = ${currency})
+        ) AS unknown
+      FROM "SemanticOperationAttempt" a
+      JOIN "Opportunity" o ON o."id" = a."opportunityId"
+      LEFT JOIN "AiModelPricingConfiguration" p ON p."id" = a."pricingConfigurationId"
+      WHERE a."createdAt" >= ${input.period.start} AND a."createdAt" < ${input.period.end}
+      GROUP BY 1, 2, 3
+      ORDER BY 1, 2 NULLS LAST, 3 NULLS LAST
+    `;
+    return rows.map((row) => ({
+      domain: row.domain,
+      sourceType: row.sourceType,
+      source: row.source,
+      attempts: Number(row.attempts),
+      evaluations: Number(row.evaluations),
+      inputTokens: Number(row.inputTokens ?? 0),
+      outputTokens: Number(row.outputTokens ?? 0),
+      totalTokens: Number(row.totalTokens ?? 0),
+      attemptsWithoutTotalTokens: Number(row.attemptsWithoutTotalTokens),
+      knownCost: input.currency ? roundMoney(toNumber(row.known)) : null,
+      unknownCostAttempts: input.currency ? Number(row.unknown) : Number(row.attempts),
+    }));
   }
 
   // Known spend per local day or month in the budget zone, from persisted

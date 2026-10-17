@@ -62,12 +62,12 @@ async function capture(token: string) {
   const captured: RawOpportunity[] = [];
   const detail = await createManualOpportunityService({
     repository: {
-      createManualSourceRecord: (raw) => {
-        captured.push(raw);
-        return repository.createManualSourceRecord(raw);
+      createManualSourceRecord: (raw) => repository.createManualSourceRecord(raw),
+      ingestManualOpportunity: (input) => {
+        captured.push(input.rawOpportunity);
+        return repository.ingestManualOpportunity(input);
       },
-      createDiscoveredOpportunity: (input) => repository.createDiscoveredOpportunity(input),
-      transitionOpportunityStatus: (input) => repository.transitionOpportunityStatus(input),
+      checkDuplicates: (input) => repository.checkDuplicates(input),
       findOpportunityDetail: (id) => repository.findOpportunityDetail(id),
     } as typeof repository,
     normalizer: createManualOpportunityNormalizer(),

@@ -10,10 +10,12 @@ import {
 } from "@ai-career/customer-success";
 import {
   AdmissionNotConsumableError,
+  PrismaDuplicateRepository,
   PrismaEvaluationQueryRepository,
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
   type DeferredEvaluationRecord,
+  withDuplicateSpendLock,
 } from "@ai-career/database";
 import type {
   EvaluationRepository,
@@ -93,6 +95,14 @@ export interface EvaluationServiceDependencies {
   jobMaxAttempts?: number;
   resolveExecution?: () => { semanticConfig: SemanticExecutorConfig; jobMaxAttempts: number };
   now?: () => Date;
+  // Duplicate-spend protection: the exact duplicate that already has (or is
+  // about to have) a paid evaluation, if any, and the lock that serializes
+  // that check with the admission it protects. Optional so evaluator-level
+  // tests can run without a database.
+  duplicates?: {
+    blockingTwin(opportunityId: string): Promise<{ opportunityId: string; title: string | null; companyName: string | null } | null>;
+  };
+  duplicateSpendLock?: <T>(work: () => Promise<T>) => Promise<T>;
 }
 
 // The public evaluation JSON omits stored error messages and provider request
@@ -208,7 +218,34 @@ export function createEvaluationService(
       409,
     );
 
+  // Every new request and every deferred resume ends here, so the
+  // duplicate-spend check covers both (Core TDD §33: recheck duplicate state
+  // before release). Under the lock, the check and the admission, evaluation
+  // or deferral it allows are one serialized step.
   async function admitAndEnqueue(input: {
+    opportunityId: string;
+    domain: string;
+    profile: { id: string; version: number };
+    resumeDeferralId?: string;
+  }) {
+    const duplicates = dependencies.duplicates;
+    if (!duplicates) return admitAndEnqueueChecked(input);
+    const guarded = async () => {
+      const twin = await duplicates.blockingTwin(input.opportunityId);
+      if (twin) {
+        throw new EvaluationApiError(
+          "DUPLICATE_LISTING_ALREADY_EVALUATED",
+          "This listing is a duplicate of an opportunity that already has an evaluation or a pending request. Open that opportunity, or mark the two as different jobs to evaluate this one.",
+          409,
+          { duplicateOfOpportunityId: twin.opportunityId, title: twin.title, companyName: twin.companyName },
+        );
+      }
+      return admitAndEnqueueChecked(input);
+    };
+    return dependencies.duplicateSpendLock ? dependencies.duplicateSpendLock(guarded) : guarded();
+  }
+
+  async function admitAndEnqueueChecked(input: {
     opportunityId: string;
     domain: string;
     profile: { id: string; version: number };
@@ -561,6 +598,8 @@ export function getEvaluationService(): EvaluationService {
     tasks: new PrismaEvaluationTaskRepository(),
     resolveExecution: resolveProductionExecution,
     admissionGate: getBudgetService().gate,
+    duplicates: new PrismaDuplicateRepository(),
+    duplicateSpendLock: (work) => withDuplicateSpendLock(work),
   });
   return evaluationService;
 }

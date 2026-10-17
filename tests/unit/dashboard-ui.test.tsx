@@ -96,7 +96,7 @@ describe("filter form", () => {
     const options = {
       sources: [{ value: "manual-input", count: 3 }],
       domains: [{ value: "customer-success", count: 3 }],
-      companies: [{ id: companyId, name: "Acme", count: 2 }],
+      companies: [{ value: companyId, name: "Acme", count: 2, companyIds: [companyId] }],
       departments: [],
       currencies: [],
     };

@@ -58,6 +58,10 @@ export interface OpportunityListItem {
   priorityBand: string | null;
   roleFamily: string | null;
   customerSegment: string | null;
+  // An unresolved stored duplicate relationship: MATCH (same listing) or
+  // PROBABLE_MATCH (possible duplicate). Pairs marked as different jobs are
+  // not shown.
+  duplicate: "MATCH" | "PROBABLE_MATCH" | null;
   // The application tracker's state for this opportunity, if tracked.
   application: {
     stage: ApplicationStage;
@@ -81,7 +85,9 @@ export interface OpportunityListFilters {
   seniorities?: string[];
   residencyRequirements?: string[];
   source?: string | null;
-  companyId?: string | null;
+  // A normalized company name (every company sharing it), or a company id:
+  // that company and every company sharing its normalized name.
+  company?: string | null;
   domain?: string | null;
   titleContains?: string | null;
   locationContains?: string | null;
@@ -208,6 +214,7 @@ const searchColumns = [
   Prisma.sql`o."atsRequisitionId"`,
 ];
 
+const uuidValue = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isPresent = (value: number | null | undefined): value is number => value !== null && value !== undefined;
 
 // The top and bottom of a stated salary range; a one-sided range uses its
@@ -250,7 +257,13 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   add(valuesOrMissing(Prisma.sql`o."residencyRequirement"`, filters.residencyRequirements, "UNKNOWN"));
   if (filters.department) add(Prisma.sql`o."department" = ${filters.department}`);
   if (filters.source) add(Prisma.sql`o."source" = ${filters.source}`);
-  if (filters.companyId) add(Prisma.sql`o."companyId" = ${filters.companyId}::uuid`);
+  if (filters.company) {
+    add(
+      uuidValue.test(filters.company)
+        ? Prisma.sql`(o."companyId" = ${filters.company}::uuid OR c."normalizedName" = (SELECT "normalizedName" FROM "Company" WHERE "id" = ${filters.company}::uuid))`
+        : Prisma.sql`c."normalizedName" = ${filters.company}`,
+    );
+  }
   if (filters.domain) add(Prisma.sql`o."domain" = ${filters.domain}`);
   if (filters.titleContains) {
     add(Prisma.sql`o."title" ILIKE ${`%${escapeLikePattern(filters.titleContains)}%`} ESCAPE '\\'`);
@@ -329,7 +342,17 @@ type Row = {
   applicationStage: ApplicationStage | null;
   applicationOutcome: ApplicationOutcome | null;
   nextFollowUpOn: Date | null;
+  duplicate: "MATCH" | "PROBABLE_MATCH" | null;
 };
+
+// The strongest unresolved stored duplicate relationship, either direction.
+const duplicateStatus = Prisma.sql`(
+  SELECT CASE WHEN bool_or(dr."decision" = 'MATCH') THEN 'MATCH'
+              WHEN COUNT(*) > 0 THEN 'PROBABLE_MATCH' END
+  FROM "DuplicateReference" dr
+  WHERE dr."resolution" IS NULL AND dr."decision" <> 'NO_MATCH'
+    AND (dr."opportunityId" = o."id" OR dr."relatedOpportunityId" = o."id")
+) AS "duplicate"`;
 
 function toItem(row: Row, today: string): OpportunityListItem {
   const nextFollowUpOn = row.nextFollowUpOn ? toIsoDate(row.nextFollowUpOn) : null;
@@ -374,6 +397,7 @@ function toItem(row: Row, today: string): OpportunityListItem {
     priorityBand: row.priorityBand,
     roleFamily: row.roleFamily,
     customerSegment: row.customerSegment,
+    duplicate: row.duplicate ?? null,
     application: row.applicationStage
       ? {
           stage: row.applicationStage,
@@ -449,7 +473,7 @@ export class PrismaOpportunityListRepository {
             cr."decision" AS "recDecision", cr."evaluationId" AS "recEvaluationId",
             cr."band" AS "priorityBand", cr."roleFamily" AS "roleFamily", cr."segment" AS "customerSegment",
             app."stage"::text AS "applicationStage", app."outcome"::text AS "applicationOutcome",
-            app_next."dueOn" AS "nextFollowUpOn"
+            app_next."dueOn" AS "nextFollowUpOn", ${duplicateStatus}
           ${joins} ${predicate}
           ORDER BY ${sortOrders[input.sort] ?? sortOrders.newest}
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}

@@ -285,12 +285,15 @@ describe("manual submission", () => {
     let captured: RawOpportunity | null = null;
     const service = createManualOpportunityService({
       repository: {
-        createManualSourceRecord: async (rawOpportunity) => {
+        createManualSourceRecord: async () => ({ id: "source-1", discoveredAt }),
+        ingestManualOpportunity: async ({ rawOpportunity }) => {
           captured = rawOpportunity;
-          return { id: "source-1", discoveredAt };
+          return {
+            opportunityId: "opportunity-1",
+            deduplication: { outcome: "CREATED", decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] },
+          };
         },
-        createDiscoveredOpportunity: async () => ({ id: "opportunity-1" }),
-        transitionOpportunityStatus: async () => undefined,
+        checkDuplicates: async () => ({ decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] }),
         findOpportunityDetail: async () => ({ opportunity: { id: "opportunity-1" } }) as never,
       },
       normalizer: createManualOpportunityNormalizer(),
@@ -300,6 +303,36 @@ describe("manual submission", () => {
     expect(captured!.employmentType).toBe("FULL_TIME");
     expect(captured!.sourceMetadata).toMatchObject({ details: { department: "CS", compensationCurrency: "USD", workArrangement: null } });
     expect(captured!.rawPayload).toMatchObject({ employmentType: "FULL_TIME", department: "CS", compensationCurrency: "USD" });
+  });
+});
+
+describe("stated time-zone requirements (G5)", () => {
+  const raw = (details: Record<string, unknown>, description = "Job") => ({
+    source: "manual-input", sourceType: "MANUAL" as const, sourceUrl: null, applicationUrl: null, domain: null,
+    externalId: null, requisitionId: null, title: null, company: null, location: null, description,
+    salaryText: null, employmentType: null, postingDate: null, sourceMetadata: { details }, rawPayload: null, discoveredAt,
+  });
+
+  it("records only the stated value, trimmed, with provenance", async () => {
+    const stated = await createManualOpportunityNormalizer().normalize(raw({ timeZoneRequirements: "US Eastern hours" }));
+    expect(stated.opportunity.timeZoneRequirements).toBe("US Eastern hours");
+    expect(stated.provenance).toContainEqual(expect.objectContaining({ fieldName: "timeZoneRequirements", kind: "DIRECT" }));
+    const padded = await createManualOpportunityNormalizer().normalize(raw({ timeZoneRequirements: "  CET  " }));
+    expect(padded.opportunity.timeZoneRequirements).toBe("CET");
+    expect(padded.provenance).toContainEqual(expect.objectContaining({ fieldName: "timeZoneRequirements", kind: "DETERMINISTIC", sourceText: "  CET  " }));
+  });
+
+  it("leaves it Unknown when only the job text mentions time zones", async () => {
+    const result = await createManualOpportunityNormalizer().normalize(raw({}, "Must work US Eastern (EST) hours."));
+    expect(result.opportunity.timeZoneRequirements).toBeNull();
+    expect(result.provenance.map((item) => item.fieldName)).not.toContain("timeZoneRequirements");
+  });
+
+  it("validates the submitted value", () => {
+    expect(manualOpportunitySubmissionSchema.parse({ rawText: "x", timeZoneRequirements: "PST overlap" })).toMatchObject({ timeZoneRequirements: "PST overlap" });
+    for (const bad of ["", "   ", "x".repeat(121)]) {
+      expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", timeZoneRequirements: bad }).success).toBe(false);
+    }
   });
 });
 

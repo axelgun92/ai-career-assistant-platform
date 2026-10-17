@@ -13,6 +13,7 @@
     "@ai-career/core": "workspace:*",
     "@ai-career/customer-success": "workspace:*",
     "@ai-career/database": "workspace:*",
+    "@ai-career/deduplication": "workspace:*",
     "@ai-career/evaluation": "workspace:*",
     "@ai-career/evidence": "workspace:*",
     "@ai-career/normalization": "workspace:*",

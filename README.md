@@ -129,17 +129,22 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - dashboard search, filters, sorting and summaries;
 - Task 7 normalized opportunity facts: salary minimum/maximum and currency, work arrangement, seniority, department, employment type, closing date, and residency requirement/regions, with provenance and Unknown preserved;
 - application tracker (Task 8 completion pass complete): stages and outcomes with calendar-date rules, rescheduling follow-ups, interviews, contacts, notes, next-action and due visibility, and stale-write protection;
-- setup and operations tooling (Task 9 completion pass complete): `pnpm app:setup`, `pnpm app:doctor`, migration verification, `/api/health`, the single-worker lock, honest queue states, error-name-only API logging, and whole-product acceptance tests with a deterministic, non-live E2E credential.
+- setup and operations tooling (Task 9 completion pass complete): `pnpm app:setup`, `pnpm app:doctor`, migration verification, `/api/health`, the single-worker lock, honest queue states, error-name-only API logging, and whole-product acceptance tests with a deterministic, non-live E2E credential;
+- Features 1–10 Gap Closure (implemented and verified; awaiting review, not committed):
+  - deduplication of captured listings with provenance retention: an exact duplicate is added to the saved opportunity as another source instead of becoming a second opportunity, and a possible duplicate is flagged for review;
+  - a guard against paying twice for one listing, rechecked before a deferred evaluation resumes;
+  - company names normalized, so the dashboard company filter treats spellings of one company as one company;
+  - versions on evaluation-history rows, an optional stated time-zone requirement, AI usage and spend by domain and source on `/budget`, and phone-width layout fixes.
 
 ### In Progress
 
-- No main-product implementation task is open. Task 8 and Task 9 are complete.
-- The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
-- Next: an audit of any remaining gaps in main-product features 1–10.
+- The Features 1–10 Gap Closure is implemented and verified on the isolated test database and is awaiting review; it is not committed yet.
+- The read-only gap audit of features 1–10 that preceded it is complete.
+- Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- next: an audit of any remaining gaps in features 1–10;
+- close the Features 1–10 Gap Closure (review, then commit);
 - feature 11 — automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
 - feature 12 — source health and conservative retrieval;
 - feature 13 — posting-history/ghost-job intelligence;
@@ -241,7 +246,7 @@ Superseded PRD/TDD versions are kept for history in the `Archive/` folders besid
 The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; next comes an audit of any remaining gaps in features 1–10;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit is complete and the Features 1–10 Gap Closure is implemented and under review;
 3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
@@ -273,7 +278,9 @@ pnpm app:doctor               # read-only check of everything above
 
 `pnpm prisma:generate` is required after every clean clone: the generated client (`database/generated/`) is not committed. `pnpm app:setup` runs it and applies all migrations (`prisma migrate deploy`).
 
-`pnpm app:doctor` is strictly read-only. It checks Node, configuration (by variable name; values are never printed), database reachability, applied migrations, the generated client, the active profile, whether an evaluation worker is connected, and the queue. It never changes data. (The script is named `app:doctor`/`app:setup` because `pnpm doctor` and `pnpm setup` are built-in pnpm commands.)
+`pnpm app:doctor` is strictly read-only. It checks Node, configuration (by variable name; values are never printed), database reachability, applied migrations, the generated client, the active profile, whether an evaluation worker is connected, the queue, and whether company names still need the deduplication backfill. It never changes data.
+
+**Existing databases (once, after migrating to the deduplication release):** `pnpm db:backfill-dedup --dry-run` reports what would change; `pnpm db:backfill-dedup` then fills `Company.normalizedName` where it is empty and records duplicate relationships among existing opportunities. It is additive and idempotent: it never renames, merges, deletes or re-links a company or an opportunity, and never changes an existing relationship. It changes data, so `pnpm app:setup` does not run it; run it deliberately against the database you intend (it prints the target host and database name first). (The script is named `app:doctor`/`app:setup` because `pnpm doctor` and `pnpm setup` are built-in pnpm commands.)
 
 ### 3. Environment variables
 
@@ -354,6 +361,8 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `prisma migrate dev` reports a `Recommendation.evidenceReferences` change | Known, documented drift (awaiting a decision); use `pnpm db:migrate` (deploy). `pnpm db:verify-migrations` confirms it is the only difference. |
 | `Cannot find module …/generated/prisma` | Run `pnpm prisma:generate`. |
 | `pnpm app:doctor` warns about the evaluation policy version | `.env` pins `AI_EXECUTION_POLICY_VERSION`. Remove the line and restart the web app and worker. Evaluations already queued under another policy fail safely with `SEMANTIC_EXECUTION_POLICY_MISMATCH`; request them again. |
+| `pnpm app:doctor` warns about company names | Companies saved before the deduplication release have no normalized name, so the company filter lists them separately. Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, against this database. |
+| "This listing is a duplicate of an opportunity that already has an evaluation…" | The opportunity is an exact duplicate (same listing URL, or same job ID at the same company) of one that already has an evaluation or a pending request, so evaluating it would pay twice. Open the other opportunity, or choose **Not the same job** on this page if they are different jobs (reversible with **Undo**). |
 | `pnpm app:doctor` warns that deferrals use another profile version | Each deferral resumes with the profile version it was requested with. On `/budget`, resume to keep that version, or cancel and request again to use the active one. |
 
 ### 9. Updating the evaluator or the bundled profile
@@ -367,15 +376,24 @@ When a new evaluator version or a new bundled Customer Success profile arrives:
 
 ### 10. Ingestion boundary (before scraper work)
 
-Every source must converge on one pipeline: *source adapter → `RawOpportunity` (`packages/core/src/raw-opportunity.ts`) → preserved `SourceRecord` → normalizer for that source type → `Opportunity` + `FieldProvenance` → evaluation*. Manual entry is the only adapter today. Known manual-only points to generalize in the scraper phase:
+Every source must converge on one pipeline: *source adapter → `RawOpportunity` (`packages/core/src/raw-opportunity.ts`) → normalizer for that source type → one capture transaction (preserved `SourceRecord` → duplicate decision → new `Opportunity` + `FieldProvenance`, or the `SourceRecord` attached to the existing opportunity) → evaluation*. A capture whose normalization fails still preserves its raw `SourceRecord`, unlinked. Manual entry is the only adapter today.
+
+Deduplication (`packages/deduplication`, engine `core-dedup-v1`):
+
+- **MATCH** (same listing URL with nothing conflicting, or the same source job/requisition ID at the same company): the new `SourceRecord` is attached to the earliest-seen matching opportunity (`duplicateDecision`/`duplicateEvidence` on the record). The opportunity's fields, lifecycle, evaluations and application are unchanged; only its last-seen time moves. `POST /api/opportunities` then returns 200 with that opportunity (201 when one is created). The capture form asks first (read-only `POST /api/opportunities/duplicate-check`); "Save as a separate opportunity" keeps it apart and records the pair as `DISTINCT`, which can be undone.
+- **PROBABLE_MATCH** (same company and similar title, location and description, or a shared URL/ID with a conflict): the opportunity is created and the pair is recorded as a warning; nothing is ever merged on a probable match.
+- **Duplicate spend:** an opportunity that has never completed an evaluation cannot request one (or resume a deferred one) while an unresolved exact duplicate already has a completed or active evaluation, a live admission or an open deferred request. The check and the admission it allows are serialized by an advisory lock on a dedicated connection.
+- Companies are reused by normalized name (case, punctuation, `&` and one recognized legal suffix such as Inc, LLC or GmbH are ignored); stored names are never rewritten, and what the user typed stays in the raw source and field provenance.
+
+Known points to generalize in the scraper phase:
 
 - the submission schema, `submit()` and `POST /api/opportunities` are manual-specific, and the normalizer accepts only `sourceType` `MANUAL`;
-- a `Company` row is created per opportunity (no matching), `SourceRecord (source, externalId)` is not unique, and there is no re-observation path for `lastSeenAt`/`lastObservedAt`;
-- the evaluator reads an opportunity's oldest `SourceRecord`;
-- `DuplicateReference`, `packages/discovery` and `packages/deduplication` exist but are unused; `apps/extension` is a placeholder for the browser extension, which must feed the same backend.
+- cross-source matching, canonical-source selection by source type, merging opportunities that already have history, and posting history wait for retrieved data (feature 11); `SourceRecord (source, externalId)` is not unique, and re-observation of a listing only moves `lastSeenAt` through an attached capture;
+- the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates come after it);
+- `packages/discovery` is unused; `apps/extension` is a placeholder for the browser extension, which must feed the same backend.
 
 ## Project Status
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. Next is an audit of any remaining gaps in features 1–10, then main-product features 11–18. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is implemented and verified and awaiting review. Main-product features 11–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

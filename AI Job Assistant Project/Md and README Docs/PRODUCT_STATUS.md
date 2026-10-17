@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development  
-**Last updated:** October 16, 2026
+**Last updated:** October 17, 2026
 
 ## Purpose
 
@@ -185,7 +185,20 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
-No main-product implementation task is open. The Task 1–9 completion pass is complete: Task 8 (`534a4c7`) and Task 9 (October 16, 2026) both closed. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is also complete. The next step is an audit of any remaining gaps in features 1–10 (see below).
+The Features 1–10 Gap Closure is implemented and verified on the isolated test database and awaiting user review; it is not committed. It followed a read-only audit of features 1–10 (October 17, 2026) and closes these gaps:
+
+- **Feature 9, deduplication with provenance retention:**
+  - an exact duplicate capture (same listing URL, or the same job ID at the same company) is added to the saved opportunity as another source instead of becoming a second opportunity;
+  - a possible duplicate is flagged for review and never merged;
+  - "Not the same job" decisions are reversible.
+- **Feature 10:** a paid evaluation, or a deferred resume, is refused when an exact duplicate already has an evaluation or a pending request. The check is serialized, so simultaneous requests cannot both pay.
+- **Features 2 and 8:** company names are normalized and reused, so the dashboard company filter treats spellings of one company as one company. An explicit, additive `pnpm db:backfill-dedup` covers existing data; it is not run automatically.
+- **Feature 3:** evaluation-history rows show the profile and evaluator versions behind them.
+- **Feature 6:** an optional stated time-zone requirement, never read from the job text and withheld from the evaluator.
+- **Feature 7:** AI usage and spend by domain and source on `/budget`.
+- Phone-width layout fixes on the opportunity page and `/profile`.
+
+The Task 1–9 completion pass and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete. *(Earlier status, superseded on October 17, 2026: "No main-product implementation task is open … The next step is an audit of any remaining gaps in features 1–10.")*
 
 ### Evaluator acceptance state
 
@@ -203,7 +216,7 @@ The main-product branch runs its own unit, DB-backed integration and E2E suites 
 Task 8 and Task 9 are complete. In order:
 
 1. Done: the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
-2. Next: audit and close any remaining gaps in main-product features 1–10.
+2. Now: the Features 1–10 Gap Closure. The audit is complete; the implementation is verified and awaiting review, then the versioned-specification check and the commit.
 3. Build main-product features 11–18:
    - automated discovery/retrieval/scraping;
    - source health and conservative retrieval;

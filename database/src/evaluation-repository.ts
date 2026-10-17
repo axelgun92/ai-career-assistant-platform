@@ -23,7 +23,9 @@ function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
 // and no provenance rows for them): the Customer Success salary hard filter
 // prefers salaryMin/salaryMax over its own parsing and does not compare
 // currencies, so delivering them would silently change recommendations.
-// See HANDOFFS.md ("Task 7 Completion Amendment").
+// See HANDOFFS.md ("Task 7 Completion Amendment"). timeZoneRequirements
+// (stated by the user since the Features 1–10 Gap Closure) is withheld the
+// same way: the evaluator reads time zones from the job text itself.
 export const fieldsWithheldFromEvaluator = [
   "salaryMin",
   "salaryMax",
@@ -35,6 +37,7 @@ export const fieldsWithheldFromEvaluator = [
   "closingDate",
   "residencyRequirement",
   "residencyRegions",
+  "timeZoneRequirements",
 ] as const;
 
 // What the evaluator received for each withheld field before it existed.
@@ -49,6 +52,7 @@ const withheldValues = {
   closingDate: null,
   residencyRequirement: null,
   residencyRegions: [],
+  timeZoneRequirements: null,
 } satisfies Pick<NormalizedOpportunity, (typeof fieldsWithheldFromEvaluator)[number]>;
 
 const withheldFromEvaluator = new Set<string>(fieldsWithheldFromEvaluator);

@@ -14,30 +14,38 @@ const timestamp = new Date("2026-08-12T20:00:00.000Z");
 const opportunityId = "2e041b87-368c-4763-b7b4-7685c3eb0946";
 const sourceRecordId = "2bd4d9a6-a2d7-4dd5-875e-a4c6181748b1";
 
-function createRepository(calls: string[]): ManualOpportunityRepository {
+type IngestInput = Parameters<ManualOpportunityRepository["ingestManualOpportunity"]>[0];
+
+function createRepository(
+  calls: string[],
+  options: { ingestFails?: boolean; seen?: { ingest?: IngestInput; preserved?: RawOpportunity } } = {},
+): ManualOpportunityRepository {
   let rawOpportunity: RawOpportunity | null = null;
   let opportunity: NormalizedOpportunity | null = null;
-  let provenance: Parameters<
-    ManualOpportunityRepository["createDiscoveredOpportunity"]
-  >[0]["provenance"] = [];
+  let provenance: IngestInput["provenance"] = [];
 
   return {
     async createManualSourceRecord(raw) {
       calls.push("source-record");
-      rawOpportunity = raw;
+      if (options.seen) options.seen.preserved = raw;
       return { id: sourceRecordId, discoveredAt: raw.discoveredAt };
     },
-    async createDiscoveredOpportunity(input) {
-      calls.push("opportunity");
-      opportunity = input.opportunity;
+    async ingestManualOpportunity(input) {
+      calls.push("ingest");
+      if (options.seen) options.seen.ingest = input;
+      // A real ingest is one transaction: a failure leaves nothing behind.
+      if (options.ingestFails) throw new Error("ingest transaction failed");
+      rawOpportunity = input.rawOpportunity;
+      opportunity = { ...input.opportunity, status: "NORMALIZED" };
       provenance = input.provenance;
-      return { id: opportunityId };
+      return {
+        opportunityId,
+        deduplication: { outcome: "CREATED", decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] },
+      };
     },
-    async transitionOpportunityStatus() {
-      calls.push("transition");
-      if (opportunity) {
-        opportunity = { ...opportunity, status: "NORMALIZED" };
-      }
+    async checkDuplicates() {
+      calls.push("check");
+      return { decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] };
     },
     async findOpportunityDetail() {
       calls.push("retrieve");
@@ -156,11 +164,12 @@ describe("manual opportunity ingestion", () => {
     );
   });
 
-  it("preserves SourceRecord before normalization and reaches NORMALIZED", async () => {
+  it("writes the raw SourceRecord and the opportunity in one ingest after normalizing", async () => {
     const calls: string[] = [];
+    const seen: { ingest?: IngestInput } = {};
     const normalizer = createManualOpportunityNormalizer();
     const service = createManualOpportunityService({
-      repository: createRepository(calls),
+      repository: createRepository(calls, { seen }),
       normalizer: {
         async normalize(raw) {
           calls.push("normalize");
@@ -177,21 +186,19 @@ describe("manual opportunity ingestion", () => {
       domain: "customer-success",
     });
 
-    expect(calls).toEqual([
-      "source-record",
-      "normalize",
-      "opportunity",
-      "transition",
-      "retrieve",
-    ]);
+    expect(calls).toEqual(["normalize", "ingest", "retrieve"]);
+    expect(seen.ingest?.rawOpportunity.description).toBe(rawText);
+    expect(seen.ingest?.duplicateResolution).toBeNull();
     expect(detail.sourceRecords[0]?.rawDescription).toBe(rawText);
     expect(detail.opportunity.status).toBe("NORMALIZED");
+    expect(detail.deduplication).toEqual({ outcome: "CREATED", decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] });
   });
 
-  it("leaves SourceRecord preserved when normalization fails", async () => {
+  it("leaves the raw SourceRecord preserved (unlinked) when normalization fails", async () => {
     const calls: string[] = [];
+    const seen: { preserved?: RawOpportunity } = {};
     const service = createManualOpportunityService({
-      repository: createRepository(calls),
+      repository: createRepository(calls, { seen }),
       normalizer: {
         async normalize() {
           calls.push("normalize");
@@ -204,6 +211,45 @@ describe("manual opportunity ingestion", () => {
     await expect(service.submit({ rawText: "Preserve me" })).rejects.toThrow(
       "normalization failed",
     );
-    expect(calls).toEqual(["source-record", "normalize"]);
+    expect(calls).toEqual(["normalize", "source-record"]);
+    expect(seen.preserved?.description).toBe("Preserve me");
+  });
+
+  it("writes nothing outside the ingest transaction when it fails", async () => {
+    const calls: string[] = [];
+    const service = createManualOpportunityService({
+      repository: createRepository(calls, { ingestFails: true }),
+      normalizer: createManualOpportunityNormalizer(),
+      clock: () => timestamp,
+    });
+
+    await expect(service.submit({ rawText: "Job" })).rejects.toThrow("ingest transaction failed");
+    expect(calls).toEqual(["ingest"]);
+  });
+
+  it("passes the duplicate choice through without storing it as a listing fact", async () => {
+    const seen: { ingest?: IngestInput } = {};
+    const service = createManualOpportunityService({
+      repository: createRepository([], { seen }),
+      normalizer: createManualOpportunityNormalizer(),
+      clock: () => timestamp,
+    });
+
+    await service.submit({ rawText: "Job", duplicateResolution: "SEPARATE" });
+    expect(seen.ingest?.duplicateResolution).toBe("SEPARATE");
+    expect(JSON.stringify(seen.ingest?.rawOpportunity)).not.toContain("SEPARATE");
+    expect(manualOpportunitySubmissionSchema.safeParse({ rawText: "x", duplicateResolution: "MERGE" }).success).toBe(false);
+  });
+
+  it("checks duplicates without writing anything", async () => {
+    const calls: string[] = [];
+    const service = createManualOpportunityService({
+      repository: createRepository(calls),
+      normalizer: createManualOpportunityNormalizer(),
+      clock: () => timestamp,
+    });
+
+    await expect(service.checkDuplicates({ rawText: "Job" })).resolves.toMatchObject({ decision: "NO_MATCH" });
+    expect(calls).toEqual(["check"]);
   });
 });

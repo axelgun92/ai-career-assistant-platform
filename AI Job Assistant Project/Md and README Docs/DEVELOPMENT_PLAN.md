@@ -1,7 +1,7 @@
 # Development Plan
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 16, 2026
+**Last updated:** October 17, 2026
 
 ## Goal
 
@@ -18,7 +18,7 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Task 8 — Application Tracker completion pass is complete at `534a4c718b21086d9419c0b0d18b0c907c15b3f9`.
 - Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
 - The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
-- Next: an audit of any remaining gaps in main-product features 1–10, then main-product features 11–18.
+- The features 1–10 gap audit is complete (October 17, 2026). The Features 1–10 Gap Closure is implemented and verified and awaiting review (not committed). Main-product features 11–18 follow.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
 **Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
@@ -93,7 +93,8 @@ The completion pass audits existing work against the authoritative PRDs/TDDs and
 
 - Tasks 1–9 have completed their current completion work (Task 8 at `534a4c7`; Task 9 on October 16, 2026).
 - **Done:** the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
-- **Next:** an audit of features 1–10 for any genuine remaining gaps, before moving on to features 11–18.
+- **Done:** the read-only audit of features 1–10 (October 17, 2026). It found the feature 9 deduplication gap and smaller gaps in features 2, 3, 6, 7 and 8.
+- **Now:** the Features 1–10 Gap Closure, implemented and verified and awaiting review. It reuses the existing ingestion boundary; feature 11 extends the same capture transaction and deduplication engine to retrieved sources, adding cross-source matching, canonical-source selection, posting history and any merging of opportunities with history.
 
 ### Completion-pass rule
 

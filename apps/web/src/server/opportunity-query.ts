@@ -183,6 +183,17 @@ function text(params: SearchParamsInput, key: string, maxLength = 200): string |
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// A normalized company name as the dashboard groups companies: lowercase
+// letters and digits in single-spaced words.
+const companyKeyPattern = /^[\p{Ll}\p{Lo}\p{Lm}\p{N}]+(?: [\p{Ll}\p{Lo}\p{Lm}\p{N}]+)*$/u;
+
+// The company filter value: a normalized company name, or (older links and
+// companies not yet backfilled) a company id.
+function companyValue(value: string | undefined): string | null {
+  if (!value) return null;
+  if (uuidPattern.test(value)) return value.toLowerCase();
+  return value.length <= 200 && companyKeyPattern.test(value) ? value : null;
+}
 
 export function isoDate(value: string | undefined): string | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -255,7 +266,7 @@ export function parseOpportunityQuery(
     seniority: multi(params, "seniority", seniorityOptions),
     residency: multi(params, "residency", residencyOptions),
     source: text(params, "source"),
-    company: company && uuidPattern.test(company) ? company.toLowerCase() : null,
+    company: companyValue(company),
     domain: text(params, "domain"),
     title: text(params, "title"),
     location: text(params, "location"),
@@ -360,7 +371,7 @@ export interface OpportunityListFilters {
   seniorities: string[];
   residencyRequirements: string[];
   source: string | null;
-  companyId: string | null;
+  company: string | null;
   domain: string | null;
   titleContains: string | null;
   locationContains: string | null;
@@ -389,7 +400,7 @@ export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
     seniorities: stored(query.seniority, seniorityOptions),
     residencyRequirements: stored(query.residency, residencyOptions),
     source: query.source,
-    companyId: query.company,
+    company: query.company,
     domain: query.domain,
     titleContains: query.title,
     locationContains: query.location,

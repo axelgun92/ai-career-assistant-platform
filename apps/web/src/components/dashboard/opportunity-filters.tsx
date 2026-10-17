@@ -77,6 +77,16 @@ export function changedBeforeHydration(form: HTMLFormElement): boolean {
   });
 }
 
+// The option for the current company filter; an older link by company id
+// selects that company's group.
+export function selectedCompany(
+  value: string | null,
+  companies: DashboardFilterOptions["companies"],
+): string {
+  if (!value) return "";
+  return companies.find((company) => company.value === value || company.companyIds.includes(value))?.value ?? value;
+}
+
 // A plain GET form: every submission is a URL (bookmarkable, back/forward
 // friendly) and works without JavaScript. With JavaScript, changing a
 // checkbox, select or date submits immediately; text submits on Enter. A
@@ -152,10 +162,10 @@ export function OpportunityFilters({
             <legend>Details</legend>
             <label>
               Company
-              <select name="company" defaultValue={query.company ?? ""}>
+              <select name="company" defaultValue={selectedCompany(query.company, options.companies)}>
                 <option value="">Any company</option>
                 {options.companies.map((company) => (
-                  <option key={company.id} value={company.id}>
+                  <option key={company.value} value={company.value}>
                     {company.name} ({company.count})
                   </option>
                 ))}

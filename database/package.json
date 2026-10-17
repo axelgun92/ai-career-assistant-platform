@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ai-career/core": "workspace:*",
+    "@ai-career/deduplication": "workspace:*",
     "@ai-career/evaluation": "workspace:*",
     "@ai-career/evidence": "workspace:*",
     "@ai-career/shared": "workspace:*",

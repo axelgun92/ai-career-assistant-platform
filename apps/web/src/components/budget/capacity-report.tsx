@@ -80,7 +80,52 @@ function Tokens({ report }: { report: BudgetReportView }) {
         <div><dt>Output tokens</dt><dd>{formatCount(tokens.outputTokens)}{unreported(tokens.attemptsWithoutOutputTokens)}</dd></div>
         <div><dt>Total tokens</dt><dd>{formatCount(tokens.totalTokens)}{unreported(tokens.attemptsWithoutTotalTokens)}</dd></div>
       </dl>
+      <UsageBreakdown report={report} />
     </section>
+  );
+}
+
+// Usage and spend by domain and job source (Core PRD §20). Unreported
+// tokens and unknown or other-currency costs are counted, never zero.
+export function UsageBreakdown({ report }: { report: BudgetReportView }) {
+  const rows = report.usageBreakdown ?? [];
+  if (!rows.length) return null;
+  return (
+    <div className="table-scroll">
+      <table className="capacity-table">
+        <caption>Usage and spend by domain and source, {formatPeriodLabel(report.period.label)}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Domain</th>
+            <th scope="col">Source</th>
+            <th scope="col">Evaluations</th>
+            <th scope="col">AI attempts</th>
+            <th scope="col">Total tokens</th>
+            <th scope="col">Known spend</th>
+            <th scope="col">Cost not known</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.domain}-${row.sourceType}-${row.source}`}>
+              <th scope="row">{domainLabel(row.domain)}</th>
+              <td>
+                {sourceTypeLabel(row.sourceType)}
+                {row.source ? ` (${row.source})` : ""}
+              </td>
+              <td>{formatCount(row.evaluations)}</td>
+              <td>{formatCount(row.attempts)}</td>
+              <td>
+                {formatCount(row.totalTokens)}
+                {row.attemptsWithoutTotalTokens > 0 ? ` (${pluralize(row.attemptsWithoutTotalTokens, "attempt")} unreported)` : ""}
+              </td>
+              <td>{formatMoney(row.knownCost, report.currency)}</td>
+              <td>{row.unknownCostAttempts > 0 ? pluralize(row.unknownCostAttempts, "attempt") : "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

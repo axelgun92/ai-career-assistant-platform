@@ -28,17 +28,22 @@ describe("manual capture provenance fields", () => {
 
   it("keeps manual source identity even when the user says it was found on LinkedIn", async () => {
     let captured: RawOpportunity | null = null;
-    let normalized: Parameters<ManualOpportunityRepository["createDiscoveredOpportunity"]>[0] | null = null;
+    let normalized: Parameters<ManualOpportunityRepository["ingestManualOpportunity"]>[0] | null = null;
     const repository: ManualOpportunityRepository = {
       async createManualSourceRecord(raw) {
-        captured = raw;
         return { id: "2bd4d9a6-a2d7-4dd5-875e-a4c6181748b1", discoveredAt: raw.discoveredAt };
       },
-      async createDiscoveredOpportunity(input) {
+      async ingestManualOpportunity(input) {
+        captured = input.rawOpportunity;
         normalized = input;
-        return { id: "2e041b87-368c-4763-b7b4-7685c3eb0946" };
+        return {
+          opportunityId: "2e041b87-368c-4763-b7b4-7685c3eb0946",
+          deduplication: { outcome: "CREATED", decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] },
+        };
       },
-      async transitionOpportunityStatus() {},
+      async checkDuplicates() {
+        return { decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] };
+      },
       async findOpportunityDetail() {
         return { opportunity: {}, sourceRecords: [], fieldProvenance: [] } as unknown as ManualOpportunityDetail;
       },

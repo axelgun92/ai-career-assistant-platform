@@ -8,7 +8,28 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 ## Unreleased
 
-Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026.
+Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026.
+
+### Features 1–10 Gap Closure (October 17, 2026)
+
+- A read-only audit of main-product features 1–10 against the current PRDs/TDDs found that feature 9 (deduplication with provenance retention) was missing, plus smaller gaps in features 2, 3, 6, 7 and 8. The gap closure addresses them; there is no task number by decision.
+- **Deduplication** (`packages/deduplication`, engine `core-dedup-v1`):
+  - **MATCH:** the same listing URL with nothing conflicting, or the same job/requisition ID at the same company. An exact re-capture is attached to the saved opportunity as another source instead of becoming a second opportunity.
+  - **PROBABLE_MATCH:** confidence-scored. The opportunity is created and the pair is recorded for review; nothing is merged on a probable match.
+  - Capture is one transaction (raw source record, decision, create or attach); a normalization failure still preserves the raw record.
+  - "Not the same job" (`DISTINCT`) is reversible.
+  - Existing opportunities are never merged retroactively.
+- **Duplicate-spend guard:** a paid evaluation request or deferred resume is refused (409 `DUPLICATE_LISTING_ALREADY_EVALUATED`) while an exact duplicate already has an evaluation, admission or deferral. The check and admission are serialized by an advisory lock, closing the race between simultaneous requests. The Task 6 admission gate is unchanged.
+- **Companies:** reused by normalized name, with the typed spelling kept in provenance; one dashboard company-filter entry per company. `pnpm db:backfill-dedup [--dry-run]` is explicit, additive and idempotent, and is not part of `pnpm app:setup`; `pnpm app:doctor` reports when it is needed.
+- **Also:**
+  - versions on evaluation-history rows;
+  - an optional user-stated time-zone requirement, withheld from the evaluator;
+  - AI usage and spend by domain and source on `/budget`;
+  - phone-width overflow fixes on the opportunity page and `/profile`.
+- **Migration:** `20261017120000_deduplication`, additive only.
+- **New versioned specifications:** Core AI Framework PRD v1.6, Customer Success AI Assistant PRD v1.5, Core Platform TDD v1.7 and Customer Success Assistant TDD v1.5. Their status sections and the Core TDD §51 deduplication summary are updated; the requirements are unchanged. The previous versions moved unchanged into `Archive/`. The Semantic Evaluation Playbook is unchanged (v1.3).
+- **Verification** (isolated test database, no paid calls): unit 1,128, integration 223, E2E 32/32. No evaluator internals, routing, prompts or recommendation logic changed.
+- Commit: `feat: close features 1–10 gaps` on `claude/gallant-pasteur-y1ou3i`.
 
 ### Post-Task-9 versioned specification update (October 16, 2026)
 

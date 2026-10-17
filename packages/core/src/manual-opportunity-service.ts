@@ -1,4 +1,9 @@
 import { z } from "zod";
+import type {
+  DeduplicationOutcome,
+  DuplicateCheckResult,
+  DuplicateResolutionChoice,
+} from "./deduplication";
 import {
   fieldProvenanceInputSchema,
   type FieldProvenanceInput,
@@ -10,7 +15,6 @@ import {
 import {
   normalizedOpportunitySchema,
   type NormalizedOpportunity,
-  type OpportunityLifecycleState,
 } from "./opportunity";
 import { rawOpportunitySchema, type RawOpportunity } from "./raw-opportunity";
 
@@ -51,6 +55,10 @@ export interface ManualOpportunityDetail {
     rawPostingDate: string | null;
     sourceMetadata: unknown;
     rawPayload: unknown;
+    // Set when this record was attached to the opportunity as an exact
+    // duplicate of an earlier capture.
+    duplicateDecision?: "MATCH" | "PROBABLE_MATCH" | "NO_MATCH" | null;
+    duplicateEvidence?: unknown;
     discoveredAt: Date;
     lastObservedAt: Date;
     normalizedAt: Date | null;
@@ -72,24 +80,38 @@ export interface ManualOpportunityDetail {
 }
 
 export interface ManualOpportunityRepository {
+  // Preserves a raw capture whose normalization failed. It stays unlinked
+  // (no opportunity) so normalization can be corrected later without
+  // recollecting it (Core TDD §11).
   createManualSourceRecord(
     rawOpportunity: RawOpportunity,
   ): Promise<PreservedSourceRecord>;
-  createDiscoveredOpportunity(input: {
-    sourceRecordId: string;
+  // One transaction: the raw SourceRecord is written first, then the
+  // duplicate decision and either a new NORMALIZED opportunity (with field
+  // provenance and any duplicate references) or, for an exact duplicate,
+  // the attachment of that SourceRecord to the existing opportunity. A
+  // failure leaves nothing behind.
+  ingestManualOpportunity(input: {
+    rawOpportunity: RawOpportunity;
     opportunity: NormalizedOpportunity;
     provenance: FieldProvenanceInput[];
-  }): Promise<{ id: string }>;
-  transitionOpportunityStatus(input: {
-    opportunityId: string;
-    from: OpportunityLifecycleState;
-    to: OpportunityLifecycleState;
-  }): Promise<void>;
+    duplicateResolution: DuplicateResolutionChoice | null;
+  }): Promise<{ opportunityId: string; deduplication: DeduplicationOutcome }>;
+  // Read-only: the decision a capture would get now.
+  checkDuplicates(input: {
+    rawOpportunity: RawOpportunity;
+    opportunity: NormalizedOpportunity;
+  }): Promise<DuplicateCheckResult>;
   findOpportunityDetail(id: string): Promise<ManualOpportunityDetail | null>;
 }
 
+export type ManualOpportunitySubmitResult = ManualOpportunityDetail & {
+  deduplication: DeduplicationOutcome;
+};
+
 export interface ManualOpportunityService {
-  submit(input: unknown): Promise<ManualOpportunityDetail>;
+  submit(input: unknown): Promise<ManualOpportunitySubmitResult>;
+  checkDuplicates(input: unknown): Promise<DuplicateCheckResult>;
   getById(id: unknown): Promise<ManualOpportunityDetail | null>;
 }
 
@@ -100,100 +122,121 @@ export function createManualOpportunityService(input: {
 }): ManualOpportunityService {
   const clock = input.clock ?? (() => new Date());
 
-  return {
-    async submit(unvalidatedInput) {
-      const submission = manualOpportunitySubmissionSchema.parse(unvalidatedInput);
-      const discoveredAt = clock();
-      const rawOpportunity = rawOpportunitySchema.parse({
-        source: "manual-input",
-        sourceType: "MANUAL",
-        sourceUrl: submission.sourceUrl ?? null,
+  function rawOpportunityFor(
+    submission: z.infer<typeof manualOpportunitySubmissionSchema>,
+    discoveredAt: Date,
+  ): RawOpportunity {
+    return rawOpportunitySchema.parse({
+      source: "manual-input",
+      sourceType: "MANUAL",
+      sourceUrl: submission.sourceUrl ?? null,
+      applicationUrl: submission.applicationUrl ?? null,
+      domain: submission.domain ?? null,
+      externalId: submission.sourceJobId?.trim() ?? null,
+      requisitionId: null,
+      title: submission.title ?? null,
+      company: submission.company ?? null,
+      location: submission.location ?? null,
+      description: submission.rawText,
+      salaryText: submission.compensationText ?? null,
+      employmentType: submission.employmentType ?? null,
+      postingDate: submission.postingDate ?? null,
+      sourceMetadata: {
         applicationUrl: submission.applicationUrl ?? null,
         domain: submission.domain ?? null,
-        externalId: submission.sourceJobId?.trim() ?? null,
-        requisitionId: null,
-        title: submission.title ?? null,
-        company: submission.company ?? null,
-        location: submission.location ?? null,
-        description: submission.rawText,
-        salaryText: submission.compensationText ?? null,
-        employmentType: submission.employmentType ?? null,
-        postingDate: submission.postingDate ?? null,
-        sourceMetadata: {
-          applicationUrl: submission.applicationUrl ?? null,
-          domain: submission.domain ?? null,
-          // Informational only; never used as the source identity.
-          reportedSource: submission.foundOn?.trim() ?? null,
-          // Details the user stated explicitly (see manualStatedDetailsSchema).
-          details: {
-            workArrangement: submission.workArrangement ?? null,
-            seniority: submission.seniority ?? null,
-            department: submission.department ?? null,
-            closingDate: submission.closingDate ?? null,
-            compensationCurrency: submission.compensationCurrency ?? null,
-            residencyRequirement: submission.residencyRequirement ?? null,
-            residencyRegions: submission.residencyRegions ?? null,
-          },
-        },
-        rawPayload: {
-          rawText: submission.rawText,
-          title: submission.title ?? null,
-          company: submission.company ?? null,
-          location: submission.location ?? null,
-          compensationText: submission.compensationText ?? null,
-          postingDate: submission.postingDate ?? null,
-          sourceUrl: submission.sourceUrl ?? null,
-          applicationUrl: submission.applicationUrl ?? null,
-          domain: submission.domain ?? null,
-          sourceJobId: submission.sourceJobId ?? null,
-          foundOn: submission.foundOn ?? null,
+        // Informational only; never used as the source identity.
+        reportedSource: submission.foundOn?.trim() ?? null,
+        // Details the user stated explicitly (see manualStatedDetailsSchema).
+        details: {
           workArrangement: submission.workArrangement ?? null,
           seniority: submission.seniority ?? null,
-          employmentType: submission.employmentType ?? null,
           department: submission.department ?? null,
           closingDate: submission.closingDate ?? null,
+          timeZoneRequirements: submission.timeZoneRequirements ?? null,
           compensationCurrency: submission.compensationCurrency ?? null,
           residencyRequirement: submission.residencyRequirement ?? null,
           residencyRegions: submission.residencyRegions ?? null,
         },
-        discoveredAt,
-      });
+      },
+      rawPayload: {
+        rawText: submission.rawText,
+        title: submission.title ?? null,
+        company: submission.company ?? null,
+        location: submission.location ?? null,
+        compensationText: submission.compensationText ?? null,
+        postingDate: submission.postingDate ?? null,
+        sourceUrl: submission.sourceUrl ?? null,
+        applicationUrl: submission.applicationUrl ?? null,
+        domain: submission.domain ?? null,
+        sourceJobId: submission.sourceJobId ?? null,
+        foundOn: submission.foundOn ?? null,
+        workArrangement: submission.workArrangement ?? null,
+        seniority: submission.seniority ?? null,
+        employmentType: submission.employmentType ?? null,
+        department: submission.department ?? null,
+        closingDate: submission.closingDate ?? null,
+        timeZoneRequirements: submission.timeZoneRequirements ?? null,
+        compensationCurrency: submission.compensationCurrency ?? null,
+        residencyRequirement: submission.residencyRequirement ?? null,
+        residencyRegions: submission.residencyRegions ?? null,
+      },
+      discoveredAt,
+    });
+  }
 
-      const sourceRecord = await input.repository.createManualSourceRecord(
-        rawOpportunity,
-      );
-      const normalization = await input.normalizer.normalize(rawOpportunity);
-      const opportunity = normalizedOpportunitySchema.parse(
-        normalization.opportunity,
-      );
-      const provenance = z
-        .array(fieldProvenanceInputSchema)
-        .parse(normalization.provenance);
+  // Deterministic and side-effect free.
+  async function normalize(rawOpportunity: RawOpportunity) {
+    const normalization = await input.normalizer.normalize(rawOpportunity);
+    const opportunity = normalizedOpportunitySchema.parse(
+      normalization.opportunity,
+    );
+    const provenance = z
+      .array(fieldProvenanceInputSchema)
+      .parse(normalization.provenance);
 
-      if (opportunity.status !== "DISCOVERED") {
-        throw new Error(
-          "A newly normalized opportunity must begin in DISCOVERED state",
-        );
+    if (opportunity.status !== "DISCOVERED") {
+      throw new Error(
+        "A newly normalized opportunity must begin in DISCOVERED state",
+      );
+    }
+    return { opportunity, provenance };
+  }
+
+  return {
+    async submit(unvalidatedInput) {
+      const submission = manualOpportunitySubmissionSchema.parse(unvalidatedInput);
+      const rawOpportunity = rawOpportunityFor(submission, clock());
+
+      let normalized: Awaited<ReturnType<typeof normalize>>;
+      try {
+        normalized = await normalize(rawOpportunity);
+      } catch (error) {
+        // The raw capture is still preserved, unlinked, before the error is
+        // reported.
+        await input.repository.createManualSourceRecord(rawOpportunity);
+        throw error;
       }
 
-      const created = await input.repository.createDiscoveredOpportunity({
-        sourceRecordId: sourceRecord.id,
-        opportunity,
-        provenance,
+      const ingested = await input.repository.ingestManualOpportunity({
+        rawOpportunity,
+        opportunity: normalized.opportunity,
+        provenance: normalized.provenance,
+        duplicateResolution: submission.duplicateResolution ?? null,
       });
 
-      await input.repository.transitionOpportunityStatus({
-        opportunityId: created.id,
-        from: "DISCOVERED",
-        to: "NORMALIZED",
-      });
-
-      const detail = await input.repository.findOpportunityDetail(created.id);
+      const detail = await input.repository.findOpportunityDetail(ingested.opportunityId);
       if (!detail) {
         throw new Error("Persisted opportunity could not be retrieved");
       }
 
-      return detail;
+      return { ...detail, deduplication: ingested.deduplication };
+    },
+
+    async checkDuplicates(unvalidatedInput) {
+      const submission = manualOpportunitySubmissionSchema.parse(unvalidatedInput);
+      const rawOpportunity = rawOpportunityFor(submission, clock());
+      const { opportunity } = await normalize(rawOpportunity);
+      return input.repository.checkDuplicates({ rawOpportunity, opportunity });
     },
 
     async getById(id) {

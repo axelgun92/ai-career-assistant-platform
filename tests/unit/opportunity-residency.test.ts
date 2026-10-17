@@ -260,12 +260,15 @@ describe("manual submission", () => {
     let captured: RawOpportunity | null = null;
     await createManualOpportunityService({
       repository: {
-        createManualSourceRecord: async (rawOpportunity) => {
+        createManualSourceRecord: async () => ({ id: "source-1", discoveredAt }),
+        ingestManualOpportunity: async ({ rawOpportunity }) => {
           captured = rawOpportunity;
-          return { id: "source-1", discoveredAt };
+          return {
+            opportunityId: "opportunity-1",
+            deduplication: { outcome: "CREATED", decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] },
+          };
         },
-        createDiscoveredOpportunity: async () => ({ id: "opportunity-1" }),
-        transitionOpportunityStatus: async () => undefined,
+        checkDuplicates: async () => ({ decision: "NO_MATCH", canonicalOpportunityId: null, matches: [] }),
         findOpportunityDetail: async () => ({ opportunity: { id: "opportunity-1" } }) as never,
       },
       normalizer: createManualOpportunityNormalizer(),

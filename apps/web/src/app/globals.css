@@ -109,6 +109,15 @@ pre {
   padding-left: 1.25rem;
 }
 
+/* Long unbroken values (listing URLs, IDs) wrap instead of widening the
+   page on a phone. */
+.provenance dd,
+.source-details dd,
+.provenance-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .provenance-list li {
   margin-bottom: 0.75rem;
 }
@@ -635,6 +644,9 @@ blockquote {
 
 .table-scroll {
   overflow-x: auto;
+  /* Contains absolutely positioned content (visually hidden labels), so it
+     scrolls with the table instead of widening the page on a phone. */
+  position: relative;
 }
 
 .table-scroll table {
@@ -930,6 +942,55 @@ blockquote {
   border-color: #a16207;
   color: #713f12;
   background: #fefce8;
+}
+
+.status-label-duplicate {
+  border-color: #6d28d9;
+  color: #4c1d95;
+  background: #f5f3ff;
+}
+
+.duplicate-notices {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-left: 4px solid #6d28d9;
+  background: #f5f3ff;
+}
+
+.duplicate-notices h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.duplicate-notices ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.duplicate-notices li + li {
+  margin-top: 0.5rem;
+}
+
+.duplicate-notices .duplicate-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+}
+
+.duplicate-match {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #6d28d9;
+  border-radius: 6px;
+  background: #f5f3ff;
+}
+
+.duplicate-match .duplicate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .deferred-notice {

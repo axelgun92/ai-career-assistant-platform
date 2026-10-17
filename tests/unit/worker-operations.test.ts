@@ -272,6 +272,7 @@ describe("pnpm app:doctor checks", () => {
       expiredExhausted: 1,
     }),
     openDeferrals: async () => ({ open: 1, waitingForUsageLimits: 0, pinnedToOtherVersion: 0 }),
+    companiesNeedingBackfill: async () => 0,
     ...overrides,
   });
 
@@ -292,6 +293,19 @@ describe("pnpm app:doctor checks", () => {
     expect(text).toMatch(/Stale evaluations: 1 evaluation\(s\) exceeded their worker lease .* does not prove the worker stopped/);
     expect(text).toContain("it recovers them on startup");
     for (const secret of ["secret-password", "YOUR_OPENAI_API_KEY", "localhost:5432"]) expect(text).not.toContain(secret);
+  });
+
+  it("reports companies awaiting the deduplication backfill without running it", async () => {
+    const run = async (count: number) =>
+      formatDoctorChecks(await runDoctorChecks({
+        environment, nodeVersion: "22.1.0", migrationFolders: ["001_init"], prismaClientGenerated: true,
+        reads: reads({ companiesNeedingBackfill: async () => count }), now,
+      }));
+    expect(await run(0)).toContain("PASS  Company names: normalized");
+    const pending = await run(3);
+    expect(pending).toContain("WARN  Company names: 3 companies have no normalized name");
+    expect(pending).toContain("Run pnpm db:backfill-dedup --dry-run, then pnpm db:backfill-dedup");
+    expect(await run(1)).toContain("1 company has no normalized name");
   });
 
   it("reports the evaluator's built-in policy version and warns on a stale override", async () => {

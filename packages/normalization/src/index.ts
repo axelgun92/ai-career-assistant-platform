@@ -100,6 +100,8 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const details = statedDetails(rawOpportunity);
       const closingDate = parseExplicitDate(details.closingDate, "closing date");
       const department = normalizeOptionalText(details.department);
+      // Only as the user stated it; the job text is never scanned for it.
+      const timeZoneRequirements = normalizeOptionalText(details.timeZoneRequirements);
       const employmentType = standardizeEmploymentType(
         normalizeOptionalText(rawOpportunity.employmentType),
       );
@@ -155,7 +157,7 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         seniority,
         location,
         remoteStatus,
-        timeZoneRequirements: null,
+        timeZoneRequirements,
         residencyRequirement,
         residencyRegions,
         salaryMin: compensation.minimum,
@@ -285,6 +287,17 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
             sourceField: "department",
             sourceValue: details.department,
             normalizedValue: department,
+            collectedAt: rawOpportunity.discoveredAt,
+          }),
+        );
+      }
+      if (timeZoneRequirements !== null && details.timeZoneRequirements !== null) {
+        provenance.push(
+          provenanceFor({
+            fieldName: "timeZoneRequirements",
+            sourceField: "timeZoneRequirements",
+            sourceValue: details.timeZoneRequirements,
+            normalizedValue: timeZoneRequirements,
             collectedAt: rawOpportunity.discoveredAt,
           }),
         );

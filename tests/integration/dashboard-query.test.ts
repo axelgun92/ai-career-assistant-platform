@@ -402,7 +402,9 @@ describe("summary", () => {
     const options = await dashboard.filterOptions();
     expect(options.sources.map((item) => item.value)).toEqual(expect.arrayContaining(["greenhouse", "linkedin-import"]));
     expect(options.domains.map((item) => item.value)).toEqual(expect.arrayContaining(["account-management", "customer-success"]));
-    expect(options.companies.find((item) => item.id === companyIds.Acme)).toMatchObject({ count: 2 });
+    // One entry per logical company (its normalized name, or the id of a
+    // company not yet backfilled).
+    expect(options.companies.find((item) => item.companyIds.includes(companyIds.Acme!))).toMatchObject({ count: 2 });
   });
 });
 

@@ -24,8 +24,10 @@ export async function POST(request: Request) {
   try {
     const detail = await getManualOpportunityService().submit(requestBody);
 
+    // An exact duplicate is attached to the opportunity already saved: 200
+    // with that opportunity, never a second one.
     return Response.json(detail, {
-      status: 201,
+      status: detail.deduplication.outcome === "ATTACHED" ? 200 : 201,
       headers: {
         Location: `/opportunities/${detail.opportunity.id}`,
       },

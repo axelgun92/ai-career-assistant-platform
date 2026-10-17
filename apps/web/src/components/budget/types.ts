@@ -100,6 +100,21 @@ export interface SpendBucketView {
   unknownCostAttempts: number;
 }
 
+// Usage and known spend in the period for one domain and job source.
+export interface UsageBreakdownView {
+  domain: string;
+  sourceType: string | null;
+  source: string | null;
+  attempts: number;
+  evaluations: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  attemptsWithoutTotalTokens: number;
+  knownCost: number | null;
+  unknownCostAttempts: number;
+}
+
 // The operational usage, capacity and backlog report for /budget.
 export interface BudgetReportView {
   generatedAt: string;
@@ -115,6 +130,8 @@ export interface BudgetReportView {
     attemptsWithoutOutputTokens: number;
     attemptsWithoutTotalTokens: number;
   };
+  // Optional so reports from before the breakdown still render.
+  usageBreakdown?: UsageBreakdownView[];
   counts: { totals: Omit<CountRowView, "domain" | "sourceType">; breakdown: CountRowView[] };
   capacity: {
     averageEvaluationCost: number | null;

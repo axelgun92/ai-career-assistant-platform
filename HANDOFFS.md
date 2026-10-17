@@ -910,3 +910,59 @@ When that branch's progress records are carried into the canonical documents (Oc
 - The checklist item 7 clarification (the single-worker lock's connection-loss caveat) stays open for the Codex review at final integration. The final integration gates are unchanged.
 - Evaluator routing and contracts remain branch-specific: the main-product branch runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2`, `cs-organizational-maturity-v6` with GPT-5.6 Luna for Company Alignment and Burnout Risk and all ten Task 7 fields withheld; `codex/evaluator-live-diagnostic` carries v7/v4/v7, the GPT-6 Luna routes and the five-field release (`267124f`). See `EVALUATOR_STATUS.md` §20.
 - Next on the main-product workstream: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then features 11–18.
+
+### Features 1–10 Gap Closure — shared-boundary record (October 17, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-17\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+The read-only audit of main-product features 1–10 found that feature 9 (deduplication with provenance retention) was missing. The gap closure implements it at the existing ingestion boundary, together with smaller fixes. No evaluator stage, prompt, schema, routing, salary policy, evidence behavior or recommendation logic changed, and no change was made on `codex/evaluator-live-diagnostic`. These are the points that touch shared contracts:
+
+1. **Capture transaction and the `ManualOpportunityRepository` port** (`packages/core/src/manual-opportunity-service.ts`, `database/src/manual-opportunity-repository.ts`).
+   - `createDiscoveredOpportunity()` and `transitionOpportunityStatus()` are replaced by `ingestManualOpportunity()`, plus a read-only `checkDuplicates()`.
+   - Normalization runs first. One transaction under a capture advisory lock then writes the raw `SourceRecord`, decides duplicates, and either creates the `NORMALIZED` opportunity (with field provenance) or attaches the `SourceRecord` to the existing opportunity.
+   - A normalization failure still preserves the raw `SourceRecord`, unlinked, through `createManualSourceRecord()`.
+   - Both branches edit these files: expect merge conflicts at final integration.
+2. **`loadSubject()` raw sources.** The code is unchanged, but an opportunity can now have attached duplicate `SourceRecord`s, ordered after the original.
+   - The Customer Success evaluator reads `rawSources[0]` and `postingHistory` payloads. Manual payloads have none, so semantic inputs are unchanged.
+   - Retrieved sources that carry posting history will feed Ghost Job Risk on purpose once feature 11 exists.
+3. **`fieldsWithheldFromEvaluator` gains `timeZoneRequirements`** (now user-stated, optional), so the evaluator subject is unchanged.
+   - The evaluator branch rewrites the same list for the five-field release (`267124f`). At integration, keep `timeZoneRequirements` withheld unless the evaluator adopts it deliberately.
+4. **Company reuse.** New captures link to the oldest `Company` with the same normalized name.
+   - For such a capture, `opportunity.companyName`, which reaches the semantic operations, is that company's stored spelling (user decision D1). What the user typed stays in `SourceRecord.rawCompany` and the `company.name` field provenance.
+   - Existing opportunities and companies are never re-linked or renamed.
+5. **Duplicate-spend refusal** (`apps/web/src/server/evaluation-service.ts`).
+   - Before admission, a request or resume is refused with 409 `DUPLICATE_LISTING_ALREADY_EVALUATED` when all of the following hold:
+     - the opportunity has never completed an evaluation;
+     - an unresolved exact duplicate has a completed or active evaluation, a live admission, or an open deferral.
+   - The check and the admission it allows run under `withDuplicateSpendLock` (a session advisory lock, key 41220/3, on its own short-lived connection).
+   - The Task 6 admission gate, `enqueueAdmitted()`, the queue and the worker are unchanged.
+   - Like the worker lock, the guarantee holds while the lock's connection stays up.
+6. **Schema:** migration `20261017120000_deduplication`, additive. It adds enum `DuplicateResolution`, `DuplicateReference.resolution`/`resolvedAt`, and `SourceRecord.duplicateDecision`/`duplicateEvidence`. The `Recommendation.evidenceReferences` drift is excluded.
+7. **Data backfill:** `pnpm db:backfill-dedup [--dry-run]` is explicit, additive and idempotent, and is not part of `pnpm app:setup`. It has been run only on the isolated test database. Running it on the normal application database is the user's decision.
+
+Final Integration Checklist: add items 1–5 to the Codex review list. Feature 11 must reuse the capture transaction and the engine for retrieved sources.
+
+### Closure Annotation — October 17, 2026: Features 1–10 Gap Closure (Claude main-product workstream)
+
+**Date:** 2026-10-17\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Closed for review (annotation only; every entry above, including the shared-boundary record, is preserved as written)
+
+- The user reviewed and approved the implementation and verification. The closeout is complete:
+  - the documentation is synchronized;
+  - after a substantive check, the new versioned specifications document the implemented behavior: Core AI Framework PRD v1.6, Customer Success PRD v1.5, Core Platform TDD v1.7 (§51) and Customer Success TDD v1.5 (§40, §49);
+  - the previous versions are archived unchanged.
+- The checkpoint commit to `claude/gallant-pasteur-y1ou3i` follows the user's commit approval; `main` is not merged.
+- The shared-boundary items 1–5 in the record above stay open for the Codex review at final integration:
+  - the capture transaction and repository port;
+  - attached sources in `loadSubject()`;
+  - `timeZoneRequirements` withheld;
+  - the reused-company spelling;
+  - the duplicate-spend refusal and its lock.
+- Running `pnpm db:backfill-dedup` on the normal application database remains the user's decision.
+- Evaluator routing and contracts remain branch-specific, as recorded in the October 16 closure annotation and `EVALUATOR_STATUS.md` §20.
+- Next on the main-product workstream: features 11–18. Feature 11 reuses the capture transaction and the deduplication engine for retrieved sources.

@@ -27,6 +27,7 @@
     "db:migrate": "prisma migrate deploy --config database/prisma.config.ts",
     "db:status": "prisma migrate status --config database/prisma.config.ts",
     "db:verify-migrations": "tsx database/scripts/verify-migrations.ts",
+    "db:backfill-dedup": "tsx database/scripts/backfill-deduplication.ts",
     "app:setup": "pnpm prisma:generate && pnpm db:migrate",
     "app:doctor": "tsx apps/web/src/server/doctor-cli.ts"
   },

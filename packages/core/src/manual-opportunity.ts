@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { duplicateResolutionChoiceSchema } from "./deduplication";
 import { parseGeographyList, residencyRequirementFor, residencyRequirementValues } from "./geography";
 import {
   compensationCurrencyCodes,
@@ -44,6 +45,12 @@ export const manualOpportunitySubmissionSchema = z
       "Department must be at most 120 characters",
     ),
     closingDate: z.iso.date().optional(),
+    // Stated time-zone requirements (for example "US Eastern hours"); never
+    // read from the job text.
+    timeZoneRequirements: optionalSuppliedText.refine(
+      (value) => value === undefined || value.trim().length <= 120,
+      "Time-zone requirements must be at most 120 characters",
+    ),
     compensationCurrency: z.enum(compensationCurrencyCodes).optional(),
     // Where the employee may (or must) reside, as the listing states it.
     residencyRequirement: z.enum(residencyRequirementValues).optional(),
@@ -56,6 +63,9 @@ export const manualOpportunitySubmissionSchema = z
         value === undefined || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value),
       "Domain must be a lowercase slug such as customer-success",
     ),
+    // Processing choice for an exact duplicate (not a listing fact; never
+    // stored in the raw payload). Absent means ATTACH.
+    duplicateResolution: duplicateResolutionChoiceSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -82,6 +92,7 @@ export const manualStatedDetailsSchema = z
     seniority: z.enum(seniorityValues).nullable().default(null),
     department: z.string().nullable().default(null),
     closingDate: z.string().nullable().default(null),
+    timeZoneRequirements: z.string().nullable().default(null),
     compensationCurrency: z.enum(compensationCurrencyCodes).nullable().default(null),
     residencyRequirement: z.enum(residencyRequirementValues).nullable().default(null),
     residencyRegions: z.string().nullable().default(null),
@@ -91,6 +102,7 @@ export const manualStatedDetailsSchema = z
     seniority: null,
     department: null,
     closingDate: null,
+    timeZoneRequirements: null,
     compensationCurrency: null,
     residencyRequirement: null,
     residencyRegions: null,

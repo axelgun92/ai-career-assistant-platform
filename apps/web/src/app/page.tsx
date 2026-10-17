@@ -84,7 +84,12 @@ export default async function HomePage({
       return null;
     }),
   ]);
-  const companyNames = Object.fromEntries(filterOptions.companies.map((company) => [company.id, company.name]));
+  const companyNames = Object.fromEntries(
+    filterOptions.companies.flatMap((company) => [
+      [company.value, company.name],
+      ...company.companyIds.map((id) => [id, company.name]),
+    ]),
+  );
   const filtered = hasActiveFilters(query);
 
   return (
