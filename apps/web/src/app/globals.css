@@ -1576,6 +1576,35 @@ main {
   margin-top: 0.75rem;
 }
 
+.source-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.status-label-health-good {
+  border-color: #15803d;
+  color: #14532d;
+  background: #f0fdf4;
+}
+
+.status-label-health-warn {
+  border-color: #a16207;
+  color: #713f12;
+  background: #fefce8;
+}
+
+.status-label-health-bad {
+  border-color: #b91c1c;
+  color: #7f1d1d;
+  background: #fef2f2;
+}
+
+.source-health-notes {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
 .listing-changed {
   margin: 0.5rem 0 1rem;
   padding: 0.75rem 1rem;

@@ -285,6 +285,9 @@ model RetrievalSource {
   config          Json
   scheduleMinutes Int            @default(720)
   lastRunAt       DateTime?      @db.Timestamptz(3)
+  // The earliest time the next run may start after source failures (backoff
+  // or a wait the source asked for); null when the normal schedule applies.
+  nextEligibleAt  DateTime?      @db.Timestamptz(3)
   archivedAt      DateTime?      @db.Timestamptz(3)
   runs            RetrievalRun[]
   sourceRecords   SourceRecord[]
@@ -307,6 +310,9 @@ model RetrievalRun {
   // A safe code and message only; never a response body or credential.
   errorCode         String?
   errorMessage      String?
+  // When the source asked us to wait until (a valid Retry-After on a 429 or
+  // 503 in this run).
+  retryAfterUntil   DateTime?          @db.Timestamptz(3)
   sourceRecords     SourceRecord[]
   createdAt         DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime           @updatedAt @db.Timestamptz(3)

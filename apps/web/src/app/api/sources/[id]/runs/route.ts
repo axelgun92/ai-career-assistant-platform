@@ -9,7 +9,9 @@ export async function GET(_request: Request, context: Context) {
 }
 
 // Run now: queues a run for the retrieval worker (one at a time per source).
-export async function POST(_request: Request, context: Context) {
+// An optional {"override": true} body runs once past our own backoff; a rate
+// limit or a wait the source asked for is never overridden.
+export async function POST(request: Request, context: Context) {
   const { id } = await context.params;
-  return createRetrievalApiHandlers(getRetrievalService()).runNow(id);
+  return createRetrievalApiHandlers(getRetrievalService()).runNow(id, request);
 }

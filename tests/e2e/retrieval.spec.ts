@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { build } from "esbuild";
 
-// Features 11A and 11B: Greenhouse, Workday, Workable and Wellfound sources added and
-// run from /sources. The retrieval worker iteration runs in a helper with
+// Features 11A, 11B and 12: Greenhouse, Workday, Workable and Wellfound sources added and
+// run from /sources, and a rate-limited source's health and Run now gate. The retrieval worker iteration runs in a helper with
 // the fixture transport (the committed fixtures); nothing reaches the
 // network. The tests share fixture listings, so they run in order.
 test.describe.configure({ mode: "serial" });
@@ -179,4 +179,37 @@ test("Workday, Workable and Wellfound sources run from /sources; Welcome to the 
   const jungle = await addSource(page, "welcome-to-the-jungle", `WTTJ E2E ${suffix}`);
   await expect(jungle).toContainText("Cannot be enabled");
   await expect(jungle.getByRole("button", { name: "Enable" })).toBeDisabled();
+});
+
+test("a rate-limited source shows when it may run again, Run now waits, and a later success is healthy", async ({ page }) => {
+  const name = `GitLab limited E2E ${randomUUID().slice(0, 8)}`;
+  const card = await addGreenhouseSource(page, name);
+  await card.getByRole("button", { name: "Enable" }).click();
+  await expect(card).toContainText("Not yet run");
+  await card.getByRole("button", { name: "Run now" }).click();
+  await expect(card.getByRole("status")).toBeVisible();
+  expect(JSON.parse(await runHelper("run-retrieval", "rate-limited"))).toMatchObject({ status: "FAILED", errorCode: "RATE_LIMITED" });
+
+  await page.reload();
+  await expect(card.getByLabel("Health: Rate limited")).toBeVisible();
+  await expect(card).toContainText(/Rate limited until \d{1,2} \w{3} \d{4}, \d{2}:\d{2} UTC/);
+  await expect(card).toContainText("(the source rate limited retrieval)");
+  await expect(card).toContainText("Latest failure:");
+  await expect(card.getByRole("button", { name: "Run now" })).toBeDisabled();
+  // The API refuses too, even with an override.
+  const id = sourceIds[sourceIds.length - 1]!;
+  const refused = await page.request.post(`/api/sources/${id}/runs`, { data: { override: true } });
+  expect(refused.status()).toBe(409);
+  expect(await refused.json()).toMatchObject({ code: "SOURCE_RATE_LIMITED", until: expect.any(String) });
+
+  await runHelper("expire-gate", id);
+  await page.reload();
+  await expect(card.getByLabel("Health: Degraded")).toBeVisible();
+  await card.getByRole("button", { name: "Run now" }).click();
+  await expect(card.getByRole("status")).toHaveText("Run queued. The retrieval worker will pick it up.");
+  expect(JSON.parse(await runHelper("run-retrieval"))).toMatchObject({ status: "COMPLETED" });
+  await page.reload();
+  await expect(card.getByLabel("Health: Healthy")).toBeVisible();
+  await expect(card).not.toContainText("Rate limited until");
+  await expect(card).not.toContainText("Latest failure:");
 });

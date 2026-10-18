@@ -1,3 +1,4 @@
+import { deriveSourceHealth, type HealthRun } from "@ai-career/core";
 import { normalizeCompanyName } from "@ai-career/deduplication";
 import { defaultAdapterRegistry, missingEnvironment } from "@ai-career/discovery";
 import type { QueueSnapshot } from "@ai-career/database";
@@ -34,13 +35,25 @@ export interface DoctorReads {
   // Companies `pnpm db:backfill-dedup` would give a normalized name.
   companiesNeedingBackfill(): Promise<number>;
   // Automated retrieval (feature 11): enabled sources, failed runs in the
-  // last 24 hours and whether the retrieval worker holds its lock.
+  // last 24 hours and whether the retrieval worker holds its lock; with
+  // feature 12, what each enabled source's health is derived from.
   retrieval?(now: Date): Promise<{
     workerConnected: boolean;
-    enabledSources: Array<{ adapterKey: string; name: string }>;
+    enabledSources: Array<{ adapterKey: string; name: string; health?: DoctorSourceHealthInputs }>;
     failedRunsLastDay: number;
   }>;
 }
+
+export interface DoctorSourceHealthInputs {
+  scheduleMinutes: number;
+  lastRunAt: Date | null;
+  nextEligibleAt: Date | null;
+  // Recent runs, newest first.
+  runs: HealthRun[];
+  lastSuccess: HealthRun | null;
+}
+
+const doctorTime = (value: Date) => `${value.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
 export interface DoctorInputs {
   environment: NodeJS.ProcessEnv;
@@ -227,6 +240,35 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
           ? "not running; start pnpm worker:retrieval to run enabled sources"
           : "not running (not needed until a source is enabled)",
     );
+    // Source health (feature 12): read-only; the doctor never clears a gate.
+    const attention = retrieval.enabledSources.flatMap((source) => {
+      if (!source.health) return [];
+      const health = deriveSourceHealth({
+        enabled: true,
+        archivedAt: null,
+        blockedReason: null,
+        scheduleMinutes: source.health.scheduleMinutes,
+        lastRunAt: source.health.lastRunAt,
+        nextEligibleAt: source.health.nextEligibleAt,
+        runsNewestFirst: source.health.runs,
+        lastSuccess: source.health.lastSuccess,
+        now: inputs.now,
+      });
+      const reasons: string[] = [];
+      if (health.status === "rate_limited" && health.gate) reasons.push(`rate limited until ${doctorTime(health.gate.until)}`);
+      if (health.status === "provider_wait" && health.gate) reasons.push(`the source asked to wait until ${doctorTime(health.gate.until)}`);
+      if (health.status === "needs_attention") reasons.push(`needs attention (${health.lastFailure?.code ?? "source failure"})`);
+      if (health.status === "failing") reasons.push(`failing (${health.streak} source failures in a row)`);
+      if (health.stale) reasons.push("no successful retrieval for more than two schedule intervals");
+      return reasons.length ? [`${source.name} (${reasons.join("; ")})`] : [];
+    });
+    if (enabled > 0) {
+      add(
+        attention.length ? "WARN" : "PASS",
+        "Retrieval source health",
+        attention.length ? `${attention.join(", ")}; see /sources` : "no enabled source needs attention",
+      );
+    }
     add(
       retrieval.failedRunsLastDay > 0 ? "WARN" : "PASS",
       "Retrieval runs",
@@ -276,9 +318,44 @@ export function createDoctorReads(client: {
     },
     queueSnapshot: (now) => helpers.queueSnapshot(now),
     async retrieval(now) {
-      const enabledSources = (await client.$queryRaw`
-        SELECT "adapterKey", "name" FROM "RetrievalSource"
-        WHERE "enabled" AND "archivedAt" IS NULL ORDER BY "createdAt" ASC, "id" ASC`) as Array<{ adapterKey: string; name: string }>;
+      const sources = (await client.$queryRaw`
+        SELECT "id", "adapterKey", "name", "scheduleMinutes", "lastRunAt", "nextEligibleAt" FROM "RetrievalSource"
+        WHERE "enabled" AND "archivedAt" IS NULL ORDER BY "createdAt" ASC, "id" ASC`) as Array<{
+        id: string;
+        adapterKey: string;
+        name: string;
+        scheduleMinutes: number;
+        lastRunAt: Date | null;
+        nextEligibleAt: Date | null;
+      }>;
+      type RunRow = HealthRun & { retrievalSourceId: string };
+      const recentRuns = (await client.$queryRaw`
+        SELECT r."retrievalSourceId", r."status", r."errorCode", r."errorMessage", r."createdAt", r."finishedAt", r."counts", r."retryAfterUntil"
+        FROM (
+          SELECT run.*, row_number() OVER (PARTITION BY run."retrievalSourceId" ORDER BY run."createdAt" DESC, run."id" DESC) AS "position"
+          FROM "RetrievalRun" run JOIN "RetrievalSource" s ON s."id" = run."retrievalSourceId"
+          WHERE s."enabled" AND s."archivedAt" IS NULL
+        ) r
+        WHERE r."position" <= 20
+        ORDER BY r."retrievalSourceId", r."createdAt" DESC, r."id" DESC`) as RunRow[];
+      const lastSuccesses = (await client.$queryRaw`
+        SELECT DISTINCT ON (run."retrievalSourceId") run."retrievalSourceId", run."status", run."errorCode", run."errorMessage",
+          run."createdAt", run."finishedAt", run."counts", run."retryAfterUntil"
+        FROM "RetrievalRun" run JOIN "RetrievalSource" s ON s."id" = run."retrievalSourceId"
+        WHERE s."enabled" AND s."archivedAt" IS NULL AND run."finishedAt" IS NOT NULL
+          AND (run."status" = 'COMPLETED' OR (run."status" = 'PARTIAL' AND run."errorCode" = 'LISTING_FAILURES'))
+        ORDER BY run."retrievalSourceId", run."finishedAt" DESC, run."id" DESC`) as RunRow[];
+      const enabledSources = sources.map((source) => ({
+        adapterKey: source.adapterKey,
+        name: source.name,
+        health: {
+          scheduleMinutes: source.scheduleMinutes,
+          lastRunAt: source.lastRunAt,
+          nextEligibleAt: source.nextEligibleAt,
+          runs: recentRuns.filter((run) => run.retrievalSourceId === source.id),
+          lastSuccess: lastSuccesses.find((run) => run.retrievalSourceId === source.id) ?? null,
+        },
+      }));
       const failed = (await client.$queryRaw`
         SELECT COUNT(*)::int AS "count" FROM "RetrievalRun"
         WHERE "status" = 'FAILED' AND "finishedAt" >= ${new Date(now.getTime() - 24 * 60 * 60 * 1000)}`) as Array<{ count: number }>;

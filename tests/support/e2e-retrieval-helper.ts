@@ -16,8 +16,10 @@ import { createRetrievalWorker } from "../../apps/web/src/server/retrieval-worke
 // retrieval worker iteration with the fixture transport serving the
 // committed Greenhouse, Workday, Workable and Wellfound fixtures (never the network);
 // "changed" serves Greenhouse with the Customer Success posting's
-// description extended. Only the isolated test database is ever used
-// (Playwright points DATABASE_URL at it).
+// description extended; "rate-limited" answers Greenhouse with a 429 and a
+// two-hour Retry-After (feature 12). expire-gate moves a source's backoff
+// gate into the past, standing in for the wait. Only the isolated test
+// database is ever used (Playwright points DATABASE_URL at it).
 
 const database = getDatabaseClient();
 const command = process.argv[2];
@@ -81,7 +83,10 @@ try {
       registry: defaultAdapterRegistry,
       transport: () =>
         createFixtureTransport({
-          [greenhouseUrl]: json(body(process.argv[3])),
+          [greenhouseUrl]:
+            process.argv[3] === "rate-limited"
+              ? { status: 429, contentType: "application/json", body: "{}", retryAfterSeconds: 7200 }
+              : json(body(process.argv[3])),
           [fixtureRequestKey(`${workdaySite}/jobs`, workdayListBody(0))]: json(fixtureFile("workday", "response.json")),
           [`${workdaySite}${workdayPath}`]: json(fixtureFile("workday", "detail-JR-0110682.json")),
           "https://wellfound.com/role/customer-success-specialist": { status: 200, contentType: "text/html; charset=utf-8", body: wellfoundPage },
@@ -94,6 +99,8 @@ try {
       lastChecked: (source, externalIds) => store.lastCheckedListings(source, externalIds),
     });
     process.stdout.write(JSON.stringify(await worker.runOnce()));
+  } else if (command === "expire-gate") {
+    await database.retrievalSource.update({ where: { id: process.argv[3]! }, data: { nextEligibleAt: new Date(Date.now() - 60_000) } });
   } else if (command === "cleanup-source") {
     const sourceId = process.argv[3]!;
     await resetFixtureListings();

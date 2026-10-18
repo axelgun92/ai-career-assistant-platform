@@ -8,6 +8,7 @@ export * from "./platform";
 export * from "./raw-opportunity";
 export * from "./retrieval";
 export * from "./retrieval-ingestion";
+export * from "./retrieval-health";
 export * from "./opportunity-lifecycle";
 export * from "./budget";
 export * from "./application";

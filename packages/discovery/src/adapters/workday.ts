@@ -1,7 +1,7 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
 import { mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
-import { AdapterError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
+import { AdapterError, isStopError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
 import { getJson, postJson } from "../transport";
 import { companyNameSchema, isoDate } from "./shared";
 
@@ -195,8 +195,8 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
       const end = offset + list.jobPostings.length;
       if (list.jobPostings.length < pageSize || (total !== null && end >= total)) break;
     }
-    // After a 429 or an access refusal nothing more is requested.
-    if (result.halted && (result.halted.code === "RATE_LIMITED" || result.halted.code === "ACCESS_DENIED")) return result;
+    // After a 429, an access refusal or a server error nothing more is requested.
+    if (result.halted && isStopError(result.halted)) return result;
     const matches = postings
       .filter((posting) => context.keepTitle(posting.title))
       .map((posting) => ({ id: workdayListingId(config, posting.externalPath), posting }));
@@ -209,7 +209,7 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
         if (parsed.success) details.push({ posting, detail: parsed.data });
         else result.issues.push({ externalId: workdayListingId(config, posting.externalPath), code: "CONTRACT_MISMATCH", message: "Posting detail does not match the expected shape" });
       } catch (error) {
-        if (error instanceof AdapterError && (error.code === "RATE_LIMITED" || error.code === "ACCESS_DENIED")) {
+        if (isStopError(error)) {
           result.halted = error;
           break;
         }

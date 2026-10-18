@@ -13,12 +13,14 @@ import type { RetrievalTransport } from "./transport";
 // collect: they keep listings whose title matches the domain's role-family
 // terms and never score or evaluate anything.
 
-// Why a retrieval stopped or failed. RATE_LIMITED (HTTP 429) and
-// ACCESS_DENIED (HTTP 401/403) stop all further requests to that source for
-// the run; ACCESS_DENIED is an access failure, not a rate limit.
+// Why a retrieval stopped or failed. RATE_LIMITED (HTTP 429), ACCESS_DENIED
+// (HTTP 401/403) and SERVER_ERROR (HTTP 5xx) stop all further requests to
+// that source's host for the run; ACCESS_DENIED is an access failure, not a
+// rate limit, and a 503 is a server error even when it asks us to wait.
 export const adapterErrorCodes = [
   "NETWORK",
   "HTTP_STATUS",
+  "SERVER_ERROR",
   "ACCESS_DENIED",
   "RATE_LIMITED",
   "RESPONSE_TOO_LARGE",
@@ -45,18 +47,37 @@ export function redactUrl(url: string): string {
   }
 }
 
+export interface AdapterErrorDetails {
+  status?: number;
+  url?: string;
+  // A valid, future Retry-After the source sent with a 429 or 503, in
+  // seconds from when the response arrived.
+  retryAfterSeconds?: number;
+}
+
 export class AdapterError extends Error {
-  readonly details: { status?: number; url?: string };
+  readonly details: AdapterErrorDetails;
 
   constructor(
     readonly code: AdapterErrorCode,
     message: string,
-    details: { status?: number; url?: string } = {},
+    details: AdapterErrorDetails = {},
   ) {
     super(message);
     this.name = "AdapterError";
     this.details = { ...details, ...(details.url ? { url: redactUrl(details.url) } : {}) };
   }
+}
+
+// Whether a failure means no further request may go to the source's host in
+// this run: a rate limit, an access refusal or a server error (and any
+// response carrying Retry-After). Adapters that make several requests per
+// run stop on these instead of carrying on with the next request.
+export function isStopError(error: unknown): error is AdapterError {
+  return (
+    error instanceof AdapterError &&
+    (error.code === "RATE_LIMITED" || error.code === "ACCESS_DENIED" || error.code === "SERVER_ERROR" || error.details.retryAfterSeconds !== undefined)
+  );
 }
 
 // A listing the adapter could not map; the rest of the run continues.

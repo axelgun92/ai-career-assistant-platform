@@ -31,7 +31,7 @@ Manual Opportunity
 → Lifecycle and application workflow
 ```
 
-Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, awaiting review). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. The manual workflow is unchanged and remains the stable foundation.
+Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, awaiting review) back a failing source off, honour a source's request to wait, and show each source's health and freshness. The manual workflow is unchanged and remains the stable foundation.
 
 ```text
 Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workable, Wellfound)
@@ -195,6 +195,17 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+Feature 12, source health and conservative retrieval, is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 11B was committed as `2a1d8c2` (October 18, 2026). Feature 12 adds deterministic health and backoff around the existing sources, without changing any adapter:
+
+- **Stopping politely within a run:** a server error (any 5xx, now its own `SERVER_ERROR` code), like a rate limit (429) or an access refusal (401/403), stops all further requests to that source for the run. Nothing is retried within a run.
+- **Waiting between runs:** after a source failure the next run waits longer each time, up to once a week; an access refusal or a changed response format waits at least a day. A source's own Retry-After (on a 429 or 503) is honoured in full, however long. Failures on our side (an interrupted worker, an internal error) never count. No source is ever disabled automatically.
+- **Run now:** it can never override a rate limit ("Rate limited until …") or a wait the source asked for ("Retry after … (requested by the source)"). Our own backoff can be passed once with an explicit "Run now anyway". Changing a source's settings clears only our own backoff; enabling or disabling a source keeps any wait.
+- **Health on `/sources`:** Healthy, Degraded, Failing, Needs attention, Rate limited or Waiting, with the last attempt, the last successful retrieval, the next run and why, the latest failure, a stale note when no successful retrieval happened for two schedule intervals, and an empty-result note. A run stopped part-way by the source never counts as a successful retrieval.
+- **`pnpm app:doctor`:** read-only warnings for enabled sources that are rate limited, waiting, failing, need attention or are stale.
+- Listing expiry and removal detection moved to feature 13 (posting history).
+
+*(Earlier status, superseded on October 18, 2026 when Feature 11B was committed as `2a1d8c2`. It read as follows.)*
+
 Feature 11B is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 11A was committed as `fad2341` (October 18, 2026). 11B adds the verified public/guest-endpoint and public-HTML sources to the same retrieval path:
 
 - **Workday** (employer ATS): add an employer's career-site address (for example `https://acme.wd5.myworkdayjobs.com/External`). Each run reads a bounded window of the first 100 postings Workday's listing returns (5 pages of 20; Workday does not state their order) and fetches the full details of matching titles, at most 25 per run, postings not seen before first. The company comes from the posting (an optional company name is used only when it is missing).
@@ -252,16 +263,16 @@ Task 8 and Task 9 are complete. In order:
 1. Done: the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
 2. Done: the Features 1–10 Gap Closure (`d573acf`, October 17, 2026). *(Earlier step: "Now: the Features 1–10 Gap Closure. The audit is complete; the implementation is verified and awaiting review, then the versioned-specification check and the commit.")*
 3. Done: Feature 11A (`fad2341`, October 18, 2026), with Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8 and Customer Success TDD v1.6. *(Earlier step: "Now: Feature 11A, implemented and verified, awaiting review.")*
-4. Now: Feature 11B, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9, Customer Success TDD v1.7).
-5. Build the rest of main-product features 12–18:
-   - source health and conservative retrieval;
-   - ghost-job/posting-history intelligence;
+4. Done: Feature 11B (`2a1d8c2`, October 18, 2026), with Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9 and Customer Success TDD v1.7. *(Earlier step: "Now: Feature 11B, implemented and verified, awaiting review.")*
+5. Now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10, Customer Success TDD v1.8).
+6. Build the rest of main-product features 13–18:
+   - ghost-job/posting-history intelligence, including listing expiry/removal detection (moved from feature 12);
    - browser extension companion;
    - source intelligence;
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-6. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+7. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 

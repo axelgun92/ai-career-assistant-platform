@@ -1022,3 +1022,21 @@ Feature 11B adds the verified public/guest-endpoint and public-HTML sources (Wor
 5. **Workable contingency:** the JSON search endpoint is the sole production interface. Workable's official XML feed (`https://www.workable.com/boards/workable.xml`, about 850 MB, Range ignored) was verified as technically sufficient but is not implemented. Reconsider it deliberately only if the JSON endpoint proves persistently unusable from the actual production host; one Claude-cloud request was rate-limited (HTTP 429) while other networks succeeded. Retry-After handling and backoff belong to Feature 12.
 
 Final Integration Checklist: item 1 is a shared-contract change to note in the Codex review list; items 2–5 are recorded for awareness. Feature 11B changes nothing on the evaluator side.
+
+*(Annotation, October 18, 2026: Feature 11B was committed as `2a1d8c2`. The record above is preserved as written.)*
+
+### Feature 12 — shared-boundary record (October 18, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-18\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+Feature 12 adds source health and conservative retrieval around the existing adapters. No evaluator stage, prompt, schema, routing, salary policy, evidence behavior, recommendation logic or `loadSubject()` code changed, and ingestion and deduplication are unchanged.
+
+1. **Adapter error codes** (`packages/discovery/src/contract.ts`). `adapterErrorCodes` gains `SERVER_ERROR`: `ensureSuccess` now reports HTTP 5xx as `SERVER_ERROR` instead of `HTTP_STATUS` (other unexpected statuses keep `HTTP_STATUS`). `AdapterError.details` may carry `retryAfterSeconds`. A new `isStopError()` (429, 401/403, 5xx, or any Retry-After) is what adapters that make several requests use to stop.
+2. **Retrieval transport contract** (`transport.ts`, `politeness.ts`). `TransportResponse` gains an optional `retryAfterSeconds`, set by the fetch transport from a valid, future `Retry-After` on a 429 or 503 (`parseRetryAfter`; never capped). The politeness layer now stops a host for the rest of the run after any 5xx as well as after 429 and 401/403, and the stop error carries any Retry-After. Fixture transports can carry the field.
+3. **Schema** (migration `20261018120000_retrieval_source_health`, additive, nullable, no backfill): `RetrievalSource.nextEligibleAt` (the scheduling gate) and `RetrievalRun.retryAfterUntil` (the exact wait the source asked for). `PrismaRetrievalSourceRepository.finishRun` takes an optional `retryAfterSeconds` and writes the gate in the same transaction; `enqueueRun` takes `{ override, now }` and refuses a gated source with `SOURCE_RATE_LIMITED`, `SOURCE_PROVIDER_WAIT` or `SOURCE_BACKING_OFF` (with `until`); `enqueueDueRuns` skips gated sources; `update` clears only our own backoff on a settings change; `healthInputs` is new.
+4. **Run now API:** `POST /api/sources/<id>/runs` accepts an optional `{"override": true}` body; a refusal is HTTP 409 with `code` and `until`.
+
+Final Integration Checklist: items 1–3 are shared-contract changes to note in the Codex review list (any code that matched `HTTP_STATUS` for a 5xx now sees `SERVER_ERROR`); item 4 is recorded for awareness. Feature 12 changes nothing on the evaluator side.

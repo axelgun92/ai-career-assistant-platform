@@ -5,6 +5,18 @@
 
 ## Current Objective
 
+**Feature 12 — source health and conservative retrieval** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 11B was committed as `2a1d8c2` (October 18, 2026).
+
+In order, what follows:
+
+1. Next: user review of Feature 12, then the checkpoint commit and the personal-file refresh.
+2. Then: main-product features 13–18 (feature 13 now includes listing expiry/removal detection).
+3. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier objective, superseded on October 18, 2026 when Feature 11B had been committed as `2a1d8c2` and Feature 12 implemented. It read as follows.)*
+
 **Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 11A was committed as `fad2341` (October 18, 2026).
 
 In order, what follows:
@@ -68,7 +80,62 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 ## Recently Completed (October 14–18, 2026)
 
-### Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources (implemented and verified October 18, 2026; awaiting user review; not committed)
+### Feature 12 — source health and conservative retrieval (implemented and verified October 18, 2026; awaiting user review; not committed)
+
+**Scope (approved).** Deterministic source health and conservative retrieval around the existing adapters: no adapter or contract redesign, no in-run retries, no automatic disabling, no live source requests and no AI calls. Listing expiry/removal detection moved to feature 13 (DEVELOPMENT_PLAN updated). Out of scope: features 13–15 and evaluator changes.
+
+**Approved decisions.**
+
+- Access, contract, settings and oversized-response failures use long deterministic backoff (at least a day, escalating to at most once per 7 days); no auto-disable and no manual repair step.
+- Internal backoff is capped at 7 days. A valid provider Retry-After (429, or 503 with Retry-After) is honoured in full with no cap: the gate is the later of it and the backoff. Invalid, unparsable, zero, negative or past values fall back to the deterministic policy.
+- A successful retrieval is COMPLETED, or PARTIAL caused solely by `LISTING_FAILURES`; a PARTIAL caused by a source failure never counts as success or clears the failure state.
+- Within a run, any 5xx stops further requests to that host (not only a 503 with Retry-After). Across runs, the first transient failure keeps the normal schedule, repeats escalate, and a valid Retry-After extends the gate.
+- A 429 is a rate limit ("Rate limited until …", `SOURCE_RATE_LIMITED`); a 503 with Retry-After is a generic provider wait ("Retry after … (requested by the source)", `SOURCE_PROVIDER_WAIT`). Both are non-bypassable. When our backoff outlasts the source's date, the gate is a provider wait until `retryAfterUntil` and then our backoff, which can be overridden.
+- Run now: our own backoff only through an explicit "Run now anyway" (one run; its outcome recalculates the gate). A settings change clears only our own backoff, never a rate limit or provider wait; enable/disable never touches any gate.
+- Schema: `RetrievalSource.nextEligibleAt` plus `RetrievalRun.retryAfterUntil` (the flagged, accepted deviation), both nullable; everything else derived from runs. Stale = no successful retrieval for 2× the schedule; disabled/archived sources stay neutral; zero results are informational.
+
+**What changed.**
+
+- **Transport and adapters** (`packages/discovery`): `SERVER_ERROR` for 5xx (`ensureSuccess`); `parseRetryAfter` and `TransportResponse.retryAfterSeconds` (429/503); politeness stops a host after any 5xx and carries Retry-After on the stop error; `isStopError()` used where SmartRecruiters and Workday stop detail requests.
+- **Policy** (`packages/core/src/retrieval-health.ts`): `classifyRunOutcome` (success / source failure / neutral / active), `failureStreak`, `computeNextEligibleAt`, `activeGate`/`gateKind` (rate_limited, provider_wait, backoff) and `deriveSourceHealth` (status, streak, last attempt, last success, latest failure, gate, next run, stale, never succeeded, empty result).
+- **Migration** `20261018120000_retrieval_source_health`: two nullable `TIMESTAMPTZ(3)` columns, no backfill.
+- **Repository:** `finishRun` writes the run (with `retryAfterUntil`) and the gate in one transaction, never shortening a gate still in force after a failure; `enqueueDueRuns` skips gated sources; `enqueueRun(id, trigger, { override, now })` refuses with `SOURCE_RATE_LIMITED`, `SOURCE_PROVIDER_WAIT` or `SOURCE_BACKING_OFF` (with `until`); `update` clears only a backoff gate on a settings change; `healthInputs`.
+- **Worker:** passes the failure's `retryAfterSeconds` to `finishRun`; safe message for `SERVER_ERROR`.
+- **Service/API:** `health` on every source summary; `runNow(id, { override })`; `POST /api/sources/<id>/runs` takes an optional `{"override": true}`; refusals are 409 with `code` and `until`.
+- **UI** (`/sources`): health badge, last attempt, last successful retrieval, next run and why, latest failure, stale/never-succeeded/empty-result notes; Run now disabled with distinct 429 and provider-wait wording; a "Run now anyway" confirmation for backoff.
+- **`pnpm app:doctor`:** a read-only "Retrieval source health" check listing enabled sources that are rate limited, waiting, failing, need attention or are stale.
+- **No change** to adapter contracts beyond the shared stop rule, ingestion, `core-dedup-v2`, the evaluator or `loadSubject()`.
+
+**Tests.**
+
+- **Unit:** new `retrieval-health.test.ts` (29): outcomes and streaks, every backoff family, uncapped Retry-After, the mixed provider/backoff gate, health statuses (PARTIAL-by-429 not refreshing freshness, neutral runs, disabled/archived neutral, stale, never succeeded, zero results), `parseRetryAfter`, Retry-After on 429/503 only, politeness stopping after any 5xx, `isStopError`, the worker passing Retry-After and the `SERVER_ERROR` message, service and API Run now rules, and the doctor check. `retrieval-ui.test.tsx` (+3): health lines, distinct gate wording with Run now disabled, and the "Run now anyway" confirmation. Adapter tests now cover 500/503 page stops and 5xx detail stops for SmartRecruiters and Workday; the framework test expects `SERVER_ERROR` for 5xx.
+- **Integration:** `retrieval-ingestion.test.ts` (+4): a 60-day Retry-After honoured in full (scheduler, override, settings and enable/disable cannot pass it); a 503 provider wait turning into overridable backoff after its date and cleared by a settings change; access-refusal backoff escalating 1 → 2 → 4 days with an override run, a neutral interrupted run ignored and success clearing the gate; and a PARTIAL run stopped by a 429 never counting as a successful retrieval. The existing access/rate-limit test now needs an explicit override for its second run.
+- **E2E:** `retrieval.spec.ts` (+1): a fixture 429 with Retry-After shows "Rate limited until …" with Run now disabled and the API refusing even with an override; after the gate expires (helper), a successful run shows Healthy.
+
+**Verification** (isolated test database only; no live source requests; no AI or provider calls; normal application database untouched):
+
+- typecheck and lint clean; `git diff --check` clean;
+- unit 51 files / 1,293 tests; integration 27 files / 243 tests; E2E 36/36; production build succeeds; `pnpm db:verify-migrations` (18 migrations, only the known documented drift);
+- `pnpm app:doctor` run read-only against the test database (its new queries execute);
+- `apps/web/next-env.d.ts` unchanged.
+
+**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/` (the blobs match `HEAD`):
+
+- **Core Platform TDD v1.10:** a §51 "Source Health and Conservative Retrieval (Feature 12)" section (four paragraphs), the sequence and the dependency.
+- **Core AI Framework PRD v1.9**, **Customer Success PRD v1.8** and **Customer Success TDD v1.8:** current status, revision history and dependencies.
+
+The Semantic Evaluation Playbook is unchanged.
+
+**Known issues and observations.**
+
+- Health is derived per request from the latest 20 runs and the last successful run; `/sources` reads them per source (fine for the expected handful of sources).
+- A settings change is detected by comparing the stored and submitted configuration; the `/sources` UI has no settings editor, so this path is used through `PATCH /api/sources/<id>`.
+- The gate is checked when a run is queued, not again when the worker claims it; since a source has at most one queued or running run and the gate changes only when a run finishes, a queued run cannot be overtaken by a new gate.
+- Listing expiry/removal detection is feature 13.
+
+### Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources (committed `2a1d8c2`, October 18, 2026)
+
+*(Heading updated on October 18, 2026 after the commit; it read "implemented and verified October 18, 2026; awaiting user review; not committed". The record below is preserved as written.)*
 
 **Scope (approved).** The remaining non-browser Customer Success sources, on the Feature 11A framework without redesigning it: Workday and Workable (Type #3, public/guest endpoints) and Wellfound (Type #4, public HTML). Welcome to the Jungle / Otta (Type #3) is in scope but could not be verified. ProBlogger and Mediabistro, listed in Core Platform TDD §10, are Freelance Writing domain sources and not part of 11B. Out of scope: features 12–15, evaluator changes, automatic evaluation and description-based discovery.
 
@@ -630,7 +697,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-Feature 11A is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+Feature 12 (source health and conservative retrieval) is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+
+*(Earlier status, superseded on October 18, 2026: "Feature 11A is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." Feature 11A was committed as `fad2341` and Feature 11B as `2a1d8c2`.)*
 
 *(Earlier status, superseded on October 18, 2026: "The Features 1–10 Gap Closure is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `d573acf`.)*
 
@@ -1352,10 +1421,10 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Feature 11A is implemented and verified (October 18, 2026).
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`) and 11B (`2a1d8c2`) are committed, and Feature 12 is implemented and verified (October 18, 2026).
 
-1. Next: user review of Feature 11A, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
-2. Then: Feature 11B (the verified public/guest-endpoint and public-HTML sources), then main-product features 12–18: source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+1. Next: user review of Feature 12, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: user review of Feature 11A …" and of Feature 11B, superseded October 18, 2026 after the commits `fad2341` and `2a1d8c2`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
+2. Then: main-product features 13–18: posting history/ghost intelligence (including listing expiry/removal detection), browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.

@@ -1,5 +1,9 @@
 import {
+  activeGate,
+  classifyRunOutcome,
+  computeNextEligibleAt,
   emptyRetrievalRunCounts,
+  failureStreak,
   type RetrievalRunCounts,
   type RetrievalRunStatus,
   type RetrievalTrigger,
@@ -25,6 +29,8 @@ export interface RetrievalSourceRecord {
   config: unknown;
   scheduleMinutes: number;
   lastRunAt: Date | null;
+  // The backoff gate (feature 12): no run starts before it.
+  nextEligibleAt: Date | null;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -41,18 +47,38 @@ export interface RetrievalRunRecord {
   counts: RetrievalRunCounts | null;
   errorCode: string | null;
   errorMessage: string | null;
+  // When the source asked us to wait until, in this run.
+  retryAfterUntil: Date | null;
   createdAt: Date;
 }
 
+export type RetrievalSourceErrorCode =
+  | "SOURCE_NOT_FOUND"
+  | "SOURCE_ARCHIVED"
+  | "SOURCE_DISABLED"
+  // The source rate limited us (429): no run before until.
+  | "SOURCE_RATE_LIMITED"
+  // The source asked us to wait (Retry-After on another response): no run
+  // before until.
+  | "SOURCE_PROVIDER_WAIT"
+  // Our backoff after source failures; a manual run can override it once.
+  | "SOURCE_BACKING_OFF";
+
 export class RetrievalSourceError extends Error {
   constructor(
-    readonly code: "SOURCE_NOT_FOUND" | "SOURCE_ARCHIVED" | "SOURCE_DISABLED",
+    readonly code: RetrievalSourceErrorCode,
     message: string,
+    readonly until?: Date,
   ) {
     super(message);
     this.name = "RetrievalSourceError";
   }
 }
+
+// Recent runs are enough to cover a failure streak: backoff reaches its
+// 7-day cap well within this many consecutive failures.
+const healthRunWindow = 20;
+const successfulRetrieval = [{ status: "COMPLETED" as const }, { status: "PARTIAL" as const, errorCode: "LISTING_FAILURES" }];
 
 type SourceRow = Prisma.RetrievalSourceGetPayload<object>;
 type RunRow = Prisma.RetrievalRunGetPayload<object>;
@@ -78,6 +104,7 @@ function mapRun(row: RunRow): RetrievalRunRecord {
     counts: mapCounts(row.counts),
     errorCode: row.errorCode,
     errorMessage: row.errorMessage,
+    retryAfterUntil: row.retryAfterUntil,
     createdAt: row.createdAt,
   };
 }
@@ -119,15 +146,25 @@ export class PrismaRetrievalSourceRepository {
   async update(
     id: string,
     input: { name?: string; config?: unknown; scheduleMinutes?: number; enabled?: boolean },
+    now = new Date(),
   ): Promise<RetrievalSourceRecord> {
     const existing = await this.get(id);
     if (!existing) throw new RetrievalSourceError("SOURCE_NOT_FOUND", "Retrieval source not found");
     if (existing.archivedAt && input.enabled) {
       throw new RetrievalSourceError("SOURCE_ARCHIVED", "An archived source cannot be enabled");
     }
+    // A settings change clears our own backoff, which may have come from
+    // the old settings; a rate limit or a wait the source asked for stays.
+    // Enabling or disabling never changes the gate.
+    let clearGate = false;
+    if (input.config !== undefined && existing.nextEligibleAt && JSON.stringify(input.config) !== JSON.stringify(existing.config)) {
+      const gate = activeGate({ nextEligibleAt: existing.nextEligibleAt, runsNewestFirst: await this.listRuns(id, healthRunWindow), now });
+      clearGate = gate?.kind === "backoff";
+    }
     const row = await this.database.retrievalSource.update({
       where: { id },
       data: {
+        ...(clearGate ? { nextEligibleAt: null } : {}),
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.config !== undefined ? { config: input.config as Prisma.InputJsonValue } : {}),
         ...(input.scheduleMinutes !== undefined ? { scheduleMinutes: input.scheduleMinutes } : {}),
@@ -173,15 +210,33 @@ export class PrismaRetrievalSourceRepository {
     return rows.map(mapRun);
   }
 
+  // What the source's health is derived from: its recent runs, newest
+  // first, and its last successful retrieval (COMPLETED, or PARTIAL only
+  // because of listing failures), which may be older.
+  async healthInputs(sourceId: string): Promise<{ runs: RetrievalRunRecord[]; lastSuccess: RetrievalRunRecord | null }> {
+    const [runs, lastSuccess] = await Promise.all([
+      this.listRuns(sourceId, healthRunWindow),
+      this.database.retrievalRun.findFirst({
+        where: { retrievalSourceId: sourceId, finishedAt: { not: null }, OR: successfulRetrieval },
+        orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+      }),
+    ]);
+    return { runs, lastSuccess: lastSuccess ? mapRun(lastSuccess) : null };
+  }
+
   // Queues a run unless one is already queued or running for the source
-  // (then that one is returned). Only an enabled, unarchived source runs.
+  // (then that one is returned). Only an enabled, unarchived source runs,
+  // and not before its gate: a rate limit or a wait the source asked for is
+  // never overridden; our own backoff is, for one manual run, with override.
   async enqueueRun(
     sourceId: string,
     trigger: RetrievalTrigger,
+    options: { override?: boolean; now?: Date } = {},
   ): Promise<{ run: RetrievalRunRecord; alreadyActive: boolean }> {
+    const now = options.now ?? new Date();
     return this.database.$transaction(async (transaction) => {
-      const rows = await transaction.$queryRaw<Array<{ enabled: boolean; archivedAt: Date | null }>>`
-        SELECT "enabled", "archivedAt" FROM "RetrievalSource" WHERE "id" = ${sourceId}::uuid FOR UPDATE`;
+      const rows = await transaction.$queryRaw<Array<{ enabled: boolean; archivedAt: Date | null; nextEligibleAt: Date | null }>>`
+        SELECT "enabled", "archivedAt", "nextEligibleAt" FROM "RetrievalSource" WHERE "id" = ${sourceId}::uuid FOR UPDATE`;
       const source = rows[0];
       if (!source) throw new RetrievalSourceError("SOURCE_NOT_FOUND", "Retrieval source not found");
       if (source.archivedAt) throw new RetrievalSourceError("SOURCE_ARCHIVED", "An archived source cannot run");
@@ -191,19 +246,38 @@ export class PrismaRetrievalSourceRepository {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
       if (active) return { run: mapRun(active), alreadyActive: true };
+      if (source.nextEligibleAt && source.nextEligibleAt > now) {
+        const recent = await transaction.retrievalRun.findMany({
+          where: { retrievalSourceId: sourceId },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: healthRunWindow,
+        });
+        const gate = activeGate({ nextEligibleAt: source.nextEligibleAt, runsNewestFirst: recent, now });
+        if (gate?.kind === "rate_limited") {
+          throw new RetrievalSourceError("SOURCE_RATE_LIMITED", "The source rate limited retrieval; it cannot run yet", gate.until);
+        }
+        if (gate?.kind === "provider_wait") {
+          throw new RetrievalSourceError("SOURCE_PROVIDER_WAIT", "The source asked retrieval to wait; it cannot run yet", gate.until);
+        }
+        if (gate && !(trigger === "MANUAL" && options.override)) {
+          throw new RetrievalSourceError("SOURCE_BACKING_OFF", "Retrieval is backing off after source failures", gate.until);
+        }
+      }
       const run = await transaction.retrievalRun.create({ data: { retrievalSourceId: sourceId, trigger } });
       return { run: mapRun(run), alreadyActive: false };
     });
   }
 
   // Queues a scheduled run for every enabled source whose interval has
-  // passed since its last run (or that has never run) and that has no
-  // queued or running run. Returns how many were queued.
+  // passed since its last run (or that has never run), whose backoff gate
+  // has passed and that has no queued or running run. Returns how many
+  // were queued.
   async enqueueDueRuns(now = new Date()): Promise<number> {
     const due = await this.database.$queryRaw<Array<{ id: string }>>`
       SELECT s."id" FROM "RetrievalSource" s
       WHERE s."enabled" AND s."archivedAt" IS NULL
         AND (s."lastRunAt" IS NULL OR s."lastRunAt" + make_interval(mins => s."scheduleMinutes") <= ${now}::timestamptz)
+        AND (s."nextEligibleAt" IS NULL OR s."nextEligibleAt" <= ${now}::timestamptz)
         AND NOT EXISTS (
           SELECT 1 FROM "RetrievalRun" r WHERE r."retrievalSourceId" = s."id" AND r."status" IN ('QUEUED', 'RUNNING')
         )
@@ -211,10 +285,10 @@ export class PrismaRetrievalSourceRepository {
     let queued = 0;
     for (const { id } of due) {
       try {
-        const result = await this.enqueueRun(id, "SCHEDULE");
+        const result = await this.enqueueRun(id, "SCHEDULE", { now });
         if (!result.alreadyActive) queued += 1;
       } catch (error) {
-        // Disabled or archived since the read: nothing to queue.
+        // Disabled, archived or gated since the read: nothing to queue.
         if (!(error instanceof RetrievalSourceError)) throw error;
       }
     }
@@ -262,6 +336,11 @@ export class PrismaRetrievalSourceRepository {
     });
   }
 
+  // Closes a run and, in the same transaction, sets the source's gate from
+  // its outcome (Core TDD §51): a successful retrieval clears it, a source
+  // failure backs off by its streak (never shortening a gate still in
+  // force) and a run that failed on our side leaves it alone. A valid
+  // Retry-After from the source is kept on the run and honoured in full.
   async finishRun(
     runId: string,
     input: {
@@ -269,21 +348,56 @@ export class PrismaRetrievalSourceRepository {
       counts: RetrievalRunCounts;
       errorCode: string | null;
       errorMessage: string | null;
+      retryAfterSeconds?: number;
       now?: Date;
     },
   ): Promise<RetrievalRunRecord> {
-    const run = await this.database.retrievalRun.update({
-      where: { id: runId },
-      data: {
-        status: input.status,
-        finishedAt: input.now ?? new Date(),
-        leaseExpiresAt: null,
-        counts: input.counts as unknown as Prisma.InputJsonValue,
-        errorCode: input.errorCode,
-        errorMessage: input.errorMessage,
-      },
+    const finishedAt = input.now ?? new Date();
+    const retryAfterUntil =
+      input.retryAfterSeconds !== undefined && Number.isFinite(input.retryAfterSeconds) && input.retryAfterSeconds > 0
+        ? new Date(finishedAt.getTime() + input.retryAfterSeconds * 1000)
+        : null;
+    return this.database.$transaction(async (transaction) => {
+      const run = await transaction.retrievalRun.update({
+        where: { id: runId },
+        data: {
+          status: input.status,
+          finishedAt,
+          leaseExpiresAt: null,
+          counts: input.counts as unknown as Prisma.InputJsonValue,
+          errorCode: input.errorCode,
+          errorMessage: input.errorMessage,
+          retryAfterUntil,
+        },
+      });
+      const rows = await transaction.$queryRaw<Array<{ scheduleMinutes: number; nextEligibleAt: Date | null }>>`
+        SELECT "scheduleMinutes", "nextEligibleAt" FROM "RetrievalSource" WHERE "id" = ${run.retrievalSourceId}::uuid FOR UPDATE`;
+      const source = rows[0];
+      if (!source) return mapRun(run);
+      const outcome = classifyRunOutcome(run);
+      if (outcome === "success" || outcome === "source_failure") {
+        const previous = await transaction.retrievalRun.findMany({
+          where: { retrievalSourceId: run.retrievalSourceId, id: { not: run.id }, finishedAt: { not: null } },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: healthRunWindow,
+          select: { status: true, errorCode: true },
+        });
+        let next = computeNextEligibleAt({
+          outcome: run,
+          streak: outcome === "source_failure" ? 1 + failureStreak(previous) : 0,
+          scheduleMinutes: source.scheduleMinutes,
+          finishedAt,
+          retryAfterUntil,
+          current: source.nextEligibleAt,
+        });
+        const current = source.nextEligibleAt;
+        if (outcome === "source_failure" && current && current > finishedAt && (!next || current > next)) next = current;
+        if (next?.getTime() !== current?.getTime()) {
+          await transaction.retrievalSource.update({ where: { id: run.retrievalSourceId }, data: { nextEligibleAt: next } });
+        }
+      }
+      return mapRun(run);
     });
-    return mapRun(run);
   }
 
   // Runs left RUNNING by a worker that stopped mid-run are closed as

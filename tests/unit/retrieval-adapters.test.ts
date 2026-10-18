@@ -356,6 +356,10 @@ describe("SmartRecruiters", () => {
     const limited = await run({ [detail(ids[0]!)]: { status: 429, contentType: "application/json", body: "{}" } });
     expect(limited.halted?.code).toBe("RATE_LIMITED");
     expect(limited.requests).toBe(2);
+    // Any server error stops detail requests too (feature 12).
+    const serverError = await run({ [detail(ids[0]!)]: { status: 502, contentType: "text/html", body: "" } });
+    expect(serverError.halted?.code).toBe("SERVER_ERROR");
+    expect(serverError.requests).toBe(2);
     const missing = await run({
       [detail(ids[0]!)]: { status: 200, contentType: "application/json", body: read("smartrecruiters", "detail-744000156080369.json") },
       [detail(ids[1]!)]: { status: 404, contentType: "application/json", body: "{}" },
@@ -512,10 +516,10 @@ describe("SmartRecruiters list paging", () => {
     expect(result.fetched).toBe(14);
   });
 
-  it("stops everything after a 429 or an access refusal on a later page, keeping the first page's failure fatal", async () => {
-    for (const status of [429, 401, 403]) {
+  it("stops everything after a 429, an access refusal or a server error on a later page, keeping the first page's failure fatal", async () => {
+    for (const status of [429, 401, 403, 500, 503]) {
       const { result, requested } = await run({ [page1Url]: json(fullPage1()), [page2Url]: json({}, status) });
-      expect(result.halted?.code).toBe(status === 429 ? "RATE_LIMITED" : "ACCESS_DENIED");
+      expect(result.halted?.code).toBe(status === 429 ? "RATE_LIMITED" : status >= 500 ? "SERVER_ERROR" : "ACCESS_DENIED");
       expect(requested).toEqual([page1Url, page2Url]);
       expect(result).toMatchObject({ listings: [], requests: 2 });
     }

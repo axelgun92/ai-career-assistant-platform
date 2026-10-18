@@ -1,8 +1,8 @@
 import { connection } from "next/server";
 import { SourcesManager } from "@/components/sources/sources-manager";
-import type { RunView, SourceView } from "@/components/sources/types";
+import type { RunView, SourceHealthView, SourceView } from "@/components/sources/types";
 import type { RetrievalRunRecord } from "@ai-career/database";
-import { getRetrievalService } from "@/server/retrieval-service";
+import { getRetrievalService, type SourceSummary } from "@/server/retrieval-service";
 
 export const metadata = { title: "Sources" };
 
@@ -22,12 +22,31 @@ function runView(run: RetrievalRunRecord): RunView {
   };
 }
 
+function healthView(health: SourceSummary["health"], now: Date): SourceHealthView {
+  return {
+    status: health.status,
+    streak: health.streak,
+    lastAttemptAt: health.lastAttemptAt?.toISOString() ?? null,
+    lastSuccessAt: health.lastSuccessAt?.toISOString() ?? null,
+    lastFailure: health.lastFailure
+      ? { at: health.lastFailure.at.toISOString(), code: health.lastFailure.code, message: health.lastFailure.message }
+      : null,
+    gate: health.gate ? { kind: health.gate.kind, until: health.gate.until.toISOString() } : null,
+    nextRunAt: health.nextRunAt?.toISOString() ?? null,
+    nextRunDue: health.nextRunAt !== null && health.nextRunAt <= now,
+    stale: health.stale,
+    neverSucceeded: health.neverSucceeded,
+    emptyResult: health.emptyResult,
+  };
+}
+
 export default async function SourcesPage() {
   await connection();
   const service = getRetrievalService();
   let sources: SourceView[];
   try {
     const listed = await service.list({ includeArchived: true });
+    const now = new Date();
     sources = [];
     // Sequential reads keep connection use flat.
     for (const source of listed) {
@@ -47,6 +66,7 @@ export default async function SourcesPage() {
         enableBlockedReason: source.enableBlockedReason,
         configFields: [...(source.adapter?.configFields ?? [])],
         runs: runs.slice(0, recentRuns).map(runView),
+        health: healthView(source.health, now),
       });
     }
   } catch (error) {

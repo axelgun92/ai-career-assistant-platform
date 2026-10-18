@@ -236,10 +236,10 @@ describe("Workday", () => {
       expect(result.fetched).toBe(24);
     });
 
-    it("stops everything after a 429 or access refusal on a later page; the first page's failure fails the run", async () => {
-      for (const status of [429, 401, 403]) {
+    it("stops everything after a 429, an access refusal or a server error on a later page; the first page's failure fails the run", async () => {
+      for (const status of [429, 401, 403, 500, 503]) {
         const { result, requested } = await run({ [listKey(0)]: json(fullPage1()), [listKey(20)]: json({}, status) });
-        expect(result.halted?.code).toBe(status === 429 ? "RATE_LIMITED" : "ACCESS_DENIED");
+        expect(result.halted?.code).toBe(status === 429 ? "RATE_LIMITED" : status >= 500 ? "SERVER_ERROR" : "ACCESS_DENIED");
         expect(requested).toEqual([listKey(0), listKey(20)]);
         expect(result.listings).toEqual([]);
       }
@@ -277,6 +277,10 @@ describe("Workday", () => {
       const limited = await run({ [listKey(0)]: json(matching()), [`${detailBase}/job/x/CSM-d_JR-d`]: json({}, 429) });
       expect(limited.result.halted?.code).toBe("RATE_LIMITED");
       expect(requestedDetails(limited.requested)).toEqual(["d"]);
+      // Any server error stops detail requests too (feature 12).
+      const serverError = await run({ [listKey(0)]: json(matching()), [`${detailBase}/job/x/CSM-d_JR-d`]: json({}, 500) });
+      expect(serverError.result.halted?.code).toBe("SERVER_ERROR");
+      expect(requestedDetails(serverError.requested)).toEqual(["d"]);
       const missing = await run({ [listKey(0)]: json(matching()), [`${detailBase}/job/x/CSM-d_JR-d`]: json({}, 404) }, { maxDetailRequests: 2 });
       expect(missing.result.halted).toBeNull();
       expect(missing.result.issues.map((issue) => issue.externalId)).toEqual([idOf("d"), idOf("c")]);

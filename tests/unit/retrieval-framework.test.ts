@@ -219,12 +219,14 @@ describe("retrieved listings", () => {
 describe("transport and politeness", () => {
   const response = (status: number) => ({ status, url: "https://api.example.com/x", contentType: "application/json", body: "{}" });
 
-  it("classifies 429 as a rate limit and 401/403 as an access failure, not a rate limit", () => {
+  it("classifies 429 as a rate limit, 401/403 as an access failure and 5xx as a server error", () => {
     expect(() => ensureSuccess(response(429))).toThrow(expect.objectContaining({ code: "RATE_LIMITED" }));
     expect(() => ensureSuccess(response(403))).toThrow(expect.objectContaining({ code: "ACCESS_DENIED" }));
     expect(() => ensureSuccess(response(401))).toThrow(expect.objectContaining({ code: "ACCESS_DENIED" }));
     expect(() => ensureSuccess(response(302))).toThrow(expect.objectContaining({ code: "HTTP_STATUS" }));
-    expect(() => ensureSuccess(response(500))).toThrow(expect.objectContaining({ code: "HTTP_STATUS" }));
+    expect(() => ensureSuccess(response(500))).toThrow(expect.objectContaining({ code: "SERVER_ERROR" }));
+    expect(() => ensureSuccess(response(503))).toThrow(expect.objectContaining({ code: "SERVER_ERROR" }));
+    expect(() => ensureSuccess(response(404))).toThrow(expect.objectContaining({ code: "HTTP_STATUS" }));
     expect(ensureSuccess(response(200)).status).toBe(200);
   });
 

@@ -1,7 +1,7 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
 import { mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
-import { AdapterError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
+import { AdapterError, isStopError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
 import { getJson } from "../transport";
 import { slugSchema } from "./shared";
 
@@ -139,8 +139,8 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
       const end = offset + list.content.length;
       if (list.content.length < config.pageSize || (list.totalFound != null && end >= list.totalFound)) break;
     }
-    // After a 429 or an access refusal nothing more is requested.
-    if (result.halted && (result.halted.code === "RATE_LIMITED" || result.halted.code === "ACCESS_DENIED")) return result;
+    // After a 429, an access refusal or a server error nothing more is requested.
+    if (result.halted && isStopError(result.halted)) return result;
     // Only titles that match are considered for a detail request.
     const kept = await prioritizeDetailRequests(
       context,
@@ -156,7 +156,7 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
         if (parsed.success) details.push(parsed.data);
         else result.issues.push({ externalId: summary.id, code: "CONTRACT_MISMATCH", message: "Posting detail does not match the expected shape" });
       } catch (error) {
-        if (error instanceof AdapterError && (error.code === "RATE_LIMITED" || error.code === "ACCESS_DENIED")) {
+        if (isStopError(error)) {
           result.halted = error;
           break;
         }

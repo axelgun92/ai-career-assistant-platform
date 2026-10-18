@@ -112,8 +112,8 @@ function serve(adapter: typeof ats, board: string, jobs: TestJob[], status = 200
   responses[testBoardUrl(adapter.key, board, 1)] = status === 200 ? jsonResponse({ jobs }) : jsonResponse({}, status);
 }
 
-async function run(sourceId: string) {
-  await store.enqueueRun(sourceId, "MANUAL");
+async function run(sourceId: string, options: { override?: boolean } = {}) {
+  await store.enqueueRun(sourceId, "MANUAL", { now: clock, ...options });
   const outcome = await worker.runOnce();
   expect(outcome?.sourceId).toBe(sourceId);
   return outcome!;
@@ -327,8 +327,11 @@ describe("retrieval ingestion", () => {
     const source = await addSource(ats, token);
     serve(ats, token, [], 403);
     await run(source.id);
+    // The refusal backs the source off; only an explicit override runs it
+    // again before then (feature 12).
     serve(ats, token, [], 429);
-    await run(source.id);
+    await expect(store.enqueueRun(source.id, "MANUAL", { now: clock })).rejects.toMatchObject({ code: "SOURCE_BACKING_OFF" });
+    await run(source.id, { override: true });
     const runs = await store.listRuns(source.id);
     expect(runs.map((item) => [item.status, item.errorCode])).toEqual([
       ["FAILED", "RATE_LIMITED"],
@@ -668,5 +671,119 @@ describe("retrieval runs and sources", () => {
     const unused = await addSource(ats, `${token}-new`, false);
     expect(await store.remove(unused.id)).toBe("DELETED");
     expect(await store.get(unused.id)).toBeNull();
+  });
+});
+
+// Feature 12: the backoff gate written with each run's outcome, and the
+// scheduler, Run now and settings changes respecting it.
+describe("source health and the backoff gate", () => {
+  const hour = 60 * 60_000;
+  const later = (ms: number) => new Date(clock.getTime() + ms);
+
+  const respond = (board: string, response: Omit<TransportResponse, "url">, page = 1) => {
+    responses[testBoardUrl(ats.key, board, page)] = response;
+  };
+  const gateOf = async (id: string) => (await store.get(id))!.nextEligibleAt;
+
+  it("honours a 429's Retry-After in full; the scheduler, Run now (even with override), settings and enabling never pass it", async () => {
+    const token = newToken();
+    const source = await addSource(ats, token);
+    const sixtyDays = 60 * 24 * 60 * 60;
+    respond(token, { ...jsonResponse({}, 429), retryAfterSeconds: sixtyDays });
+    expect(await run(source.id)).toMatchObject({ status: "FAILED", errorCode: "RATE_LIMITED" });
+    const until = later(sixtyDays * 1000);
+    expect((await store.listRuns(source.id))[0]!.retryAfterUntil).toEqual(until);
+    expect(await gateOf(source.id)).toEqual(until);
+
+    clock = later(13 * hour);
+    expect(await store.enqueueDueRuns(clock)).toBe(0);
+    await expect(store.enqueueRun(source.id, "MANUAL", { override: true, now: clock })).rejects.toMatchObject({ code: "SOURCE_RATE_LIMITED", until });
+    await store.update(source.id, { config: { board: `${token}-moved` } }, clock);
+    await store.update(source.id, { enabled: false });
+    await store.update(source.id, { enabled: true });
+    expect(await gateOf(source.id)).toEqual(until);
+    expect(await store.enqueueDueRuns(new Date(until.getTime() + 1000))).toBe(1);
+  });
+
+  it("treats a 503's Retry-After as a provider wait, then our backoff after it, which a settings change clears", async () => {
+    const token = newToken();
+    const source = await addSource(ats, token);
+    // A first server error without Retry-After: the normal schedule applies.
+    respond(token, jsonResponse({}, 500));
+    expect(await run(source.id)).toMatchObject({ status: "FAILED", errorCode: "SERVER_ERROR" });
+    expect(await gateOf(source.id)).toBeNull();
+    // A repeat with Retry-After of one hour: backoff (2 × 12 h) outlasts it.
+    clock = later(10 * 60_000);
+    const finished = clock;
+    respond(token, { ...jsonResponse({}, 503), retryAfterSeconds: 3600 });
+    expect(await run(source.id)).toMatchObject({ status: "FAILED", errorCode: "SERVER_ERROR" });
+    expect(await gateOf(source.id)).toEqual(new Date(finished.getTime() + 24 * hour));
+
+    clock = new Date(finished.getTime() + 20 * 60_000);
+    await expect(store.enqueueRun(source.id, "MANUAL", { override: true, now: clock })).rejects.toMatchObject({
+      code: "SOURCE_PROVIDER_WAIT",
+      until: new Date(finished.getTime() + hour),
+    });
+    await store.update(source.id, { config: { board: `${token}-b` } }, clock);
+    expect(await gateOf(source.id)).toEqual(new Date(finished.getTime() + 24 * hour));
+
+    // After the source's date only our backoff remains.
+    clock = new Date(finished.getTime() + 2 * hour);
+    await expect(store.enqueueRun(source.id, "MANUAL", { now: clock })).rejects.toMatchObject({ code: "SOURCE_BACKING_OFF" });
+    await store.update(source.id, { config: { board: token } }, clock);
+    expect(await gateOf(source.id)).toBeNull();
+    serve(ats, token, [csJob(token)]);
+    expect(await run(source.id)).toMatchObject({ status: "COMPLETED" });
+    expect(await gateOf(source.id)).toBeNull();
+  });
+
+  it("backs off an access refusal a day at a time, lets an explicit override run once, ignores neutral runs and clears on success", async () => {
+    const token = newToken();
+    const source = await addSource(ats, token);
+    respond(token, jsonResponse({}, 403));
+    expect(await run(source.id)).toMatchObject({ errorCode: "ACCESS_DENIED" });
+    expect(await gateOf(source.id)).toEqual(later(24 * hour));
+
+    await expect(store.enqueueRun(source.id, "MANUAL", { now: clock })).rejects.toMatchObject({ code: "SOURCE_BACKING_OFF", until: later(24 * hour) });
+    await expect(store.enqueueRun(source.id, "SCHEDULE", { override: true, now: clock })).rejects.toMatchObject({ code: "SOURCE_BACKING_OFF" });
+    expect(await store.enqueueDueRuns(later(23 * hour))).toBe(0);
+
+    clock = later(hour);
+    expect(await run(source.id, { override: true })).toMatchObject({ errorCode: "ACCESS_DENIED" });
+    expect(await gateOf(source.id)).toEqual(later(48 * hour));
+
+    // An interrupted run is neutral: neither the gate nor the streak moves.
+    await store.enqueueRun(source.id, "MANUAL", { override: true, now: clock });
+    await store.claimNextRun(clock);
+    await store.failInterruptedRuns(clock, { regardlessOfLease: true });
+    expect(await gateOf(source.id)).toEqual(later(48 * hour));
+    await store.update(source.id, { enabled: false });
+    await store.update(source.id, { enabled: true });
+    expect(await gateOf(source.id)).toEqual(later(48 * hour));
+
+    clock = later(hour);
+    expect(await run(source.id, { override: true })).toMatchObject({ errorCode: "ACCESS_DENIED" });
+    expect(await gateOf(source.id)).toEqual(later(4 * 24 * hour));
+
+    clock = later(hour);
+    serve(ats, token, [csJob(token)]);
+    expect(await run(source.id, { override: true })).toMatchObject({ status: "COMPLETED" });
+    expect(await gateOf(source.id)).toBeNull();
+    const { runs, lastSuccess } = await store.healthInputs(source.id);
+    expect(lastSuccess).toMatchObject({ id: runs[0]!.id, status: "COMPLETED" });
+    expect(runs.map((item) => item.errorCode)).toEqual([null, "ACCESS_DENIED", "WORKER_INTERRUPTED", "ACCESS_DENIED", "ACCESS_DENIED"]);
+  });
+
+  it("never counts a run stopped part-way by a 429 as a successful retrieval", async () => {
+    const token = newToken();
+    const source = await addSource(ats, token);
+    responses[testBoardUrl(ats.key, token, 1)] = jsonResponse({ jobs: [csJob(token)], has_more: true });
+    respond(token, jsonResponse({}, 429), 2);
+    expect(await run(source.id)).toMatchObject({ status: "PARTIAL", errorCode: "RATE_LIMITED", counts: { created: 1 } });
+    expect(await gateOf(source.id)).toEqual(later(12 * hour));
+    expect((await store.healthInputs(source.id)).lastSuccess).toBeNull();
+    // A 429 without Retry-After records none, and is still a rate limit.
+    expect((await store.listRuns(source.id))[0]!.retryAfterUntil).toBeNull();
+    await expect(store.enqueueRun(source.id, "MANUAL", { now: clock, override: true })).rejects.toMatchObject({ code: "SOURCE_RATE_LIMITED" });
   });
 });

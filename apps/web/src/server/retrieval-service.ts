@@ -1,4 +1,4 @@
-import { defaultRetrievalScheduleMinutes } from "@ai-career/core";
+import { defaultRetrievalScheduleMinutes, deriveSourceHealth, type SourceHealth } from "@ai-career/core";
 import {
   PrismaRetrievalSourceRepository,
   RetrievalSourceError,
@@ -21,7 +21,7 @@ export const maximumScheduleMinutes = 7 * 24 * 60;
 
 export type RetrievalStore = Pick<
   PrismaRetrievalSourceRepository,
-  "list" | "get" | "create" | "update" | "remove" | "restore" | "listRuns" | "enqueueRun"
+  "list" | "get" | "create" | "update" | "remove" | "restore" | "listRuns" | "enqueueRun" | "healthInputs"
 >;
 
 export class RetrievalServiceError extends Error {
@@ -34,9 +34,15 @@ export class RetrievalServiceError extends Error {
       | "SOURCE_ARCHIVED"
       | "SOURCE_DISABLED"
       | "ADAPTER_UNVERIFIED"
-      | "ENVIRONMENT_MISSING",
+      | "ENVIRONMENT_MISSING"
+      | "SOURCE_RATE_LIMITED"
+      | "SOURCE_PROVIDER_WAIT"
+      | "SOURCE_BACKING_OFF",
     message: string,
     readonly status: number,
+    // For a gated source, when it can run (or, for backoff, run without an
+    // override).
+    readonly until?: Date,
   ) {
     super(message);
     this.name = "RetrievalServiceError";
@@ -59,6 +65,8 @@ export type SourceSummary = RetrievalSourceRecord & {
   adapter: AdapterSummary | null;
   // Why the source cannot be enabled now, if so.
   enableBlockedReason: string | null;
+  // Derived from its runs (feature 12, Core TDD §51).
+  health: SourceHealth;
 };
 
 const scheduleSchema = z.number().int().min(minimumScheduleMinutes).max(maximumScheduleMinutes);
@@ -85,9 +93,11 @@ export function createRetrievalService(input: {
   store: RetrievalStore;
   registry?: AdapterRegistry;
   env?: () => Readonly<Record<string, string | undefined>>;
+  now?: () => Date;
 }) {
   const registry = input.registry ?? defaultAdapterRegistry;
   const env = input.env ?? (() => process.env);
+  const now = input.now ?? (() => new Date());
 
   function summarize(adapter: AnySourceAdapter): AdapterSummary {
     return {
@@ -122,13 +132,26 @@ export function createRetrievalService(input: {
     return parsed.data;
   }
 
-  function toSummary(source: RetrievalSourceRecord & { latestRun?: RetrievalRunRecord | null }): SourceSummary {
+  async function toSummary(source: RetrievalSourceRecord & { latestRun?: RetrievalRunRecord | null }): Promise<SourceSummary> {
     const adapter = registry.get(source.adapterKey);
+    const blocked = enableBlockedReason(adapter);
+    const { runs, lastSuccess } = await input.store.healthInputs(source.id);
     return {
       ...source,
-      latestRun: source.latestRun ?? null,
+      latestRun: source.latestRun ?? runs[0] ?? null,
       adapter: adapter ? summarize(adapter) : null,
-      enableBlockedReason: enableBlockedReason(adapter),
+      enableBlockedReason: blocked,
+      health: deriveSourceHealth({
+        enabled: source.enabled,
+        archivedAt: source.archivedAt,
+        blockedReason: blocked,
+        scheduleMinutes: source.scheduleMinutes,
+        lastRunAt: source.lastRunAt,
+        nextEligibleAt: source.nextEligibleAt,
+        runsNewestFirst: runs,
+        lastSuccess,
+        now: now(),
+      }),
     };
   }
 
@@ -141,7 +164,7 @@ export function createRetrievalService(input: {
 
   function mapStoreError(error: unknown): never {
     if (error instanceof RetrievalSourceError) {
-      throw new RetrievalServiceError(error.code, error.message, error.code === "SOURCE_NOT_FOUND" ? 404 : 409);
+      throw new RetrievalServiceError(error.code, error.message, error.code === "SOURCE_NOT_FOUND" ? 404 : 409, error.until);
     }
     throw error;
   }
@@ -150,7 +173,7 @@ export function createRetrievalService(input: {
     adapters: (): AdapterSummary[] => registry.list().map(summarize),
 
     async list(options: { includeArchived?: boolean } = {}): Promise<SourceSummary[]> {
-      return (await input.store.list(options)).map(toSummary);
+      return Promise.all((await input.store.list(options)).map(toSummary));
     },
 
     async get(id: string): Promise<SourceSummary> {
@@ -207,11 +230,14 @@ export function createRetrievalService(input: {
       return toSummary(await input.store.restore(id).catch(mapStoreError));
     },
 
-    async runNow(id: string): Promise<{ run: RetrievalRunRecord; alreadyActive: boolean }> {
+    // A rate limit or a wait the source asked for always refuses the run;
+    // our own backoff refuses it unless override is set (an explicit "Run
+    // now anyway"), which permits this one run.
+    async runNow(id: string, options: { override?: boolean } = {}): Promise<{ run: RetrievalRunRecord; alreadyActive: boolean }> {
       const source = await existing(id);
       const blocked = enableBlockedReason(registry.get(source.adapterKey));
       if (blocked) throw new RetrievalServiceError("SOURCE_DISABLED", blocked, 409);
-      return input.store.enqueueRun(id, "MANUAL").catch(mapStoreError);
+      return input.store.enqueueRun(id, "MANUAL", { override: options.override === true, now: now() }).catch(mapStoreError);
     },
 
     async runs(id: string): Promise<RetrievalRunRecord[]> {
@@ -232,7 +258,10 @@ export function getRetrievalService(): RetrievalService {
 
 function errorResponse(error: unknown) {
   if (error instanceof RetrievalServiceError) {
-    return Response.json({ error: error.message, code: error.code }, { status: error.status });
+    return Response.json(
+      { error: error.message, code: error.code, ...(error.until ? { until: error.until.toISOString() } : {}) },
+      { status: error.status },
+    );
   }
   console.error("Retrieval source request failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
   return Response.json({ error: "The request could not be completed", code: "INTERNAL_ERROR" }, { status: 500 });
@@ -245,6 +274,8 @@ async function jsonBody(request: Request): Promise<{ ok: true; body: unknown } |
     return { ok: false, response: Response.json({ error: "Request body must be valid JSON", code: "REQUEST_INVALID" }, { status: 400 }) };
   }
 }
+
+const runNowSchema = z.object({ override: z.boolean().optional() }).strict();
 
 export function createRetrievalApiHandlers(retrieval: RetrievalService) {
   const handle = async (work: () => Promise<Response>) => {
@@ -274,10 +305,21 @@ export function createRetrievalApiHandlers(retrieval: RetrievalService) {
     remove: (id: string) => handle(async () => Response.json(await retrieval.remove(id))),
     restore: (id: string) => handle(async () => Response.json({ source: await retrieval.restore(id) })),
     runs: (id: string) => handle(async () => Response.json({ runs: await retrieval.runs(id) })),
-    runNow: (id: string) =>
-      handle(async () => {
-        const result = await retrieval.runNow(id);
+    // The body is optional; {"override": true} is the explicit "Run now
+    // anyway" past our own backoff.
+    runNow: async (id: string, request?: Request) => {
+      let override = false;
+      if (request && (await request.clone().text()).trim()) {
+        const parsed = await jsonBody(request);
+        if (!parsed.ok) return parsed.response;
+        const body = runNowSchema.safeParse(parsed.body);
+        if (!body.success) return Response.json({ error: "The request is invalid", code: "REQUEST_INVALID" }, { status: 400 });
+        override = body.data.override === true;
+      }
+      return handle(async () => {
+        const result = await retrieval.runNow(id, { override });
         return Response.json(result, { status: result.alreadyActive ? 200 : 202 });
-      }),
+      });
+    },
   };
 }

@@ -73,6 +73,10 @@ function source(overrides: Partial<SourceView> = {}): SourceView {
     enableBlockedReason: null,
     configFields: [boardField],
     runs: [],
+    health: {
+      status: "not_run", streak: 0, lastAttemptAt: null, lastSuccessAt: null, lastFailure: null, gate: null,
+      nextRunAt: null, nextRunDue: false, stale: false, neverSucceeded: false, emptyResult: false,
+    },
     ...overrides,
   };
 }
@@ -161,6 +165,87 @@ describe("sources manager", () => {
     await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("The schedule must be a whole number of hours from 1 to 168.");
+  });
+
+  // Feature 12: health, freshness and the Run now gate.
+  const healthy = (overrides: Partial<SourceView["health"]> = {}): SourceView["health"] => ({
+    status: "healthy", streak: 0, lastAttemptAt: "2026-10-18T09:00:00.000Z", lastSuccessAt: "2026-10-18T09:01:00.000Z", lastFailure: null,
+    gate: null, nextRunAt: "2026-10-18T21:00:00.000Z", nextRunDue: false, stale: false, neverSucceeded: false, emptyResult: false,
+    ...overrides,
+  });
+
+  it("shows an enabled source's health, last success, next run and freshness notes", () => {
+    const html = renderToStaticMarkup(
+      <SourcesManager
+        adapters={adapters}
+        sources={[
+          source({ enabled: true, lastRunAt: "2026-10-18T09:00:00.000Z", health: healthy({ emptyResult: true }) }),
+          source({
+            id: "f1", name: "Flaky board", enabled: true, lastRunAt: "2026-10-18T09:00:00.000Z",
+            health: healthy({
+              status: "failing", streak: 3, lastSuccessAt: "2026-10-15T09:00:00.000Z", stale: true,
+              lastFailure: { at: "2026-10-18T09:01:00.000Z", code: "SERVER_ERROR", message: "The source had a server error; retrieval stopped." },
+              gate: { kind: "backoff", until: "2026-10-20T09:01:00.000Z" }, nextRunAt: "2026-10-20T09:01:00.000Z",
+            }),
+          }),
+          source({ id: "d1", name: "Off board", health: healthy({ status: "disabled" }) }),
+        ]}
+      />,
+    );
+    expect(html).toContain('aria-label="Health: Healthy"');
+    expect(html).toContain("Last attempt: 18 Oct 2026, 09:00 UTC");
+    expect(html).toContain("Last successful retrieval: 18 Oct 2026, 09:01 UTC · Next run: 18 Oct 2026, 21:00 UTC");
+    expect(html).toContain("The last successful retrieval returned no listings; the board may be empty.");
+    expect(html).toContain('aria-label="Health: Failing"');
+    expect(html).toContain("Next run: 20 Oct 2026, 09:01 UTC (backing off after 3 source failures)");
+    expect(html).toContain("Latest failure: 18 Oct 2026, 09:01 UTC · The source had a server error; retrieval stopped.");
+    expect(html).toContain("No successful retrieval for more than two schedule intervals.");
+    // A disabled source shows no health badge or health lines.
+    expect(html).not.toContain('aria-label="Health: Disabled"');
+    expect(html.match(/Last successful retrieval/g)).toHaveLength(2);
+  });
+
+  it("disables Run now during a rate limit or a wait the source asked for, with distinct wording", () => {
+    render(
+      <SourcesManager
+        adapters={adapters}
+        sources={[source({ enabled: true, health: healthy({ status: "rate_limited", gate: { kind: "rate_limited", until: "2026-12-17T12:00:00.000Z" } }) })]}
+      />,
+    );
+    expect(button("Run now").disabled).toBe(true);
+    expect(container.textContent).toContain("Rate limited until 17 Dec 2026, 12:00 UTC");
+    expect(container.textContent).not.toContain("requested by the source");
+    render(
+      <SourcesManager
+        adapters={adapters}
+        sources={[source({ enabled: true, health: healthy({ status: "provider_wait", gate: { kind: "provider_wait", until: "2026-10-18T13:00:00.000Z" } }) })]}
+      />,
+    );
+    expect(button("Run now").disabled).toBe(true);
+    expect(container.textContent).toContain("Retry after 18 Oct 2026, 13:00 UTC (requested by the source)");
+    expect(container.textContent).not.toContain("Rate limited until");
+    expect(container.textContent).toContain("Waiting (requested by the source)");
+  });
+
+  it("asks before running past our own backoff and sends the override only after confirmation", async () => {
+    fetchMock.mockReturnValue(json({ run: {}, alreadyActive: false }, 202));
+    render(
+      <SourcesManager
+        adapters={adapters}
+        sources={[source({ enabled: true, health: healthy({ status: "needs_attention", streak: 1, gate: { kind: "backoff", until: "2026-10-19T09:00:00.000Z" } }) })]}
+      />,
+    );
+    await act(async () => button("Run now").click());
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Retrieval is backing off after source failures until 19 Oct 2026, 09:00 UTC.");
+    await act(async () => button("Wait").click());
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(async () => button("Run now").click());
+    await act(async () => button("Run now anyway").click());
+    await flush();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/sources/${sourceId}/runs`, expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({ override: true });
+    expect(container.textContent).toContain("Run queued. The retrieval worker will pick it up.");
   });
 
   it("formats schedules", () => {

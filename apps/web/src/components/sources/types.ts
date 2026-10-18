@@ -41,6 +41,24 @@ export interface AdapterView {
   configFields: AdapterConfigFieldView[];
 }
 
+// A source's health (feature 12), derived on the server from its runs.
+export interface SourceHealthView {
+  status: string;
+  streak: number;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastFailure: { at: string; code: string; message: string | null } | null;
+  // rate_limited and provider_wait are set by the source and cannot be
+  // overridden; backoff is ours and can be, once.
+  gate: { kind: "rate_limited" | "provider_wait" | "backoff"; until: string } | null;
+  nextRunAt: string | null;
+  // Whether nextRunAt had already passed when the page was rendered.
+  nextRunDue: boolean;
+  stale: boolean;
+  neverSucceeded: boolean;
+  emptyResult: boolean;
+}
+
 export interface SourceView {
   id: string;
   adapterKey: string;
@@ -56,4 +74,5 @@ export interface SourceView {
   enableBlockedReason: string | null;
   configFields: AdapterConfigFieldView[];
   runs: RunView[];
+  health: SourceHealthView;
 }

@@ -60,6 +60,7 @@ export const defaultMaxDetailRequestsPerRun = 25;
 const safeMessages: Record<string, string> = {
   NETWORK: "The source could not be reached.",
   HTTP_STATUS: "The source returned an unexpected response.",
+  SERVER_ERROR: "The source had a server error; retrieval stopped.",
   ACCESS_DENIED: "The source refused access; retrieval stopped.",
   RATE_LIMITED: "The source rate-limited retrieval; retrieval stopped.",
   RESPONSE_TOO_LARGE: "The source's response was larger than allowed.",
@@ -73,12 +74,22 @@ const safeMessages: Record<string, string> = {
 export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies) {
   const keepTitle = createTitleMatcher(dependencies.discovery.titleTerms);
 
-  async function finish(run: RetrievalRunRecord, status: RetrievalRunOutcome["status"], counts: RetrievalRunCounts, errorCode: string | null) {
+  // The run's outcome; a failure from the source carries any Retry-After it
+  // sent, which sets how long the source waits (feature 12).
+  async function finish(
+    run: RetrievalRunRecord,
+    status: RetrievalRunOutcome["status"],
+    counts: RetrievalRunCounts,
+    errorCode: string | null,
+    failure?: AdapterError,
+  ) {
+    const retryAfterSeconds = failure?.details.retryAfterSeconds;
     await dependencies.store.finishRun(run.id, {
       status,
       counts,
       errorCode,
       errorMessage: errorCode ? (safeMessages[errorCode] ?? safeMessages.INTERNAL!) : null,
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
       now: dependencies.now(),
     });
     return { runId: run.id, sourceId: run.retrievalSourceId, status, counts, errorCode };
@@ -109,7 +120,7 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
         config.data,
       );
     } catch (error) {
-      if (error instanceof AdapterError) return finish(run, "FAILED", counts, error.code);
+      if (error instanceof AdapterError) return finish(run, "FAILED", counts, error.code, error);
       dependencies.log.warn(`run ${run.id} failed in the adapter ${formatWorkerError(error)}`);
       return finish(run, "FAILED", counts, "INTERNAL");
     }
@@ -136,7 +147,7 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     }
 
     const stored = counts.created + counts.attached + counts.unchanged + counts.changed;
-    if (result.halted) return finish(run, stored ? "PARTIAL" : "FAILED", counts, result.halted.code);
+    if (result.halted) return finish(run, stored ? "PARTIAL" : "FAILED", counts, result.halted.code, result.halted);
     if (counts.failed) return finish(run, stored ? "PARTIAL" : "FAILED", counts, "LISTING_FAILURES");
     return finish(run, "COMPLETED", counts, null);
   }

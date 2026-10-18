@@ -24,6 +24,28 @@ export const runStatusLabels: Record<string, string> = {
   FAILED: "Failed",
 };
 
+// Source health (feature 12); shown only for enabled sources, next to
+// Enabled.
+export const sourceHealthLabels: Record<string, string> = {
+  blocked: "Cannot run",
+  queued: "Queued",
+  running: "Running",
+  not_run: "Not yet run",
+  rate_limited: "Rate limited",
+  provider_wait: "Waiting (requested by the source)",
+  needs_attention: "Needs attention",
+  failing: "Failing",
+  degraded: "Degraded",
+  healthy: "Healthy",
+};
+
+export function sourceHealthTone(status: string): "good" | "warn" | "bad" | null {
+  if (status === "healthy") return "good";
+  if (status === "failing" || status === "needs_attention") return "bad";
+  if (status === "degraded" || status === "rate_limited" || status === "provider_wait" || status === "blocked") return "warn";
+  return null;
+}
+
 export function retrievalSummary(category: string | null | undefined, type: string | null | undefined): string {
   return [category ? sourceCategoryLabels[category] ?? category : null, type ? retrievalTypeLabels[type] ?? type : null]
     .filter(Boolean)

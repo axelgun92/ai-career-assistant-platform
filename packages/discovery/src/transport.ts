@@ -11,6 +11,9 @@ export interface TransportResponse {
   url: string;
   contentType: string | null;
   body: string;
+  // A valid, future Retry-After sent with a 429 or 503, in seconds from
+  // when the response arrived; absent when missing, invalid or expired.
+  retryAfterSeconds?: number;
 }
 
 export interface TransportRequestOptions {
@@ -44,6 +47,24 @@ function requireHttpUrl(url: string): URL {
   return parsed;
 }
 
+// Retry-After as delta-seconds or an HTTP date. Only a value that asks for a
+// wait in the future counts; anything unparsable, negative, zero or already
+// past is ignored (the deterministic backoff applies instead). A long wait
+// is kept in full: the source's request is honoured, never shortened.
+export function parseRetryAfter(value: string | null | undefined, now: Date): number | undefined {
+  const text = value?.trim();
+  if (!text) return undefined;
+  if (/^\d+$/.test(text)) {
+    const seconds = Number(text);
+    return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : undefined;
+  }
+  if (!/[a-z]/i.test(text)) return undefined;
+  const at = Date.parse(text);
+  if (Number.isNaN(at)) return undefined;
+  const seconds = Math.ceil((at - now.getTime()) / 1000);
+  return seconds > 0 ? seconds : undefined;
+}
+
 async function readCapped(response: Response, maxBytes: number, url: string): Promise<string> {
   const declared = Number(response.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > maxBytes) {
@@ -74,10 +95,12 @@ export function createFetchTransport(options: {
   userAgent?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  now?: () => Date;
 } = {}): RetrievalTransport {
   const userAgent = options.userAgent?.trim() || defaultRetrievalUserAgent;
   const timeoutMs = options.timeoutMs ?? defaultRequestTimeoutMs;
   const fetchImpl = options.fetchImpl ?? fetch;
+  const now = options.now ?? (() => new Date());
 
   async function send(url: string, request: TransportRequestOptions, init: { method: "GET" | "POST"; body?: string }) {
     requireHttpUrl(url);
@@ -103,7 +126,15 @@ export function createFetchTransport(options: {
       if (error instanceof AdapterError) throw error;
       throw new AdapterError("NETWORK", "Response could not be read", { url });
     });
-    return { status: response.status, url, contentType: response.headers.get("content-type"), body };
+    const retryAfterSeconds =
+      response.status === 429 || response.status === 503 ? parseRetryAfter(response.headers.get("retry-after"), now()) : undefined;
+    return {
+      status: response.status,
+      url,
+      contentType: response.headers.get("content-type"),
+      body,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    };
   }
 
   return {
@@ -140,15 +171,17 @@ export function createFixtureTransport(
 }
 
 // The one place response statuses are classified. 429 is a rate limit;
-// 401/403 is an access failure; redirects and other non-2xx statuses are
-// HTTP failures.
+// 401/403 is an access failure; 5xx is a server error; redirects and other
+// non-2xx statuses are HTTP failures. A Retry-After travels with the error.
 export function ensureSuccess(response: TransportResponse): TransportResponse {
   const { status, url } = response;
   if (status >= 200 && status < 300) return response;
-  if (status === 429) throw new AdapterError("RATE_LIMITED", "The source rate-limited the request (HTTP 429)", { status, url });
+  const retryAfter = response.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: response.retryAfterSeconds };
+  if (status === 429) throw new AdapterError("RATE_LIMITED", "The source rate-limited the request (HTTP 429)", { status, url, ...retryAfter });
   if (status === 401 || status === 403) {
     throw new AdapterError("ACCESS_DENIED", `The source refused access (HTTP ${status})`, { status, url });
   }
+  if (status >= 500 && status < 600) throw new AdapterError("SERVER_ERROR", `The source had a server error (HTTP ${status})`, { status, url, ...retryAfter });
   if (status >= 300 && status < 400) throw new AdapterError("HTTP_STATUS", `Unexpected redirect (HTTP ${status})`, { status, url });
   throw new AdapterError("HTTP_STATUS", `Unexpected response (HTTP ${status})`, { status, url });
 }

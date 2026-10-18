@@ -27,6 +27,7 @@ function sourceRecord(overrides: Partial<RetrievalSourceRecord> = {}): Retrieval
     config: { board: "acme" },
     scheduleMinutes: 720,
     lastRunAt: null,
+    nextEligibleAt: null,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -46,6 +47,7 @@ function runRecord(): RetrievalRunRecord {
     counts: null,
     errorCode: null,
     errorMessage: null,
+    retryAfterUntil: null,
     createdAt: now,
   };
 }
@@ -234,6 +236,7 @@ function fakeSourceStore(initial: RetrievalSourceRecord[] = []) {
     restore: vi.fn(async (id: string) => sources.get(id)!),
     listRuns: vi.fn(async () => []),
     enqueueRun: vi.fn(async () => ({ run: { ...runRecord(), status: "QUEUED" as const }, alreadyActive: false })),
+    healthInputs: vi.fn(async () => ({ runs: [], lastSuccess: null })),
   };
   return store;
 }
