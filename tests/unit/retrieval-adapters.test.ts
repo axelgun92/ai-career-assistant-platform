@@ -369,6 +369,7 @@ describe("SmartRecruiters", () => {
 
 describe("SmartRecruiters detail-request priority", () => {
   const summary = (id: string, releasedDate: string | null) => ({ id, name: `Customer Success Manager ${id}`, releasedDate });
+  const released = (item: { releasedDate: string | null }) => item.releasedDate;
   // Newest first, as the list is ordered.
   const matches = [
     summary("e", "2026-10-18T05:00:00.000Z"),
@@ -382,7 +383,7 @@ describe("SmartRecruiters detail-request priority", () => {
     return new Map(Object.entries(entries).map(([id, at]) => [id, new Date(at)]));
   };
   const order = async (cap: number, entries: Record<string, string>, items = matches) =>
-    (await prioritizeDetailRequests({ maxDetailRequests: cap, lastChecked: checked(entries) }, items)).map((item) => item.id);
+    (await prioritizeDetailRequests({ maxDetailRequests: cap, lastChecked: checked(entries) }, items, released)).map((item) => item.id);
 
   it("puts unseen postings first, oldest first, then stored postings by oldest last check", async () => {
     // b and d are stored: d was checked before b.
@@ -422,7 +423,7 @@ describe("SmartRecruiters detail-request priority", () => {
 
   it("orders undated postings after dated ones, and treats every posting as unseen without a lookup", async () => {
     const items = [summary("new", null), ...matches.slice(3), summary("old", "not a date")];
-    const picked = await prioritizeDetailRequests({ maxDetailRequests: 25 }, items);
+    const picked = await prioritizeDetailRequests({ maxDetailRequests: 25 }, items, released);
     // b, a by date; then the undated ones, later in the list counting as older.
     expect(picked.map((item) => item.id)).toEqual(["a", "b", "old", "new"]);
   });

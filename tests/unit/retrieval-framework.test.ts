@@ -16,14 +16,17 @@ import {
   defaultAdapterRegistry,
   defaultMaxResponseBytes,
   ensureSuccess,
+  fixtureRequestKey,
   listingContentHash,
   parseRssItems,
+  postJson,
+  readJsonScript,
   redactUrl,
   rssField,
   type CollectContext,
   type ListingContentFields,
 } from "@ai-career/discovery";
-import { createRetrievedOpportunityNormalizer, htmlToText } from "@ai-career/normalization";
+import { createRetrievedOpportunityNormalizer, htmlToText, markdownToText } from "@ai-career/normalization";
 import { createTestAdapter, jsonResponse, testBoardUrl, type TestJob } from "../support/retrieval-test-adapter";
 
 describe("HTML to text", () => {
@@ -49,6 +52,22 @@ describe("HTML to text", () => {
     expect(htmlToText("Plain   text  with 3 < 5")).toBe("Plain text with 3 < 5");
     expect(htmlToText("<p> </p>")).toBeNull();
     expect(htmlToText(null)).toBeNull();
+  });
+});
+
+describe("Markdown-style text to plain text", () => {
+  it("decodes entities, drops emphasis and heading markers, and turns star bullets into dash lines", () => {
+    expect(
+      markdownToText("### Key Result Areas ### \n\n**First and Foremost:**\n\n* Onboard new customers &amp; train them\n* Resolve *queries* fast\n\n**We would love to have you** :)"),
+    ).toBe("Key Result Areas\n\nFirst and Foremost:\n\n- Onboard new customers & train them\n- Resolve queries fast\n\nWe would love to have you :)");
+  });
+
+  it("keeps link text and addresses, and empty input is Unknown", () => {
+    expect(markdownToText("Apply via [our form](https://example.com/apply) or [https://example.com](https://example.com).")).toBe(
+      "Apply via our form (https://example.com/apply) or https://example.com.",
+    );
+    expect(markdownToText("  \n ")).toBeNull();
+    expect(markdownToText(null)).toBeNull();
   });
 });
 
@@ -266,7 +285,7 @@ describe("transport and politeness", () => {
       "https://b.example.com/1": 403,
       "https://c.example.com/1": 401,
     };
-    const inner = { get: vi.fn(async (url: string) => ({ status: statuses[url] ?? 200, url, contentType: null, body: "" })) };
+    const inner = { get: vi.fn(async (url: string) => ({ status: statuses[url] ?? 200, url, contentType: null, body: "" })), post: vi.fn() };
     const polite = createPoliteTransport(inner, {
       minIntervalMs: 1000,
       now: () => clock,
@@ -284,6 +303,59 @@ describe("transport and politeness", () => {
     expect((await polite.get("https://c.example.com/1")).status).toBe(401);
     await expect(polite.get("https://c.example.com/2")).rejects.toMatchObject({ code: "ACCESS_DENIED" });
     expect(inner.get).toHaveBeenCalledTimes(4);
+  });
+
+  it("sends a JSON POST with the same limits, no cookies and no redirects, and keys recorded POSTs by body", async () => {
+    const fetchImpl = vi.fn(async () => new Response('{"ok":true}', { status: 200, headers: { "content-type": "application/json" } }));
+    const transport = createFetchTransport({ userAgent: "Test-Agent/1", fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await postJson(transport, "https://api.example.com/jobs", { offset: 0 })).toEqual({ ok: true });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.example.com/jobs");
+    expect(init).toMatchObject({ method: "POST", redirect: "manual", credentials: "omit", body: '{"offset":0}' });
+    expect(init.headers).toMatchObject({ "user-agent": "Test-Agent/1", "content-type": "application/json", accept: "application/json" });
+    expect(Object.keys(init.headers as Record<string, string>).map((name) => name.toLowerCase())).not.toContain("cookie");
+    const big = createFetchTransport({ fetchImpl: (async () => new Response("x".repeat(64), { status: 200 })) as unknown as typeof fetch });
+    await expect(big.post("https://api.example.com/jobs", {}, { maxBytes: 16 })).rejects.toMatchObject({ code: "RESPONSE_TOO_LARGE" });
+    await expect(transport.post("file:///etc/passwd", {})).rejects.toMatchObject({ code: "CONFIG" });
+
+    const fixture = createFixtureTransport({
+      [fixtureRequestKey("https://api.example.com/jobs", { offset: 0 })]: { status: 200, contentType: "application/json", body: '{"page":1}' },
+      [fixtureRequestKey("https://api.example.com/jobs", { offset: 20 })]: { status: 429, contentType: "application/json", body: "{}" },
+    });
+    expect(await postJson(fixture, "https://api.example.com/jobs", { offset: 0 })).toEqual({ page: 1 });
+    await expect(postJson(fixture, "https://api.example.com/jobs", { offset: 20 })).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    await expect(fixture.get("https://api.example.com/jobs")).rejects.toMatchObject({ code: "NETWORK" });
+    expect(fixture.requested).toEqual([
+      'POST https://api.example.com/jobs {"offset":0}',
+      'POST https://api.example.com/jobs {"offset":20}',
+      "https://api.example.com/jobs",
+    ]);
+  });
+
+  it("queues POSTs with GETs per host and stops the host after a refused POST", async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const inner = {
+      get: vi.fn(async (url: string) => ({ status: 200, url, contentType: null, body: "" })),
+      post: vi.fn(async (url: string) => ({ status: url.endsWith("/denied") ? 401 : 200, url, contentType: null, body: "" })),
+    };
+    const polite = createPoliteTransport(inner, { minIntervalMs: 2000, now: () => clock, sleep: async (ms) => { sleeps.push(ms); clock += ms; } });
+    await polite.post("https://w.example.com/jobs", {});
+    await polite.get("https://w.example.com/job/1");
+    expect(sleeps).toEqual([2000]);
+    expect((await polite.post("https://w.example.com/denied", {})).status).toBe(401);
+    await expect(polite.get("https://w.example.com/job/2")).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    await expect(polite.post("https://w.example.com/jobs", {})).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    expect(inner.post).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads JSON state embedded in a page and rejects anything else", () => {
+    const page = (attributes: string, content: string) => `<html><body><script ${attributes}>${content}</script></body></html>`;
+    expect(readJsonScript(page('id="__NEXT_DATA__" type="application/json" crossorigin="anonymous"', '{"a":1}'), "__NEXT_DATA__")).toEqual({ a: 1 });
+    expect(readJsonScript(page('id="__NEXT_DATA__"', '{"a":1}'), "__NEXT_DATA__")).toBeNull();
+    expect(readJsonScript(page('id="__NEXT_DATA__" type="application/json"', "{not json"), "__NEXT_DATA__")).toBeNull();
+    expect(readJsonScript(page('id="other" type="application/json"', '{"a":1}'), "__NEXT_DATA__")).toBeNull();
+    expect(readJsonScript("<html><body>Checking your browser…</body></html>", "__NEXT_DATA__")).toBeNull();
   });
 
   it("redacts credentials from URLs in errors", () => {

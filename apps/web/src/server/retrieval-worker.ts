@@ -30,8 +30,9 @@ export interface RetrievalWorkerDependencies {
   store: RetrievalRunStore;
   ingestion: RetrievalIngestionService;
   registry: AdapterRegistry;
-  // A fresh (polite) transport for each run.
-  transport: () => RetrievalTransport;
+  // A fresh (polite) transport for each run, with the adapter's minimum
+  // request interval where it declares one.
+  transport: (options: { minIntervalMs?: number }) => RetrievalTransport;
   discovery: DiscoveryConfiguration;
   env: () => Readonly<Record<string, string | undefined>>;
   now: () => Date;
@@ -96,12 +97,12 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     try {
       result = await adapter.collect(
         {
-          transport: dependencies.transport(),
+          transport: dependencies.transport(adapter.minRequestIntervalMs ? { minIntervalMs: adapter.minRequestIntervalMs } : {}),
           discovery: dependencies.discovery,
           keepTitle,
           env: dependencies.env(),
           now: dependencies.now,
-          maxPages: dependencies.maxPages ?? defaultMaxPagesPerRun,
+          maxPages: adapter.maxPagesPerRun ?? dependencies.maxPages ?? defaultMaxPagesPerRun,
           maxDetailRequests: dependencies.maxDetailRequests ?? defaultMaxDetailRequestsPerRun,
           ...(dependencies.lastChecked ? { lastChecked: (ids: readonly string[]) => dependencies.lastChecked!(adapter.key, ids) } : {}),
         },

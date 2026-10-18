@@ -6,6 +6,10 @@ import { leverAdapter } from "./adapters/lever";
 import { remoteOkAdapter } from "./adapters/remote-ok";
 import { smartRecruitersAdapter } from "./adapters/smartrecruiters";
 import { weWorkRemotelyAdapter } from "./adapters/we-work-remotely";
+import { welcomeToTheJungleAdapter } from "./adapters/welcome-to-the-jungle";
+import { wellfoundAdapter } from "./adapters/wellfound";
+import { workableAdapter } from "./adapters/workable";
+import { workdayAdapter } from "./adapters/workday";
 import { workingNomadsAdapter } from "./adapters/working-nomads";
 import type { AnySourceAdapter } from "./contract";
 
@@ -36,7 +40,11 @@ export const sourceAdapters: readonly AnySourceAdapter[] = [
   weWorkRemotelyAdapter,
   himalayasAdapter,
   workingNomadsAdapter,
+  workdayAdapter,
+  workableAdapter,
+  wellfoundAdapter,
   adzunaAdapter,
+  welcomeToTheJungleAdapter,
 ];
 
 export const defaultAdapterRegistry = createAdapterRegistry(sourceAdapters);

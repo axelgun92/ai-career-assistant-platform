@@ -68,7 +68,7 @@ async function main(): Promise<number> {
       normalizer: createRetrievedOpportunityNormalizer(),
     }),
     registry: defaultAdapterRegistry,
-    transport: () => createPoliteTransport(createFetchTransport({ userAgent: settings.RETRIEVAL_USER_AGENT })),
+    transport: (options) => createPoliteTransport(createFetchTransport({ userAgent: settings.RETRIEVAL_USER_AGENT }), options),
     discovery: customerSuccessDiscoveryConfiguration,
     env: () => process.env,
     now: () => new Date(),

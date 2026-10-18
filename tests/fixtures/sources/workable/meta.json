@@ -1,0 +1,100 @@
+{
+  "adapter": "workable",
+  "request": "GET https://jobs.workable.com/api/v1/jobs?query=customer%20success",
+  "httpStatus": 200,
+  "contentType": "application/json",
+  "capturedAt": "2026-10-18T19:59:59.999Z (the searchAt in the response's nextPageToken; captured by the user)",
+  "capturedFrom": "The user's local environment (Codex/WSL), which could reach the endpoint; this cloud environment's only request was rate-limited (HTTP 429, a network/reputation condition). The raw files were supplied to this session and are kept outside the repository.",
+  "fullResponse": {
+    "bytes": 149984,
+    "sha256": "6e3bf52227d68e0eb73a62aa00d6e2eceb778e37f5fad698d5c6de414e984c02",
+    "keptInGit": false
+  },
+  "trimmedTo": "3 of 20 items",
+  "items": [
+    {
+      "responseIndex": 0,
+      "id": "1671f9c9-4f39-44b7-b44a-5889b15bfafd",
+      "title": "Customer Success - Apptrove (Onboarding & Account Management)",
+      "company": "Trackier",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 2,
+      "id": "0686d816-4047-43c8-8fc9-e73eb6aa2bf2",
+      "title": "VP of Sales and Customer Success",
+      "company": "ClickView",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 19,
+      "id": "87fe7050-1014-4a7f-abdf-d982fed59223",
+      "title": "Менеджер по сопровождению клиентов (CSM)",
+      "company": "DMED",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation. title, totalSize, nextPageToken and autoAppliedFilters are kept as received.",
+  "sanitization": [],
+  "selectionNote": "A job with requirements and benefits sections, a remote job with a TELECOMMUTE location marker and empty sections, and a non-English title the role filter does not keep.",
+  "fixtureFile": "response.json",
+  "page2": {
+    "request": "GET https://jobs.workable.com/api/v1/jobs?query=customer%20success&pageToken=eyJzZWFyY2hBdCI6IjIwMjYtMTAtMThUMTk6NTk6NTkuOTk5WiIsIm9mZnNldCI6WzQxLjk5MjM2MywwLDE3OTE5NzY4ODA4NTMsIjg3ZmU3MDUwLTEwMTQtNGE3Zi1hYmRmLWQ5ODJmZWQ1OTIyMyJdfQ%3D%3D",
+    "httpStatus": 200,
+    "file": "response-page-2.json",
+    "fullResponse": {
+      "bytes": 129293,
+      "sha256": "078236380d647936127b53b3c828a83bfea9349ab4d9863b8152a9308b873f22",
+      "keptInGit": false
+    },
+    "trimmedTo": "3 of 20 items",
+    "items": [
+      {
+        "responseIndex": 0,
+        "id": "019301c6-c309-4849-a71f-96931f87395c",
+        "title": "Customer Success Manager- Energy Commodities",
+        "company": "Vortexa",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 1,
+        "id": "481f5fe8-3f32-4b47-bc15-675cc78257b2",
+        "title": "SAP SF - Customer Success Manager",
+        "company": "Rolling Arrays - Consulting",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 7,
+        "id": "24810ec3-14e7-44ff-ae4d-f1291f906d7b",
+        "title": "Enterprise Customer Success Manager",
+        "company": "PatientIQ",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      }
+    ],
+    "note": "Requested with page 1's nextPageToken as pageToken. 20 jobs, the same totalSize (3156), a new nextPageToken, and no overlap with page 1 by id (verified over both complete responses)."
+  }
+}

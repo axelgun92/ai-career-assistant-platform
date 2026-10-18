@@ -1003,3 +1003,22 @@ No evaluator stage, prompt, schema, routing, salary policy, evidence behavior or
 8. **New single-worker lock:** advisory key 41220/4 for `pnpm worker:retrieval`, separate from the evaluation worker (41220/1) and the duplicate-spend lock (41220/3).
 
 Final Integration Checklist: add items 1 and 2 to the Codex review list. Item 3 is recorded for awareness only; Feature 11A changes nothing on the evaluator side. Feature 11B extends the same adapter contract and ingestion path.
+
+*(Annotation, October 18, 2026: Feature 11A was committed as `fad2341`. The record above is preserved as written.)*
+
+### Feature 11B — shared-boundary record (October 18, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-18\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+Feature 11B adds the verified public/guest-endpoint and public-HTML sources (Workday, Workable, Wellfound) to the Feature 11A adapter contract and ingestion path. No evaluator stage, prompt, schema, routing, salary policy, evidence behavior, recommendation logic or `loadSubject()` code changed, and nothing changed on `codex/evaluator-live-diagnostic`. There is no schema or migration change and no change to the capture repository, the retrieval worker's ingestion or deduplication engine `core-dedup-v2`.
+
+1. **Retrieval transport contract** (`packages/discovery/src/transport.ts`, `politeness.ts`). `RetrievalTransport` gains `post(url, jsonBody)`, used only by Workday, whose verified listing request is a stateless JSON POST. It shares the 10 MB ceiling, timeout, identifying User-Agent, no-cookie and no-redirect rules, per-host politeness queue and 401/403/429 stop. The fixture transport keys recorded POSTs by URL and body (`fixtureRequestKey`). Any other implementation of `RetrievalTransport` must add `post`.
+2. **Adapter options.** `SourceAdapter` may declare `minRequestIntervalMs` (Wellfound: 2 s), `maxPagesPerRun` (Wellfound: 11) and `verificationBody` (Workday's verification POST). The worker's transport factory now receives the adapter's interval; `pnpm sources:verify` sends a POST where a body is declared.
+3. **Listing identity.** Workday listing IDs are `<tenant>/<site>:<externalPath>`, so re-observation and source-scoped deduplication never confuse two career sites; the requisition stays in `requisitionId`, so the same requisition at the same company still matches across sites.
+4. **Welcome to the Jungle / Otta:** registered as Type #3 but unverified, so it cannot be enabled. On October 18, 2026 its logged-out search surface returned HTTP 200, unblocked, but showed a sign-up and matching flow: no listings in markup or embedded state, and no anonymous listing endpoint, GraphQL operation, paging, job IDs or listing fields. It was not reinterpreted as a per-company source. **Handoff:** Feature 14 (browser-assisted retrieval) may reconsider it if that feature provides a viable current retrieval path. This is not a claim that it can never be retrieved.
+5. **Workable contingency:** the JSON search endpoint is the sole production interface. Workable's official XML feed (`https://www.workable.com/boards/workable.xml`, about 850 MB, Range ignored) was verified as technically sufficient but is not implemented. Reconsider it deliberately only if the JSON endpoint proves persistently unusable from the actual production host; one Claude-cloud request was rate-limited (HTTP 429) while other networks succeeded. Retry-After handling and backoff belong to Feature 12.
+
+Final Integration Checklist: item 1 is a shared-contract change to note in the Codex review list; items 2–5 are recorded for awareness. Feature 11B changes nothing on the evaluator side.

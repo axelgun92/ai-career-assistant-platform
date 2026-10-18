@@ -76,6 +76,7 @@ function worker(options: {
 }) {
   const { store, finished } = fakeStore(options.source);
   const ingested: RawOpportunity[] = [];
+  const transports: Array<{ minIntervalMs?: number }> = [];
   const instance = createRetrievalWorker({
     store,
     ingestion: {
@@ -85,14 +86,17 @@ function worker(options: {
       },
     },
     registry: createAdapterRegistry([options.adapter ?? createTestAdapter()]),
-    transport: () => createFixtureTransport(options.responses),
+    transport: (transportOptions) => {
+      transports.push(transportOptions);
+      return createFixtureTransport(options.responses);
+    },
     discovery: customerSuccessDiscoveryConfiguration,
     env: () => options.env ?? {},
     now: () => now,
     log: { info: vi.fn(), warn: vi.fn() },
     ...(options.lastChecked ? { lastChecked: options.lastChecked } : {}),
   });
-  return { instance, store, finished, ingested };
+  return { instance, store, finished, ingested, transports };
 }
 
 const firstPage = testBoardUrl("test-board", "acme", 1);
@@ -133,6 +137,19 @@ describe("retrieval worker", () => {
     const bare = worker({ adapter: { ...base, collect: async (...args: Parameters<typeof base.collect>) => ((plain = args[0]), base.collect(...args)) }, responses: { [firstPage]: jsonResponse({ jobs: [] }) } });
     await bare.instance.runOnce();
     expect(plain!.lastChecked).toBeUndefined();
+  });
+
+  it("uses an adapter's own request interval and page cap where it declares them", async () => {
+    const base = createTestAdapter();
+    let seen: Parameters<typeof base.collect>[0] | null = null;
+    const slow = { ...base, minRequestIntervalMs: 2000, maxPagesPerRun: 11, collect: async (...args: Parameters<typeof base.collect>) => ((seen = args[0]), base.collect(...args)) };
+    const declared = worker({ adapter: slow, responses: { [firstPage]: jsonResponse({ jobs: [] }) } });
+    await declared.instance.runOnce();
+    expect(declared.transports).toEqual([{ minIntervalMs: 2000 }]);
+    expect(seen).toMatchObject({ maxPages: 11, maxDetailRequests: 25 });
+    const plain = worker({ responses: { [firstPage]: jsonResponse({ jobs: [] }) } });
+    await plain.instance.runOnce();
+    expect(plain.transports).toEqual([{}]);
   });
 
   it("counts a listing that fails and continues with the rest (PARTIAL)", async () => {

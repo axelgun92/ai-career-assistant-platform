@@ -8,7 +8,17 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 ## Unreleased
 
-Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026.
+Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026.
+
+### Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources (October 18, 2026)
+
+- **Sources** (each verified with individually approved live requests; committed fixtures of at most three items with metadata; raw responses outside Git):
+  - **Workday** (employer ATS, public/guest endpoint): configured by the employer's career-site address. A stateless JSON POST list with offset paging (the total is reported on the first page only), capped detail requests with unseen postings first, listing IDs qualified by tenant and site, the company from the detail, the absolute start date as the posting date, and only Remote/Onsite mapped to a workplace type. Pay ranges stay in the description; daily-changing fields are not material.
+  - **Workable** (job board, public/guest endpoint): the Jobs by Workable search for "customer success", paged by `pageToken`, with the complete text (description, requirements, benefits) inline, so no detail requests. Its official whole-feed XML export (about 850 MB) was verified as a contingency only and is not used.
+  - **Wellfound** (marketplace, public HTML): the embedded Next.js state of the public Customer Success role page, up to 11 pages at least 2 s apart, complete descriptions converted from Markdown-style text; compensation kept as source data.
+  - **Welcome to the Jungle / Otta** keeps its Type #3 classification but is registered unverified and cannot be enabled: its logged-out search now shows a sign-up and matching flow with no listings or anonymous listing endpoint. Deferred to browser-assisted retrieval (feature 14) for reconsideration.
+- **Framework:** a JSON POST transport method with the existing ceiling, politeness, 401/403/429 handling and no-redirect rule; source-specific request intervals and page caps; the unseen-first detail priority shared by SmartRecruiters and Workday; an embedded-state reader. No schema change, no worker or deduplication change.
+- **New versioned specifications:** Core AI Framework PRD v1.8, Customer Success AI Assistant PRD v1.7, Core Platform TDD v1.9 (§51 "Automated Retrieval: Type #3 and Type #4 Sources (Feature 11B)") and Customer Success Assistant TDD v1.7 (the §8 implementation note). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged (v1.3).
 
 ### Feature 11A — automated retrieval from the verified official API and feed sources (October 18, 2026)
 

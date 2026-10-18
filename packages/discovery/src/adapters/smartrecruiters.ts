@@ -1,7 +1,7 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
-import { mapKeptItems, parseItems, parseResponse } from "../collection";
-import { AdapterError, type CollectContext, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
+import { mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
+import { AdapterError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
 import { getJson } from "../transport";
 import { slugSchema } from "./shared";
 
@@ -87,42 +87,6 @@ const listUrl = (config: SmartRecruitersConfig, offset = 0) =>
 const detailUrl = (config: SmartRecruitersConfig, id: string) =>
   `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(config.company)}/postings/${encodeURIComponent(id)}`;
 
-const releasedTime = (summary: Summary) => {
-  const time = summary.releasedDate ? Date.parse(summary.releasedDate) : Number.NaN;
-  return Number.isNaN(time) ? null : time;
-};
-
-// Oldest posting first. A posting without a readable date goes after the
-// dated ones; among those, later in the (newest-first) list counts as older.
-function olderFirst(a: { summary: Summary; position: number }, b: { summary: Summary; position: number }) {
-  const left = releasedTime(a.summary);
-  const right = releasedTime(b.summary);
-  if (left !== null && right !== null && left !== right) return left - right;
-  if ((left === null) !== (right === null)) return left === null ? 1 : -1;
-  return b.position - a.position;
-}
-
-// Which title matches get one of the run's detail requests (at most
-// maxDetailRequests). Postings never stored from this source go first,
-// oldest first: they are the closest to leaving the window a run can see.
-// Stored postings get what is left, longest since last checked first, so a
-// stored posting never holds a place ahead of an unseen one and stored
-// postings take turns from run to run.
-export async function prioritizeDetailRequests(
-  context: Pick<CollectContext, "lastChecked" | "maxDetailRequests">,
-  matches: readonly Summary[],
-): Promise<Summary[]> {
-  const cap = Math.max(0, context.maxDetailRequests);
-  if (!matches.length || !cap) return [];
-  const checked = context.lastChecked ? await context.lastChecked(matches.map((summary) => summary.id)) : new Map<string, Date>();
-  const entries = matches.map((summary, position) => ({ summary, position, checkedAt: checked.get(summary.id)?.getTime() ?? null }));
-  const unseen = entries.filter((entry) => entry.checkedAt === null).sort(olderFirst);
-  const stored = entries
-    .filter((entry) => entry.checkedAt !== null)
-    .sort((a, b) => (a.checkedAt! !== b.checkedAt! ? a.checkedAt! - b.checkedAt! : olderFirst(a, b)));
-  return [...unseen, ...stored].slice(0, cap).map((entry) => entry.summary);
-}
-
 export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
   key: "smartrecruiters",
   name: "SmartRecruiters",
@@ -181,6 +145,7 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
     const kept = await prioritizeDetailRequests(
       context,
       summaries.filter((summary) => context.keepTitle(summary.name)),
+      (summary) => summary.releasedDate,
     );
     const details: Detail[] = [];
     for (const summary of kept) {

@@ -93,3 +93,38 @@ export function parseItems<T>(
   }
   return { valid, issues };
 }
+
+// Which kept listings get one of the run's detail requests (at most
+// maxDetailRequests), for sources whose list has no full description.
+// Listings never stored from this source go first, oldest first: they are
+// the closest to leaving the window a run can see. Stored listings get what
+// is left, longest since last checked first, so a stored listing never holds
+// a place ahead of an unseen one and stored listings take turns from run to
+// run. "Oldest" uses the posting date when the list gives one; a listing
+// without a readable date goes after the dated ones, and among those a later
+// place in the list goes first. No chronological order is assumed: a later
+// place is simply closer to leaving the bounded window a run reads.
+export async function prioritizeDetailRequests<Item extends { id: string }>(
+  context: Pick<CollectContext, "lastChecked" | "maxDetailRequests">,
+  items: readonly Item[],
+  postedAt: (item: Item) => string | null | undefined = () => null,
+): Promise<Item[]> {
+  const cap = Math.max(0, context.maxDetailRequests);
+  if (!items.length || !cap) return [];
+  const checked = context.lastChecked ? await context.lastChecked(items.map((item) => item.id)) : new Map<string, Date>();
+  const entries = items.map((item, position) => {
+    const time = Date.parse(postedAt(item) ?? "");
+    return { item, position, posted: Number.isNaN(time) ? null : time, checkedAt: checked.get(item.id)?.getTime() ?? null };
+  });
+  type Entry = (typeof entries)[number];
+  const olderFirst = (a: Entry, b: Entry) => {
+    if (a.posted !== null && b.posted !== null && a.posted !== b.posted) return a.posted - b.posted;
+    if ((a.posted === null) !== (b.posted === null)) return a.posted === null ? 1 : -1;
+    return b.position - a.position;
+  };
+  const unseen = entries.filter((entry) => entry.checkedAt === null).sort(olderFirst);
+  const stored = entries
+    .filter((entry) => entry.checkedAt !== null)
+    .sort((a, b) => (a.checkedAt! !== b.checkedAt! ? a.checkedAt! - b.checkedAt! : olderFirst(a, b)));
+  return [...unseen, ...stored].slice(0, cap).map((entry) => entry.item);
+}

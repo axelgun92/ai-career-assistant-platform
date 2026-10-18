@@ -16,7 +16,18 @@ import {
   RetrievalSourceError,
 } from "@ai-career/database";
 import { readFileSync } from "node:fs";
-import { createAdapterRegistry, createFixtureTransport, greenhouseAdapter, smartRecruitersAdapter, type TransportResponse } from "@ai-career/discovery";
+import {
+  createAdapterRegistry,
+  createFixtureTransport,
+  fixtureRequestKey,
+  greenhouseAdapter,
+  smartRecruitersAdapter,
+  wellfoundAdapter,
+  workableAdapter,
+  workdayAdapter,
+  workdayListBody,
+  type TransportResponse,
+} from "@ai-career/discovery";
 import { createManualOpportunityNormalizer, createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
 import { createRetrievalWorker } from "../../apps/web/src/server/retrieval-worker";
 import { createTestAdapter, jsonResponse, testBoardUrl, type TestJob } from "../support/retrieval-test-adapter";
@@ -463,6 +474,146 @@ describe("SmartRecruiters detail requests through the worker", () => {
     expect(checked.get(board[3]!.id)!.toISOString()).toBe(clock.toISOString());
     // The lookup is scoped to the source key.
     expect((await store.lastCheckedListings("greenhouse", ids)).size).toBe(0);
+  });
+});
+
+describe("Feature 11B adapters through the worker (real fixtures)", () => {
+  const sourceWorker = createRetrievalWorker({
+    store,
+    ingestion: createRetrievalIngestionService({ repository, normalizer: createRetrievedOpportunityNormalizer() }),
+    registry: createAdapterRegistry([workdayAdapter, workableAdapter, wellfoundAdapter]),
+    transport: () => createFixtureTransport(responses),
+    discovery: customerSuccessDiscoveryConfiguration,
+    env: () => ({}),
+    now: () => clock,
+    log: { info: () => undefined, warn: () => undefined },
+    lastChecked: (source, externalIds) => store.lastCheckedListings(source, externalIds),
+  });
+  const csPath = "/job/USA-IL-Chicago/Revenue-Operations-Director--Global-Customer-Success_JR-0110682";
+  const workdayList = readFileSync("tests/fixtures/sources/workday/response.json", "utf8");
+  const workdayDetail = readFileSync("tests/fixtures/sources/workday/detail-JR-0110682.json", "utf8");
+  const wellfoundPage = readFileSync("tests/fixtures/sources/wellfound/response.html", "utf8");
+  const fixtureListings = [
+    { source: "workday", externalId: { endsWith: csPath } },
+    { source: "wellfound", externalId: { in: ["1716423", "4829861", "3886599"] } },
+    { source: "workable", externalId: { in: ["1671f9c9-4f39-44b7-b44a-5889b15bfafd", "0686d816-4047-43c8-8fc9-e73eb6aa2bf2", "87fe7050-1014-4a7f-abdf-d982fed59223"] } },
+  ];
+  const fixtureCompanies = ["Workday, Inc.", "Pragma (formerly Logisy)", "Medsender", "Trackier", "ClickView", "DMED"];
+
+  // The fixtures' real listing ids are shared with any other run of them,
+  // so their records, opportunities and companies are removed before and after.
+  async function clearFixtureListings() {
+    const where = { OR: fixtureListings };
+    const records = await database.sourceRecord.findMany({ where, select: { opportunityId: true } });
+    const opportunityIds = records.map((record) => record.opportunityId).filter((id): id is string => id !== null);
+    for (;;) {
+      const leaves = await database.sourceRecord.findMany({ where: { OR: [...fixtureListings, { opportunityId: { in: opportunityIds } }], laterObservations: { none: {} } }, select: { id: true } });
+      if (!leaves.length) break;
+      await database.sourceRecord.deleteMany({ where: { id: { in: leaves.map((leaf) => leaf.id) } } });
+    }
+    await database.opportunity.deleteMany({ where: { id: { in: opportunityIds } } });
+    await database.company.deleteMany({ where: { name: { in: fixtureCompanies }, opportunities: { none: {} } } });
+  }
+
+  async function addAdapterSource(adapterKey: string, name: string, config: unknown, sourceCategory: "ATS" | "MARKETPLACE" | "JOB_BOARD", retrievalType: "PUBLIC_GUEST_INTERNAL_ENDPOINT" | "PUBLIC_HTML") {
+    const source = await store.create({ adapterKey, name, domain: "customer-success", retrievalType, sourceCategory, config, scheduleMinutes: 720 });
+    sourceIds.push(source.id);
+    await store.update(source.id, { enabled: true });
+    return source;
+  }
+
+  async function runSource(sourceId: string) {
+    clock = new Date(clock.getTime() + 60 * 60 * 1000);
+    await store.enqueueRun(sourceId, "MANUAL");
+    const outcome = await sourceWorker.runOnce();
+    expect(outcome?.sourceId).toBe(sourceId);
+    return outcome!;
+  }
+
+  function serveWorkday(host: string, tenant: string, site: string, detail = workdayDetail) {
+    responses[fixtureRequestKey(`https://${host}/wday/cxs/${tenant}/${site}/jobs`, workdayListBody(0))] = jsonResponse(JSON.parse(workdayList));
+    responses[`https://${host}/wday/cxs/${tenant}/${site}${csPath}`] = jsonResponse(JSON.parse(detail));
+  }
+
+  it("stores the Workday posting once per tenant-scoped listing, attaches the same requisition from a second site, and ignores daily-changing fields", async () => {
+    await clearFixtureListings();
+    try {
+      const first = await addAdapterSource("workday", "Workday (fixture)", { careerSite: "https://workday.wd5.myworkdayjobs.com/Workday" }, "ATS", "PUBLIC_GUEST_INTERNAL_ENDPOINT");
+      serveWorkday("workday.wd5.myworkdayjobs.com", "workday", "Workday");
+      expect(await runSource(first.id)).toMatchObject({ status: "COMPLETED", counts: { fetched: 3, keptByTerms: 1, created: 1 } });
+      const record = await database.sourceRecord.findFirstOrThrow({ where: { retrievalSourceId: first.id }, include: { opportunity: { include: { company: true } } } });
+      expect(record).toMatchObject({ externalId: `workday/Workday:${csPath}`, requisitionId: "JR-0110682", retrievalType: "PUBLIC_GUEST_INTERNAL_ENDPOINT", sourceCategory: "ATS" });
+      expect(record.opportunity).toMatchObject({ status: "NORMALIZED", atsPlatform: "workday", salaryMin: null });
+      expect(record.opportunity!.company!.name).toBe("Workday, Inc.");
+      expect(await database.evaluation.count({ where: { opportunityId: record.opportunityId! } })).toBe(0);
+
+      // The same path at another site is a different listing: it is not a
+      // re-observation, and the same requisition at the same company attaches.
+      const second = await addAdapterSource("workday", "Workday second site (fixture)", { careerSite: "https://workday.wd5.myworkdayjobs.com/en-US/Workday_Careers" }, "ATS", "PUBLIC_GUEST_INTERNAL_ENDPOINT");
+      serveWorkday("workday.wd5.myworkdayjobs.com", "workday", "Workday_Careers");
+      expect(await runSource(second.id)).toMatchObject({ status: "COMPLETED", counts: { attached: 1, unchanged: 0, created: 0 } });
+      const records = await database.sourceRecord.findMany({ where: { opportunityId: record.opportunityId! }, orderBy: { createdAt: "asc" } });
+      expect(records.map((row) => row.externalId)).toEqual([`workday/Workday:${csPath}`, `workday/Workday_Careers:${csPath}`]);
+
+      // Next day: postedOn, timeLeftToApply and similarJobs change; nothing material does.
+      const touched = JSON.parse(workdayDetail);
+      touched.jobPostingInfo.postedOn = "Posted 4 Days Ago";
+      touched.jobPostingInfo.timeLeftToApply = "29 days left to apply";
+      touched.similarJobs = [];
+      serveWorkday("workday.wd5.myworkdayjobs.com", "workday", "Workday", JSON.stringify(touched));
+      expect(await runSource(first.id)).toMatchObject({ status: "COMPLETED", counts: { unchanged: 1, changed: 0, created: 0 } });
+    } finally {
+      await clearFixtureListings();
+    }
+  });
+
+  it("stores the Workable Customer Success jobs with their complete text as job-board listings, ignoring freshness stamps on re-run", async () => {
+    await clearFixtureListings();
+    try {
+      const source = await addAdapterSource("workable", "Workable (fixture)", {}, "JOB_BOARD", "PUBLIC_GUEST_INTERNAL_ENDPOINT");
+      const page = JSON.parse(readFileSync("tests/fixtures/sources/workable/response.json", "utf8"));
+      // One page only, so the run completes without page 2.
+      responses["https://jobs.workable.com/api/v1/jobs?query=customer%20success"] = jsonResponse({ ...page, nextPageToken: null });
+      expect(await runSource(source.id)).toMatchObject({ status: "COMPLETED", counts: { fetched: 3, keptByTerms: 2, created: 2 } });
+      const records = await database.sourceRecord.findMany({ where: { retrievalSourceId: source.id }, include: { opportunity: { include: { company: true } } }, orderBy: { externalId: "asc" } });
+      expect(records.map((row) => [row.externalId, row.sourceCategory, row.opportunity?.company?.name, row.opportunity?.remoteStatus])).toEqual([
+        ["0686d816-4047-43c8-8fc9-e73eb6aa2bf2", "JOB_BOARD", "ClickView", "REMOTE"],
+        ["1671f9c9-4f39-44b7-b44a-5889b15bfafd", "JOB_BOARD", "Trackier", "ONSITE"],
+      ]);
+      expect(records[1]!.opportunity!.jobDescription).toContain("B.Tech/BE degree is mandatory.");
+      page.jobs[0].updated = "2026-10-20T00:00:00.000Z";
+      responses["https://jobs.workable.com/api/v1/jobs?query=customer%20success"] = jsonResponse({ ...page, totalSize: 4000, nextPageToken: null });
+      expect(await runSource(source.id)).toMatchObject({ status: "COMPLETED", counts: { unchanged: 2, changed: 0, created: 0 } });
+    } finally {
+      await clearFixtureListings();
+    }
+  });
+
+  it("stores the Wellfound Customer Success listings from the embedded state as marketplace listings and re-runs idempotently", async () => {
+    await clearFixtureListings();
+    try {
+      const source = await addAdapterSource("wellfound", "Wellfound (fixture)", {}, "MARKETPLACE", "PUBLIC_HTML");
+      // One page only, so the run completes without a page 2.
+      responses["https://wellfound.com/role/customer-success-specialist"] = {
+        status: 200,
+        contentType: "text/html; charset=utf-8",
+        body: wellfoundPage.replace(/"pageCount":\s*11/, '"pageCount": 1'),
+      };
+      expect(await runSource(source.id)).toMatchObject({ status: "COMPLETED", counts: { fetched: 3, keptByTerms: 2, created: 2 } });
+      const records = await database.sourceRecord.findMany({ where: { retrievalSourceId: source.id }, include: { opportunity: { include: { company: true } } }, orderBy: { externalId: "asc" } });
+      expect(records.map((row) => [row.externalId, row.sourceCategory, row.retrievalType, row.opportunity?.company?.name])).toEqual([
+        ["1716423", "MARKETPLACE", "PUBLIC_HTML", "Pragma (formerly Logisy)"],
+        ["4829861", "MARKETPLACE", "PUBLIC_HTML", "Medsender"],
+      ]);
+      for (const row of records) {
+        expect(row.opportunity!.salaryMin).toBeNull();
+        expect(row.opportunity!.jobDescription).not.toMatch(/\*\*|&amp;/);
+        expect(await database.evaluation.count({ where: { opportunityId: row.opportunityId! } })).toBe(0);
+      }
+      expect(await runSource(source.id)).toMatchObject({ status: "COMPLETED", counts: { unchanged: 2, created: 0, changed: 0 } });
+    } finally {
+      await clearFixtureListings();
+    }
   });
 });
 

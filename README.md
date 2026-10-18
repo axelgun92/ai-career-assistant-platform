@@ -135,23 +135,25 @@ Model routing is treated as an execution detail. It does not change the meaning 
   - a guard against paying twice for one listing, rechecked before a deferred evaluation resumes;
   - company names normalized, so the dashboard company filter treats spellings of one company as one company;
   - versions on evaluation-history rows, an optional stated time-zone requirement, AI usage and spend by domain and source on `/budget`, and phone-width layout fixes;
-- Feature 11A, automated retrieval from the verified official API and feed sources (implemented and verified; awaiting review, not committed):
+- Feature 11A, automated retrieval from the verified official API and feed sources (complete, `fad2341`):
   - Greenhouse, Lever, Ashby and SmartRecruiters (employer ATS), plus Remote OK, We Work Remotely, Himalayas and Working Nomads. Adzuna is listed but stays disabled until it is verified;
   - sources managed on `/sources`, disabled until enabled, then run every 12 hours by the single retrieval worker (`pnpm worker:retrieval`);
   - only listings whose title matches a Customer Success role family are kept, with their complete description and raw source data;
   - cross-source deduplication, an employer-ATS application link preferred over an aggregator's, and a changed listing kept as a linked new version ("Listing changed since first seen");
-  - retrieved jobs arrive unevaluated: evaluation stays your choice within the budget.
+  - retrieved jobs arrive unevaluated: evaluation stays your choice within the budget;
+- Feature 11B, the verified public/guest-endpoint and public-HTML sources (implemented and verified; awaiting review, not committed):
+  - Workday (an employer's career site), the Workable job search and the Wellfound Customer Success role page, through the same retrieval, deduplication and provenance path;
+  - Welcome to the Jungle / Otta is listed but cannot be enabled (no public listing interface on its current logged-out site).
 
 ### In Progress
 
-- Feature 11A is implemented and verified on the isolated test database and is awaiting review; it is not committed yet.
+- Feature 11B is implemented and verified on the isolated test database and is awaiting review; it is not committed yet. Feature 11A is complete (`fad2341`).
 - The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- close Feature 11A (review, then commit);
-- feature 11B — the verified public/guest-endpoint and public-HTML sources (Workday, Workable, Welcome to the Jungle / Otta, Wellfound);
+- close Feature 11B (review, then commit);
 - feature 12 — source health and conservative retrieval;
 - feature 13 — posting-history/ghost-job intelligence;
 - feature 14 — browser extension companion;
@@ -326,15 +328,16 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
 - **Errors.** Temporary infrastructure problems (database unreachable or restarting, dropped connections, timeouts) are logged without details and retried with backoff (capped at 30 s). Configuration problems and unexpected errors stop the worker with a non-zero exit code instead of looping. Evaluation failures are recorded on the evaluation and the worker continues.
 - **Shutdown.** Ctrl-C stops after the current task; a second Ctrl-C exits immediately (the task is then recovered as above).
 
-### 5a. Sources and the retrieval worker (feature 11A)
+### 5a. Sources and the retrieval worker (features 11A and 11B)
 
-- **Sources.** Add a source on `/sources`: the source type, its board, site or company identifier (Lever and Ashby also need the company name, which their APIs do not return), an optional name, and a schedule (12 hours by default). Every source starts disabled, and nothing is retrieved until you enable it. A newly enabled source runs at the worker's next check, then on its schedule. Run now queues a run for an enabled source. Removing a source that has run archives it (its listings keep their provenance); a source that never ran is deleted.
-- **One worker.** `pnpm worker:retrieval` takes its own database lock; a second one exits. `pnpm worker:retrieval:once` processes the queued and due runs once and exits. It contacts only enabled sources: one request at a time per host, at least 1 s apart. It stops a host on HTTP 429 (rate limited) or 401/403 (access refused), and refuses responses over 10 MB. It never starts an evaluation.
+- **Sources.** Add a source on `/sources`: the source type, its board, site or company identifier (Lever and Ashby also need the company name, which their APIs do not return; Workday needs the employer's career-site address, for example `https://acme.wd5.myworkdayjobs.com/External`, and takes an optional company name used only when a posting names none), an optional name, and a schedule (12 hours by default). Workable and Wellfound need no settings: they search for Customer Success roles themselves. Every source starts disabled, and nothing is retrieved until you enable it. A newly enabled source runs at the worker's next check, then on its schedule. Run now queues a run for an enabled source. Removing a source that has run archives it (its listings keep their provenance); a source that never ran is deleted.
+- **One worker.** `pnpm worker:retrieval` takes its own database lock; a second one exits. `pnpm worker:retrieval:once` processes the queued and due runs once and exits. It contacts only enabled sources: one request at a time per host, at least 1 s apart (2 s for Wellfound). It stops a host on HTTP 429 (rate limited) or 401/403 (access refused), and refuses responses over 10 MB. It never starts an evaluation.
 - **What a run does.** Only listings whose title contains a Customer Success role-family term are kept.
   - A new listing is normalized and deduplicated like a manual capture.
   - A listing seen again unchanged only updates its last-seen time.
   - A changed listing is stored as a new, linked version, and the opportunity keeps its original description.
   - Run history on `/sources` shows each run's counts and, if it failed, a safe reason.
+  - **Coverage per run:** SmartRecruiters reads up to the newest 500 postings, Workday the first 100 postings its listing endpoint returns (5 pages of 20; Workday does not state the order), Workable a bounded window of its search results (up to 5 pages, relevance order) and Wellfound up to 11 pages of its role page. Sources whose lists lack full descriptions (SmartRecruiters, Workday) fetch at most 25 details per run, new listings first.
 - **Verifying a source contract.** `pnpm sources:verify <adapter> --config '<json>' --raw-dir <directory outside the repository>` makes that adapter's single verification request and checks the mapping. `--offline <directory>` re-checks saved responses without the network. It touches no database. Only run it with approval for that source.
 
 ### 6. Deterministic, no-paid-call workflow
@@ -383,9 +386,9 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `pnpm app:doctor` warns about company names | Companies saved before the deduplication release have no normalized name, so the company filter lists them separately. Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, against this database. |
 | "This listing is a duplicate of an opportunity that already has an evaluation…" | The opportunity is an exact duplicate (same listing URL, or same job ID at the same company) of one that already has an evaluation or a pending request, so evaluating it would pay twice. Open the other opportunity, or choose **Not the same job** on this page if they are different jobs (reversible with **Undo**). |
 | `pnpm app:doctor` warns that deferrals use another profile version | Each deferral resumes with the profile version it was requested with. On `/budget`, resume to keep that version, or cancel and request again to use the active one. |
-| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna) or needs environment variables that are not set; the card says which. |
+| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna; Welcome to the Jungle / Otta, whose logged-out site offers no public job search) or needs environment variables that are not set; the card says which. |
 | `pnpm app:doctor` warns that the retrieval worker is not running | A source is enabled but no worker runs it. Start `pnpm worker:retrieval`. |
-| A retrieval run failed with "refused access" or "rate-limited" | The source answered 401/403 or 429; retrieval from it stopped for that run. Nothing is retried automatically within the run; check the source's settings (board name) and wait for the next scheduled run. |
+| A retrieval run failed with "refused access" or "rate-limited" | The source answered 401/403 or 429; retrieval from it stopped for that run. Nothing is retried automatically within the run; check the source's settings (board name, career-site address) and wait for the next scheduled run. Some sources limit requests from particular networks (Workable answered one network with 429 while others worked), so a persistent rate limit can depend on where the worker runs. |
 
 ### 9. Updating the evaluator or the bundled profile
 

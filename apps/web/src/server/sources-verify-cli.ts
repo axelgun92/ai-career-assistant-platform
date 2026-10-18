@@ -8,6 +8,7 @@ import {
   createFixtureTransport,
   createPoliteTransport,
   defaultAdapterRegistry,
+  fixtureRequestKey,
   missingEnvironment,
   redactUrl,
   type AnySourceAdapter,
@@ -18,8 +19,9 @@ import {
 // pnpm sources:verify <adapter> --config '<json>' --offline <dir>
 //
 // Verifies one adapter's response contract with the single low-volume
-// request it declares (plus, for a list without full descriptions, the one
-// detail request derived from it). The responses are saved byte for byte,
+// request it declares (a GET, or a JSON POST where the adapter gives a
+// body), plus, for a list without full descriptions, the one detail request
+// derived from it. The responses are saved byte for byte,
 // with metadata, in a directory outside the repository; then the adapter's
 // mapping runs over them offline and a summary is printed. --offline reruns
 // only the mapping over responses saved earlier, with no network access.
@@ -44,6 +46,7 @@ function withCredentials(adapter: AnySourceAdapter, url: string): string {
 
 interface SavedResponse {
   file: string;
+  // The fixture-transport key: the URL, or "POST <url> <body>".
   url: string;
   status: number;
   contentType: string | null;
@@ -60,29 +63,37 @@ async function capture(adapter: AnySourceAdapter, config: unknown, rawDir: strin
   const missing = missingEnvironment(adapter, process.env);
   if (missing.length) fail(`set ${missing.join(" and ")} first`);
   mkdirSync(target, { recursive: true });
-  const transport = createPoliteTransport(createFetchTransport({ userAgent: process.env.RETRIEVAL_USER_AGENT }));
+  const transport = createPoliteTransport(
+    createFetchTransport({ userAgent: process.env.RETRIEVAL_USER_AGENT }),
+    adapter.minRequestIntervalMs ? { minIntervalMs: adapter.minRequestIntervalMs } : {},
+  );
   const recorded: Record<string, TransportResponse> = {};
   const saved: SavedResponse[] = [];
 
-  async function request(url: string, index: number) {
-    const response = await transport.get(withCredentials(adapter, url), { accept: "application/json, application/rss+xml, application/xml;q=0.9, */*;q=0.5" });
+  async function request(url: string, index: number, body?: unknown) {
+    const accept = "application/json, text/html;q=0.9, application/rss+xml, application/xml;q=0.9, */*;q=0.5";
+    const response =
+      body === undefined
+        ? await transport.get(withCredentials(adapter, url), { accept })
+        : await transport.post(withCredentials(adapter, url), body, { accept });
     const file = `response-${index}.body`;
     writeFileSync(path.join(target, file), response.body);
-    recorded[url] = { ...response, url };
+    const key = fixtureRequestKey(url, body);
+    recorded[key] = { ...response, url };
     saved.push({
       file,
-      url: redactUrl(url),
+      url: body === undefined ? redactUrl(url) : fixtureRequestKey(redactUrl(url), body),
       status: response.status,
       contentType: response.contentType,
       bytes: Buffer.byteLength(response.body),
       capturedAt: new Date().toISOString(),
     });
-    console.info(`[sources:verify] GET ${redactUrl(url)} -> ${response.status} ${response.contentType ?? "-"} ${Buffer.byteLength(response.body)} bytes`);
+    console.info(`[sources:verify] ${body === undefined ? "GET" : "POST"} ${redactUrl(url)} -> ${response.status} ${response.contentType ?? "-"} ${Buffer.byteLength(response.body)} bytes`);
     return response;
   }
 
   const firstUrl = adapter.verificationUrl(config);
-  const first = await request(firstUrl, 1);
+  const first = await request(firstUrl, 1, adapter.verificationBody?.(config));
   if (first.status >= 200 && first.status < 300 && adapter.verificationFollowUpUrl) {
     let parsed: unknown = null;
     try {
@@ -103,7 +114,7 @@ function loadSaved(rawDir: string): Record<string, TransportResponse> {
   return Object.fromEntries(
     index.responses.map((saved) => [
       saved.url,
-      { url: saved.url, status: saved.status, contentType: saved.contentType, body: readFileSync(path.join(rawDir, saved.file), "utf8") },
+      { url: saved.url.replace(/^POST (\S+) .*$/s, "$1"), status: saved.status, contentType: saved.contentType, body: readFileSync(path.join(rawDir, saved.file), "utf8") },
     ]),
   );
 }

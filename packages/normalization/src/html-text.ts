@@ -130,3 +130,29 @@ export function htmlToText(html: string | null | undefined): string | null {
     .trim();
   return text.length ? text : null;
 }
+
+// Markdown-style description text (Wellfound) to plain text: entities are
+// decoded, emphasis and heading markers removed, "*"/"+" list markers become
+// "- ", links keep their text and address, and blank runs collapse.
+export function markdownToText(markdown: string | null | undefined): string | null {
+  if (markdown === null || markdown === undefined) return null;
+  const lines = decodeHtmlEntities(markdown.replace(/\r\n?/g, "\n"))
+    .replace(/[\u00a0\u2007\u202f]/g, " ")
+    .replace(/[\u200b\ufeff]/g, "")
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s{0,3}#{1,6}\s*/, "")
+        .replace(/\s*#{1,6}\s*$/, "")
+        .replace(/^(\s*)[*+]\s+/, "$1- ")
+        .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, "$1")
+        .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_match, label: string, url: string) => (label.trim() === url ? url : `${label} (${url})`))
+        .replace(/(\*\*|__)(.+?)\1/g, "$2")
+        .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g, "$1$2")
+        .replace(/\*{2,}/g, "")
+        .replace(/[ \t\f\v]+/g, " ")
+        .trim(),
+    );
+  const text = lines.filter((line) => line !== "-").join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return text.length ? text : null;
+}

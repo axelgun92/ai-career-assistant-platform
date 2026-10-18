@@ -19,7 +19,7 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
 - The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
 - The features 1–10 gap audit is complete (October 17, 2026), and the Features 1–10 Gap Closure is committed (`d573acf`).
-- Feature 11A (automated retrieval from the verified official API and feed sources) is implemented and verified and awaiting review (not committed). Feature 11B and main-product features 12–18 follow.
+- Feature 11A (automated retrieval from the verified official API and feed sources) is committed (`fad2341`). Feature 11B (the verified public/guest-endpoint and public-HTML sources) is implemented and verified and awaiting review (not committed). Main-product features 12–18 follow.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
 **Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
@@ -114,12 +114,15 @@ For each task:
 These features are part of the intended main product and must be complete before final product acceptance.
 
 11. Automated job discovery/retrieval/scraping, in two acceptance units:
-    - **11A (implemented and verified October 18, 2026; awaiting review):**
+    - **11A (complete, `fad2341`, October 18, 2026):**
       - the collection framework, and the verified Type #1 adapters (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads; Adzuna registered but unverified and disabled);
       - source and run storage, the retrieval worker, `/sources`, and title-only role-family discovery;
       - cross-source deduplication (`core-dedup-v2`), canonical-link precedence, and re-observation with linked changed observations;
       - no automatic evaluation.
-    - **11B (next, separate acceptance unit):** the verified Type #3/#4 sources (Workday, Workable, Welcome to the Jungle / Otta, Wellfound).
+    - **11B (implemented and verified October 18, 2026; awaiting review):**
+      - Workday (employer career sites; stateless JSON POST list with offset paging, capped detail requests, tenant-scoped listing IDs), Workable (the Jobs by Workable search; token paging, complete inline text) and Wellfound (embedded state of the public Customer Success role page; up to 11 pages, 2 s apart);
+      - a JSON POST transport method and source-specific request intervals and page caps, with the existing limits and status handling;
+      - Welcome to the Jungle / Otta registered but unverified (no anonymous listing interface on its current logged-out site); it may be reconsidered with browser-assisted retrieval (feature 14).
 12. Source health monitoring and conservative retrieval: pacing, backoff, failure isolation, freshness checks, and expiry/removal detection.
 13. Ghost-job/posting-history intelligence.
 14. Browser extension companion using the same backend, account, data, evaluator, lifecycle, provenance, budget, and dashboard as the main app.

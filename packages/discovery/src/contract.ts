@@ -126,7 +126,14 @@ export interface SourceAdapter<Config = unknown> {
   // contract, and, where the list has no full description, the one detail
   // request derived from that response.
   verificationUrl(config: Config): string;
+  // When the verification request is a JSON POST (Workday), its body.
+  verificationBody?(config: Config): unknown;
   verificationFollowUpUrl?(firstResponse: unknown, config: Config): string | null;
+  // Source-specific limits, where a source's verified contract calls for
+  // them: a longer minimum interval between requests to its host, and a
+  // page cap other than the worker's default.
+  minRequestIntervalMs?: number;
+  maxPagesPerRun?: number;
   collect(context: CollectContext, config: Config): Promise<CollectResult>;
 }
 

@@ -5,6 +5,18 @@
 
 ## Current Objective
 
+**Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 11A was committed as `fad2341` (October 18, 2026).
+
+In order, what follows:
+
+1. Next: user review of Feature 11B, then the checkpoint commit and the personal-file refresh.
+2. Then: main-product features 12–18.
+3. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier objective, superseded on October 18, 2026 when Feature 11A had been committed as `fad2341` and Feature 11B implemented. It read as follows.)*
+
 **Feature 11A — automated retrieval from the verified official API and feed sources** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 11B (the verified public/guest-endpoint and public-HTML sources) is a separate acceptance unit that starts only after 11A is committed.
 
 In order, what follows:
@@ -56,7 +68,79 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 ## Recently Completed (October 14–18, 2026)
 
-### Feature 11A — automated retrieval from the verified official API and feed sources (implemented and verified October 18, 2026; awaiting user review; not committed)
+### Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources (implemented and verified October 18, 2026; awaiting user review; not committed)
+
+**Scope (approved).** The remaining non-browser Customer Success sources, on the Feature 11A framework without redesigning it: Workday and Workable (Type #3, public/guest endpoints) and Wellfound (Type #4, public HTML). Welcome to the Jungle / Otta (Type #3) is in scope but could not be verified. ProBlogger and Mediabistro, listed in Core Platform TDD §10, are Freelance Writing domain sources and not part of 11B. Out of scope: features 12–15, evaluator changes, automatic evaluation and description-based discovery.
+
+**Live verification** (each request approved individually; no retries, alternate endpoints or probing; raw responses kept outside Git):
+
+- **Workday** (target `https://workday.wd5.myworkdayjobs.com/Workday`, stateless: no cookies or session values):
+  - the career-site document is an application shell whose configuration names `tenant: "workday"`, `siteId: "Workday"`, `appName: "cxs"`;
+  - `POST /wday/cxs/workday/Workday/jobs` with `{"appliedFacets":{},"limit":20,"offset":0,"searchText":""}` returned `{total: 386, jobPostings[20], facets, userAuthenticated: false}`. Each posting has only title, externalPath, locationsText, relative postedOn, remoteType and the requisition;
+  - the posting detail `GET /wday/cxs/workday/Workday<externalPath>` returned the complete HTML description, locations, `startDate`, `timeType`, `jobReqId`, `externalUrl` and `hiringOrganization.name`;
+  - page 2 (`offset` 20) returned 20 new postings with `total` 0: Workday reports the total on the first page only.
+- **Wellfound:** `GET https://wellfound.com/jobs` returned a curated featured-jobs page (no descriptions or paging), so it is not a discovery page. The approved role page `https://wellfound.com/role/customer-success-specialist` returned usable logged-out HTML whose Next.js state holds the results (`totalJobCount` 335, `pageCount` 11, 20 companies per page) and 39 listings with complete descriptions.
+- **Workable:** this environment's only request was rate-limited (HTTP 429, `Retry-After` 19517), a network/reputation condition: another network and your local environment reached the same endpoint. Your local verification established the contract: `{title, totalSize: 3156, nextPageToken, jobs[20], autoAppliedFilters}`, page 2 by `pageToken=<nextPageToken>` (20 jobs, same total, no overlap). You supplied both raw pages to this session for the fixture. The official XML feed (`workable.xml`: public, `application/xml`, 849,816,782 bytes, Range ignored; a bounded 256 KB sample held 79 complete job records with full descriptions) was compared and kept as a documented contingency only.
+- **Welcome to the Jungle / Otta:** the logged-out search `GET https://www.welcometothejungle.com/en/jobs?query=customer%20success` returned HTTP 200, unblocked, but a sign-up and matching flow: no listings in markup or embedded state, and no anonymous listing endpoint, GraphQL operation, paging, job IDs or fields. Verification stopped there by decision.
+- **Offline check:** every adapter maps every item of its full real responses with no contract issues: Workday's 20 postings (with the verified detail), Wellfound's 39 listings and both 20-job Workable pages.
+
+**What changed.**
+
+- **Framework** (`packages/discovery`):
+  - a JSON POST transport method (`post`, `postJson`) with the existing ceiling, timeout, User-Agent, no-cookie and no-redirect rules, politeness and status handling; the fixture transport keys POSTs by URL and body (`fixtureRequestKey`);
+  - adapter options `minRequestIntervalMs`, `maxPagesPerRun` and `verificationBody`, passed through the worker's transport factory and `pnpm sources:verify`;
+  - `prioritizeDetailRequests` moved into `collection.ts` and shared by SmartRecruiters and Workday (unchanged behaviour);
+  - `readJsonScript` for embedded JSON state, and `markdownToText` in the normalization package.
+- **Workday adapter:** configured by "Career site address" (validated `https://<tenant>.wd<N>.myworkdayjobs.com/[<locale>/]<site>`; only those hosts) and an optional company name used only when a detail names no hiring organization (then recorded as `sourceConfiguration.company`).
+  - Paging by offset up to 5 pages: a bounded window of the first 100 postings the listing endpoint returns. Workday does not state the order (the verified pages looked newest first, which is not relied on). Paging stops on a short page, the first page's total or the cap; a posting shifted between pages is read once.
+  - Detail requests for title matches only, at most 25 per run, unseen postings first (among those, later list positions first, as no posting dates are listed); posting paths must be `/job/...` on the same site.
+  - Listing ID `<tenant>/<site>:<externalPath>`; `jobReqId` as the requisition; the posting date from `startDate`; Remote/Onsite mapped, Flex kept as source data; pay ranges left in the description; `postedOn`, `timeLeftToApply` and `similarJobs` excluded from change detection (and `similarJobs` not stored).
+- **Workable adapter:** no configuration; the search for "customer success"; `pageToken` paging up to 5 pages (a bounded relevance-ordered window, not newest first); the complete text joined from `description`, `requirementsSection` and `benefitsSection`; `TELECOMMUTE` treated as a remote marker, not a place; `workplace` mapped (remote, on_site, hybrid); the `created` date; `updated`, `totalSize`, `nextPageToken` and `autoAppliedFilters` not material.
+- **Wellfound adapter:** no configuration; the built-in role page only; the embedded `__NEXT_DATA__` state parsed (a page without it is a contract mismatch, never a guess); `?page=N` up to the verified `pageCount`, capped at 11 pages, at least 2 s apart; no job-page requests; Markdown-style descriptions converted to plain text; duplicate location names removed; only explicit REMOTE/ONSITE kinds mapped; compensation, `atsSource` and remote fields kept as source data; bookmark flags, logo URLs, badges, page position and counts not material.
+- **Welcome to the Jungle / Otta adapter:** registered (Type #3, job board), unverified, cannot be enabled; collecting throws a configuration error.
+- **Fixtures** (`tests/fixtures/sources/`): `workday/` (page 1, page 2 and the complete detail), `wellfound/` (the role page reduced to its title and embedded state, three listings) and `workable/` (pages 1 and 2, three jobs each), each with `meta.json`: requests, capture times, full-response sizes and SHA-256, "3 of N items", selection reasons and personal-data scans. No sanitization was needed; the Workday detail keeps the employer's published accommodations address.
+- **No change** to the schema, migrations, the capture repository, the retrieval worker's ingestion, `core-dedup-v2`, `/sources` UI code, the evaluator or `loadSubject()`.
+
+**Decisions recorded (user-approved).**
+
+- Workday: the target tenant above; tenant/site + externalPath identity; company from the detail with an optional fallback; Flex never hybrid; `startDate` as posting date; no salary from multiple ranges; volatile fields not material.
+- Wellfound: the verified role page only (no role-slug field); an 11-page source cap (more is documented partial coverage); a 2-second interval; no detail requests; compensation as source data.
+- Workable: the JSON search as the sole production interface, Type #3 unchanged; XML a documented contingency only; no further Claude-cloud retry required.
+- Welcome to the Jungle / Otta: registered but unverified for 11B; no per-company reinterpretation; reconsider with feature 14.
+- The JSON POST transport extension, because Workday's verified contract requires it.
+
+**Tests.**
+
+- **Unit:** `retrieval-adapters-11b.test.ts` (26): Workday (configuration parsing, mapping, workplace and company rules, tenant-scoped IDs, change detection, path safety, offset paging with the first-page total, detail priority and stops), Workable (mapping, combined text, TELECOMMUTE, token paging, stops, change detection) and Wellfound (state parsing, title filter, paging and cap, contract-mismatch cases, change detection), and Welcome to the Jungle registered but unverified. `retrieval-framework.test.ts` (39) adds the JSON POST, fixture keying, POST politeness, embedded state and Markdown tests; `retrieval-worker-service.test.ts` (13) adds the adapter interval and page cap; `retrieval-adapters.test.ts` (47) is unchanged in count.
+- **Integration:** `retrieval-ingestion.test.ts` (16) adds the real Workday, Workable and Wellfound fixtures through the worker: tenant-scoped records with a shared requisition attached, unchanged re-runs despite daily-changing fields, marketplace and job-board provenance, and no evaluation rows.
+- **E2E:** `retrieval.spec.ts` (3) adds Workday, Workable and Wellfound sources added and run from `/sources`, "Found via" on the dashboard, provenance on the opportunity page, and Welcome to the Jungle unable to be enabled.
+
+**Verification** (isolated test database only; no paid provider calls; no live production worker; normal application database untouched):
+
+- typecheck and lint clean; `git diff --check` clean;
+- unit 50 files / 1,261 tests; integration 27 files / 239 tests; E2E 35/35; production build succeeds;
+- `apps/web/next-env.d.ts` reverted after each Next run.
+
+**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/` (the blobs match `HEAD`):
+
+- **Core AI Framework PRD v1.8** and **Customer Success PRD v1.7:** current status and dependencies.
+- **Core Platform TDD v1.9:** a §51 "Automated Retrieval: Type #3 and Type #4 Sources (Feature 11B)" summary, the sequence and the dependency.
+- **Customer Success TDD v1.7:** the dated §8 implementation note, the sequence and the dependencies.
+
+Each `.docx` passes the validator against its source. The Semantic Evaluation Playbook is unchanged.
+
+**Known issues and observations.**
+
+- **Welcome to the Jungle / Otta** is unverified and cannot be enabled (see above).
+- **Coverage windows:** Workday reads the first 100 postings its listing endpoint returns per run (5 pages of 20; the order is not stated), Workable a bounded relevance window (up to 5 pages), Wellfound up to 11 pages (the current page count). Beyond them is out of scope for 11B.
+- **Workable rate limiting** depends on the network the worker runs from; a 429 stops the run, and Retry-After/backoff is feature 12.
+- **Wellfound** may block non-browser clients in future; a 403 or a page without the verified state stops the run.
+- **Test database cluster:** it stopped again after environment restarts and was restarted; one E2E attempt failed only for that reason and passed on rerun.
+- **E2E log line:** the full run logged one dev-server "destination stream closed early" message during an evaluation-results test unrelated to retrieval; all tests passed.
+
+### Feature 11A — automated retrieval from the verified official API and feed sources (committed `fad2341`, October 18, 2026)
+
+*(Heading until October 18, 2026: "implemented and verified October 18, 2026; awaiting user review; not committed". The record below is preserved as written.)*
 
 **Scope (approved).** Feature 11 is split into two acceptance units. 11A is the collection framework, the Type #1 adapters, source and run storage, the retrieval worker, normalization of retrieved listings, cross-source deduplication, canonical-link selection, re-observation and change detection, the `/sources` UI and basic politeness and safety. 11B covers the verified Type #3/#4 sources (Workday, Workable, Welcome to the Jungle / Otta, Wellfound). These stay out of 11A: source health, backoff and freshness (feature 12); posting history and Ghost Job Risk input (feature 13); LinkedIn and browser-assisted sources (feature 14); and source-quality analytics (feature 15).
 

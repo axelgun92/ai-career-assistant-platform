@@ -31,10 +31,10 @@ Manual Opportunity
 → Lifecycle and application workflow
 ```
 
-Automated discovery is implemented for the verified official API and feed sources (Feature 11A, awaiting review). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. The manual workflow is unchanged and remains the stable foundation.
+Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, awaiting review). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. The manual workflow is unchanged and remains the stable foundation.
 
 ```text
-Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads)
+Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workable, Wellfound)
 → Retrieval worker (title-term filter, raw source preserved)
 → Deterministic normalization
 → Deduplication (attach, flag or create; employer link preferred; changes recorded)
@@ -195,6 +195,16 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+Feature 11B is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 11A was committed as `fad2341` (October 18, 2026). 11B adds the verified public/guest-endpoint and public-HTML sources to the same retrieval path:
+
+- **Workday** (employer ATS): add an employer's career-site address (for example `https://acme.wd5.myworkdayjobs.com/External`). Each run reads a bounded window of the first 100 postings Workday's listing returns (5 pages of 20; Workday does not state their order) and fetches the full details of matching titles, at most 25 per run, postings not seen before first. The company comes from the posting (an optional company name is used only when it is missing).
+- **Workable** (job board): the Jobs by Workable search for "customer success", with no setup. Each result already has its full text, so no extra requests are made per job. A run reads a bounded window of the search results (up to 5 pages, relevance order, not newest first).
+- **Wellfound** (startup marketplace): the public Customer Success role page, with no setup. Listings are read from the page's embedded data (complete descriptions), up to 11 pages per run, at least 2 seconds apart. Compensation is shown as the source states it and is not normalized.
+- **Welcome to the Jungle / Otta** is listed but cannot be enabled: its logged-out site now shows a sign-up and matching flow instead of a public job search, so no listing interface could be verified. It may be reconsidered with browser-assisted retrieval (feature 14).
+- Everything else works as in 11A: title-only discovery, complete descriptions, cross-source deduplication with the employer's link preferred, changed listings kept as linked versions, no automatic evaluation, and the same safety limits.
+
+*(Earlier status, superseded on October 18, 2026 when Feature 11A was committed as `fad2341`. It read as follows.)*
+
 Feature 11A is implemented and verified on the isolated test database and awaiting user review; it is not committed. It adds automated retrieval from the verified official API and feed sources:
 
 - **Sources:** Greenhouse, Lever, Ashby and SmartRecruiters (employer ATS), plus Remote OK, We Work Remotely, Himalayas and Working Nomads. Each was verified against one approved live response and a small committed fixture. Adzuna is listed but stays disabled until it is verified.
@@ -241,9 +251,9 @@ Task 8 and Task 9 are complete. In order:
 
 1. Done: the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
 2. Done: the Features 1–10 Gap Closure (`d573acf`, October 17, 2026). *(Earlier step: "Now: the Features 1–10 Gap Closure. The audit is complete; the implementation is verified and awaiting review, then the versioned-specification check and the commit.")*
-3. Now: Feature 11A, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8, Customer Success TDD v1.6).
-4. Build the rest of main-product features 11–18:
-   - automated discovery/retrieval/scraping (Feature 11B: the verified public/guest-endpoint and public-HTML sources);
+3. Done: Feature 11A (`fad2341`, October 18, 2026), with Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8 and Customer Success TDD v1.6. *(Earlier step: "Now: Feature 11A, implemented and verified, awaiting review.")*
+4. Now: Feature 11B, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9, Customer Success TDD v1.7).
+5. Build the rest of main-product features 12–18:
    - source health and conservative retrieval;
    - ghost-job/posting-history intelligence;
    - browser extension companion;
@@ -251,7 +261,7 @@ Task 8 and Task 9 are complete. In order:
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-5. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+6. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 

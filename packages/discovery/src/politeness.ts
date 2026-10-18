@@ -1,5 +1,5 @@
 import { AdapterError } from "./contract";
-import type { RetrievalTransport } from "./transport";
+import type { RetrievalTransport, TransportResponse } from "./transport";
 
 // Basic politeness for one run: requests to a host go one at a time with at
 // least minIntervalMs between their starts, and once a host answers 429
@@ -24,34 +24,37 @@ export function createPoliteTransport(
   const lastStart = new Map<string, number>();
   const stopped = new Map<string, AdapterError>();
 
-  return {
-    get(url, request) {
-      let host: string;
-      try {
-        host = new URL(url).host.toLowerCase();
-      } catch {
-        return inner.get(url, request);
+  function schedule(url: string, send: () => Promise<TransportResponse>): Promise<TransportResponse> {
+    let host: string;
+    try {
+      host = new URL(url).host.toLowerCase();
+    } catch {
+      return send();
+    }
+    const previous = queues.get(host) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(async () => {
+      const stop = stopped.get(host);
+      if (stop) throw new AdapterError(stop.code, "Retrieval from this host stopped earlier in the run", { url, status: stop.details.status });
+      const last = lastStart.get(host);
+      if (last !== undefined) {
+        const wait = last + minIntervalMs - now();
+        if (wait > 0) await sleep(wait);
       }
-      const previous = queues.get(host) ?? Promise.resolve();
-      const run = previous.catch(() => undefined).then(async () => {
-        const stop = stopped.get(host);
-        if (stop) throw new AdapterError(stop.code, "Retrieval from this host stopped earlier in the run", { url, status: stop.details.status });
-        const last = lastStart.get(host);
-        if (last !== undefined) {
-          const wait = last + minIntervalMs - now();
-          if (wait > 0) await sleep(wait);
-        }
-        lastStart.set(host, now());
-        const response = await inner.get(url, request);
-        if (response.status === 429) {
-          stopped.set(host, new AdapterError("RATE_LIMITED", "Rate limited", { status: 429, url }));
-        } else if (response.status === 401 || response.status === 403) {
-          stopped.set(host, new AdapterError("ACCESS_DENIED", "Access refused", { status: response.status, url }));
-        }
-        return response;
-      });
-      queues.set(host, run);
-      return run;
-    },
+      lastStart.set(host, now());
+      const response = await send();
+      if (response.status === 429) {
+        stopped.set(host, new AdapterError("RATE_LIMITED", "Rate limited", { status: 429, url }));
+      } else if (response.status === 401 || response.status === 403) {
+        stopped.set(host, new AdapterError("ACCESS_DENIED", "Access refused", { status: response.status, url }));
+      }
+      return response;
+    });
+    queues.set(host, run);
+    return run;
+  }
+
+  return {
+    get: (url, request) => schedule(url, () => inner.get(url, request)),
+    post: (url, body, request) => schedule(url, () => inner.post(url, body, request)),
   };
 }

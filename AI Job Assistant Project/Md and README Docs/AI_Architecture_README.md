@@ -140,7 +140,8 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 - application tracker, complete after the Task 8 completion pass (`534a4c7`);
 - setup and operations tooling, single-worker evaluation processing, honest queue states, and whole-product acceptance tests (original Task 9 work), complete after the Task 9 completion pass (October 16, 2026);
 - deduplication with provenance retention for captured listings (an exact duplicate is added to the saved opportunity as another source; a possible duplicate is flagged and never merged), a serialized guard against paying twice for one listing, and normalized company names (Features 1–10 Gap Closure, `d573acf`);
-- automated retrieval from the verified official API and feed sources (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads): sources managed on `/sources` and disabled until enabled, title-only Customer Success role-family discovery, cross-source deduplication with employer-link preference, changed-listing observations, and no automatic evaluation (Feature 11A: implemented and verified, awaiting review);
+- automated retrieval from the verified official API and feed sources (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads): sources managed on `/sources` and disabled until enabled, title-only Customer Success role-family discovery, cross-source deduplication with employer-link preference, changed-listing observations, and no automatic evaluation (Feature 11A, `fad2341`);
+- automated retrieval from the verified public/guest-endpoint and public-HTML sources (Workday career sites, the Workable job search, the Wellfound role page) through the same path; Welcome to the Jungle / Otta registered but not enabled (Feature 11B: implemented and verified, awaiting review);
 - persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
 - Task 7 normalized salary/currency/position/residency contract;
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
@@ -151,14 +152,15 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### In progress
 
-- Feature 11A is implemented and verified and awaiting review (not committed): the collection framework, eight verified official API/feed adapters, the retrieval worker and `/sources`, title-only role-family discovery, cross-source deduplication (`core-dedup-v2`), canonical-link precedence and changed-listing observations.
+- Feature 11B is implemented and verified and awaiting review (not committed): the Workday, Workable and Wellfound adapters, a JSON POST transport method and source-specific request intervals and page caps; Welcome to the Jungle / Otta registered but unverified.
+- Feature 11A is complete (`fad2341`, October 18, 2026): the collection framework, eight verified official API/feed adapters, the retrieval worker and `/sources`, title-only role-family discovery, cross-source deduplication (`core-dedup-v2`), canonical-link precedence and changed-listing observations.
 - The Features 1–10 Gap Closure is complete (`d573acf`, October 17, 2026).
 - The features 1–10 gap audit, Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
 
 ### Main-product work still required before final acceptance
 
-- close Feature 11A (review, then commit), then Feature 11B (the verified public/guest-endpoint and public-HTML sources);
-- automated retrieval/scraping (11A implemented and under review; 11B next);
+- close Feature 11B (review, then commit);
+- automated retrieval/scraping (11A complete; 11B implemented and under review);
 - source health and conservative retrieval;
 - posting-history/ghost-job intelligence;
 - browser extension companion;
@@ -254,7 +256,7 @@ The following repository documentation also exists (paths are listed in the "Doc
 The current development order is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit and the Features 1–10 Gap Closure are complete, and Feature 11A is implemented and under review;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure and Feature 11A are complete, and Feature 11B is implemented and under review;
 3. build any still-missing main-product features through feature 18, including retrieval and analytics/intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add features 19–23 later.
@@ -318,7 +320,7 @@ packages/
   evidence/            Evidence contracts
   normalization/       Opportunity normalization
   shared/              Environment and shared server configuration
-  discovery/           Collection framework and verified source adapters (feature 11A)
+  discovery/           Collection framework and verified source adapters (features 11A and 11B)
   deduplication/       Domain-neutral deduplication package
 
 tests/
@@ -332,7 +334,7 @@ tests/
 - This is a private pnpm monorepo.
 - Core remains domain-neutral; Customer Success rules live under `domains/customer-success`.
 - Manual opportunities are normalized and persisted in PostgreSQL.
-- Retrieved listings (feature 11A) are collected by the single retrieval worker from sources enabled on `/sources`, through an injectable transport with politeness and size limits. They are normalized and deduplicated in the same capture transaction as manual captures and arrive unevaluated.
+- Retrieved listings (features 11A and 11B) are collected by the single retrieval worker from sources enabled on `/sources`, through an injectable transport with politeness and size limits. They are normalized and deduplicated in the same capture transaction as manual captures and arrive unevaluated.
 - Evaluation tasks are stored in PostgreSQL and processed by the background worker.
 - Semantic results use strict structured outputs, schema validation, evidence-reference validation, Unknown preservation, contradiction preservation, and bounded retry/call budgets.
 - Provider calls and retries persist model, prompt version, token usage, pricing version, estimated cost, status, and duration.
@@ -348,4 +350,4 @@ tests/
 
 **Active development**
 
-Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is implemented and verified and awaiting review. Main-product features 11–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Feature 11A is complete, and Feature 11B is implemented and verified and awaiting review. Main-product features 12–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

@@ -8,10 +8,10 @@ Before substantial implementation work, also read:
 - `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
 - `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md`
 - the relevant authoritative PRD/TDD:
-  - `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.7.docx`
-  - `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.6.docx`
-  - `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.8.docx`
-  - `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.6.docx`
+  - `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.8.docx`
+  - `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.7.docx`
+  - `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.9.docx`
+  - `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.7.docx`
 - the AI Career Assistant Semantic Evaluation Implementation Playbook (`AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`) when touching evaluator or semantic-execution code
 
 ## Current Claude Workstream

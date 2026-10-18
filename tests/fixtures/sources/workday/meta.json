@@ -1,0 +1,143 @@
+{
+  "adapter": "workday",
+  "request": "POST https://workday.wd5.myworkdayjobs.com/wday/cxs/workday/Workday/jobs",
+  "requestBody": {
+    "appliedFacets": {},
+    "limit": 20,
+    "offset": 0,
+    "searchText": ""
+  },
+  "requestHeaders": {
+    "content-type": "application/json"
+  },
+  "stateless": "No cookies, CSRF token or session values were sent.",
+  "httpStatus": 200,
+  "contentType": "application/json",
+  "capturedAt": "2026-10-18T16:38:36Z",
+  "fullResponse": {
+    "bytes": 30173,
+    "sha256": "f9658ddbd9a66616e38d42179803fe0950adae08fcfffedd62bdac87140dbe93",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 20 items",
+  "items": [
+    {
+      "responseIndex": 19,
+      "externalPath": "/job/USA-IL-Chicago/Revenue-Operations-Director--Global-Customer-Success_JR-0110682",
+      "title": "Revenue Operations Director for the Customer Success & Solutions COE",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 0,
+      "externalPath": "/job/USA-GA-Atlanta/People-Business-Partner---M-A_JR-0107852",
+      "title": "Integration & Transformation Lead, P&P M&A",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 1,
+      "externalPath": "/job/USA-Remote/Student-Financial-Aid-Consultant--Higher-Education---Nonprofit_JR-0110396",
+      "title": "Student Financial Aid Consultant, Higher Education & Nonprofit",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation. total and facets are kept as received.",
+  "sanitization": [],
+  "fixtureFile": "response.json",
+  "careerSiteDocument": {
+    "request": "GET https://workday.wd5.myworkdayjobs.com/Workday",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T16:36:56Z",
+    "fullResponse": {
+      "bytes": 9418,
+      "sha256": "1074bc60b7ed1168538a511843580bb3a9ac4d5ac5cef41191f84404a9f4ae5f",
+      "keptInGit": false
+    },
+    "note": "Application shell; window.workday = {tenant: \"workday\", siteId: \"Workday\", clientOrigin: \"https://wd5.myworkday.com\", appName: \"cxs\"}. No listing request or job data. Not kept as a fixture."
+  },
+  "page2": {
+    "request": "POST https://workday.wd5.myworkdayjobs.com/wday/cxs/workday/Workday/jobs",
+    "requestBody": {
+      "appliedFacets": {},
+      "limit": 20,
+      "offset": 20,
+      "searchText": ""
+    },
+    "file": "response-page-2.json",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T16:55:53Z",
+    "fullResponse": {
+      "bytes": 5034,
+      "sha256": "8fafc1ec111b6e7809ab2abc39fd61dd530c5092333ef11d56a8a8a47be1827c",
+      "keptInGit": false
+    },
+    "trimmedTo": "3 of 20 items",
+    "items": [
+      {
+        "responseIndex": 17,
+        "externalPath": "/job/Australia-NSW-North-Sydney/Customer-Success-Manager--Paradox_JR-0110720",
+        "title": "Customer Success Manager, Paradox",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 0,
+        "externalPath": "/job/USA-CA-San-Francisco/Software-Development-Engineer--Pipedream-Connect_JR-0107821",
+        "title": "Software Development Engineer--Pipedream Connect",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 1,
+        "externalPath": "/job/USA-CA-Pleasanton/Medium-Enterprise-Account-Executive--Customer-Base_JR-0110512-1",
+        "title": "Medium Enterprise Account Executive, Customer Base",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      }
+    ],
+    "note": "20 postings, no overlap with page 1 by externalPath; same six posting fields. total is 0 and facets is empty on this page: Workday reports them on the first page only."
+  },
+  "detail": {
+    "request": "GET https://workday.wd5.myworkdayjobs.com/wday/cxs/workday/Workday/job/USA-IL-Chicago/Revenue-Operations-Director--Global-Customer-Success_JR-0110682",
+    "file": "detail-JR-0110682.json",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T16:53:14Z",
+    "fullResponse": {
+      "bytes": 13741,
+      "sha256": "3df4bf862b5bee2b5dbfbe263604097cc0508dce68976c4037e623e104bc375f",
+      "keptInGit": true,
+      "note": "Kept complete (value-for-value, re-serialized with 2-space indentation)."
+    },
+    "personalDataScan": {
+      "emails": [
+        "accommodations@workday.com"
+      ],
+      "phoneLike": false,
+      "personalIntroduction": false
+    },
+    "organizationalContacts": [
+      "accommodations@workday.com (the employer's accommodations address, kept as published)"
+    ]
+  }
+}
