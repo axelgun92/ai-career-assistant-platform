@@ -1,0 +1,52 @@
+{
+  "adapter": "we-work-remotely",
+  "request": "GET https://weworkremotely.com/categories/remote-customer-support-jobs.rss",
+  "httpStatus": 200,
+  "contentType": "application/rss+xml; charset=utf-8",
+  "capturedAt": "2026-10-17T23:07:57Z",
+  "fullResponse": {
+    "bytes": 587238,
+    "sha256": "903f682ffcd65abb9988dd8e806fe4b34d3e6061d75614520f467ae0e530dcf0",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 61 items",
+  "items": [
+    {
+      "responseIndex": 8,
+      "id": "https://weworkremotely.com/remote-jobs/gong-io-lead-enterprise-revenue-architect-customer-success",
+      "title": "Gong.io: Lead Enterprise Revenue Architect (Customer Success)",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 1,
+      "id": "https://weworkremotely.com/remote-jobs/emerging-travel-group-senior-python-developer-crm-ai-llm",
+      "title": "Emerging Travel Group: Senior Python Developer (CRM - AI/LLM)",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 30,
+      "id": "https://weworkremotely.com/remote-jobs/dropbox-scaled-customer-success-manager",
+      "title": "Dropbox: Scaled Customer Success Manager",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "The channel header, the three item blocks and the closing tags are copied byte-for-byte from the response.",
+  "sanitization": [],
+  "retainedContactData": [
+    "'@gong.io': a domain named in Gong's anti-fraud notice (no address); kept unchanged."
+  ],
+  "fixtureFile": "response.rss"
+}

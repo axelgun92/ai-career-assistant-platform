@@ -966,3 +966,40 @@ Final Integration Checklist: add items 1–5 to the Codex review list. Feature 1
 - Running `pnpm db:backfill-dedup` on the normal application database remains the user's decision.
 - Evaluator routing and contracts remain branch-specific, as recorded in the October 16 closure annotation and `EVALUATOR_STATUS.md` §20.
 - Next on the main-product workstream: features 11–18. Feature 11 reuses the capture transaction and the deduplication engine for retrieved sources.
+
+### Feature 11A — shared-boundary record (October 18, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-18\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+The Features 1–10 Gap Closure above was committed as `d573acf` (October 17, 2026). Feature 11A adds automated retrieval from the verified official API and feed sources at the existing ingestion boundary: Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas and Working Nomads. Adzuna is registered but unverified and disabled.
+
+No evaluator stage, prompt, schema, routing, salary policy, evidence behavior or recommendation logic changed, and no change was made on `codex/evaluator-live-diagnostic`. These are the points that touch shared contracts:
+
+1. **Capture repository** (`database/src/manual-opportunity-repository.ts`, `packages/core/src/retrieval-ingestion.ts`).
+   - `PrismaManualOpportunityRepository` also implements the new `RetrievalIngestionRepository` port: `ingestRetrievedListing()` and `preserveUnnormalizedListing()`.
+   - The body of `ingestManualOpportunity()` moved into a private `capture()` shared with retrieval. Manual capture behaves exactly as before, apart from the `recordedBy` label on duplicate references.
+   - Retrieved listings run in the same capture transaction and lock. A listing with the same source and source listing ID is a re-observation: an unchanged content hash moves only last-seen times, and a changed hash adds a `SourceRecord` linked through `previousSourceRecordId`. Any other listing takes the existing create/attach path, and an attach can upgrade `Opportunity.applicationUrl` to a higher-precedence source, with an added `applicationUrl` field-provenance row.
+   - The gap-closure merge-conflict warning for this file still applies.
+2. **Deduplication engine `core-dedup-v2`** (approved contract change).
+   - Retrieved listing IDs are compared as `<source>::<id>`; manual IDs keep their plain form.
+   - Differing listing IDs count as a conflict only when both come from the same source.
+   - The candidate SQL mirrors the scoping. Manual-only decisions are unchanged, and existing evidence keeps its `core-dedup-v1` label.
+3. **Evaluator boundary: no change.** Feature 11A changes no evaluator semantic logic, provider inputs, stage routing, or `loadSubject()` code or behavior.
+   - Retrieval creates and updates opportunities only through the existing ingestion/capture path. It never starts an evaluation.
+   - A retrieved opportunity becomes an evaluator subject only when the user requests an evaluation through the existing workflow. `loadSubject()` then loads it exactly as it loads any opportunity: its source records oldest first and its canonical description.
+   - For awareness at integration (data shape, not a code change):
+     - **Record order:** a retrieved opportunity's first record is the first retrieved one; attached duplicates and changed observations follow it. A changed observation does not alter the canonical description.
+     - **No posting history:** retrieved source items are stored under `rawPayload.source`, never as `postingHistory`, so Ghost Job Risk sees no retrieved posting history until feature 13. This deliberately supersedes the gap-closure expectation that retrieved posting history would feed it in feature 11.
+     - **Provenance labels:** retrieved field provenance uses the `retrieval:<source>` reference, `source.<field>` for structured facts, and `sourceConfiguration.company` where the company name comes from the source configuration (Lever, Ashby).
+4. **`fieldsWithheldFromEvaluator`** is unchanged. Retrieval never sets `timeZoneRequirements`, and the withheld fields stay withheld.
+5. **Schema:** migration `20261018090000_retrieval_sources`, additive.
+   - It adds the `RetrievalSource` and `RetrievalRun` models; the enums `RetrievalType`, `SourceCategory`, `RetrievalRunStatus` and `RetrievalTrigger`; and the `SourceRecord` columns `retrievalType`, `sourceCategory`, `retrievalSourceId`, `retrievalRunId`, `contentHash` and `previousSourceRecordId`.
+   - All new foreign keys are `RESTRICT`, so a source, run or earlier observation with dependent records cannot be deleted. The `Recommendation.evidenceReferences` drift is excluded.
+6. **Customer Success domain:** a new `src/discovery/discovery-config.ts` holds the role-family title terms and the default search phrase. It contains no evaluator code.
+7. **No paid-evaluation path changed.** Retrieval creates no `Evaluation`, `EvaluationAdmission` or `DeferredEvaluation`. The budget gate, limits and duplicate-spend refusal apply to retrieved opportunities exactly as to captured ones.
+8. **New single-worker lock:** advisory key 41220/4 for `pnpm worker:retrieval`, separate from the evaluation worker (41220/1) and the duplicate-spend lock (41220/3).
+
+Final Integration Checklist: add items 1 and 2 to the Codex review list. Item 3 is recorded for awareness only; Feature 11A changes nothing on the evaluator side. Feature 11B extends the same adapter contract and ingestion path.

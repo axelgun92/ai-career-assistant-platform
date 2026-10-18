@@ -1,4 +1,5 @@
 import { normalizeCompanyName } from "@ai-career/deduplication";
+import { defaultAdapterRegistry, missingEnvironment } from "@ai-career/discovery";
 import type { QueueSnapshot } from "@ai-career/database";
 import {
   customerSuccessProductionSemanticPolicyVersion,
@@ -32,6 +33,13 @@ export interface DoctorReads {
   openDeferrals(): Promise<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
   // Companies `pnpm db:backfill-dedup` would give a normalized name.
   companiesNeedingBackfill(): Promise<number>;
+  // Automated retrieval (feature 11): enabled sources, failed runs in the
+  // last 24 hours and whether the retrieval worker holds its lock.
+  retrieval?(now: Date): Promise<{
+    workerConnected: boolean;
+    enabledSources: Array<{ adapterKey: string; name: string }>;
+    failedRunsLastDay: number;
+  }>;
 }
 
 export interface DoctorInputs {
@@ -192,6 +200,41 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
           "against this database when you choose (it also records duplicates among existing opportunities)."
       : "normalized",
   );
+
+  if (reads.retrieval) {
+    const retrieval = await reads.retrieval(inputs.now);
+    const enabled = retrieval.enabledSources.length;
+    const blocked = retrieval.enabledSources.flatMap((source) => {
+      const adapter = defaultAdapterRegistry.get(source.adapterKey);
+      if (!adapter) return [`${source.name} (unknown source type)`];
+      if (!adapter.verified) return [`${source.name} (awaiting verification)`];
+      const missing = missingEnvironment(adapter, inputs.environment);
+      return missing.length ? [`${source.name} (needs ${missing.join(" and ")})`] : [];
+    });
+    add(
+      blocked.length ? "WARN" : "PASS",
+      "Retrieval sources",
+      enabled === 0
+        ? "none enabled; nothing is retrieved until you enable a source on /sources"
+        : `${enabled} enabled` + (blocked.length ? `; cannot run: ${blocked.join(", ")}` : ""),
+    );
+    add(
+      enabled > 0 && !retrieval.workerConnected ? "WARN" : "PASS",
+      "Retrieval worker",
+      retrieval.workerConnected
+        ? "connected"
+        : enabled > 0
+          ? "not running; start pnpm worker:retrieval to run enabled sources"
+          : "not running (not needed until a source is enabled)",
+    );
+    add(
+      retrieval.failedRunsLastDay > 0 ? "WARN" : "PASS",
+      "Retrieval runs",
+      retrieval.failedRunsLastDay > 0
+        ? `${retrieval.failedRunsLastDay} run(s) failed in the last 24 hours; see each source's run history on /sources`
+        : "no failed runs in the last 24 hours",
+    );
+  }
   return checks;
 }
 
@@ -206,6 +249,7 @@ export function createDoctorReads(client: {
 }, helpers: {
   workerConnected(): Promise<boolean>;
   queueSnapshot(now: Date): Promise<QueueSnapshot>;
+  retrievalWorkerConnected?(): Promise<boolean>;
 }): DoctorReads {
   return {
     async ping() {
@@ -231,6 +275,19 @@ export function createDoctorReads(client: {
       return rows.filter((row) => normalizeCompanyName(row.name) !== null).length;
     },
     queueSnapshot: (now) => helpers.queueSnapshot(now),
+    async retrieval(now) {
+      const enabledSources = (await client.$queryRaw`
+        SELECT "adapterKey", "name" FROM "RetrievalSource"
+        WHERE "enabled" AND "archivedAt" IS NULL ORDER BY "createdAt" ASC, "id" ASC`) as Array<{ adapterKey: string; name: string }>;
+      const failed = (await client.$queryRaw`
+        SELECT COUNT(*)::int AS "count" FROM "RetrievalRun"
+        WHERE "status" = 'FAILED' AND "finishedAt" >= ${new Date(now.getTime() - 24 * 60 * 60 * 1000)}`) as Array<{ count: number }>;
+      return {
+        workerConnected: helpers.retrievalWorkerConnected ? await helpers.retrievalWorkerConnected() : false,
+        enabledSources,
+        failedRunsLastDay: failed[0]?.count ?? 0,
+      };
+    },
     async openDeferrals() {
       // A deferral resumes with the version it was requested with; count the
       // open ones whose version is not the active one (or no longer exists).

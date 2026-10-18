@@ -1,7 +1,7 @@
 # Development Plan
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 17, 2026
+**Last updated:** October 18, 2026
 
 ## Goal
 
@@ -18,7 +18,8 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Task 8 — Application Tracker completion pass is complete at `534a4c718b21086d9419c0b0d18b0c907c15b3f9`.
 - Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
 - The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
-- The features 1–10 gap audit is complete (October 17, 2026). The Features 1–10 Gap Closure is implemented and verified and awaiting review (not committed). Main-product features 11–18 follow.
+- The features 1–10 gap audit is complete (October 17, 2026), and the Features 1–10 Gap Closure is committed (`d573acf`).
+- Feature 11A (automated retrieval from the verified official API and feed sources) is implemented and verified and awaiting review (not committed). Feature 11B and main-product features 12–18 follow.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
 **Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
@@ -94,7 +95,7 @@ The completion pass audits existing work against the authoritative PRDs/TDDs and
 - Tasks 1–9 have completed their current completion work (Task 8 at `534a4c7`; Task 9 on October 16, 2026).
 - **Done:** the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
 - **Done:** the read-only audit of features 1–10 (October 17, 2026). It found the feature 9 deduplication gap and smaller gaps in features 2, 3, 6, 7 and 8.
-- **Now:** the Features 1–10 Gap Closure, implemented and verified and awaiting review. It reuses the existing ingestion boundary; feature 11 extends the same capture transaction and deduplication engine to retrieved sources, adding cross-source matching, canonical-source selection, posting history and any merging of opportunities with history.
+- **Done:** the Features 1–10 Gap Closure (`d573acf`, October 17, 2026). *(Earlier entry: "Now: the Features 1–10 Gap Closure, implemented and verified and awaiting review. It reuses the existing ingestion boundary; feature 11 extends the same capture transaction and deduplication engine to retrieved sources, adding cross-source matching, canonical-source selection, posting history and any merging of opportunities with history.")*
 
 ### Completion-pass rule
 
@@ -112,7 +113,13 @@ For each task:
 
 These features are part of the intended main product and must be complete before final product acceptance.
 
-11. Automated job discovery/retrieval/scraping.
+11. Automated job discovery/retrieval/scraping, in two acceptance units:
+    - **11A (implemented and verified October 18, 2026; awaiting review):**
+      - the collection framework, and the verified Type #1 adapters (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads; Adzuna registered but unverified and disabled);
+      - source and run storage, the retrieval worker, `/sources`, and title-only role-family discovery;
+      - cross-source deduplication (`core-dedup-v2`), canonical-link precedence, and re-observation with linked changed observations;
+      - no automatic evaluation.
+    - **11B (next, separate acceptance unit):** the verified Type #3/#4 sources (Workday, Workable, Welcome to the Jungle / Otta, Wellfound).
 12. Source health monitoring and conservative retrieval: pacing, backoff, failure isolation, freshness checks, and expiry/removal detection.
 13. Ghost-job/posting-history intelligence.
 14. Browser extension companion using the same backend, account, data, evaluator, lifecycle, provenance, budget, and dashboard as the main app.
@@ -136,6 +143,8 @@ These features are part of the intended main product and must be complete before
 - Do not mutate an evaluated opportunity's canonical JD/raw description in place; append observations/source records and preserve history.
 - Keep deduplication upstream of paid evaluation to avoid duplicate spend.
 - Source health must be conservative and respectful of each source.
+- Verify each source's real response contract with one approved low-volume request and a small sanitized fixture before its adapter can be enabled; do not retry or probe alternatives without approval (applied throughout 11A).
+- Retrieved jobs arrive unevaluated; no retrieval path bypasses the budget gate, limits, hard filters or duplicate-spend protection.
 
 ## Phase 4 — Final Integration, Acceptance, and Freeze
 

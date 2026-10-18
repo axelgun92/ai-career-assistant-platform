@@ -1,0 +1,431 @@
+{
+  "offset": 10,
+  "limit": 10,
+  "totalFound": 5079,
+  "content": [
+    {
+      "id": "744000156079459",
+      "name": "Sr. Key Account Manager - The Home Depot",
+      "uuid": "9402a539-f8c0-48c5-9be2-2d3a9304fa49",
+      "jobAdId": "ff31948f-4331-457b-ad37-064d2c2cc9ee",
+      "defaultJobAd": true,
+      "refNumber": "REF297100M",
+      "company": {
+        "identifier": "BoschGroup",
+        "name": "Bosch Group"
+      },
+      "releasedDate": "2026-10-16T20:44:03.753Z",
+      "location": {
+        "city": "Marietta",
+        "region": "GA",
+        "country": "us",
+        "address": "1395 South Marietta Parkway Southeast",
+        "postalCode": "30067",
+        "remote": false,
+        "hybrid": true,
+        "hybridDescription": "3 days in office per week",
+        "latitude": "33.9414793",
+        "longitude": "-84.5113034",
+        "fullLocation": "Marietta, GA, United States"
+      },
+      "industry": {
+        "id": "consumer_goods",
+        "label": "Consumer Goods"
+      },
+      "department": {},
+      "function": {
+        "id": "sales",
+        "label": "Sales"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "associate",
+        "label": "Associate"
+      },
+      "customField": [
+        {
+          "fieldId": "5abe2a4ab60a5e486a2d9b1d",
+          "fieldLabel": "Contract type",
+          "valueId": "1e46492b-d24f-460c-b095-38cf08a778d8",
+          "valueLabel": "Unlimited"
+        },
+        {
+          "fieldId": "5abe28e96d8bc56863dd9746",
+          "fieldLabel": "Tariff Area",
+          "valueId": "82f1dd4b-de9d-4134-9f1a-8d315be380ae",
+          "valueLabel": "United States Local Grades"
+        },
+        {
+          "fieldId": "586a997ee4b05fd937b86098",
+          "fieldLabel": "Legal Entity(acronym)",
+          "valueId": "PTNA",
+          "valueLabel": "PTNA"
+        },
+        {
+          "fieldId": "586a99b5e4b0daa006ae1079",
+          "fieldLabel": "Working Location",
+          "valueId": "Atlanta, GA",
+          "valueLabel": "Atlanta, GA"
+        },
+        {
+          "fieldId": "5abe295a6d8bc56863dd9747",
+          "fieldLabel": "Global Salary Level",
+          "valueId": "4eb55129-0528-4879-b132-1d17e25df928",
+          "valueLabel": "Senior/ Upper Tariff"
+        },
+        {
+          "fieldId": "69ca83a2489188782a1e9f87",
+          "fieldLabel": "Direct Or Indirect",
+          "valueId": "1aefbf4c-c10a-422e-a975-a504a7117792",
+          "valueLabel": "Indirect"
+        },
+        {
+          "fieldId": "5abe29f9b60a5e486a2d9b1c",
+          "fieldLabel": "Working hours",
+          "valueId": "60756b3e-dbab-4353-ac3a-0064d2bb27d8",
+          "valueLabel": "Full-time"
+        },
+        {
+          "fieldId": "586a9995e4b0daa006ae1078",
+          "fieldLabel": "Legal Entity",
+          "valueId": "Robert Bosch Tool Corporation",
+          "valueLabel": "Robert Bosch Tool Corporation"
+        },
+        {
+          "fieldId": "691cf1c93001c782b9560ab7",
+          "fieldLabel": "Division full name",
+          "valueId": "d46bc602-375e-4c5b-8773-170f49339203",
+          "valueLabel": "Power Tools"
+        },
+        {
+          "fieldId": "5abe27936d8bc56863dd9745",
+          "fieldLabel": "Position type",
+          "valueId": "c7b4da31-6f38-405a-b2e8-08a76e3c3f2c",
+          "valueLabel": "Professional"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "us",
+          "valueLabel": "United States"
+        },
+        {
+          "fieldId": "586a971ee4b0daa006ae1077",
+          "fieldLabel": "Brands",
+          "valueId": "default",
+          "valueLabel": "Bosch Group"
+        },
+        {
+          "fieldId": "586a996ce4b05fd937b86097",
+          "fieldLabel": "Working Country",
+          "valueId": "US",
+          "valueLabel": "United States"
+        },
+        {
+          "fieldId": "586a9b22e4b05fd937b8609a",
+          "fieldLabel": "Local Grade",
+          "valueId": "US_E4",
+          "valueLabel": "US_E4"
+        },
+        {
+          "fieldId": "586a99a5e4b05fd937b86099",
+          "fieldLabel": "Division",
+          "valueId": "PT",
+          "valueLabel": "PT"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/BoschGroup/postings/744000156079459",
+      "language": {
+        "code": "en",
+        "label": "English",
+        "labelNative": "English (US)"
+      }
+    },
+    {
+      "id": "744000156079119",
+      "name": "Supervisor de Almacén",
+      "uuid": "af449240-1486-4130-b8cd-da2ae1066c34",
+      "jobAdId": "0450380d-7484-4100-a23a-7965f71e1ba2",
+      "defaultJobAd": true,
+      "refNumber": "REF292996U",
+      "company": {
+        "identifier": "BoschGroup",
+        "name": "Bosch Group"
+      },
+      "releasedDate": "2026-10-16T20:41:56.592Z",
+      "location": {
+        "city": "Juárez",
+        "region": "Chih.",
+        "country": "mx",
+        "address": "Calle Hornos",
+        "postalCode": "32630",
+        "remote": false,
+        "hybrid": false,
+        "latitude": "31.6980529",
+        "longitude": "-106.4493045",
+        "fullLocation": "Juárez, Chih., Mexico"
+      },
+      "industry": {
+        "id": "automotive",
+        "label": "Automotive"
+      },
+      "department": {},
+      "function": {
+        "id": "supply_chain",
+        "label": "Supply Chain"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "associate",
+        "label": "Associate"
+      },
+      "customField": [
+        {
+          "fieldId": "5abe2a4ab60a5e486a2d9b1d",
+          "fieldLabel": "Contract type",
+          "valueId": "1e46492b-d24f-460c-b095-38cf08a778d8",
+          "valueLabel": "Unlimited"
+        },
+        {
+          "fieldId": "5abe28e96d8bc56863dd9746",
+          "fieldLabel": "Tariff Area",
+          "valueId": "540ff3f7-a953-4856-97e3-f2202d80c57c",
+          "valueLabel": "Mexico Local Grades"
+        },
+        {
+          "fieldId": "586a997ee4b05fd937b86098",
+          "fieldLabel": "Legal Entity(acronym)",
+          "valueId": "MAMX",
+          "valueLabel": "MAMX"
+        },
+        {
+          "fieldId": "586a99b5e4b0daa006ae1079",
+          "fieldLabel": "Working Location",
+          "valueId": "Juarez",
+          "valueLabel": "Juarez"
+        },
+        {
+          "fieldId": "5abe295a6d8bc56863dd9747",
+          "fieldLabel": "Global Salary Level",
+          "valueId": "427b1359-5057-4375-a2ae-6c649782296d",
+          "valueLabel": "Experienced/ Middle Tariff"
+        },
+        {
+          "fieldId": "69ca83a2489188782a1e9f87",
+          "fieldLabel": "Direct Or Indirect",
+          "valueId": "1aefbf4c-c10a-422e-a975-a504a7117792",
+          "valueLabel": "Indirect"
+        },
+        {
+          "fieldId": "5abe29f9b60a5e486a2d9b1c",
+          "fieldLabel": "Working hours",
+          "valueId": "60756b3e-dbab-4353-ac3a-0064d2bb27d8",
+          "valueLabel": "Full-time"
+        },
+        {
+          "fieldId": "586a9995e4b0daa006ae1078",
+          "fieldLabel": "Legal Entity",
+          "valueId": "Robert Bosch Mexico Sistemas de Frenos, S. de R.L. de C.V.",
+          "valueLabel": "Robert Bosch Mexico Sistemas de Frenos, S. de R.L. de C.V."
+        },
+        {
+          "fieldId": "691cf1c93001c782b9560ab7",
+          "fieldLabel": "Division full name",
+          "valueId": "b2e47e43-790d-4acb-871a-2ed61d7177ba",
+          "valueLabel": "Mobility Aftermarket"
+        },
+        {
+          "fieldId": "5abe27936d8bc56863dd9745",
+          "fieldLabel": "Position type",
+          "valueId": "c7b4da31-6f38-405a-b2e8-08a76e3c3f2c",
+          "valueLabel": "Professional"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "mx",
+          "valueLabel": "Mexico"
+        },
+        {
+          "fieldId": "586a971ee4b0daa006ae1077",
+          "fieldLabel": "Brands",
+          "valueId": "default",
+          "valueLabel": "Bosch Group"
+        },
+        {
+          "fieldId": "586a996ce4b05fd937b86097",
+          "fieldLabel": "Working Country",
+          "valueId": "MX",
+          "valueLabel": "Mexico"
+        },
+        {
+          "fieldId": "586a9b22e4b05fd937b8609a",
+          "fieldLabel": "Local Grade",
+          "valueId": "MX_E3",
+          "valueLabel": "MX_E3"
+        },
+        {
+          "fieldId": "586a99a5e4b05fd937b86099",
+          "fieldLabel": "Division",
+          "valueId": "AA",
+          "valueLabel": "MA"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/BoschGroup/postings/744000156079119",
+      "language": {
+        "code": "es",
+        "label": "Spanish",
+        "labelNative": "español"
+      }
+    },
+    {
+      "id": "744000156070702",
+      "name": "Production Worker",
+      "uuid": "cffc032b-b501-4098-b3b0-bd4b2d4aaf0b",
+      "jobAdId": "ac6cc5a0-6fa7-406f-820e-f8260b108f40",
+      "defaultJobAd": true,
+      "refNumber": "REF297745E",
+      "company": {
+        "identifier": "BoschGroup",
+        "name": "Bosch Group"
+      },
+      "releasedDate": "2026-10-16T19:43:20.527Z",
+      "location": {
+        "city": "Lincolnshire",
+        "region": "IL",
+        "country": "us",
+        "address": "500 Barclay Boulevard",
+        "postalCode": "60069",
+        "remote": false,
+        "hybrid": false,
+        "latitude": "42.1875623",
+        "longitude": "-87.93694239999999",
+        "fullLocation": "Lincolnshire, IL, United States"
+      },
+      "industry": {
+        "id": "mechanical_engineering",
+        "label": "Mechanical Or Industrial Engineering"
+      },
+      "department": {},
+      "function": {
+        "id": "production",
+        "label": "Production"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "associate",
+        "label": "Associate"
+      },
+      "customField": [
+        {
+          "fieldId": "5abe2a4ab60a5e486a2d9b1d",
+          "fieldLabel": "Contract type",
+          "valueId": "1e46492b-d24f-460c-b095-38cf08a778d8",
+          "valueLabel": "Unlimited"
+        },
+        {
+          "fieldId": "5abe28e96d8bc56863dd9746",
+          "fieldLabel": "Tariff Area",
+          "valueId": "82f1dd4b-de9d-4134-9f1a-8d315be380ae",
+          "valueLabel": "United States Local Grades"
+        },
+        {
+          "fieldId": "586a997ee4b05fd937b86098",
+          "fieldLabel": "Legal Entity(acronym)",
+          "valueId": "DCUS",
+          "valueLabel": "DCUS"
+        },
+        {
+          "fieldId": "586a99b5e4b0daa006ae1079",
+          "fieldLabel": "Working Location",
+          "valueId": "2e1eea40-e3ec-49b3-b3f5-48ec585e13d5",
+          "valueLabel": "Lincolnshire, IL"
+        },
+        {
+          "fieldId": "5abe295a6d8bc56863dd9747",
+          "fieldLabel": "Global Salary Level",
+          "valueId": "4319a4d2-6690-4a34-ac0f-9d8c126f1af2",
+          "valueLabel": "Junior/ Lower Tariff"
+        },
+        {
+          "fieldId": "69ca83a2489188782a1e9f87",
+          "fieldLabel": "Direct Or Indirect",
+          "valueId": "0d8b2ae9-fc67-447b-9165-201f59f71e90",
+          "valueLabel": "Direct"
+        },
+        {
+          "fieldId": "5abe29f9b60a5e486a2d9b1c",
+          "fieldLabel": "Working hours",
+          "valueId": "60756b3e-dbab-4353-ac3a-0064d2bb27d8",
+          "valueLabel": "Full-time"
+        },
+        {
+          "fieldId": "586a9995e4b0daa006ae1078",
+          "fieldLabel": "Legal Entity",
+          "valueId": "Bosch Rexroth Corporation",
+          "valueLabel": "Bosch Rexroth Corporation"
+        },
+        {
+          "fieldId": "691cf1c93001c782b9560ab7",
+          "fieldLabel": "Division full name",
+          "valueId": "d3ef257d-1f63-457f-b72f-8caac2ddc992",
+          "valueLabel": "Drive and Control Technology"
+        },
+        {
+          "fieldId": "5abe27936d8bc56863dd9745",
+          "fieldLabel": "Position type",
+          "valueId": "e1a146c4-6212-4f0d-b2f6-060dd801354f",
+          "valueLabel": "Blue-collar workers"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "us",
+          "valueLabel": "United States"
+        },
+        {
+          "fieldId": "586a971ee4b0daa006ae1077",
+          "fieldLabel": "Brands",
+          "valueId": "fd4db50e-91ce-4946-b74c-b62af21aa406",
+          "valueLabel": "Rexroth"
+        },
+        {
+          "fieldId": "586a996ce4b05fd937b86097",
+          "fieldLabel": "Working Country",
+          "valueId": "US",
+          "valueLabel": "United States"
+        },
+        {
+          "fieldId": "586a9b22e4b05fd937b8609a",
+          "fieldLabel": "Local Grade",
+          "valueId": "9ceea6ff-37fa-40a0-90e7-51fcc4977094",
+          "valueLabel": "US_N"
+        },
+        {
+          "fieldId": "586a99a5e4b05fd937b86099",
+          "fieldLabel": "Division",
+          "valueId": "DC",
+          "valueLabel": "DC"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/BoschGroup/postings/744000156070702",
+      "language": {
+        "code": "en",
+        "label": "English",
+        "labelNative": "English (US)"
+      }
+    }
+  ]
+}

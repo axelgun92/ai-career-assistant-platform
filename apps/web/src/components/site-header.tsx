@@ -9,6 +9,7 @@ export const siteSections = [
   { href: "/", label: "Dashboard", matches: (path: string) => path === "/" || (path.startsWith("/opportunities/") && path !== "/opportunities/new") },
   { href: "/applications", label: "Applications", matches: (path: string) => path.startsWith("/applications") },
   { href: "/opportunities/new", label: "New opportunity", matches: (path: string) => path === "/opportunities/new" },
+  { href: "/sources", label: "Sources", matches: (path: string) => path.startsWith("/sources") },
   { href: "/profile", label: "Profile & preferences", matches: (path: string) => path.startsWith("/profile") },
   { href: "/budget", label: "Budget", matches: (path: string) => path.startsWith("/budget") },
 ] as const;

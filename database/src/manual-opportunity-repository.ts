@@ -1,4 +1,8 @@
-import { residencyRequirementValues, type ResidencyRequirement } from "@ai-career/core";
+import {
+  residencyRequirementValues,
+  shouldReplaceApplicationLink,
+  type ResidencyRequirement,
+} from "@ai-career/core";
 import type {
   DeduplicationOutcome,
   DuplicateCheckResult,
@@ -8,10 +12,13 @@ import type {
   ManualOpportunityRepository,
   NormalizedOpportunity,
   RawOpportunity,
+  RetrievalIngestionRepository,
+  RetrievedListingResult,
 } from "@ai-career/core";
 import {
   decideDuplicates,
   normalizeCompanyName,
+  scopedListingId,
   textTokens,
   type DuplicateDecisionResult,
   type DuplicateIdentity,
@@ -43,7 +50,7 @@ function captureIdentity(opportunity: NormalizedOpportunity): DuplicateIdentity 
     location: opportunity.location,
     description: opportunity.jobDescription,
     urls: [opportunity.canonicalUrl, opportunity.applicationUrl],
-    listingIds: [opportunity.externalListingId],
+    listingIds: [scopedListingId(opportunity.source, opportunity.sourceType, opportunity.externalListingId)],
     requisitionIds: [opportunity.atsRequisitionId],
     salaryMin: opportunity.salaryMin,
     salaryMax: opportunity.salaryMax,
@@ -86,7 +93,7 @@ function asInputJson(value: unknown): Prisma.InputJsonValue {
 type OpportunityDetailRecord = Prisma.OpportunityGetPayload<{
   include: {
     company: true;
-    sourceRecords: true;
+    sourceRecords: { include: { retrievalSource: { select: { name: true } } } };
     fieldProvenance: true;
   };
 }>;
@@ -167,6 +174,12 @@ function mapOpportunityDetail(
       rawPayload: sourceRecord.rawPayload,
       duplicateDecision: sourceRecord.duplicateDecision,
       duplicateEvidence: sourceRecord.duplicateEvidence,
+      retrievalType: sourceRecord.retrievalType,
+      sourceCategory: sourceRecord.sourceCategory,
+      retrievalSourceId: sourceRecord.retrievalSourceId,
+      retrievalSourceName: sourceRecord.retrievalSource?.name ?? null,
+      retrievalRunId: sourceRecord.retrievalRunId,
+      previousSourceRecordId: sourceRecord.previousSourceRecordId,
       discoveredAt: sourceRecord.discoveredAt,
       lastObservedAt: sourceRecord.lastObservedAt,
       normalizedAt: sourceRecord.normalizedAt,
@@ -189,7 +202,7 @@ function mapOpportunityDetail(
 }
 
 export class PrismaManualOpportunityRepository
-  implements ManualOpportunityRepository
+  implements ManualOpportunityRepository, RetrievalIngestionRepository
 {
   private readonly database = getDatabaseClient();
 
@@ -220,6 +233,11 @@ export class PrismaManualOpportunityRepository
       rawPayload: rawOpportunity.rawPayload === null ? undefined : asInputJson(rawOpportunity.rawPayload),
       discoveredAt: rawOpportunity.discoveredAt,
       lastObservedAt: rawOpportunity.discoveredAt,
+      retrievalType: rawOpportunity.retrieval?.retrievalType ?? null,
+      sourceCategory: rawOpportunity.retrieval?.sourceCategory ?? null,
+      retrievalSourceId: rawOpportunity.retrieval?.retrievalSourceId ?? null,
+      retrievalRunId: rawOpportunity.retrieval?.retrievalRunId ?? null,
+      contentHash: rawOpportunity.retrieval?.contentHash ?? null,
     } satisfies Prisma.SourceRecordUncheckedCreateInput;
   }
 
@@ -245,85 +263,261 @@ export class PrismaManualOpportunityRepository
     return this.database.$transaction(
       async (transaction) => {
         await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
-        // The raw capture is written first, exactly as submitted.
-        const sourceRecord = await transaction.sourceRecord.create({
-          data: this.sourceRecordData(input.rawOpportunity),
-          select: { id: true },
-        });
-        const identity = captureIdentity(input.opportunity);
-        const details = await findDuplicateCandidates(transaction, identity);
-        const decision = decideDuplicates(identity, details.candidates);
-        const matches = summaries(decision, details.labels);
-        const now = new Date();
+        const captured = await this.capture(transaction, { ...input, recordedBy: "CAPTURE" });
+        return { opportunityId: captured.opportunityId, deduplication: captured.deduplication };
+      },
+      { maxWait: 15_000, timeout: 30_000 },
+    );
+  }
 
-        if (decision.canonical && input.duplicateResolution !== "SEPARATE") {
-          // Exact duplicate: keep the existing opportunity and add this
-          // capture as another of its sources. Its fields, lifecycle,
-          // evaluations and application are not changed.
-          const canonical = decision.canonical;
-          await transaction.$queryRaw`SELECT "id" FROM "Opportunity" WHERE "id" = ${canonical.opportunityId}::uuid FOR UPDATE`;
-          await transaction.sourceRecord.update({
-            where: { id: sourceRecord.id },
-            data: {
-              opportunityId: canonical.opportunityId,
-              normalizedAt: now,
-              duplicateDecision: "MATCH",
-              duplicateEvidence: referenceEvidence(canonical, { confidence: canonical.confidence, decidedAt: now.toISOString() }),
-            },
-          });
+  // One retrieved listing, in the same capture transaction and lock as a
+  // manual capture. A listing already stored from the same source (same
+  // source listing ID) is a re-observation: unchanged content only moves
+  // last-seen times; changed content adds a new source record linked to the
+  // previous one, and the opportunity, its canonical description and the
+  // earlier record are left as they are. Anything else goes through the
+  // deduplication path.
+  async ingestRetrievedListing(input: {
+    rawOpportunity: RawOpportunity;
+    opportunity: NormalizedOpportunity;
+    provenance: FieldProvenanceInput[];
+  }): Promise<RetrievedListingResult> {
+    const raw = input.rawOpportunity;
+    const retrieval = raw.retrieval;
+    if (!retrieval) throw new Error("A retrieved listing must carry retrieval provenance");
+    return this.database.$transaction(
+      async (transaction) => {
+        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+        const previous = raw.externalId
+          ? await transaction.sourceRecord.findFirst({
+              where: { source: raw.source, externalId: raw.externalId, opportunityId: { not: null }, contentHash: { not: null } },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              select: { id: true, opportunityId: true, contentHash: true },
+            })
+          : null;
+        if (previous?.opportunityId) {
+          const opportunityId = previous.opportunityId;
+          let sourceRecordId = previous.id;
+          if (previous.contentHash === retrieval.contentHash) {
+            await transaction.$executeRaw`
+              UPDATE "SourceRecord" SET "lastObservedAt" = GREATEST("lastObservedAt", ${raw.discoveredAt}::timestamptz), "updatedAt" = now()
+              WHERE "id" = ${previous.id}::uuid
+            `;
+          } else {
+            const created = await transaction.sourceRecord.create({
+              data: {
+                ...this.sourceRecordData(raw),
+                opportunityId,
+                previousSourceRecordId: previous.id,
+                normalizedAt: new Date(),
+              },
+              select: { id: true },
+            });
+            sourceRecordId = created.id;
+          }
           await transaction.$executeRaw`
-            UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${input.rawOpportunity.discoveredAt}::timestamptz)
-            WHERE "id" = ${canonical.opportunityId}::uuid
+            UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${raw.discoveredAt}::timestamptz)
+            WHERE "id" = ${opportunityId}::uuid
           `;
           return {
-            opportunityId: canonical.opportunityId,
-            deduplication: {
-              outcome: "ATTACHED" as const,
-              decision: decision.decision,
-              canonicalOpportunityId: canonical.opportunityId,
-              matches,
-            },
+            outcome: previous.contentHash === retrieval.contentHash ? ("UNCHANGED" as const) : ("CHANGED" as const),
+            opportunityId,
+            sourceRecordId,
+            decision: null,
           };
         }
 
-        const opportunityId = await this.createNormalizedOpportunity(transaction, {
-          sourceRecordId: sourceRecord.id,
-          opportunity: input.opportunity,
-          provenance: input.provenance,
-          normalizedAt: now,
-        });
-
-        // Relationships to record: an exact duplicate the user kept separate
-        // (stored as DISTINCT, reversible) and the strongest probable matches.
-        const recorded = [
-          ...(decision.canonical ? [decision.canonical] : []),
-          ...decision.matches.filter((match) => match.decision === "PROBABLE_MATCH").slice(0, recordedProbableMatches),
-        ];
-        for (const match of recorded) {
-          const separate = match === decision.canonical;
-          await transaction.duplicateReference.create({
-            data: {
-              ...orientPair({ opportunityId, firstSeenAt: input.opportunity.firstSeenAt }, match),
-              decision: match.decision,
-              confidence: match.confidence,
-              evidence: referenceEvidence(match, { recordedBy: separate ? "CAPTURE_KEPT_SEPARATE" : "CAPTURE" }),
-              ...(separate ? { resolution: "DISTINCT" as const, resolvedAt: now } : {}),
-            },
+        const captured = await this.capture(transaction, { ...input, duplicateResolution: null, recordedBy: "RETRIEVAL" });
+        if (captured.deduplication.outcome === "ATTACHED") {
+          await this.applyApplicationLinkPrecedence(transaction, {
+            opportunityId: captured.opportunityId,
+            sourceRecordId: captured.sourceRecordId,
+            rawOpportunity: raw,
           });
         }
-
         return {
-          opportunityId,
-          deduplication: {
-            outcome: "CREATED" as const,
-            decision: decision.decision,
-            canonicalOpportunityId: decision.canonical?.opportunityId ?? null,
-            matches,
-          },
+          outcome: captured.deduplication.outcome,
+          opportunityId: captured.opportunityId,
+          sourceRecordId: captured.sourceRecordId,
+          decision: captured.deduplication.decision,
         };
       },
       { maxWait: 15_000, timeout: 30_000 },
     );
+  }
+
+  // Keeps a retrieved listing whose normalization failed, unlinked. The
+  // same unnormalized content seen again only moves its last-observed time.
+  async preserveUnnormalizedListing(rawOpportunity: RawOpportunity) {
+    const hash = rawOpportunity.retrieval?.contentHash ?? null;
+    return this.database.$transaction(async (transaction) => {
+      await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+      const existing =
+        hash && rawOpportunity.externalId
+          ? await transaction.sourceRecord.findFirst({
+              where: { source: rawOpportunity.source, externalId: rawOpportunity.externalId, contentHash: hash, opportunityId: null },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              select: { id: true, discoveredAt: true },
+            })
+          : null;
+      if (existing) {
+        await transaction.$executeRaw`
+          UPDATE "SourceRecord" SET "lastObservedAt" = GREATEST("lastObservedAt", ${rawOpportunity.discoveredAt}::timestamptz), "updatedAt" = now()
+          WHERE "id" = ${existing.id}::uuid
+        `;
+        return existing;
+      }
+      return transaction.sourceRecord.create({
+        data: this.sourceRecordData(rawOpportunity),
+        select: { id: true, discoveredAt: true },
+      });
+    });
+  }
+
+  // The capture path shared by manual capture and retrieval, inside the
+  // caller's transaction (which holds the capture lock): the raw
+  // SourceRecord first, then the duplicate decision and either attachment
+  // to the existing opportunity or a new NORMALIZED opportunity.
+  private async capture(
+    transaction: Transaction,
+    input: {
+      rawOpportunity: RawOpportunity;
+      opportunity: NormalizedOpportunity;
+      provenance: FieldProvenanceInput[];
+      duplicateResolution: DuplicateResolutionChoice | null;
+      recordedBy: "CAPTURE" | "RETRIEVAL";
+    },
+  ): Promise<{ opportunityId: string; sourceRecordId: string; deduplication: DeduplicationOutcome }> {
+    // The raw capture is written first, exactly as submitted.
+    const sourceRecord = await transaction.sourceRecord.create({
+      data: this.sourceRecordData(input.rawOpportunity),
+      select: { id: true },
+    });
+    const identity = captureIdentity(input.opportunity);
+    const details = await findDuplicateCandidates(transaction, identity);
+    const decision = decideDuplicates(identity, details.candidates);
+    const matches = summaries(decision, details.labels);
+    const now = new Date();
+
+    if (decision.canonical && input.duplicateResolution !== "SEPARATE") {
+      // Exact duplicate: keep the existing opportunity and add this
+      // capture as another of its sources. Its fields, lifecycle,
+      // evaluations and application are not changed.
+      const canonical = decision.canonical;
+      await transaction.$queryRaw`SELECT "id" FROM "Opportunity" WHERE "id" = ${canonical.opportunityId}::uuid FOR UPDATE`;
+      await transaction.sourceRecord.update({
+        where: { id: sourceRecord.id },
+        data: {
+          opportunityId: canonical.opportunityId,
+          normalizedAt: now,
+          duplicateDecision: "MATCH",
+          duplicateEvidence: referenceEvidence(canonical, { confidence: canonical.confidence, decidedAt: now.toISOString() }),
+        },
+      });
+      await transaction.$executeRaw`
+        UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${input.rawOpportunity.discoveredAt}::timestamptz)
+        WHERE "id" = ${canonical.opportunityId}::uuid
+      `;
+      return {
+        opportunityId: canonical.opportunityId,
+        sourceRecordId: sourceRecord.id,
+        deduplication: {
+          outcome: "ATTACHED" as const,
+          decision: decision.decision,
+          canonicalOpportunityId: canonical.opportunityId,
+          matches,
+        },
+      };
+    }
+
+    const opportunityId = await this.createNormalizedOpportunity(transaction, {
+      sourceRecordId: sourceRecord.id,
+      opportunity: input.opportunity,
+      provenance: input.provenance,
+      normalizedAt: now,
+    });
+
+    // Relationships to record: an exact duplicate the user kept separate
+    // (stored as DISTINCT, reversible) and the strongest probable matches.
+    const recorded = [
+      ...(decision.canonical ? [decision.canonical] : []),
+      ...decision.matches.filter((match) => match.decision === "PROBABLE_MATCH").slice(0, recordedProbableMatches),
+    ];
+    for (const match of recorded) {
+      const separate = match === decision.canonical;
+      await transaction.duplicateReference.create({
+        data: {
+          ...orientPair({ opportunityId, firstSeenAt: input.opportunity.firstSeenAt }, match),
+          decision: match.decision,
+          confidence: match.confidence,
+          evidence: referenceEvidence(match, { recordedBy: separate ? "CAPTURE_KEPT_SEPARATE" : input.recordedBy }),
+          ...(separate ? { resolution: "DISTINCT" as const, resolvedAt: now } : {}),
+        },
+      });
+    }
+
+    return {
+      opportunityId,
+      sourceRecordId: sourceRecord.id,
+      deduplication: {
+        outcome: "CREATED" as const,
+        decision: decision.decision,
+        canonicalOpportunityId: decision.canonical?.opportunityId ?? null,
+        matches,
+      },
+    };
+  }
+
+  // Canonical application link (Core TDD §15): when a retrieved source is
+  // attached, its application link replaces the current one only if the
+  // source has strictly higher precedence (employer ATS/careers, then job
+  // board/marketplace, then aggregator). The change is recorded as field
+  // provenance. A link the user entered manually is never replaced, nor is
+  // one whose origin is not recorded.
+  private async applyApplicationLinkPrecedence(
+    transaction: Transaction,
+    input: { opportunityId: string; sourceRecordId: string; rawOpportunity: RawOpportunity },
+  ) {
+    const candidateUrl = input.rawOpportunity.applicationUrl;
+    const candidateCategory = input.rawOpportunity.retrieval?.sourceCategory;
+    if (!candidateUrl || !candidateCategory) return;
+    const opportunity = await transaction.opportunity.findUnique({
+      where: { id: input.opportunityId },
+      select: { applicationUrl: true },
+    });
+    if (!opportunity) return;
+    const current = opportunity.applicationUrl
+      ? await transaction.fieldProvenance.findFirst({
+          where: { opportunityId: input.opportunityId, fieldName: "applicationUrl" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { sourceRecord: { select: { sourceType: true, sourceCategory: true } } },
+        })
+      : null;
+    const replace = shouldReplaceApplicationLink({
+      currentUrl: opportunity.applicationUrl,
+      currentIsManual: Boolean(opportunity.applicationUrl) && (!current?.sourceRecord || current.sourceRecord.sourceType === "MANUAL"),
+      currentCategory: current?.sourceRecord?.sourceCategory ?? null,
+      candidateUrl,
+      candidateCategory,
+    });
+    if (!replace) return;
+    await transaction.opportunity.update({
+      where: { id: input.opportunityId },
+      data: { applicationUrl: candidateUrl },
+    });
+    await transaction.fieldProvenance.create({
+      data: {
+        opportunityId: input.opportunityId,
+        sourceRecordId: input.sourceRecordId,
+        fieldName: "applicationUrl",
+        sourceField: "applicationUrl",
+        kind: "DIRECT",
+        normalizedValue: candidateUrl,
+        sourceReference: `retrieval:${input.rawOpportunity.source}`,
+        sourceText: candidateUrl,
+        collectedAt: input.rawOpportunity.discoveredAt,
+      },
+    });
   }
 
   // Creates the opportunity in DISCOVERED, its field provenance and the
@@ -419,7 +613,7 @@ export class PrismaManualOpportunityRepository
       where: { id },
       include: {
         company: true,
-        sourceRecords: { orderBy: { createdAt: "asc" } },
+        sourceRecords: { orderBy: { createdAt: "asc" }, include: { retrievalSource: { select: { name: true } } } },
         fieldProvenance: { orderBy: { createdAt: "asc" } },
       },
     });

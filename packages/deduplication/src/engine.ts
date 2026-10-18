@@ -1,7 +1,9 @@
 import { normalizeCompanyName, textTokens } from "./company-name";
-import { listingIdKey, listingUrlKey } from "./listing-identity";
+import { listingIdKey, listingIdScope, listingUrlKey } from "./listing-identity";
 
-export const deduplicationEngineVersion = "core-dedup-v1";
+// v2: source listing IDs are scoped by source, and differing IDs count as a
+// conflict only when both listings carry IDs from the same source.
+export const deduplicationEngineVersion = "core-dedup-v2";
 
 export type DuplicateDecision = "MATCH" | "PROBABLE_MATCH" | "NO_MATCH";
 
@@ -107,8 +109,13 @@ export function compareListings(
   const subjectTitle = textTokens(subject.title).join(" ");
   const candidateTitle = textTokens(candidate.title).join(" ");
   const titleConflict = Boolean(subjectTitle && candidateTitle && subjectTitle !== candidateTitle);
+  // Different IDs conflict only within one source scope: a Greenhouse ID and
+  // an aggregator's own ID for the same job never agree.
+  const candidateScopes = new Set([...candidateListingIds].map(listingIdScope));
   const listingIdConflict =
-    sameCompany && subjectListingIds.size > 0 && candidateListingIds.size > 0 && sharedListingIds.length === 0;
+    sameCompany &&
+    sharedListingIds.length === 0 &&
+    [...subjectListingIds].some((key) => candidateScopes.has(listingIdScope(key)));
   const base = {
     engineVersion: deduplicationEngineVersion,
     sharedUrlKeys,

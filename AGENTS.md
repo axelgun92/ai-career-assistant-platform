@@ -10,10 +10,10 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.6.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.7.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.5.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.5.docx`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.7.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.8.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.6.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.6.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
@@ -27,10 +27,10 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.6.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.5.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.7.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.5.docx` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.7.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.6.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.8.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.6.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
@@ -122,7 +122,7 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order (October 16, 2026). The intended main product is features 1–18:
+Current order (October 18, 2026). The intended main product is features 1–18:
 
 ```text
 Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
@@ -130,12 +130,17 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4,
   Semantic Evaluation Playbook v1.3)
 → features 1–10 gap audit: complete (October 17, 2026)
-→ now: Features 1–10 Gap Closure, implemented and verified, awaiting review (not committed): deduplication
-  with provenance retention, duplicate-spend guard, company normalization, history versions, stated
-  time-zone requirement, usage by domain and source, phone-width fixes; its versioned-specification
-  check produced Core AI Framework PRD v1.6, Customer Success PRD v1.5, Core Platform TDD v1.7 and
-  Customer Success TDD v1.5 (status sections only; Semantic Evaluation Playbook v1.3 unchanged)
-→ remaining main-product features 11–18 (retrieval, source health, posting-history/ghost intelligence,
+→ Features 1–10 Gap Closure: complete (d573acf, October 17, 2026): deduplication with provenance
+  retention, duplicate-spend guard, company normalization, history versions, stated time-zone
+  requirement, usage by domain and source, phone-width fixes (Core AI Framework PRD v1.6, Customer
+  Success PRD v1.5, Core Platform TDD v1.7, Customer Success TDD v1.5)
+→ now: Feature 11A, automated retrieval from the verified official API and feed sources, implemented
+  and verified, awaiting review (not committed); its versioned-specification check produced Core AI
+  Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8 and Customer Success TDD v1.6
+  (status sections and dated implementation notes; Semantic Evaluation Playbook v1.3 unchanged)
+→ then Feature 11B (the verified public/guest-endpoint and public-HTML sources), a separate
+  acceptance unit
+→ remaining main-product features 12–18 (source health, posting-history/ghost intelligence,
   browser extension companion, source intelligence, market analytics, personal job-search analytics,
   company intelligence)
 → only after features 1–18: deliberate evaluator/product integration, full isolated verification,
@@ -162,13 +167,14 @@ After meaningful completed work, update `AI Job Assistant Project/Md and README 
 
 ## Source / Retrieval Rule
 
-When future retrieval work begins:
+Retrieval (feature 11) follows these rules:
 
-- source adapters obtain source data only;
+- source adapters obtain source data only, and keep a listing only when its title matches a domain role-family term;
 - normalization standardizes it;
 - deduplication resolves duplicate opportunities;
 - the existing evaluator decides suitability;
-- retrieval must not become a second evaluator.
+- retrieval must not become a second evaluator, and never starts an evaluation;
+- a new or changed source contract is verified with one approved live request and a small sanitized fixture before its adapter can be enabled.
 
 Once a job source has enough evidence to classify it under an established retrieval category, stop investigating that source unless more detail is actually required.
 

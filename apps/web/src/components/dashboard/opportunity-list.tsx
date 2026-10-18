@@ -10,7 +10,7 @@ import { formatResidency, workArrangementLabel } from "../opportunity-facts";
 type Optional =
   | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
   | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority"
-  | "residencyRequirement" | "residencyRegions" | "duplicate";
+  | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged";
 type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
 
 // The application tracker's state, kept to one badge plus the next follow-up.
@@ -107,7 +107,7 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
               </div>
               <div>
                 <dt>Source</dt>
-                <dd>{sourceTypeLabel(opportunity.sourceType)}</dd>
+                <dd>{opportunity.foundVia ? `Found via ${opportunity.foundVia}` : sourceTypeLabel(opportunity.sourceType)}</dd>
               </div>
               <div>
                 <dt>Discovered</dt>
@@ -128,6 +128,9 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
                 <span className="status-label status-label-duplicate">
                   {opportunity.duplicate === "MATCH" ? "Duplicate listing" : "Possible duplicate"}
                 </span>
+              ) : null}
+              {opportunity.listingChanged ? (
+                <span className="status-label status-label-deferred">Listing changed</span>
               ) : null}
               {applicationUrl ? (
                 <ExternalLink href={applicationUrl}>Application page</ExternalLink>

@@ -65,6 +65,9 @@ importers:
       '@ai-career/deduplication':
         specifier: workspace:*
         version: link:../../packages/deduplication
+      '@ai-career/discovery':
+        specifier: workspace:*
+        version: link:../../packages/discovery
       '@ai-career/evaluation':
         specifier: workspace:*
         version: link:../../packages/evaluation
@@ -162,6 +165,15 @@ importers:
       '@ai-career/core':
         specifier: workspace:*
         version: link:../core
+      '@ai-career/deduplication':
+        specifier: workspace:*
+        version: link:../deduplication
+      '@ai-career/normalization':
+        specifier: workspace:*
+        version: link:../normalization
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/evaluation:
     dependencies:

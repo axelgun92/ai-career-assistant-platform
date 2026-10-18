@@ -27,6 +27,7 @@ async function main() {
       reads = createDoctorReads(client, {
         workerConnected: () => database.isEvaluationWorkerConnected(client),
         queueSnapshot: (now) => database.readQueueSnapshot(client, now),
+        retrievalWorkerConnected: () => database.isRetrievalWorkerConnected(client),
       });
       disconnect = () => client.$disconnect();
     } catch {

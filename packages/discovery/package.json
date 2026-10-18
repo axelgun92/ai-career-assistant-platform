@@ -8,6 +8,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-career/core": "workspace:*"
+    "@ai-career/core": "workspace:*",
+    "@ai-career/deduplication": "workspace:*",
+    "@ai-career/normalization": "workspace:*",
+    "zod": "4.4.3"
   }
 }

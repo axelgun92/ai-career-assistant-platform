@@ -1,5 +1,17 @@
-import type { RawOpportunity } from "@ai-career/core";
-
-export interface OpportunityCollector {
-  collect(): Promise<RawOpportunity[]>;
-}
+export * from "./contract";
+export * from "./transport";
+export * from "./politeness";
+export * from "./discovery-terms";
+export * from "./rss";
+export * from "./listing";
+export * from "./collection";
+export * from "./registry";
+export { adzunaAdapter } from "./adapters/adzuna";
+export { ashbyAdapter, ashbySalaryText, ashbyStructuredSalary } from "./adapters/ashby";
+export { greenhouseAdapter } from "./adapters/greenhouse";
+export { himalayasAdapter, himalayasPageUrl } from "./adapters/himalayas";
+export { leverAdapter, leverPostingHtml } from "./adapters/lever";
+export { remoteOkAdapter } from "./adapters/remote-ok";
+export { prioritizeDetailRequests, smartRecruitersAdapter, smartRecruitersJobAdHtml } from "./adapters/smartrecruiters";
+export { splitWwrTitle, weWorkRemotelyAdapter } from "./adapters/we-work-remotely";
+export { workingNomadsAdapter, workingNomadsId } from "./adapters/working-nomads";

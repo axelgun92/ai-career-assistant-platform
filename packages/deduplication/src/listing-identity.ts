@@ -43,3 +43,26 @@ export function listingIdKey(value: string | null | undefined): string | null {
   const trimmed = value?.trim().toLowerCase();
   return trimmed ? trimmed : null;
 }
+
+// A source listing ID identifies a listing only within its source: a
+// Greenhouse "123" and a Lever "123" are different listings. Retrieved IDs
+// are therefore compared as "<source>::<id>". Manually entered IDs keep
+// their plain form, as before. Requisition IDs and URLs stay cross-source.
+export const listingIdScopeSeparator = "::";
+export function scopedListingId(
+  source: string | null | undefined,
+  sourceType: string | null | undefined,
+  id: string | null | undefined,
+): string | null {
+  const trimmed = id?.trim();
+  if (!trimmed) return null;
+  const scope = source?.trim();
+  if (!scope || !sourceType || sourceType === "MANUAL") return trimmed;
+  return `${scope}${listingIdScopeSeparator}${trimmed}`;
+}
+
+// The source scope of a listing ID key ("" for a manually entered ID).
+export function listingIdScope(key: string): string {
+  const index = key.indexOf(listingIdScopeSeparator);
+  return index > 0 ? key.slice(0, index) : "";
+}

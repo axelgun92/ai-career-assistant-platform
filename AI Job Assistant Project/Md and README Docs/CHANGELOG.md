@@ -8,7 +8,26 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 ## Unreleased
 
-Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026.
+Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026.
+
+### Feature 11A — automated retrieval from the verified official API and feed sources (October 18, 2026)
+
+- **Collection framework** (`packages/discovery`): the source-adapter contract.
+  - **Transport:** injectable, with an identifying User-Agent, a 20 s timeout, a hard 10 MB ceiling (refused, never truncated), no cookies and no redirects followed.
+  - **Politeness:** at least 1 s between requests to a host, and a stop on 429 (`RATE_LIMITED`) or 401/403 (`ACCESS_DENIED`).
+  - **Other pieces:** credential redaction, an RSS reader, title-term matching and a material-field content hash.
+- **Verified adapters:** Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas (cursor paging) and Working Nomads. Each was verified with one approved live request and a committed fixture of at most three items with metadata; SmartRecruiters with `BoschGroup` after `Visa` returned an empty board. SmartRecruiters pages its list by offset (verified with one approved page-2 request) up to the 5-page cap, so a run sees at most the newest 500 postings, and spends its 25 detail requests per run on unseen postings first (oldest first), then on stored postings by oldest last check. Adzuna is registered but unverified and disabled.
+- **Discovery and normalization:** only listings whose title contains a Customer Success role-family term are kept, with the full description. A retrieved-listing normalizer records DIRECT provenance for structured facts. Salary is normalized only as one annual range with a known currency; residency only from explicit statements; time zones never.
+- **Storage and ingestion** (migration `20261018090000_retrieval_sources`, additive):
+  - `RetrievalSource` and `RetrievalRun`. Sources or runs with history are archived, never deleted.
+  - Re-observation: an unchanged listing only moves last-seen times, and a changed one adds a linked observation while the original description stays.
+  - Canonical-link precedence: employer ATS over job board over aggregator, and a manual link is never replaced.
+- **Deduplication engine `core-dedup-v2`:** source-scoped listing IDs, with listing-ID conflicts only within one source.
+- **Worker, UI and tooling:**
+  - `pnpm worker:retrieval`: a single worker, a 12-hour default schedule, sources disabled until enabled, per-listing failure isolation and no automatic evaluation.
+  - `/sources` with run history; "Found via" and "Listing changed" on the dashboard and opportunity page.
+  - `pnpm sources:verify`, and read-only retrieval checks in `pnpm app:doctor`.
+- **New versioned specifications:** Core AI Framework PRD v1.7, Customer Success AI Assistant PRD v1.6, Core Platform TDD v1.8 (§51 "Automated Retrieval (Feature 11A)") and Customer Success Assistant TDD v1.6 (dated implementation notes in §6–§8 and §49). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged (v1.3).
 
 ### Features 1–10 Gap Closure (October 17, 2026)
 

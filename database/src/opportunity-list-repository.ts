@@ -62,6 +62,11 @@ export interface OpportunityListItem {
   // PROBABLE_MATCH (possible duplicate). Pairs marked as different jobs are
   // not shown.
   duplicate: "MATCH" | "PROBABLE_MATCH" | null;
+  // The source's display name when the opportunity was first found by
+  // automated retrieval (for example "Greenhouse"); null otherwise.
+  foundVia: string | null;
+  // A later retrieval found the listing changed since it was first seen.
+  listingChanged: boolean;
   // The application tracker's state for this opportunity, if tracked.
   application: {
     stage: ApplicationStage;
@@ -343,7 +348,19 @@ type Row = {
   applicationOutcome: ApplicationOutcome | null;
   nextFollowUpOn: Date | null;
   duplicate: "MATCH" | "PROBABLE_MATCH" | null;
+  foundVia: string | null;
+  listingChanged: boolean;
 };
+
+// Retrieval facts for the row: the first retrieved record's source name and
+// whether any changed observation exists.
+const retrievalStatus = Prisma.sql`(
+  SELECT sr."sourceMetadata"->>'sourceName' FROM "SourceRecord" sr
+  WHERE sr."opportunityId" = o."id" AND sr."retrievalType" IS NOT NULL
+  ORDER BY sr."createdAt" ASC, sr."id" ASC LIMIT 1
+) AS "foundVia", EXISTS (
+  SELECT 1 FROM "SourceRecord" sr WHERE sr."opportunityId" = o."id" AND sr."previousSourceRecordId" IS NOT NULL
+) AS "listingChanged"`;
 
 // The strongest unresolved stored duplicate relationship, either direction.
 const duplicateStatus = Prisma.sql`(
@@ -398,6 +415,8 @@ function toItem(row: Row, today: string): OpportunityListItem {
     roleFamily: row.roleFamily,
     customerSegment: row.customerSegment,
     duplicate: row.duplicate ?? null,
+    foundVia: row.foundVia ?? null,
+    listingChanged: row.listingChanged ?? false,
     application: row.applicationStage
       ? {
           stage: row.applicationStage,
@@ -473,7 +492,7 @@ export class PrismaOpportunityListRepository {
             cr."decision" AS "recDecision", cr."evaluationId" AS "recEvaluationId",
             cr."band" AS "priorityBand", cr."roleFamily" AS "roleFamily", cr."segment" AS "customerSegment",
             app."stage"::text AS "applicationStage", app."outcome"::text AS "applicationOutcome",
-            app_next."dueOn" AS "nextFollowUpOn", ${duplicateStatus}
+            app_next."dueOn" AS "nextFollowUpOn", ${duplicateStatus}, ${retrievalStatus}
           ${joins} ${predicate}
           ORDER BY ${sortOrders[input.sort] ?? sortOrders.newest}
           LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}

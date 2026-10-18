@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development  
-**Last updated:** October 17, 2026
+**Last updated:** October 18, 2026
 
 ## Purpose
 
@@ -31,7 +31,17 @@ Manual Opportunity
 → Lifecycle and application workflow
 ```
 
-Automated discovery is not yet complete, but the manual workflow remains the stable product foundation that later retrieval will feed. The current product can evaluate a manually entered job without automated retrieval.
+Automated discovery is implemented for the verified official API and feed sources (Feature 11A, awaiting review). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. The manual workflow is unchanged and remains the stable foundation.
+
+```text
+Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads)
+→ Retrieval worker (title-term filter, raw source preserved)
+→ Deterministic normalization
+→ Deduplication (attach, flag or create; employer link preferred; changes recorded)
+→ Dashboard, unevaluated until the user requests an evaluation
+```
+
+*(Earlier wording, superseded on October 18, 2026: "Automated discovery is not yet complete, but the manual workflow remains the stable product foundation that later retrieval will feed. The current product can evaluate a manually entered job without automated retrieval.")*
 
 **Branch note:** the main-product work described here is implemented on `claude/gallant-pasteur-y1ou3i`. The evaluator branch `codex/evaluator-live-diagnostic` carries three things not on the main-product branch:
 
@@ -185,6 +195,20 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+Feature 11A is implemented and verified on the isolated test database and awaiting user review; it is not committed. It adds automated retrieval from the verified official API and feed sources:
+
+- **Sources:** Greenhouse, Lever, Ashby and SmartRecruiters (employer ATS), plus Remote OK, We Work Remotely, Himalayas and Working Nomads. Each was verified against one approved live response and a small committed fixture. Adzuna is listed but stays disabled until it is verified.
+- **`/sources`:** add, configure, enable or disable a source, Run now, view run history, remove (archived when it has history) or restore. Sources start disabled and run every 12 hours once enabled.
+- **Discovery:** only listings whose title contains a Customer Success core or adjacent role-family term are kept. The complete description and raw source data are preserved.
+- **Deduplication across sources:** exact duplicates are attached (engine `core-dedup-v2`, with source-scoped listing IDs) and possible duplicates are flagged. An employer-ATS application link replaces an aggregator's, and a link you entered is never replaced.
+- **Re-retrieval:** an unchanged listing only updates last-seen times. A changed listing is kept as a linked new version, shown as "Listing changed since first seen", while the original description stays.
+- **No automatic evaluation:** retrieved jobs arrive unevaluated, and evaluation stays your choice within the budget.
+- **Safety:** an identifying User-Agent, a 20 s timeout, a 10 MB response ceiling, at least 1 s between requests to a host, a stop on 429 or 403, and one retrieval worker at a time.
+
+Feature 11B (the verified public/guest-endpoint and public-HTML sources) follows as a separate acceptance unit.
+
+*(Earlier status, superseded on October 18, 2026 when the gap closure was committed as `d573acf` on October 17. It read as follows.)*
+
 The Features 1–10 Gap Closure is implemented and verified on the isolated test database and awaiting user review; it is not committed. It followed a read-only audit of features 1–10 (October 17, 2026) and closes these gaps:
 
 - **Feature 9, deduplication with provenance retention:**
@@ -216,9 +240,10 @@ The main-product branch runs its own unit, DB-backed integration and E2E suites 
 Task 8 and Task 9 are complete. In order:
 
 1. Done: the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
-2. Now: the Features 1–10 Gap Closure. The audit is complete; the implementation is verified and awaiting review, then the versioned-specification check and the commit.
-3. Build main-product features 11–18:
-   - automated discovery/retrieval/scraping;
+2. Done: the Features 1–10 Gap Closure (`d573acf`, October 17, 2026). *(Earlier step: "Now: the Features 1–10 Gap Closure. The audit is complete; the implementation is verified and awaiting review, then the versioned-specification check and the commit.")*
+3. Now: Feature 11A, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8, Customer Success TDD v1.6).
+4. Build the rest of main-product features 11–18:
+   - automated discovery/retrieval/scraping (Feature 11B: the verified public/guest-endpoint and public-HTML sources);
    - source health and conservative retrieval;
    - ghost-job/posting-history intelligence;
    - browser extension companion;
@@ -226,7 +251,7 @@ Task 8 and Task 9 are complete. In order:
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-4. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+5. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 

@@ -1,4 +1,5 @@
 export * from "./config/preferences";
+export * from "./discovery/discovery-config";
 export * from "./evaluator";
 export * from "./extraction/extractor";
 export * from "./schemas/maps";

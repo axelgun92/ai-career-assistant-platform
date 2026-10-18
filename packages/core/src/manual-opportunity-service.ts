@@ -59,6 +59,15 @@ export interface ManualOpportunityDetail {
     // duplicate of an earlier capture.
     duplicateDecision?: "MATCH" | "PROBABLE_MATCH" | "NO_MATCH" | null;
     duplicateEvidence?: unknown;
+    // Set on records produced by automated retrieval.
+    retrievalType?: "OFFICIAL_PUBLIC_API_FEED" | "BROWSER_ASSISTED" | "PUBLIC_GUEST_INTERNAL_ENDPOINT" | "PUBLIC_HTML" | null;
+    sourceCategory?: "ATS" | "COMPANY_CAREERS" | "JOB_BOARD" | "MARKETPLACE" | "AGGREGATOR" | null;
+    retrievalSourceId?: string | null;
+    retrievalSourceName?: string | null;
+    retrievalRunId?: string | null;
+    // A changed observation of the same source listing points at the
+    // earlier record.
+    previousSourceRecordId?: string | null;
     discoveredAt: Date;
     lastObservedAt: Date;
     normalizedAt: Date | null;

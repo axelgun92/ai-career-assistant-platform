@@ -1,9 +1,21 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 17, 2026
+**Last updated:** October 18, 2026
 
 ## Current Objective
+
+**Feature 11A — automated retrieval from the verified official API and feed sources** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 11B (the verified public/guest-endpoint and public-HTML sources) is a separate acceptance unit that starts only after 11A is committed.
+
+In order, what follows:
+
+1. Next: user review of Feature 11A, then the checkpoint commit and the personal-file refresh.
+2. Then: Feature 11B, then main-product features 12–18.
+3. Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier objective, superseded on October 18, 2026 when the gap closure had been committed as `d573acf` on October 17 and Feature 11A implemented. It read as follows.)*
 
 The **Features 1–10 Gap Closure** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. It closes with the review, the check of the versioned PRDs/TDDs against what changed, and then the checkpoint commit. The read-only gap audit that defined it is complete (October 17, 2026). The work package has deliberately not been given a task number.
 
@@ -42,9 +54,141 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–17, 2026)
+## Recently Completed (October 14–18, 2026)
 
-### Features 1–10 Gap Closure (implemented and verified October 17, 2026; implementation and verification approved by the user; awaiting the commit approval)
+### Feature 11A — automated retrieval from the verified official API and feed sources (implemented and verified October 18, 2026; awaiting user review; not committed)
+
+**Scope (approved).** Feature 11 is split into two acceptance units. 11A is the collection framework, the Type #1 adapters, source and run storage, the retrieval worker, normalization of retrieved listings, cross-source deduplication, canonical-link selection, re-observation and change detection, the `/sources` UI and basic politeness and safety. 11B covers the verified Type #3/#4 sources (Workday, Workable, Welcome to the Jungle / Otta, Wellfound). These stay out of 11A: source health, backoff and freshness (feature 12); posting history and Ghost Job Risk input (feature 13); LinkedIn and browser-assisted sources (feature 14); and source-quality analytics (feature 15).
+
+**Live verification** (one approved request per source; no retries, alternative endpoints or probing; raw responses kept outside Git):
+
+- **Network:** the environment allowlist initially blocked every host at the proxy (October 17), so nothing reached a source. After the allowlist was saved, a single Greenhouse canary request succeeded, and then one request was made to each remaining source.
+- **Verified:**
+  - Greenhouse `gitlab`: 232 jobs, about 3.65 MB.
+  - Lever `palantir`: 310 postings, about 6.0 MB.
+  - Ashby `ashby`: 63 jobs.
+  - Remote OK: 99 jobs plus the API terms notice.
+  - We Work Remotely: the customer-support category feed, 61 items.
+  - Himalayas: page 1, then one approved page-2 request with the documented `nextCursor`, which confirmed the same contract with no overlap.
+  - Working Nomads: 49 jobs.
+  - SmartRecruiters: the first target, `Visa`, returned an empty board, so it was stopped. The approved replacement, `BoschGroup` (5,079 postings), was verified with one list request and one detail request. At the closeout check, one further approved request (`?limit=10&offset=10`) verified offset paging: the response echoed offset 10 and limit 10, `totalFound` was unchanged, and its 10 postings did not overlap page 1 and continued page 1's newest-first order. Three of its postings are the page-2 fixture.
+- **Offline check:** every adapter maps every item of its full real response with no contract issues, and every listing passes the retrieved-listing normalizer.
+- **Fixtures** (`tests/fixtures/sources/<source>/`): at most 3 items per response, structure preserved, with a `meta.json` (request, status, content type, capture time, full-response size and SHA-256, "3 of N items", selection reasons and a personal-data scan).
+  - No sanitization was needed. Postings with a named hiring manager (Ashby) or a recruiter `creator` name (SmartRecruiters) were left out.
+  - Two organizational contact mentions were kept and recorded: `accommodations@palantir.com` and a `@gong.io` domain.
+
+**What changed.**
+
+- **Collection framework** (`packages/discovery`): the `SourceAdapter` contract, which collects and never judges suitability.
+  - **Transport:** injectable, with an identifying User-Agent, a 20 s timeout, a hard 10 MB ceiling (refused, never truncated; raised from 5 MB after the 3.65 MB Greenhouse response), no cookies and no redirects followed.
+  - **Politeness:** within a run, requests to a host are serialized at least 1 s apart. A 429 is `RATE_LIMITED` and a 401/403 is `ACCESS_DENIED` (an access failure, not a rate limit); either stops that host for the run.
+  - **Other pieces:** credentials redacted from errors and logs, a minimal RSS reader, title-term matching and a content hash.
+- **Adapters:** Greenhouse, Lever, Ashby, SmartRecruiters (employer ATS); Remote OK, Himalayas, Working Nomads (aggregators); We Work Remotely (job board). Adzuna is registered, unverified and cannot be enabled. Notable mappings:
+  - **Greenhouse:** content arrives HTML-escaped once more; `updated_at` is metadata only.
+  - **Lever:** description + lists + additional are joined into one document.
+  - **Lever and Ashby:** neither returns an employer name, so "Company name" is a required source field, and field provenance records `sourceConfiguration.company`.
+  - **Ashby compensation:** salary is normalized only for a single published tier. Multi-tier and mixed-currency summaries are kept as source data, never normalized.
+  - **Remote OK:** salaries carry no currency, so they are source data only. The required attribution links back without `nofollow`.
+  - **We Work Remotely:** "Company: Title" is split, and the `guid` is the identity.
+  - **Himalayas:** cursor paging up to the page cap. Location and time-zone restrictions are source data only.
+  - **Working Nomads:** the identity comes from the URL number.
+  - **SmartRecruiters:** the list is paged by offset up to the 5-page cap, so a run sees at most the newest 500 postings (100 per page); older postings are out of scope for 11A. Titles are filtered from the list before any detail request. Details (whose `jobAd.sections` give the full HTML) are capped at 25 per run: postings never stored from the source go first, oldest first, then stored postings, longest since last checked first, so stored postings take turns and never displace unseen ones. A posting shifted onto the next page while paging is read once. Only an explicit remote or hybrid flag sets a workplace type.
+- **Discovery terms** (Customer Success domain, CS TDD §6): a listing is kept only when its title contains a core-family name (Customer Success, Client Success, Member Success) or an adjacent term as a whole phrase. The description is never used to keep a listing, and the full description is preserved.
+- **Normalization** (`createRetrievedOpportunityNormalizer`): structured facts get DIRECT provenance and text-derived facts DETERMINISTIC. Salary amounts count only as one annual range with a recognized currency. Residency is read only from explicit statements; a time-zone requirement is never inferred. Source items are stored under `rawPayload.source`.
+- **Persistence** (migration `20261018090000_retrieval_sources`, additive):
+  - `RetrievalSource` and `RetrievalRun`;
+  - `SourceRecord` gains retrieval type/category, source and run links, `contentHash` and `previousSourceRecordId`.
+  - Foreign keys restrict deletion, so a source or run with records is archived; only a source that never produced anything is deleted.
+- **Ingestion** (inside the existing capture transaction and lock):
+  - **Same source and listing ID:** an unchanged hash only moves last-seen times. A changed hash adds a linked observation; the original record and the canonical description are left unchanged.
+  - **Anything else** goes through the deduplication path.
+  - **On an attach,** the application link moves to a strictly higher-precedence source (ATS/careers > job board/marketplace > aggregator) with provenance; a manual link is never replaced.
+  - **Hashed fields:** the hash covers material fields only. Fetch times, counters, tracking parameters and source update stamps are not part of it.
+- **Deduplication engine `core-dedup-v2`** (approved contract change): source listing IDs are scoped by source, and differing IDs conflict only within one source. Manual-only behavior is unchanged; earlier evidence keeps its v1 label.
+- **Worker** (`pnpm worker:retrieval [--once]`): single-worker advisory lock (41220/4), SKIP LOCKED claim with a lease, and startup recovery of interrupted runs.
+  - **Detail priority:** adapters get an optional last-checked lookup (`lastCheckedListings`: the latest `lastObservedAt` per source listing ID, scoped to the adapter key), which the SmartRecruiters adapter uses to order its detail requests.
+  - **Schedule:** 12-hour default. A newly enabled source that has never run is due at the next poll.
+  - **Isolation:** each listing is ingested in its own transaction.
+  - **Run results:** `COMPLETED`, `PARTIAL` or `FAILED`, each with a safe error code.
+  - **No evaluation:** retrieval never creates an evaluation, admission or deferral.
+- **Verification command** (`pnpm sources:verify <adapter> --config '<json>' (--raw-dir <outside repo> | --offline <dir>)`): makes an adapter's single verification request (plus a derived follow-up), saves the raw response outside the repository and checks the mapping offline. It touches no database.
+- **UI and API:**
+  - **`/sources`:** add, configure, enable, disable, Run now, run history, remove/archive and restore, plus the Sources link in the navigation.
+  - **API:** `/api/sources` (`GET`, `POST`); `/api/sources/[id]` (`GET`, `PATCH`, `DELETE`); `/api/sources/[id]/runs` (`GET`, `POST`); `/api/sources/[id]/restore` (`POST`).
+  - **Opportunity page:** "Found via …", the retrieval source and run, the attribution link and a "Listing changed since first seen" notice.
+  - **Dashboard rows:** "Found via …" and a "Listing changed" badge.
+  - **`pnpm app:doctor`:** read-only retrieval checks.
+- **Configuration:** `.env.example` documents `RETRIEVAL_WORKER_POLL_MS`, `RETRIEVAL_USER_AGENT`, `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`. No new third-party dependency.
+
+**Decisions recorded (user-approved).**
+
+- **Verification targets:** `gitlab`, `palantir`, `ashby`, and `BoschGroup` replacing `Visa`. They serve fixture verification only and are never persistent sources.
+- **Schedule and enabling:** 12-hour schedule with every source disabled by default. A source becomes due as soon as it is first enabled. Run now is available only for enabled sources.
+- **Limits:** a 10 MB hard response ceiling. Himalayas cursor paging up to the page cap.
+- **SmartRecruiters coverage** (closeout check): offset paging up to the existing 5-page cap, and detail-request priority within the existing 25-request cap (unseen postings first, oldest first; then stored postings by oldest last check). Neither cap was raised. Coverage is bounded to the newest 500 postings visible through the verified list interface per run.
+- **Company name and compensation:** a required company-name field for Lever and Ashby; the conservative Ashby compensation rule.
+- **Adzuna:** stays unverified and disabled. The excerpt-only description is an open issue, not a reason to weaken the complete-description contract.
+
+**Tests.**
+
+- **Unit:**
+  - `retrieval-framework.test.ts` (34): HTML-to-text, title terms, RSS, the content-hash cases (volatile metadata gives no change, description and structured-field changes do, identical content is idempotent), transport classification, the 10 MB ceiling, politeness, the normalizer, scoped IDs and link precedence.
+  - `retrieval-adapters.test.ts` (47): every verified adapter against its fixture, including Himalayas page 2 and the SmartRecruiters detail; SmartRecruiters offset paging against the verified page 2 (page cap, short or empty page, `totalFound`, a shifted posting read once, a 429/401/403 on a later page stopping everything, another later-page failure keeping what was read); and detail priority (unseen before stored, oldest unseen first, stored by oldest last check, rotation, the cap always respected).
+  - `retrieval-worker-service.test.ts` (12), including a 401 run outcome and the last-checked lookup scoped to the adapter key, and `retrieval-ui.test.tsx` (8); a Sources entry in the navigation test.
+- **Integration:** `retrieval-ingestion.test.ts` (13) on the isolated test database, covering:
+  - the first run, idempotent reruns and volatile-only changes;
+  - linked changed observations;
+  - cross-source attach with the link upgrade, and a manual link never replaced;
+  - probable matches and scoped IDs;
+  - per-listing failure isolation;
+  - access versus rate-limit failures;
+  - the real Greenhouse fixture through the worker;
+  - SmartRecruiters detail priority through the worker and repository over seven runs: unseen postings first (oldest first), stored postings rotating by last check, and a new posting going ahead of every stored one;
+  - one active run per source and a single claim;
+  - scheduling and archive-instead-of-delete;
+  - no evaluation rows ever created.
+- **E2E:** `retrieval.spec.ts` (2): add Greenhouse on `/sources`, enable it, Run now, check the run history, "Found via Greenhouse" on the dashboard and provenance on the opportunity page; then a changed listing flagged on both, and archiving a source with history.
+
+**Verification** (isolated test database only; no paid provider calls; no live production retrieval worker; no normal application database in this environment):
+
+- typecheck and lint clean; Prisma schema valid; `db:verify-migrations` 17/17 (only the documented drift);
+- unit 49 files / 1,218 tests; integration 27 files / 235 tests; E2E 34/34 across all five projects; production build succeeds; `git diff --check` clean;
+- `pnpm app:doctor`: no blocking problems; the retrieval checks are read-only.
+- **Fixture-transport browser walkthrough:**
+  - all eight sources were added, enabled and run from `/sources`: 7 listings created, the counts shown in run history, and dashboard rows showing "Found via".
+  - The Greenhouse provenance, the Remote OK attribution link (followed, no `nofollow`) and a changed-listing notice were all shown.
+  - At 390 px, `/sources`, the opportunity page and the dashboard measure 390 px wide.
+
+**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/` (the blobs match `HEAD`):
+
+- **Core AI Framework PRD v1.7:** §31 status and planned work.
+- **Customer Success PRD v1.6:** §23 status, the implemented employer-ATS link preference, and the dependency.
+- **Core Platform TDD v1.8:**
+  - a §51 "Automated Retrieval (Feature 11A)" summary, including the SmartRecruiters 500-posting window and detail-request priority;
+  - the `core-dedup-v2` wording;
+  - the merging and cross-source sentences;
+  - the sequence and the dependency.
+- **Customer Success TDD v1.6:**
+  - dated implementation notes in §6–§8: the title-matching rule; title-only discovery, so the semantic and responsibility-based discovery of §7 is not implemented at discovery time; and the implemented sources;
+  - a §49 paragraph on retrieved opportunities and the unchanged evaluator;
+  - the planned work and the dependencies.
+
+Each `.docx` passes the validator against its source, and the text comparison shows only these changes. The Semantic Evaluation Playbook is unchanged.
+
+**Known issues and observations.**
+
+- **Adzuna** is unverified (no credentials), and its description is excerpt-only.
+- **Pagination:** SmartRecruiters coverage is bounded to the newest 500 postings visible through its list per run (5 pages of 100); postings outside that window are out of scope for 11A. Within it, up to 25 details per run, so a burst of matches takes several runs to work through. Remote OK, Working Nomads, We Work Remotely, Greenhouse, Lever and Ashby return their whole feed or board in one response.
+- **Description-only roles:** a listing whose title has no role-family term is not retrieved even when its description is Customer Success work (CS TDD §7, by decision).
+- **Retrieval is exercised only with the fixture transport.** It has never run live against real sources, and no production worker has been run.
+- **Test database cluster:** it stopped several times when the environment restarted, and was restarted each time; no data was lost.
+- **Date dependence:** one integration test assumed the real date was earlier than its fixed test clock, and is now direction-independent.
+- **pg warning:** the pg "client.query() when the client is already executing a query" warning still appears in integration and E2E runs. It is pre-existing (see the gap-closure record); the retrieval tests produce none.
+
+
+### Features 1–10 Gap Closure (committed `d573acf`, October 17, 2026)
+
+*(Heading until October 18, 2026: "implemented and verified October 17, 2026; implementation and verification approved by the user; awaiting the commit approval". The record below is preserved as written.)*
 
 **Audit (read-only, approved October 17, 2026).** Features 1–10 were checked against Core AI Framework PRD v1.5, Core Platform TDD v1.6, Customer Success PRD v1.4 and Customer Success TDD v1.4, in code, with targeted tests and in a browser walkthrough on the isolated test database.
 
@@ -402,7 +546,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-The Features 1–10 Gap Closure is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+Feature 11A is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+
+*(Earlier status, superseded on October 18, 2026: "The Features 1–10 Gap Closure is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `d573acf`.)*
 
 *(Earlier status, superseded on October 17, 2026: "No main-product implementation task is open. Task 9 and the post-Task-9 versioned-document update are complete (see "Recently Completed"). Next is the audit of any remaining gaps in main-product features 1–10.")*
 
@@ -1122,10 +1268,10 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is implemented and verified (October 17, 2026).
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Feature 11A is implemented and verified (October 18, 2026).
 
-1. Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit. *(Earlier step, superseded on October 17, 2026: "Next: audit any remaining main-product gaps in features 1–10.")*
-2. Then: build main-product features 11–18: retrieval, source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+1. Next: user review of Feature 11A, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
+2. Then: Feature 11B (the verified public/guest-endpoint and public-HTML sources), then main-product features 12–18: source health, posting history/ghost intelligence, browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.
@@ -1183,11 +1329,18 @@ Codex reviews still open from the `HANDOFFS.md` Final Integration Checklist:
   - `timeZoneRequirements` added to `fieldsWithheldFromEvaluator`;
   - the reused-company spelling;
   - the duplicate-spend refusal and its lock.
+- the Feature 11A shared-boundary changes (October 18, 2026; see `HANDOFFS.md`):
+  - `ingestRetrievedListing()` and `preserveUnnormalizedListing()` on the capture repository, which now implements the new `RetrievalIngestionRepository` port and shares its capture path with manual capture;
+  - deduplication engine `core-dedup-v2` (source-scoped listing IDs; listing-ID conflicts only within one source);
+  - new `SourceRecord` columns and the retrieval models;
+  - no evaluator or `loadSubject()` change: retrieval creates and updates opportunities through the existing capture path, and a retrieved opportunity becomes an evaluator subject only through the existing evaluation workflow (for awareness: its first source record is the first retrieved one, changed observations follow it, and source items live under `rawPayload.source`, with no posting history);
+  - the Customer Success discovery configuration (no evaluator code).
 
 Main-product follow-up (not an integration blocker):
 
 - Source Analytics must exclude budget/usage-limit deferrals once Source Analytics exists (features 11–18).
-- Feature 11 must reuse the capture transaction and the deduplication engine for retrieved sources. It must add cross-source matching, canonical-source selection by source type, posting history and any merging of opportunities that already have history (not done in the gap closure, by decision).
+- Feature 11 must reuse the capture transaction and the deduplication engine for retrieved sources. It must add cross-source matching, canonical-source selection by source type, posting history and any merging of opportunities that already have history (not done in the gap closure, by decision). *(Status October 18, 2026: Feature 11A reuses the capture transaction and engine and adds cross-source matching and canonical-link selection. Posting history is feature 13. Merging opportunities that already have history remains undone by decision.)*
+- Adzuna stays registered, unverified and disabled until the user provides credentials and authorizes its verification. Its documented search response carries only a description excerpt, which conflicts with the complete-description contract; this is an open Adzuna-specific design decision.
 - Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, on the normal application database. Only when the user chooses to; it changes data.
 
 Documentation items carried from the earlier Open Items list, with their status after the October 15 documentation preservation audit and correction pass:

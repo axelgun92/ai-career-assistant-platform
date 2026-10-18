@@ -6,6 +6,8 @@ export * from "./manual-opportunity-service";
 export * from "./opportunity";
 export * from "./platform";
 export * from "./raw-opportunity";
+export * from "./retrieval";
+export * from "./retrieval-ingestion";
 export * from "./opportunity-lifecycle";
 export * from "./budget";
 export * from "./application";

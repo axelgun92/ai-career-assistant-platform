@@ -1536,3 +1536,54 @@ main {
   flex-basis: 100%;
   margin: 0;
 }
+
+/* Sources (automated discovery) */
+.sources-page {
+  max-width: 64rem;
+}
+
+.source-card,
+.source-form {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.source-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.source-card-header h3,
+.source-form h2 {
+  margin: 0 0 0.5rem;
+}
+
+.source-meta {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.listing-changed {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #a16207;
+  background: #fefce8;
+}
+
+.source-record-retrieval {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}

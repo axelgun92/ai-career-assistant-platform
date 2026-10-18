@@ -20,6 +20,9 @@ export default defineConfig({
       "@ai-career/deduplication": fileURLToPath(
         new URL("./packages/deduplication/src/index.ts", import.meta.url),
       ),
+      "@ai-career/discovery": fileURLToPath(
+        new URL("./packages/discovery/src/index.ts", import.meta.url),
+      ),
       "@ai-career/evaluation": fileURLToPath(
         new URL("./packages/evaluation/src/index.ts", import.meta.url),
       ),

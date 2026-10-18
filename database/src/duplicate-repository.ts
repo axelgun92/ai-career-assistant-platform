@@ -4,6 +4,7 @@ import {
   listingIdKey,
   listingUrlPrefix,
   normalizeCompanyName,
+  scopedListingId,
   textTokens,
   type DuplicateCandidate,
   type DuplicateDecisionResult,
@@ -53,6 +54,8 @@ interface CandidateRow {
   applicationUrl: string | null;
   externalListingId: string | null;
   atsRequisitionId: string | null;
+  source: string | null;
+  sourceType: string | null;
   salaryMin: Prisma.Decimal | null;
   salaryMax: Prisma.Decimal | null;
   currency: string | null;
@@ -113,14 +116,22 @@ export async function findDuplicateCandidates(
   }
   const idMatch = (column: Prisma.Sql, values: string[]) =>
     Prisma.sql`lower(btrim(${column})) = ANY(${values}::text[])`;
+  // The SQL form of scopedListingId (listing-identity.ts), lowercased.
+  const scopedIdMatch = (source: Prisma.Sql, sourceType: Prisma.Sql, id: Prisma.Sql, values: string[]) =>
+    Prisma.sql`(CASE WHEN ${sourceType} IS NULL OR ${sourceType} = 'MANUAL' OR nullif(btrim(${source}), '') IS NULL
+      THEN lower(btrim(${id})) ELSE lower(btrim(${source})) || '::' || lower(btrim(${id})) END) = ANY(${values}::text[])`;
   const urlMatch = (column: Prisma.Sql) => Prisma.sql`${column} ILIKE ANY(${urlPatterns}::text[])`;
-  if (listingIds.length) conditions.push(idMatch(Prisma.sql`o."externalListingId"`, listingIds));
+  if (listingIds.length) {
+    conditions.push(scopedIdMatch(Prisma.sql`o."source"`, Prisma.sql`o."sourceType"::text`, Prisma.sql`o."externalListingId"`, listingIds));
+  }
   if (requisitionIds.length) conditions.push(idMatch(Prisma.sql`o."atsRequisitionId"`, requisitionIds));
   if (urlPatterns.length) {
     conditions.push(urlMatch(Prisma.sql`o."canonicalUrl"`), urlMatch(Prisma.sql`o."applicationUrl"`));
   }
   const sourceConditions: Prisma.Sql[] = [];
-  if (listingIds.length) sourceConditions.push(idMatch(Prisma.sql`s."externalId"`, listingIds));
+  if (listingIds.length) {
+    sourceConditions.push(scopedIdMatch(Prisma.sql`s."source"`, Prisma.sql`s."sourceType"::text`, Prisma.sql`s."externalId"`, listingIds));
+  }
   if (requisitionIds.length) sourceConditions.push(idMatch(Prisma.sql`s."requisitionId"`, requisitionIds));
   if (urlPatterns.length) sourceConditions.push(urlMatch(Prisma.sql`s."sourceUrl"`), urlMatch(Prisma.sql`s."applicationUrl"`));
   if (sourceConditions.length) {
@@ -130,7 +141,7 @@ export async function findDuplicateCandidates(
 
   const rows = await client.$queryRaw<CandidateRow[]>`
     SELECT o."id", o."firstSeenAt", o."title", o."location", o."jobDescription", o."canonicalUrl",
-           o."applicationUrl", o."externalListingId", o."atsRequisitionId", o."salaryMin", o."salaryMax",
+           o."applicationUrl", o."externalListingId", o."atsRequisitionId", o."source", o."sourceType"::text AS "sourceType", o."salaryMin", o."salaryMax",
            o."currency", c."name" AS "companyName"
     FROM "Opportunity" o
     LEFT JOIN "Company" c ON c."id" = o."companyId"
@@ -146,7 +157,7 @@ async function candidatesFromRows(client: DuplicateDatabaseClient, rows: Candida
   const sources = rows.length
     ? await client.sourceRecord.findMany({
         where: { opportunityId: { in: rows.map((row) => row.id) } },
-        select: { opportunityId: true, sourceUrl: true, applicationUrl: true, externalId: true, requisitionId: true },
+        select: { opportunityId: true, source: true, sourceType: true, sourceUrl: true, applicationUrl: true, externalId: true, requisitionId: true },
       })
     : [];
   const labels = new Map<string, { title: string | null; companyName: string | null }>();
@@ -161,7 +172,10 @@ async function candidatesFromRows(client: DuplicateDatabaseClient, rows: Candida
       location: row.location,
       description: row.jobDescription,
       urls: [row.canonicalUrl, row.applicationUrl, ...own.flatMap((source) => [source.sourceUrl, source.applicationUrl])],
-      listingIds: [row.externalListingId, ...own.map((source) => source.externalId)],
+      listingIds: [
+        scopedListingId(row.source, row.sourceType, row.externalListingId),
+        ...own.map((source) => scopedListingId(source.source, source.sourceType, source.externalId)),
+      ],
       requisitionIds: [row.atsRequisitionId, ...own.map((source) => source.requisitionId)],
       salaryMin: row.salaryMin === null ? null : Number(row.salaryMin),
       salaryMax: row.salaryMax === null ? null : Number(row.salaryMax),
@@ -178,7 +192,7 @@ export async function opportunityIdentity(
 ): Promise<DuplicateCandidate | null> {
   const rows = await client.$queryRaw<CandidateRow[]>`
     SELECT o."id", o."firstSeenAt", o."title", o."location", o."jobDescription", o."canonicalUrl",
-           o."applicationUrl", o."externalListingId", o."atsRequisitionId", o."salaryMin", o."salaryMax",
+           o."applicationUrl", o."externalListingId", o."atsRequisitionId", o."source", o."sourceType"::text AS "sourceType", o."salaryMin", o."salaryMax",
            o."currency", c."name" AS "companyName"
     FROM "Opportunity" o LEFT JOIN "Company" c ON c."id" = o."companyId"
     WHERE o."id" = ${opportunityId}::uuid

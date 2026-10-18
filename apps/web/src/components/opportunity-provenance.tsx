@@ -1,6 +1,7 @@
 import type { ManualOpportunityDetail } from "@ai-career/core";
 import { describeMatchedOn } from "./duplicate-labels";
 import { ExternalLink } from "./external-link";
+import { retrievalSummary } from "./sources/source-labels";
 
 // Domain-neutral display of where an opportunity came from. Every preserved
 // SourceRecord is listed, so the section already works for opportunities with
@@ -47,6 +48,28 @@ function matchedOn(evidence: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function metadataText(sourceMetadata: unknown, key: string): string | null {
+  if (!sourceMetadata || typeof sourceMetadata !== "object" || Array.isArray(sourceMetadata)) return null;
+  const value = (sourceMetadata as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+type SourceRecordView = ManualOpportunityDetail["sourceRecords"][number];
+
+// "Greenhouse (employer ATS · official API or feed)" for a retrieved record.
+export function retrievedVia(record: SourceRecordView): string | null {
+  if (!record.retrievalType && !record.sourceCategory) return null;
+  const name = metadataText(record.sourceMetadata, "sourceName") ?? record.source;
+  return `${name} (${retrievalSummary(record.sourceCategory, record.retrievalType)})`;
+}
+
+// The most recent changed observation of a retrieved listing, if any.
+export function latestListingChange(sourceRecords: SourceRecordView[]): Date | null {
+  const changed = sourceRecords.filter((record) => record.previousSourceRecordId);
+  if (!changed.length) return null;
+  return changed.map((record) => new Date(record.discoveredAt)).sort((left, right) => right.getTime() - left.getTime())[0]!;
+}
+
 // Readable names for known source slugs; the slug is still shown.
 const sourceNames: Record<string, string> = { "manual-input": "Manual entry" };
 
@@ -65,13 +88,30 @@ export function OpportunityProvenance({
   >;
   sourceRecords: ManualOpportunityDetail["sourceRecords"];
 }) {
+  const first = sourceRecords[0];
+  const firstRetrieved = first ? retrievedVia(first) : null;
+  const attribution = first ? metadataText(first.sourceMetadata, "attribution") : null;
+  const changedAt = latestListingChange(sourceRecords);
   return (
     <section className="provenance" aria-labelledby="provenance-title">
       <h2 id="provenance-title">Source and provenance</h2>
+      {changedAt ? (
+        <p className="listing-changed" role="note">
+          <strong>Listing changed since first seen</strong> (latest change found {timestamp(changedAt)}). The opportunity
+          keeps the description it was first saved with; every retrieved version is kept below.
+        </p>
+      ) : null}
       <dl>
         <div><dt>Entry method</dt><dd>{sourceTypeLabel(opportunity.sourceType)}</dd></div>
         <div><dt>Source</dt><dd>{sourceDisplay(opportunity.source)}</dd></div>
-        <div><dt>Found via</dt><dd>{text(reportedSource(sourceRecords[0]?.sourceMetadata))}</dd></div>
+        <div>
+          <dt>Found via</dt>
+          <dd>
+            {firstRetrieved ?? text(reportedSource(first?.sourceMetadata))}
+            {/* A source's required attribution links back to its listing (no nofollow). */}
+            {attribution ? <> · {first?.sourceUrl ? <ExternalLink href={first.sourceUrl}>{attribution}</ExternalLink> : attribution}</> : null}
+          </dd>
+        </div>
         <div><dt>First seen</dt><dd>{timestamp(opportunity.firstSeenAt)}</dd></div>
         <div><dt>Last seen</dt><dd>{timestamp(opportunity.lastSeenAt)}</dd></div>
         <div><dt>Source last updated</dt><dd>{timestamp(opportunity.sourceUpdatedAt)}</dd></div>
@@ -80,12 +120,26 @@ export function OpportunityProvenance({
       <ol className="source-record-list">
         {sourceRecords.map((record) => {
           const reported = reportedSource(record.sourceMetadata);
+          const via = retrievedVia(record);
           return (
             <li key={record.id}>
               <p className="source-record-heading">
                 <strong>{sourceTypeLabel(record.sourceType)}</strong> · {record.source}
                 {reported ? <> · <span>Reported by you: found on {reported}</span></> : null}
+                {via ? <> · <span>Found via {via}</span></> : null}
               </p>
+              {record.retrievalSourceId ? (
+                <p className="source-record-retrieval">
+                  Retrieved by your source {record.retrievalSourceName ? `“${record.retrievalSourceName}”` : <code>{record.retrievalSourceId}</code>}
+                  {record.retrievalRunId ? <> in run <code>{record.retrievalRunId.slice(0, 8)}</code></> : null}.
+                </p>
+              ) : null}
+              {record.previousSourceRecordId ? (
+                <p className="source-record-duplicate">
+                  A changed version of this listing, found {timestamp(record.discoveredAt)}. The earlier version is kept
+                  (source record <code>{record.previousSourceRecordId}</code>).
+                </p>
+              ) : null}
               {record.duplicateDecision === "MATCH" ? (
                 <p className="source-record-duplicate">
                   Added as another source on {timestamp(record.discoveredAt)}: an exact duplicate of this opportunity

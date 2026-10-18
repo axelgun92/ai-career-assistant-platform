@@ -90,7 +90,7 @@ describe("capture-time deduplication", () => {
       rawDescription: rawText,
       sourceUrl: `${url}?utm_source=newsletter`,
       duplicateDecision: "MATCH",
-      duplicateEvidence: expect.objectContaining({ engineVersion: "core-dedup-v1", matchedOn: ["url"], confidence: 1 }),
+      duplicateEvidence: expect.objectContaining({ engineVersion: "core-dedup-v2", matchedOn: ["url"], confidence: 1 }),
     });
     expect(sources[1]!.sourceMetadata).toMatchObject({ reportedSource: "A newsletter" });
 

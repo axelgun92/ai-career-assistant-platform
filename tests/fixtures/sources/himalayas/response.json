@@ -1,0 +1,143 @@
+{
+  "comments": "21/08/2026: Cursor pagination is now available and is the preferred way to page through the feed. Pass the nextCursor value from each response back as ?cursor=. It is faster than offset and will never return the same job twice. The offset parameter is deprecated and will be removed in a future release. 13/03/2026: The API has been updated to include the companySlug field in the response.",
+  "updatedAt": 1792277591,
+  "offset": 0,
+  "limit": 20,
+  "totalCount": 125942,
+  "nextCursor": "MjAyNi0xMC0xN1QyMjo0MjozMC42Mjk5NzZafDI0MTk5Njk",
+  "jobs": [
+    {
+      "title": "AI Co-Founder / COO (100 % remote) (m/f/d)",
+      "excerpt": "We are looking to hire ambitious entrepreneurs to start and scale their own startups.",
+      "companyName": "EWOR GmbH",
+      "companySlug": "ewor-gmbh",
+      "companyLogo": "https://cdn-images.himalayas.app/mzfjnameg78wsqgnqdccysf7eg22",
+      "employmentType": "Full Time",
+      "minSalary": 500000,
+      "maxSalary": 500000,
+      "salaryPeriod": "annual",
+      "seniority": [
+        "Executive"
+      ],
+      "currency": "EUR",
+      "locationRestrictions": [
+        "France"
+      ],
+      "timezoneRestrictions": [
+        1
+      ],
+      "categories": [
+        "Co-Founder",
+        "Chief-Operating-Officer",
+        "Startup-Founder",
+        "Entrepreneur",
+        "Executive",
+        "AI-Co-Founder",
+        "AI-Venture-Lead",
+        "Management"
+      ],
+      "parentCategories": [
+        "Management"
+      ],
+      "description": "<p>We are looking to hire ambitious entrepreneurs to start and scale their own startups.</p><p>We are serial entrepreneurs, for example Paul Müller (founder Adjust, €1.2B exit) and Petter Made (founder SumUp, €8B) who are eager to support outlier personalities and serial entrepreneurs to build €1B+ companies.</p><h3>Our offer:</h3><ul>\n<li>A salary while you build your startup as you will directly be employed by us. Alternatively, you can opt for up to <strong>€500k</strong> in funding.</li>\n<li>\n<strong>1:1 sparring with unicorn founders</strong> on a weekly basis</li>\n<li>\n<strong>Community</strong>: Access to the top 0.1% of founders, peers and investors</li>\n<li>\n<strong>Team building</strong>: Hiring top notch talent supported through our network (over 50,000 professionals)</li>\n<li>\n<strong>Distribution</strong>: Support in reaching product-market-fit and building up a sales force / marketing machine</li>\n<li>\n<strong>Funding support</strong> for securing a multi-million euro funding round within 12 months (on average, EWOR Fellows raise &gt; €2M after our Grand Pitch)</li>\n</ul><p>One of our fellows set a record for Europe’s largest pre-seed round by a first-time founder, securing a €12M pre-seed investment.</p><h3>Tasks</h3><ul>\n<li>You will own, build, and run your startup in fields such as AI</li>\n<li>You will embark on an extensive personal development journey crafted by unicorn founders and follow a fully customised programme enhancing your goal, time, and energy management</li>\n<li>You will receive support in hiring through our network to over 50,000 professionals and advice as well as best practices from serial entrepreneurs</li>\n<li>You will receive intensive coaching to make your startup ready to raise millions in funding</li>\n<li>You will iterate your product with us until having reached product-market-fit and receive support in building up a sales force or creating a marketing engine respectively</li>\n</ul><h3>Requirements</h3><ul>\n<li>You are based in Europe or the Americas or open to relocate</li>\n<li>You are willing to take full responsibility for your own startup and scale it to €100M+ in revenues</li>\n<li>You have excellent communication skills in the English language</li>\n</ul><p>Join us and build a €1B+ company with us!</p><p>Originally posted on <a href=\"https://himalayas.app\">Himalayas</a></p>",
+      "pubDate": 1792277591,
+      "expiryDate": 1797461590,
+      "applicationLink": "https://himalayas.app/companies/ewor-gmbh/jobs/ai-co-founder-coo-100-remote-m-f-d-270749859",
+      "guid": "https://himalayas.app/companies/ewor-gmbh/jobs/ai-co-founder-coo-100-remote-m-f-d-270749859"
+    },
+    {
+      "title": "Virtual Entry Level Leadership",
+      "excerpt": "We are currently expanding and looking to bring on motivated individuals for a remote position with a fast-growing organization.",
+      "companyName": "Fisher Agencies American Income",
+      "companySlug": "fisher-agencies-american-income",
+      "companyLogo": "https://cdn-images.himalayas.app/ix86o0rzz8kp4datwj5zfbkqlbya",
+      "employmentType": "Full Time",
+      "minSalary": null,
+      "maxSalary": null,
+      "salaryPeriod": "annual",
+      "seniority": [
+        "Entry-level"
+      ],
+      "currency": null,
+      "locationRestrictions": [
+        "United States"
+      ],
+      "timezoneRestrictions": [
+        -10,
+        -9,
+        -8,
+        -7,
+        -6,
+        -5,
+        14
+      ],
+      "categories": [
+        "Insurance",
+        "Management",
+        "Sales",
+        "Customer-Service",
+        "Entry-Level-Leadership-Roles",
+        "Virtual-Leadership",
+        "Entry-Level-Team-Leadership",
+        "Virtual-Team-Lead",
+        "Virtual-Program-Leadership",
+        "Virtual-Team-Leader"
+      ],
+      "parentCategories": [
+        "Sales",
+        "Customer Service"
+      ],
+      "description": "<p>We are currently expanding and looking to bring on motivated individuals for a remote position with a fast-growing organization. This role focuses on helping families understand and access valuable benefits while developing leadership and communication skills. This performance-based business provides no cap on your income and has a fast track to leadership. </p><p>No prior experience is required—we provide full training, mentorship, and a clear path for growth into leadership.</p><h3>⸻</h3><h3>Who We're Looking For</h3><h3>Strong communication skills</h3><h3>Coachable and motivated individuals</h3><h3>Positive attitude and work ethic</h3><p>Comfortable working independently in a remote setting</p><p>Leadership-minded (or open to growing into leadership)</p><h3>⸻</h3><h3>Why This Opportunity Stands Out</h3><h3>No prior experience required</h3><h3>Fast-track advancement opportunities</h3><h3>Work with a supportive and driven team</h3><p>Make a meaningful impact by helping families</p><h3>Requirements</h3><h3>What You'll Do</h3><p>Meet virtually with clients to review and explain benefits</p><p>Help families access no-cost and supplemental programs</p><p>Build relationships and provide ongoing client support</p><h3>Schedule and manage appointments</h3><p>Work within a structured system designed for success</p><h3>Benefits</h3><h3>What We Provide</h3><h3>Remote work (work from anywhere)</h3><h3>Step-by-step training and mentorship</h3><h3>Weekly team support and coaching</h3><p>Clear advancement opportunities into leadership roles</p><p>Performance-based incentives and recognition</p><h3>Health benefits reimbursement </h3><h3>How to Apply</h3><p>Apply directly or request more information to schedule a quick overview and interview.</p><p>Originally posted on <a href=\"https://himalayas.app\">Himalayas</a></p>",
+      "pubDate": 1792277576,
+      "expiryDate": 1797461576,
+      "applicationLink": "https://himalayas.app/companies/fisher-agencies-american-income/jobs/virtual-entry-level-leadership",
+      "guid": "https://himalayas.app/companies/fisher-agencies-american-income/jobs/virtual-entry-level-leadership"
+    },
+    {
+      "title": "Senior Cybersecurity Engineer (Infrastructure)",
+      "excerpt": "About the role:The cybersecurity team at FYUL is deliberately small and execution-focused.",
+      "companyName": "FYUL",
+      "companySlug": "fyul",
+      "companyLogo": "",
+      "employmentType": "Full Time",
+      "minSalary": 4000,
+      "maxSalary": 6000,
+      "salaryPeriod": "monthly",
+      "seniority": [
+        "Senior"
+      ],
+      "currency": "EUR",
+      "locationRestrictions": [
+        "Estonia",
+        "Latvia",
+        "Lithuania",
+        "Poland",
+        "Spain"
+      ],
+      "timezoneRestrictions": [
+        0,
+        1,
+        2
+      ],
+      "categories": [
+        "Cybersecurity-Engineer",
+        "Security-Engineer",
+        "Detection-Engineer",
+        "Infrastructure-Security-Engineer",
+        "SOC-Engineer",
+        "Senior-Cybersecurity-Engineer",
+        "Sr.-Infrastructure-Security-Engineer",
+        "Senior-Cloud-Infrastructure-Security-Engineer",
+        "Senior-Information-Security-Engineer"
+      ],
+      "parentCategories": [
+        "Developer"
+      ],
+      "description": "<h3>About the role:</h3><p>The cybersecurity team at <a href=\"https://himalayas.app/companies/fyul\">FYUL</a> is deliberately small and execution-focused. Its engineering branch runs the company's security operations backbone: a large-scale telemetry and detection platform covering endpoints, network traffic, cloud workloads, and SaaS — a modern SIEM at its core, extended with substantial custom machine learning and AI agents that this team designs and builds itself. This senior engineer role, reporting directly to the Information Security Engineering Manager, owns significant parts of that platform: detection engineering, vulnerability discovery, cloud and endpoint security, data loss prevention, and the automation of security operations.</p><p>This is an individual-contributor position where professional growth comes from depth of expertise and ownership of outcomes. The security program is mature, with governance and compliance handled by a dedicated GRC function — so this role is about building and running security engineering, full-time.</p><h3>Your daily tasks will include:</h3><ul>\n<li><p>Detection engineering. Design, implement, and tune detections across our security telemetry — SIEM rules as well as custom ML models for anomaly and risk detection. Triage alerts, investigate real incidents, and drive them to closure — including technical incident response and post-incident improvement.</p></li>\n<li><p>Cloud and platform security. Harden and monitor our AWS and Kubernetes (EKS) environments: workload security, IAM, container runtime defense, and configuration standards. Collaborate with engineering teams so security lands as enablement, not friction.</p></li>\n<li><p>Endpoint security. Own the health and hardening of the endpoint agent fleet across macOS, Windows, and Linux.</p></li>\n<li><p>Data loss prevention. Operate and extend DLP coverage across removable media, email, and SaaS channels: telemetry-driven detection of data exfiltration, tuned to keep false positives low.</p></li>\n<li><p>Security automation. Automate recurring operations and detection-to-response workflows — including AI-based agents and pipelines, which are already a working part of this program. Prefer integrating established tooling over bespoke development where it delivers the same outcome.</p></li>\n<li><p>Vulnerability discovery and management. Find infrastructure vulnerabilities yourself — through scanning, configuration review, and targeted penetration testing of our environments — then prioritize and drive remediation to closure. This is not an application security role: a dedicated sub-team covers appsec.</p></li>\n</ul><h3>Your qualifications:</h3><ul>\n<li><p>5+ years in security engineering or SecOps roles with hands-on responsibility for detections and incidents in production — not solely policy or advisory work.</p></li>\n<li><p>Real detection engineering experience on a modern SIEM/security platform (Elastic Security preferred; Splunk, Sentinel, or comparable count), and the appetite to go beyond built-in rules into custom ML-based detection.</p></li>\n<li><p>Deep, hands-on mastery of Linux, macOS, and Windows: internals, hardening, and investigation on all three. You have personally hunted or hardened systems on each of them, not just one favorite.</p></li>\n<li><p>Strong networking expertise: TCP/IP, routing, VPNs, firewalls, and packet-level analysis — you can reconstruct what happened from a packet capture and reason about how traffic actually flows through our environments.</p></li>\n<li><p>Strong cloud security foundation in AWS, including Kubernetes; you have personally secured and monitored production cloud workloads.</p></li>\n<li><p>Hands-on LLM experience. You have built or operated LLM-powered tooling — agents, pipelines, or detection/automation workflows — not merely used a chat assistant. Our security program already runs AI agents in production; you will extend that work.</p></li>\n<li><p>A certification in practical infrastructure hacking or hardening — e.g., OSCP, OSEP, or a comparable hands-on offensive credential. This matters more to us than knowledge-exam certifications.</p></li>\n<li><p>Demonstrated automation capability: scripts, integrations, pipelines, or AI-assisted workflows you can show. Software engineering background is not required; a track record of building practical automation is.</p></li>\n<li><p>Self-directed working style with strong ownership: the ability to take ambiguous problems through to completed outcomes with minimal supervision.</p></li>\n<li><h3>Excellent written and spoken English.</h3></li>\n<li><p>Further certifications (e.g., CISSP, GIAC/GCFA/GCIH, AWS Security) are an advantage, but the hands-on hacking/hardening credential above is the one we screen for. Hands-on experience always outweighs certification.</p></li>\n</ul><h3>\n<br>Our tech stack:</h3><ul>\n<li><p><strong>Infra:</strong> AWS, Kubernetes, Terraform, Helm, Atlantis</p></li>\n<li><p><strong>Engineering Tools:</strong>Postman, Git, GitHub Copilot, PhpStorm, Grafana, Kibana, Prometheus.</p></li>\n<li><p><strong>Remote work Tools:</strong>Jira, Miro, Google Workspace, Slack.</p></li>\n<li><p><strong>Development Practices:</strong>Pair Programming, Code Reviews, Continuous Integration/Deployment.</p></li>\n</ul><h3>What we offer:</h3><ul>\n<li><p>Monthly salary EUR €4,000 - €6,000/monthgross, depending on work experience, education, and skills</p></li>\n<li><p>A global, inclusive team that’s as supportive as it is ambitious and serious about getting things done</p></li>\n<li><p>An opportunity to work remotely or in a modern and welcoming office in Riga</p></li>\n<li><p>Flexible working hours (start your day as late as 11 AM)</p></li>\n<li><h3>Private health insurance</h3></li>\n<li><p>2 extra paid days off to focus on your mental or physical well-being</p></li>\n<li><p>1 extra paid day off to celebrate a Birthday or any other celebration of your choice</p></li>\n<li><p>Internal and external learning opportunities</p></li>\n<li><p>Access to mentorship, internal meetups, and hackathons, both on-site and online</p></li>\n<li><p>Free and healthy lunch if you work from the Rīga office</p></li>\n<li><p>Design and order your own merch using our platforms with an employee discount</p></li>\n<li><p>Exciting team-building events and parties you’ll never forget!</p></li>\n</ul><hr><p><strong><br><a href=\"https://himalayas.app/companies/fyul\">FYUL</a> is the engine that powers on-demand commerce at global scale.</strong></p><p>Formed in 2024 through the merger of <strong>Printful</strong>, <strong>Printify</strong>, and <strong>Snow Commerce</strong>, we bring together tech, talent, and infrastructure to help people turn ideas into beautiful products.</p><p>From solo creators to entertainment giants, <a href=\"https://himalayas.app/companies/fyul\">FYUL</a> powers merch that connects with millions, backed by advanced tech, premium production, and global reach.</p><p>We're a fast-growing global company working toward powering great brands, great experiences, and great people.</p><hr><p>We are an <strong>equal-opportunity workplace</strong>. We’re committed to diversity and inclusion and make hiring decisions based solely on qualifications, merit, and work experience.</p><p>If you think you’d excel in this role, send us your resume in English, showing us why you are the right person for the job.</p><p>Interested, but don’t think this is the right fit for you? Feel free to share it with friends and check out other open positions at our career site. We’re always looking for creative and driven minds to join our ever-growing team!</p><p>AS Printful Latvia (Reģ. Nr. 40203050078)</p><p>Originally posted on <a href=\"https://himalayas.app\">Himalayas</a></p>",
+      "pubDate": 1792277499,
+      "expiryDate": 1797461498,
+      "applicationLink": "https://himalayas.app/companies/fyul/jobs/senior-cybersecurity-engineer-infrastructure",
+      "guid": "https://himalayas.app/companies/fyul/jobs/senior-cybersecurity-engineer-infrastructure"
+    }
+  ]
+}

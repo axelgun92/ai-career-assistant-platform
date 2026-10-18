@@ -19,6 +19,8 @@ import {
 
 export { bareDollarCurrencySourceField, parseCompensation, type ParsedCompensation } from "./compensation";
 export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
+export { decodeHtmlEntities, htmlToText } from "./html-text";
+export { createRetrievedOpportunityNormalizer } from "./retrieved";
 export { parseResidency, residencySourceFields, type ParsedResidency, type ResidencyStatement } from "./residency";
 
 function normalizeOptionalText(value: string | null): string | null {

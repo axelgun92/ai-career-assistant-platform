@@ -184,42 +184,135 @@ model Opportunity {
 }
 
 model SourceRecord {
-  id                 String                     @id @default(uuid()) @db.Uuid
-  opportunityId      String?                    @db.Uuid
-  opportunity        Opportunity?               @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  source             String
-  sourceType         SourceType
-  sourceUrl          String?                    @db.Text
+  id                     String                     @id @default(uuid()) @db.Uuid
+  opportunityId          String?                    @db.Uuid
+  opportunity            Opportunity?               @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  source                 String
+  sourceType             SourceType
+  sourceUrl              String?                    @db.Text
   // This source's own application link; Opportunity.applicationUrl is the
   // canonical choice across sources.
-  applicationUrl     String?                    @db.Text
-  externalId         String?
-  requisitionId      String?
-  rawTitle           String?
-  rawCompany         String?
-  rawLocation        String?
-  rawDescription     String?                    @db.Text
-  rawSalaryText      String?
-  rawEmploymentType  String?
-  rawPostingDate     String?
-  sourceMetadata     Json?
-  rawPayload         Json?
+  applicationUrl         String?                    @db.Text
+  externalId             String?
+  requisitionId          String?
+  rawTitle               String?
+  rawCompany             String?
+  rawLocation            String?
+  rawDescription         String?                    @db.Text
+  rawSalaryText          String?
+  rawEmploymentType      String?
+  rawPostingDate         String?
+  sourceMetadata         Json?
+  rawPayload             Json?
   // Set only when this record was attached to an existing opportunity as an
   // exact duplicate (MATCH), with the engine's evidence.
-  duplicateDecision  DuplicateDecision?
-  duplicateEvidence  Json?
-  discoveredAt       DateTime                   @default(now()) @db.Timestamptz(3)
-  lastObservedAt     DateTime                   @default(now()) @db.Timestamptz(3)
-  normalizedAt       DateTime?                  @db.Timestamptz(3)
-  fieldProvenance    FieldProvenance[]
-  evidenceRecords    EvidenceRecord[]
-  semanticOperations SemanticOperationAttempt[]
-  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
+  duplicateDecision      DuplicateDecision?
+  duplicateEvidence      Json?
+  // Automated retrieval (feature 11): how and from which configured source
+  // and run this record was retrieved. Sources and runs with records are
+  // archived, never deleted, so this provenance is never lost.
+  retrievalType          RetrievalType?
+  sourceCategory         SourceCategory?
+  retrievalSourceId      String?                    @db.Uuid
+  retrievalSource        RetrievalSource?           @relation(fields: [retrievalSourceId], references: [id], onDelete: Restrict)
+  retrievalRunId         String?                    @db.Uuid
+  retrievalRun           RetrievalRun?              @relation(fields: [retrievalRunId], references: [id], onDelete: Restrict)
+  // Hash of the listing's material fields; a different hash on a later
+  // retrieval of the same source listing is a changed observation.
+  contentHash            String?
+  // Set on a changed observation: the earlier record of the same source
+  // listing. The earlier record is never overwritten.
+  previousSourceRecordId String?                    @db.Uuid
+  previousSourceRecord   SourceRecord?              @relation("SourceRecordObservations", fields: [previousSourceRecordId], references: [id], onDelete: Restrict)
+  laterObservations      SourceRecord[]             @relation("SourceRecordObservations")
+  discoveredAt           DateTime                   @default(now()) @db.Timestamptz(3)
+  lastObservedAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  normalizedAt           DateTime?                  @db.Timestamptz(3)
+  fieldProvenance        FieldProvenance[]
+  evidenceRecords        EvidenceRecord[]
+  semanticOperations     SemanticOperationAttempt[]
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                   @updatedAt @db.Timestamptz(3)
 
   @@index([opportunityId])
   @@index([source, externalId])
   @@index([requisitionId])
+  @@index([retrievalSourceId])
+  @@index([retrievalRunId])
+  @@index([previousSourceRecordId])
+}
+
+// Automated retrieval (feature 11, Core TDD §8, §15).
+enum RetrievalType {
+  OFFICIAL_PUBLIC_API_FEED
+  BROWSER_ASSISTED
+  PUBLIC_GUEST_INTERNAL_ENDPOINT
+  PUBLIC_HTML
+}
+
+enum SourceCategory {
+  ATS
+  COMPANY_CAREERS
+  JOB_BOARD
+  MARKETPLACE
+  AGGREGATOR
+}
+
+enum RetrievalRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum RetrievalTrigger {
+  MANUAL
+  SCHEDULE
+}
+
+// A configured retrieval source: one adapter with its configuration (for
+// example a Greenhouse board). Disabled by default. A source that produced
+// runs or records is archived (archivedAt), never deleted.
+model RetrievalSource {
+  id              String         @id @default(uuid()) @db.Uuid
+  adapterKey      String
+  name            String
+  domain          String
+  retrievalType   RetrievalType
+  sourceCategory  SourceCategory
+  enabled         Boolean        @default(false)
+  config          Json
+  scheduleMinutes Int            @default(720)
+  lastRunAt       DateTime?      @db.Timestamptz(3)
+  archivedAt      DateTime?      @db.Timestamptz(3)
+  runs            RetrievalRun[]
+  sourceRecords   SourceRecord[]
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@index([enabled, archivedAt])
+}
+
+model RetrievalRun {
+  id                String             @id @default(uuid()) @db.Uuid
+  retrievalSourceId String             @db.Uuid
+  retrievalSource   RetrievalSource    @relation(fields: [retrievalSourceId], references: [id], onDelete: Restrict)
+  trigger           RetrievalTrigger
+  status            RetrievalRunStatus @default(QUEUED)
+  leaseExpiresAt    DateTime?          @db.Timestamptz(3)
+  startedAt         DateTime?          @db.Timestamptz(3)
+  finishedAt        DateTime?          @db.Timestamptz(3)
+  counts            Json?
+  // A safe code and message only; never a response body or credential.
+  errorCode         String?
+  errorMessage      String?
+  sourceRecords     SourceRecord[]
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+
+  @@index([retrievalSourceId, createdAt])
+  @@index([status, createdAt])
 }
 
 model FieldProvenance {

@@ -18,3 +18,5 @@ export * from "./opportunity-dashboard-repository";
 export * from "./application-repository";
 export * from "./application-list-repository";
 export * from "./evaluation-worker-lock";
+export * from "./retrieval-source-repository";
+export * from "./retrieval-worker-lock";

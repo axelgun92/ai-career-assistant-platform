@@ -130,22 +130,28 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - Task 7 normalized opportunity facts: salary minimum/maximum and currency, work arrangement, seniority, department, employment type, closing date, and residency requirement/regions, with provenance and Unknown preserved;
 - application tracker (Task 8 completion pass complete): stages and outcomes with calendar-date rules, rescheduling follow-ups, interviews, contacts, notes, next-action and due visibility, and stale-write protection;
 - setup and operations tooling (Task 9 completion pass complete): `pnpm app:setup`, `pnpm app:doctor`, migration verification, `/api/health`, the single-worker lock, honest queue states, error-name-only API logging, and whole-product acceptance tests with a deterministic, non-live E2E credential;
-- Features 1–10 Gap Closure (implemented and verified; awaiting review, not committed):
+- Features 1–10 Gap Closure (complete, `d573acf`):
   - deduplication of captured listings with provenance retention: an exact duplicate is added to the saved opportunity as another source instead of becoming a second opportunity, and a possible duplicate is flagged for review;
   - a guard against paying twice for one listing, rechecked before a deferred evaluation resumes;
   - company names normalized, so the dashboard company filter treats spellings of one company as one company;
-  - versions on evaluation-history rows, an optional stated time-zone requirement, AI usage and spend by domain and source on `/budget`, and phone-width layout fixes.
+  - versions on evaluation-history rows, an optional stated time-zone requirement, AI usage and spend by domain and source on `/budget`, and phone-width layout fixes;
+- Feature 11A, automated retrieval from the verified official API and feed sources (implemented and verified; awaiting review, not committed):
+  - Greenhouse, Lever, Ashby and SmartRecruiters (employer ATS), plus Remote OK, We Work Remotely, Himalayas and Working Nomads. Adzuna is listed but stays disabled until it is verified;
+  - sources managed on `/sources`, disabled until enabled, then run every 12 hours by the single retrieval worker (`pnpm worker:retrieval`);
+  - only listings whose title matches a Customer Success role family are kept, with their complete description and raw source data;
+  - cross-source deduplication, an employer-ATS application link preferred over an aggregator's, and a changed listing kept as a linked new version ("Listing changed since first seen");
+  - retrieved jobs arrive unevaluated: evaluation stays your choice within the budget.
 
 ### In Progress
 
-- The Features 1–10 Gap Closure is implemented and verified on the isolated test database and is awaiting review; it is not committed yet.
-- The read-only gap audit of features 1–10 that preceded it is complete.
+- Feature 11A is implemented and verified on the isolated test database and is awaiting review; it is not committed yet.
+- The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- close the Features 1–10 Gap Closure (review, then commit);
-- feature 11 — automated retrieval/scraping, with source normalization/ingestion and deduplication across sources;
+- close Feature 11A (review, then commit);
+- feature 11B — the verified public/guest-endpoint and public-HTML sources (Workday, Workable, Welcome to the Jungle / Otta, Wellfound);
 - feature 12 — source health and conservative retrieval;
 - feature 13 — posting-history/ghost-job intelligence;
 - feature 14 — browser extension companion;
@@ -291,6 +297,7 @@ pnpm app:doctor               # read-only check of everything above
 | Required by the worker | the row above plus `EVALUATION_JOB_LEASE_SECONDS`, `EVALUATION_WORKER_POLL_MS` |
 | Optional (accepted defaults) | `AI_DEFAULT_REASONING_EFFORT`, `AI_OPERATION_EXECUTION_OVERRIDES_JSON`, `AI_PRICING_*`, `AI_*_COST_PER_MILLION_TOKENS`, `AI_LONG_CONTEXT_*`, `AI_PRICING_EFFECTIVE_FROM` |
 | Leave unset | `AI_EXECUTION_POLICY_VERSION`: the policy version is built into the evaluator and changes with it. An override goes stale, mislabels evaluations and weakens the worker's queued-policy check; `pnpm app:doctor` warns about one. |
+| Retrieval (optional) | `RETRIEVAL_WORKER_POLL_MS` (default 60000), `RETRIEVAL_USER_AGENT` (default: an identifying product string), `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` (Adzuna also stays disabled until it is verified) |
 | Test-only (optional) | `TEST_DATABASE_URL`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE` |
 
 Without an OpenAI key (empty, or the old `YOUR_OPENAI_API_KEY` placeholder) the product still runs: capture, dashboard, profile, budget, applications and existing results all work. Requesting an evaluation returns "AI evaluation is not configured" (nothing is queued), and the worker refuses to start with a clear message. Changing AI settings requires restarting the web app and worker.
@@ -300,6 +307,7 @@ Without an OpenAI key (empty, or the old `YOUR_OPENAI_API_KEY` placeholder) the 
 ```bash
 pnpm dev                  # terminal 1: web app on http://127.0.0.1:3000
 pnpm worker:evaluations   # terminal 2: exactly one evaluation worker
+pnpm worker:retrieval     # terminal 3 (optional): exactly one retrieval worker, for sources enabled on /sources
 ```
 
 Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-platform","database":"ok","aiConfigured":true}` (HTTP 503 with `"database":"unavailable"` when the database is down). Production-style: `pnpm build && pnpm start`.
@@ -317,6 +325,17 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
 - **Recovery.** If a worker dies mid-run, the task is retried automatically when attempts remain. If it died on the final attempt, the next worker start (or its idle loop) marks it failed (`EVALUATION_LEASE_EXPIRED`), which releases its budget hold and allows reevaluation. Recovery only runs in the worker that holds the lock, and only while it is not running a task, so it never fails a live run while that lock connection stays up (see the caveat under **One worker**).
 - **Errors.** Temporary infrastructure problems (database unreachable or restarting, dropped connections, timeouts) are logged without details and retried with backoff (capped at 30 s). Configuration problems and unexpected errors stop the worker with a non-zero exit code instead of looping. Evaluation failures are recorded on the evaluation and the worker continues.
 - **Shutdown.** Ctrl-C stops after the current task; a second Ctrl-C exits immediately (the task is then recovered as above).
+
+### 5a. Sources and the retrieval worker (feature 11A)
+
+- **Sources.** Add a source on `/sources`: the source type, its board, site or company identifier (Lever and Ashby also need the company name, which their APIs do not return), an optional name, and a schedule (12 hours by default). Every source starts disabled, and nothing is retrieved until you enable it. A newly enabled source runs at the worker's next check, then on its schedule. Run now queues a run for an enabled source. Removing a source that has run archives it (its listings keep their provenance); a source that never ran is deleted.
+- **One worker.** `pnpm worker:retrieval` takes its own database lock; a second one exits. `pnpm worker:retrieval:once` processes the queued and due runs once and exits. It contacts only enabled sources: one request at a time per host, at least 1 s apart. It stops a host on HTTP 429 (rate limited) or 401/403 (access refused), and refuses responses over 10 MB. It never starts an evaluation.
+- **What a run does.** Only listings whose title contains a Customer Success role-family term are kept.
+  - A new listing is normalized and deduplicated like a manual capture.
+  - A listing seen again unchanged only updates its last-seen time.
+  - A changed listing is stored as a new, linked version, and the opportunity keeps its original description.
+  - Run history on `/sources` shows each run's counts and, if it failed, a safe reason.
+- **Verifying a source contract.** `pnpm sources:verify <adapter> --config '<json>' --raw-dir <directory outside the repository>` makes that adapter's single verification request and checks the mapping. `--offline <directory>` re-checks saved responses without the network. It touches no database. Only run it with approval for that source.
 
 ### 6. Deterministic, no-paid-call workflow
 
@@ -364,6 +383,9 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `pnpm app:doctor` warns about company names | Companies saved before the deduplication release have no normalized name, so the company filter lists them separately. Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, against this database. |
 | "This listing is a duplicate of an opportunity that already has an evaluation…" | The opportunity is an exact duplicate (same listing URL, or same job ID at the same company) of one that already has an evaluation or a pending request, so evaluating it would pay twice. Open the other opportunity, or choose **Not the same job** on this page if they are different jobs (reversible with **Undo**). |
 | `pnpm app:doctor` warns that deferrals use another profile version | Each deferral resumes with the profile version it was requested with. On `/budget`, resume to keep that version, or cancel and request again to use the active one. |
+| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna) or needs environment variables that are not set; the card says which. |
+| `pnpm app:doctor` warns that the retrieval worker is not running | A source is enabled but no worker runs it. Start `pnpm worker:retrieval`. |
+| A retrieval run failed with "refused access" or "rate-limited" | The source answered 401/403 or 429; retrieval from it stopped for that run. Nothing is retried automatically within the run; check the source's settings (board name) and wait for the next scheduled run. |
 
 ### 9. Updating the evaluator or the bundled profile
 
@@ -374,26 +396,30 @@ When a new evaluator version or a new bundled Customer Success profile arrives:
 3. **Deferred requests:** if `pnpm app:doctor` reports deferrals pinned to another profile version, review them on `/budget`. Resume keeps the pinned version. **Cancel request** followed by **Evaluate** on the opportunity uses the active one. Never edit them in the database.
 4. **Existing evaluations** keep the profile version, policy and pricing they ran with; reevaluate an opportunity to apply the new evaluator and profile.
 
-### 10. Ingestion boundary (before scraper work)
+### 10. Ingestion boundary
 
-Every source must converge on one pipeline: *source adapter → `RawOpportunity` (`packages/core/src/raw-opportunity.ts`) → normalizer for that source type → one capture transaction (preserved `SourceRecord` → duplicate decision → new `Opportunity` + `FieldProvenance`, or the `SourceRecord` attached to the existing opportunity) → evaluation*. A capture whose normalization fails still preserves its raw `SourceRecord`, unlinked. Manual entry is the only adapter today.
+Every source must converge on one pipeline: *source adapter → `RawOpportunity` (`packages/core/src/raw-opportunity.ts`) → normalizer for that source type → one capture transaction (preserved `SourceRecord` → duplicate decision → new `Opportunity` + `FieldProvenance`, or the `SourceRecord` attached to the existing opportunity) → evaluation*. A capture whose normalization fails still preserves its raw `SourceRecord`, unlinked. Manual entry and the feature 11A retrieval adapters (`packages/discovery`, normalized by `createRetrievedOpportunityNormalizer`) are the adapters today.
 
-Deduplication (`packages/deduplication`, engine `core-dedup-v1`):
+Deduplication (`packages/deduplication`, engine `core-dedup-v2`; records decided before October 18, 2026 keep their `core-dedup-v1` label):
 
 - **MATCH** (same listing URL with nothing conflicting, or the same source job/requisition ID at the same company): the new `SourceRecord` is attached to the earliest-seen matching opportunity (`duplicateDecision`/`duplicateEvidence` on the record). The opportunity's fields, lifecycle, evaluations and application are unchanged; only its last-seen time moves. `POST /api/opportunities` then returns 200 with that opportunity (201 when one is created). The capture form asks first (read-only `POST /api/opportunities/duplicate-check`); "Save as a separate opportunity" keeps it apart and records the pair as `DISTINCT`, which can be undone.
 - **PROBABLE_MATCH** (same company and similar title, location and description, or a shared URL/ID with a conflict): the opportunity is created and the pair is recorded as a warning; nothing is ever merged on a probable match.
 - **Duplicate spend:** an opportunity that has never completed an evaluation cannot request one (or resume a deferred one) while an unresolved exact duplicate already has a completed or active evaluation, a live admission or an open deferred request. The check and the admission it allows are serialized by an advisory lock on a dedicated connection.
 - Companies are reused by normalized name (case, punctuation, `&` and one recognized legal suffix such as Inc, LLC or GmbH are ignored); stored names are never rewritten, and what the user typed stays in the raw source and field provenance.
+- **Source-scoped listing IDs (`core-dedup-v2`):** a retrieved listing ID is compared as `<source>::<id>`, so a Greenhouse 123 never matches a Lever 123. Manually entered IDs keep their plain form; requisition IDs and URLs still match across sources. Differing listing IDs count as a conflict only when both come from the same source.
+- **Retrieved listings:**
+  - **Re-observation:** a listing already stored from the same source with the same ID is a re-observation. If its content hash (over material fields only) is unchanged, only the last-seen times move. If it changed, a new `SourceRecord` is linked through `previousSourceRecordId`.
+  - **Application link:** on an attach, the opportunity's application link moves to a strictly higher-precedence source (employer ATS/careers, then job board/marketplace, then aggregator) with field provenance; a manually entered link is never replaced.
 
-Known points to generalize in the scraper phase:
+Known points for later features:
 
-- the submission schema, `submit()` and `POST /api/opportunities` are manual-specific, and the normalizer accepts only `sourceType` `MANUAL`;
-- cross-source matching, canonical-source selection by source type, merging opportunities that already have history, and posting history wait for retrieved data (feature 11); `SourceRecord (source, externalId)` is not unique, and re-observation of a listing only moves `lastSeenAt` through an attached capture;
-- the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates come after it);
-- `packages/discovery` is unused; `apps/extension` is a placeholder for the browser extension, which must feed the same backend.
+- the manual submission schema, `submit()` and `POST /api/opportunities` stay manual-specific; retrieval enters through `createRetrievalIngestionService` and the worker;
+- merging opportunities that already have history is not done (by decision), and posting history is feature 13;
+- the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates and changed observations come after it), and retrieved source items live under `rawPayload.source`, never as posting history;
+- `apps/extension` is a placeholder for the browser extension (feature 14), which must feed the same backend.
 
 ## Project Status
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is implemented and verified and awaiting review. Main-product features 11–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Feature 11A (automated retrieval from the verified official API and feed sources) is implemented and verified and awaiting review; Feature 11B and main-product features 12–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

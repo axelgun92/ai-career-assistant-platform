@@ -25,6 +25,7 @@ describe("site header", () => {
       ["/applications", "Applications"],
       ["/profile", "Profile &amp; preferences"],
       ["/budget", "Budget"],
+      ["/sources", "Sources"],
     ] as const) {
       pathname.value = current;
       const markup = renderToStaticMarkup(<SiteHeader />);

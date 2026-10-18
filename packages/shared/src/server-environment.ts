@@ -173,3 +173,17 @@ export function readEvaluationWorkerEnvironment(
 ): EvaluationWorkerEnvironment {
   return evaluationWorkerEnvironmentSchema.parse(environment);
 }
+
+// The retrieval worker (feature 11). Both settings are optional.
+export const retrievalWorkerEnvironmentSchema = z.object({
+  RETRIEVAL_WORKER_POLL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
+  RETRIEVAL_USER_AGENT: z.string().trim().min(1).max(200).optional(),
+});
+
+export type RetrievalWorkerEnvironment = z.infer<typeof retrievalWorkerEnvironmentSchema>;
+
+export function readRetrievalWorkerEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): RetrievalWorkerEnvironment {
+  return retrievalWorkerEnvironmentSchema.parse(environment);
+}
