@@ -1,7 +1,7 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
-import { collectPages, mapKeptItems, parseItems, parseResponse } from "../collection";
-import type { SourceAdapter } from "../contract";
+import { collectPages, itemId, listingCoverage, mapKeptItems, parseItems, parseResponse } from "../collection";
+import type { ListingCoverage, SourceAdapter } from "../contract";
 import { getJson } from "../transport";
 import { slugSchema } from "./shared";
 
@@ -9,7 +9,9 @@ import { slugSchema } from "./shared";
 // October 17, 2026 against the gitlab board: one response with every job
 // ({ jobs, meta: { total } }), no pagination. content is HTML escaped once
 // more; there are no structured salary or workplace fields. updated_at is
-// volatile and is kept as metadata only (never hashed).
+// volatile and is kept as metadata only (never hashed). The board response is
+// the whole board, so a complete run (every job with an id, as many as
+// meta.total states) can show that a tracked job is gone (feature 13).
 
 const configSchema = z.object({ board: slugSchema }).strict();
 type GreenhouseConfig = z.infer<typeof configSchema>;
@@ -32,6 +34,8 @@ const jobSchema = z
   .passthrough();
 const responseSchema = z.object({ jobs: z.array(z.unknown()), meta: z.object({ total: z.number() }).passthrough().nullish() }).passthrough();
 
+const idSchema = z.object({ id: z.number().int() }).passthrough();
+
 const names = (items: Array<{ name?: string | null }> | null | undefined) =>
   (items ?? []).map((item) => item.name?.trim()).filter((name): name is string => Boolean(name));
 
@@ -49,10 +53,17 @@ export const greenhouseAdapter: SourceAdapter<GreenhouseConfig> = {
   verified: true,
   attribution: null,
   verificationUrl: (config) => `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(config.board)}/jobs?content=true`,
-  collect(context, config) {
-    return collectPages(context, async () => {
+  listingCoverage: "complete-board",
+  trackingScope: (config) => ({ board: config.board }),
+  async collect(context, config) {
+    let coverage: ListingCoverage | undefined;
+    const result = await collectPages(context, async () => {
       const url = greenhouseAdapter.verificationUrl(config);
       const response = parseResponse(responseSchema, await getJson(context.transport, url), url);
+      coverage = listingCoverage(
+        response.jobs.map((job) => itemId(idSchema, job, (value) => String(value.id))),
+        { readWholeListing: true, statedTotal: response.meta?.total ?? null },
+      );
       const { valid, issues } = parseItems(jobSchema, response.jobs);
       const mapped = mapKeptItems(greenhouseAdapter, context, valid, {
         title: (job) => job.title,
@@ -80,5 +91,6 @@ export const greenhouseAdapter: SourceAdapter<GreenhouseConfig> = {
       });
       return { listings: mapped.listings, issues: [...issues, ...mapped.issues], fetched: response.jobs.length, more: false };
     });
+    return coverage ? { ...result, coverage } : result;
   },
 };

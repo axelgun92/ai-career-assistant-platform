@@ -144,20 +144,22 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - Feature 11B, the verified public/guest-endpoint and public-HTML sources (complete, `2a1d8c2`):
   - Workday (an employer's career site), the Workable job search and the Wellfound Customer Success role page, through the same retrieval, deduplication and provenance path;
   - Welcome to the Jungle / Otta is listed but cannot be enabled (no public listing interface on its current logged-out site);
-- Feature 12, source health and conservative retrieval (implemented and verified; awaiting review, not committed):
+- Feature 12, source health and conservative retrieval (complete, `f10a02b`):
   - a failing source is tried again less often (up to once a week), a source's own Retry-After is honoured in full, nothing is retried within a run and no source is disabled automatically;
-  - each source on `/sources` shows its health, last successful retrieval and next run; Run now cannot override a rate limit or a wait the source asked for.
+  - each source on `/sources` shows its health, last successful retrieval and next run; Run now cannot override a rate limit or a wait the source asked for;
+- Feature 13, posting history and listing removal (implemented and verified; awaiting review, not committed):
+  - each retrieved listing records where and when it was seen; a listing is confirmed "No longer listed" only by a source that shows its whole board, after two complete checks at least a day apart, and one that returns is "Listed again";
+  - a "Posting history" section on the opportunity page and a "No longer listed" dashboard badge; nothing closes an opportunity automatically, and Ghost Job Risk does not use this history yet.
 
 ### In Progress
 
-- Feature 12 is implemented and verified on the isolated test database and is awaiting review; it is not committed yet. Features 11A (`fad2341`) and 11B (`2a1d8c2`) are complete.
+- Feature 13 is implemented and verified on the isolated test database and is awaiting review; it is not committed yet. Features 11A (`fad2341`), 11B (`2a1d8c2`) and 12 (`f10a02b`) are complete.
 - The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- close Feature 12 (review, then commit);
-- feature 13 — posting-history/ghost-job intelligence, including listing expiry/removal detection;
+- close Feature 13 (review, then commit);
 - feature 14 — browser extension companion;
 - feature 15 — source intelligence;
 - feature 16 — job-market analytics;
@@ -330,12 +332,13 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
 - **Errors.** Temporary infrastructure problems (database unreachable or restarting, dropped connections, timeouts) are logged without details and retried with backoff (capped at 30 s). Configuration problems and unexpected errors stop the worker with a non-zero exit code instead of looping. Evaluation failures are recorded on the evaluation and the worker continues.
 - **Shutdown.** Ctrl-C stops after the current task; a second Ctrl-C exits immediately (the task is then recovered as above).
 
-### 5a. Sources and the retrieval worker (features 11A, 11B and 12)
+### 5a. Sources and the retrieval worker (features 11A, 11B, 12 and 13)
 
 - **Sources.** Add a source on `/sources`: the source type, its board, site or company identifier (Lever and Ashby also need the company name, which their APIs do not return; Workday needs the employer's career-site address, for example `https://acme.wd5.myworkdayjobs.com/External`, and takes an optional company name used only when a posting names none), an optional name, and a schedule (12 hours by default). Workable and Wellfound need no settings: they search for Customer Success roles themselves. Every source starts disabled, and nothing is retrieved until you enable it. A newly enabled source runs at the worker's next check, then on its schedule. Run now queues a run for an enabled source. Removing a source that has run archives it (its listings keep their provenance); a source that never ran is deleted.
 - **One worker.** `pnpm worker:retrieval` takes its own database lock; a second one exits. `pnpm worker:retrieval:once` processes the queued and due runs once and exits. It contacts only enabled sources: one request at a time per host, at least 1 s apart (2 s for Wellfound). It stops a host for the rest of the run on HTTP 429 (rate limited), 401/403 (access refused) or any 5xx (server error), never retries within a run, and refuses responses over 10 MB. It never starts an evaluation.
 - **Source health and backoff (feature 12).** After a source failure the next run waits longer: after a rate limit, the schedule doubled per consecutive failure; after a server or network error, the normal schedule the first time and then doubling; after an access refusal or a changed response format, at least a day, then doubling. Every wait is capped at 7 days, except that a source's own Retry-After (on a 429 or 503) is honoured in full however long it is. Failures on our side (an interrupted worker, an internal error) never count, and no source is disabled automatically. Each source card shows its health (Healthy, Degraded, Failing, Needs attention, Rate limited, Waiting), the last attempt, the last successful retrieval, the next run and why, and the latest failure; it notes a stale source (no successful retrieval for two schedule intervals) and a successful run that found no listings. A run stopped part-way by the source never counts as a successful retrieval.
 - **Run now and waits.** Run now is disabled while a source is rate limited ("Rate limited until …") or waiting as the source asked ("Retry after … (requested by the source)"); neither can be overridden. During our own backoff, Run now asks first and "Run now anyway" sends one run. Changing a source's settings (through `PATCH /api/sources/<id>`) clears our own backoff but never a source's wait; enabling or disabling a source keeps any wait.
+- **Posting history (feature 13).** Each run also records which listings the source listed, before the role-title filter, so a stored listing whose title changes is still seen. A listing missing from one complete check shows "Not found in the latest complete check"; missing from two consecutive complete checks at least 24 hours apart it is "No longer listed", and a listing that returns is "Listed again". Only Greenhouse, Lever and Ashby (one response with the whole board), and Workday and SmartRecruiters when a run reads exactly the total they state (at most 100 and 500 postings), can confirm removal; Wellfound, Himalayas, Remote OK, Working Nomads, Workable and We Work Remotely show a limited window and only record sightings. An expiry date a source states is shown, never treated as removal. Changing what a source retrieves (its board, site, company identifier or career site) starts fresh tracking, and changing it back does not bring back the old history; changing only a display name does not. Listings retrieved before feature 13 show "Last observed …; current status unknown" until they are seen again. The opportunity page has a "Posting history" section, dashboard rows show "No longer listed" when every source that can confirm it has, and evaluating such a listing shows a warning but is allowed. Nothing closes or archives an opportunity automatically, and the posting-history facts are not passed to the evaluator yet.
 - **What a run does.** Only listings whose title contains a Customer Success role-family term are kept.
   - A new listing is normalized and deduplicated like a manual capture.
   - A listing seen again unchanged only updates its last-seen time.
@@ -396,6 +399,8 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | A run failed with "server error" | The source answered with a 5xx; retrieval from it stopped for that run. The first time, the source runs again on its normal schedule; repeated failures wait longer (up to 7 days). |
 | Run now is disabled with "Rate limited until …" or "Retry after … (requested by the source)" | The source asked retrieval to wait, and that wait is always honoured, however long; it cannot be overridden, and enabling, disabling or changing the source's settings does not clear it. The source runs again on its own after that date. |
 | Run now asks "Run now anyway" | The source is backing off after failures (shown as Needs attention, Failing or Degraded). Fix its settings if they are wrong (that clears the backoff), or confirm to send one run now. |
+| An opportunity shows "No longer listed" | Every source that can confirm it (a whole-board ATS: Greenhouse, Lever, Ashby, or Workday/SmartRecruiters read in full) has not listed it in two complete checks at least a day apart, and no other source saw it afterwards. The opportunity is kept; archive it yourself if you no longer need it. If it is listed again, the badge goes away. |
+| A listing says "Last observed …; current status unknown" | It was retrieved before posting history existed, or its source shows only a limited window or has not run recently. It changes as soon as a run sees the listing again; absence alone never marks it removed. |
 | `pnpm app:doctor` warns about retrieval source health | An enabled source is rate limited, waiting, failing, needs attention or is stale; its card on `/sources` shows the latest failure and when it will run again. The doctor only reports; it never changes a source. |
 
 ### 9. Updating the evaluator or the bundled profile
@@ -425,7 +430,7 @@ Deduplication (`packages/deduplication`, engine `core-dedup-v2`; records decided
 Known points for later features:
 
 - the manual submission schema, `submit()` and `POST /api/opportunities` stay manual-specific; retrieval enters through `createRetrievalIngestionService` and the worker;
-- merging opportunities that already have history is not done (by decision), and posting history is feature 13;
+- merging opportunities that already have history is not done (by decision); posting history (feature 13) is recorded per listing in `RetrievedListing`, and its facts are not yet passed to the evaluator;
 - the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates and changed observations come after it), and retrieved source items live under `rawPayload.source`, never as posting history;
 - `apps/extension` is a placeholder for the browser extension (feature 14), which must feed the same backend.
 
@@ -433,4 +438,4 @@ Known points for later features:
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) are complete, Feature 12 (source health and conservative retrieval) is implemented and verified and awaiting review, and main-product features 13–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) and Feature 12 (source health and conservative retrieval, `f10a02b`) are complete, Feature 13 (posting history and listing removal) is implemented and verified and awaiting review, and main-product features 14–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

@@ -1,9 +1,21 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 18, 2026
+**Last updated:** October 19, 2026
 
 ## Current Objective
+
+**Feature 13 — posting history and listing removal** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 12 was committed as `f10a02b` (October 18, 2026).
+
+In order, what follows:
+
+1. Next: user review of Feature 13, then the checkpoint commit and the personal-file refresh.
+2. Then: main-product features 14–18.
+3. Only after features 1–18: deliberate evaluator/product integration (including how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Earlier objective, superseded on October 19, 2026 when Feature 12 had been committed as `f10a02b` and Feature 13 implemented. It read as follows.)*
 
 **Feature 12 — source health and conservative retrieval** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 11B was committed as `2a1d8c2` (October 18, 2026).
 
@@ -78,9 +90,62 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–18, 2026)
+## Recently Completed (October 14–19, 2026)
 
-### Feature 12 — source health and conservative retrieval (implemented and verified October 18, 2026; awaiting user review; not committed)
+### Feature 13 — posting history and listing removal (implemented and verified October 19, 2026; awaiting user review; not committed)
+
+**Scope (approved, with the final corrections of October 19, 2026).** An objective, conservative posting history per retrieved listing: sightings, confirmed removal only where a source provably shows its whole board, reappearance, the source's stated expiry, and deterministic posting-history facts. No adapter retrieval change beyond coverage, no ingestion or deduplication change, no evaluator change, no live source requests and no AI calls. Out of scope: feeding the evaluator, text-based ghost signals, new-ID repost and requisition-frequency patterns (feature 18), browser-assisted sources (feature 14).
+
+**Approved decisions.**
+
+- The facts are built and contract-tested but **withheld** from `loadSubject()` and the evaluator. The first question for the later integration is whether Ghost Job Risk can become deterministic from them rather than activating the dormant paid semantic path.
+- REMOVED requires two consecutive qualifying complete misses **and** at least 24 hours between the first miss and confirmation; the first miss gives MISSING only.
+- `UNCHANGED_OVER_TIME`: 30 days, measured on content observations only.
+- `Opportunity.status` is never changed automatically; source expiry dates are display-only (no removal, no `closingDate`); We Work Remotely is bounded until separately verified.
+- Corrections: coverage IDs are collected before the title filter; Wellfound never confirms removal; tracking scopes are opaque **generations** (A → B → A gives three, and A₂ never inherits A₁'s history); the legacy backfill is HISTORICAL, never currently listed; where a source states a total, unique IDs must **equal** it exactly; the dashboard badge uses current-scope logic.
+
+**What changed.**
+
+- **Coverage** (`packages/discovery`): `CollectResult.coverage` (`observedListingIds`, `complete`); `listingCoverage()` (complete only for a whole read, every item with an ID, and unique IDs equal to any stated total), `trackingScopeOf()`, `itemId()`, `isRemovalCapable()`; `listingCoverage` and `trackingScope` declared on Greenhouse (`board`; `meta.total` checked), Lever (`site`), Ashby (`board`; unlisted postings excluded), SmartRecruiters (`company`; complete only when `totalFound` is read in full within the page cap) and Workday (host/tenant/site; complete only when the first page's `total` is read in full). The others stay bounded.
+- **Migration** `20261019090000_retrieved_listing_history`: enum `RetrievedListingState`, table `RetrievedListing` (unique on source, scope generation and listing ID), `RetrievalSource.trackingScopeKey`, `RetrievalRun.listingCoverageComplete`, and the HISTORICAL backfill (one row per pre-feature-13 retrieved listing: first discovered, last observed, its opportunity, removal capability from the adapter, the `''` baseline scope).
+- **Repository:** a fresh scope key on create; `update(…, { rotateTrackingScope })` assigns a new key and makes every earlier row UNTRACKED in the same transaction; `claimNextRun` initialises a legacy null key and adopts the baseline; `recordListingObservations` (one transaction: rows for stored listings, sightings, reappearance, `Opportunity.lastSeenAt`, then MISSING/REMOVED on qualifying runs; nothing if the scope changed mid-run); `listingsForOpportunity`; `remove` counts ledger rows.
+- **Worker:** records observations after ingestion; a run qualifies only when the adapter is removal-capable, its coverage is complete, it was not halted, and it was a successful retrieval (Feature 12 sense). Source expiry is read from `expiresAt`/`endDate` metadata. A recording failure is logged and never fails the run.
+- **Service:** rotates the scope only when the adapter's scope fields change (a display-only change, such as a Lever or Workday fallback company name or the SmartRecruiters page size, does not).
+- **Facts** (`packages/core/src/posting-history.ts`): `derivePostingHistoryFacts`, `listingStatus`, `isNoLongerListed`, `isRecentlyListed`.
+- **UI:** a "Posting history" section on the opportunity page; a "No longer listed" dashboard badge (SQL equal to `isNoLongerListed`); an evaluation warning, not a block; "Read the whole list" / "Limited window" and tracked-listing counts in `/sources` run history.
+- **No change** to `loadSubject()`, the evaluator, ingestion, `core-dedup-v2` or adapter retrieval behaviour.
+
+**Tests.**
+
+- **Unit:** new `posting-history.test.ts` (18): coverage below/above/equal to a stated total, a missing ID, Greenhouse IDs before the title filter, Lever/Ashby coverage, SmartRecruiters and Workday conditional completeness (cap, halt, shift, unsafe path), the removal-capability matrix, scope fields, every fact rule including the content-only `UNCHANGED_OVER_TIME`, the evaluator-schema contract test, listing status and badge rules, the worker's qualifying decision, and the service's rotation. `retrieval-ui.test.tsx` (+2) covers the section's wording and the badge.
+- **Integration:** new `posting-history.test.ts` (8): removal after two complete misses ≥ 24 h apart (not sooner; a total mismatch run ignored), the dashboard badge, no lifecycle change and reappearance; a title change keeping a listing LISTED while `Opportunity.lastSeenAt` moves and `SourceRecord.lastObservedAt` does not; a bounded source never removing; **A → B → A** giving three scope keys with no inherited history; the migration's backfill SQL producing HISTORICAL rows; baseline adoption (seen → LISTED keeping `firstSeenAt`, absent → stays HISTORICAL); baseline UNTRACKED when a scope change comes first; and `loadSubject()` unchanged.
+- **E2E:** `retrieval.spec.ts` (+1): a complete Greenhouse fixture board shrinks across two runs a day apart (helper clock), the dashboard shows "No longer listed", the opportunity page shows the history and an evaluation warning with the button still enabled, and the listing is "Listed again" after a later run.
+
+**Verification** (isolated test database only; no live source requests; no AI or provider calls; normal application database untouched):
+
+- typecheck and lint clean; `git diff --check` clean;
+- unit 52 files / 1,313 tests; integration 28 files / 251 tests; E2E 37/37; production build succeeds; `pnpm db:verify-migrations` (19 migrations, only the known documented drift; it caught an over-long unique-index name, corrected before closeout, and the test database's copy of the migration was rolled back and re-applied);
+- `apps/web/next-env.d.ts` unchanged.
+
+**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/` (the blobs match `HEAD`):
+
+- **Core Platform TDD v1.11:** a §51 "Posting History and Listing Removal (Feature 13)" section (four paragraphs), the sequence and the dependency.
+- **Core AI Framework PRD v1.10** and **Customer Success PRD v1.9:** current status, revision history and dependencies.
+- **Customer Success TDD v1.9:** status, the §45 and §49 Ghost Job Risk notes annotated, and the dependencies.
+
+The Semantic Evaluation Playbook is unchanged.
+
+**Known issues and observations.**
+
+- The committed Greenhouse fixture states `meta.total` 232 for three jobs, so ordinary fixture runs are (correctly) incomplete; the E2E uses a consistent whole-board variant.
+- SmartRecruiters and Workday confirm removal only for employers whose total fits the run's window (500 and 100 postings); larger employers record sightings only.
+- `UNCHANGED_OVER_TIME` for SmartRecruiters and Workday advances only when a listing gets one of the 25 detail requests per run.
+- Pre-feature-13 listings that are no longer live stay "current status unknown" (HISTORICAL) indefinitely, by design.
+- A code change to a configuration-free adapter's fixed query must rotate its sources' scopes explicitly (documented in the adapter contract); no such change exists today.
+
+### Feature 12 — source health and conservative retrieval (committed `f10a02b`, October 18, 2026)
+
+*(Heading updated on October 19, 2026 after the commit; it read "implemented and verified October 18, 2026; awaiting user review; not committed". The record below is preserved as written.)*
 
 **Scope (approved).** Deterministic source health and conservative retrieval around the existing adapters: no adapter or contract redesign, no in-run retries, no automatic disabling, no live source requests and no AI calls. Listing expiry/removal detection moved to feature 13 (DEVELOPMENT_PLAN updated). Out of scope: features 13–15 and evaluator changes.
 
@@ -697,7 +762,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-Feature 12 (source health and conservative retrieval) is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+Feature 13 (posting history and listing removal) is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+
+*(Earlier status, superseded on October 19, 2026: "Feature 12 (source health and conservative retrieval) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `f10a02b`.)*
 
 *(Earlier status, superseded on October 18, 2026: "Feature 11A is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." Feature 11A was committed as `fad2341` and Feature 11B as `2a1d8c2`.)*
 
@@ -1421,10 +1488,10 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`) and 11B (`2a1d8c2`) are committed, and Feature 12 is implemented and verified (October 18, 2026).
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`) and 12 (`f10a02b`) are committed, and Feature 13 is implemented and verified (October 19, 2026).
 
-1. Next: user review of Feature 12, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: user review of Feature 11A …" and of Feature 11B, superseded October 18, 2026 after the commits `fad2341` and `2a1d8c2`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
-2. Then: main-product features 13–18: posting history/ghost intelligence (including listing expiry/removal detection), browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+1. Next: user review of Feature 13, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: user review of Feature 11A …", of Feature 11B and of Feature 12, superseded October 18–19, 2026 after the commits `fad2341`, `2a1d8c2` and `f10a02b`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
+2. Then: main-product features 14–18: browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.

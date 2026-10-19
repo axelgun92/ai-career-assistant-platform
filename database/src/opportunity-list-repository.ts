@@ -67,6 +67,9 @@ export interface OpportunityListItem {
   foundVia: string | null;
   // A later retrieval found the listing changed since it was first seen.
   listingChanged: boolean;
+  // Feature 13: every current-scope listing from a source that can confirm
+  // removal is confirmed removed, and no source saw it listed afterwards.
+  noLongerListed: boolean;
   // The application tracker's state for this opportunity, if tracked.
   application: {
     stage: ApplicationStage;
@@ -350,7 +353,17 @@ type Row = {
   duplicate: "MATCH" | "PROBABLE_MATCH" | null;
   foundVia: string | null;
   listingChanged: boolean;
+  noLongerListed: boolean | null;
 };
+
+// The opportunity's tracked listings in their source's current tracking
+// scope (feature 13); before a pre-feature-13 source first runs, its
+// baseline is current.
+const currentListings = (alias: string) => Prisma.sql`
+  FROM "RetrievedListing" ${Prisma.raw(alias)} JOIN "RetrievalSource" ${Prisma.raw(`${alias}s`)}
+    ON ${Prisma.raw(`${alias}s`)}."id" = ${Prisma.raw(alias)}."retrievalSourceId"
+   AND ${Prisma.raw(alias)}."trackingScopeKey" = COALESCE(${Prisma.raw(`${alias}s`)}."trackingScopeKey", '')
+  WHERE ${Prisma.raw(alias)}."opportunityId" = o."id" AND ${Prisma.raw(alias)}."state" <> 'UNTRACKED'`;
 
 // Retrieval facts for the row: the first retrieved record's source name and
 // whether any changed observation exists.
@@ -360,7 +373,14 @@ const retrievalStatus = Prisma.sql`(
   ORDER BY sr."createdAt" ASC, sr."id" ASC LIMIT 1
 ) AS "foundVia", EXISTS (
   SELECT 1 FROM "SourceRecord" sr WHERE sr."opportunityId" = o."id" AND sr."previousSourceRecordId" IS NOT NULL
-) AS "listingChanged"`;
+) AS "listingChanged", (
+  EXISTS (SELECT 1 ${currentListings("la")} AND la."removalCapable")
+  AND NOT EXISTS (SELECT 1 ${currentListings("lb")} AND lb."removalCapable" AND (lb."state" <> 'REMOVED' OR lb."removedAt" IS NULL))
+  AND NOT EXISTS (
+    SELECT 1 ${currentListings("lc")}
+      AND lc."lastSeenAt" > (SELECT MAX(ld."removedAt") ${currentListings("ld")} AND ld."removalCapable")
+  )
+) AS "noLongerListed"`;
 
 // The strongest unresolved stored duplicate relationship, either direction.
 const duplicateStatus = Prisma.sql`(
@@ -417,6 +437,7 @@ function toItem(row: Row, today: string): OpportunityListItem {
     duplicate: row.duplicate ?? null,
     foundVia: row.foundVia ?? null,
     listingChanged: row.listingChanged ?? false,
+    noLongerListed: row.noLongerListed ?? false,
     application: row.applicationStage
       ? {
           stage: row.applicationStage,

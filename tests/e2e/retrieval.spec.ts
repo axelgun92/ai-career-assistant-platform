@@ -6,8 +6,9 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { build } from "esbuild";
 
-// Features 11A, 11B and 12: Greenhouse, Workday, Workable and Wellfound sources added and
-// run from /sources, and a rate-limited source's health and Run now gate. The retrieval worker iteration runs in a helper with
+// Features 11A, 11B, 12 and 13: Greenhouse, Workday, Workable and Wellfound sources added and
+// run from /sources, a rate-limited source's health and Run now gate, and a
+// listing's posting history through removal and reappearance. The retrieval worker iteration runs in a helper with
 // the fixture transport (the committed fixtures); nothing reaches the
 // network. The tests share fixture listings, so they run in order.
 test.describe.configure({ mode: "serial" });
@@ -212,4 +213,54 @@ test("a rate-limited source shows when it may run again, Run now waits, and a la
   await expect(card.getByLabel("Health: Healthy")).toBeVisible();
   await expect(card).not.toContainText("Rate limited until");
   await expect(card).not.toContainText("Latest failure:");
+});
+
+test("a listing removed from a complete board is confirmed after two checks a day apart, then listed again", async ({ page }) => {
+  await runHelper("reset-fixture-listings");
+  const name = `GitLab history E2E ${randomUUID().slice(0, 8)}`;
+  const card = await addGreenhouseSource(page, name);
+  await card.getByRole("button", { name: "Enable" }).click();
+  await expect(card).toContainText("Not yet run");
+  const runNow = async (variant: string, atHours: number) => {
+    await card.getByRole("button", { name: "Run now" }).click();
+    await expect(card.getByRole("status")).toBeVisible();
+    return JSON.parse(await runHelper("run-retrieval", variant, `--at-hours=${atHours}`)) as { status: string; counts: Record<string, any> };
+  };
+  expect(await runNow("board", 0)).toMatchObject({ status: "COMPLETED", counts: { created: 1 } });
+  await page.reload();
+  await card.getByText(/^Run history/).click();
+  await expect(card).toContainText("Read the whole list.");
+
+  const opportunityRow = async () => {
+    await page.goto("/?view=all&q=Customer%20Success%20Architect");
+    const row = page.getByRole("list", { name: "Opportunities" }).getByRole("listitem").filter({ hasText: "Customer Success Architect" });
+    await expect(row).toHaveCount(1);
+    return row;
+  };
+  const history = async () => {
+    await (await opportunityRow()).getByRole("link", { name: "Customer Success Architect" }).click();
+    return page.getByRole("region", { name: "Posting history" });
+  };
+  await expect(await history()).toContainText(`${name}: Still listed`);
+
+  await page.goto("/sources");
+  expect(await runNow("board-shrunk", 1)).toMatchObject({ counts: { listings: { missing: 1 } } });
+  await expect(await history()).toContainText("Not found in the latest complete check");
+  await expect(await opportunityRow()).not.toContainText("No longer listed");
+
+  await page.goto("/sources");
+  expect(await runNow("board-shrunk", 26)).toMatchObject({ counts: { listings: { removed: 1 } } });
+  await expect(await opportunityRow()).toContainText("No longer listed");
+  const removed = await history();
+  await expect(removed).toContainText("No longer listed (not found since");
+  await expect(page.getByText("This listing is no longer listed on the sources that can confirm it")).toBeVisible();
+  // A warning, not a block: the evaluation can still be requested.
+  await expect(page.getByRole("button", { name: "Evaluate Customer Success fit" })).toBeEnabled();
+
+  await page.goto("/sources");
+  expect(await runNow("board", 30)).toMatchObject({ counts: { listings: { reappeared: 1 } } });
+  await expect(await opportunityRow()).not.toContainText("No longer listed");
+  const back = await history();
+  await expect(back).toContainText(`${name}: Listed again on`);
+  await expect(back).toContainText("Listed again after removal");
 });

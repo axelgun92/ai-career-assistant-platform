@@ -10,6 +10,7 @@ import {
   type RetrievalType,
   type SourceCategory,
 } from "@ai-career/core";
+import { randomUUID } from "node:crypto";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
 
@@ -31,6 +32,9 @@ export interface RetrievalSourceRecord {
   lastRunAt: Date | null;
   // The backoff gate (feature 12): no run starts before it.
   nextEligibleAt: Date | null;
+  // The current tracking-scope generation (feature 13); null only for a
+  // source created before feature 13 that has not run since.
+  trackingScopeKey: string | null;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -49,8 +53,74 @@ export interface RetrievalRunRecord {
   errorMessage: string | null;
   // When the source asked us to wait until, in this run.
   retryAfterUntil: Date | null;
+  // Whether the run read the source's whole listing (feature 13); null when
+  // the adapter reports no coverage.
+  listingCoverageComplete: boolean | null;
   createdAt: Date;
 }
+
+export type RetrievedListingStateValue = "HISTORICAL" | "LISTED" | "MISSING" | "REMOVED" | "UNTRACKED";
+
+// One tracked listing with its source, for the opportunity page (feature 13).
+export interface RetrievedListingRecord {
+  id: string;
+  retrievalSourceId: string;
+  source: string;
+  externalId: string;
+  opportunityId: string | null;
+  removalCapable: boolean;
+  state: RetrievedListingStateValue;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  missingSince: Date | null;
+  missedCompleteRuns: number;
+  removedAt: Date | null;
+  reappearedAt: Date | null;
+  reappearances: number;
+  sourceExpiresAt: Date | null;
+  // Whether the row belongs to its source's current tracking scope.
+  currentScope: boolean;
+  retrievalSource: {
+    name: string;
+    adapterKey: string;
+    sourceCategory: SourceCategory;
+    scheduleMinutes: number;
+    enabled: boolean;
+    archivedAt: Date | null;
+  };
+}
+
+// What one run saw (feature 13), recorded after its listings are stored.
+export interface ListingObservationInput {
+  sourceId: string;
+  runId: string;
+  // The scope generation the run was claimed under; nothing is recorded if
+  // the source's scope changed while it ran.
+  trackingScopeKey: string;
+  removalCapable: boolean;
+  // Listings the run stored, which get a row if they have none.
+  stored: ReadonlyArray<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }>;
+  // Every listing ID the run saw listed, before the title filter.
+  observedListingIds: readonly string[];
+  // The adapter reported coverage, and whether it was complete.
+  coverageComplete: boolean | null;
+  // A complete run that was a successful retrieval: absence counts.
+  qualifying: boolean;
+  at: Date;
+}
+
+export interface ListingObservationOutcome {
+  applied: boolean;
+  observed: number;
+  missing: number;
+  removed: number;
+  reappeared: number;
+}
+
+// Feature 13: absent from at least this many consecutive qualifying complete
+// checks, spanning at least removalConfirmationMs from the first miss.
+export const removalConfirmationChecks = 2;
+export const removalConfirmationMs = 24 * 60 * 60 * 1000;
 
 export type RetrievalSourceErrorCode =
   | "SOURCE_NOT_FOUND"
@@ -105,6 +175,7 @@ function mapRun(row: RunRow): RetrievalRunRecord {
     errorCode: row.errorCode,
     errorMessage: row.errorMessage,
     retryAfterUntil: row.retryAfterUntil,
+    listingCoverageComplete: row.listingCoverageComplete,
     createdAt: row.createdAt,
   };
 }
@@ -138,7 +209,8 @@ export class PrismaRetrievalSourceRepository {
     scheduleMinutes: number;
   }): Promise<RetrievalSourceRecord> {
     const row = await this.database.retrievalSource.create({
-      data: { ...input, enabled: false, config: input.config as Prisma.InputJsonValue },
+      // Every source starts its own tracking-scope generation.
+      data: { ...input, enabled: false, config: input.config as Prisma.InputJsonValue, trackingScopeKey: randomUUID() },
     });
     return mapSource(row);
   }
@@ -147,6 +219,11 @@ export class PrismaRetrievalSourceRepository {
     id: string,
     input: { name?: string; config?: unknown; scheduleMinutes?: number; enabled?: boolean },
     now = new Date(),
+    // Feature 13: the change alters which listings the source retrieves (the
+    // service decides from the adapter's scope fields). A fresh scope
+    // generation starts, and every listing tracked so far, the pre-feature-13
+    // baseline included, becomes UNTRACKED history.
+    options: { rotateTrackingScope?: boolean } = {},
   ): Promise<RetrievalSourceRecord> {
     const existing = await this.get(id);
     if (!existing) throw new RetrievalSourceError("SOURCE_NOT_FOUND", "Retrieval source not found");
@@ -161,17 +238,27 @@ export class PrismaRetrievalSourceRepository {
       const gate = activeGate({ nextEligibleAt: existing.nextEligibleAt, runsNewestFirst: await this.listRuns(id, healthRunWindow), now });
       clearGate = gate?.kind === "backoff";
     }
-    const row = await this.database.retrievalSource.update({
-      where: { id },
-      data: {
-        ...(clearGate ? { nextEligibleAt: null } : {}),
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.config !== undefined ? { config: input.config as Prisma.InputJsonValue } : {}),
-        ...(input.scheduleMinutes !== undefined ? { scheduleMinutes: input.scheduleMinutes } : {}),
-        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-      },
+    return this.database.$transaction(async (transaction) => {
+      const trackingScopeKey = options.rotateTrackingScope ? randomUUID() : undefined;
+      if (trackingScopeKey) {
+        await transaction.retrievedListing.updateMany({
+          where: { retrievalSourceId: id, state: { not: "UNTRACKED" } },
+          data: { state: "UNTRACKED" },
+        });
+      }
+      const row = await transaction.retrievalSource.update({
+        where: { id },
+        data: {
+          ...(clearGate ? { nextEligibleAt: null } : {}),
+          ...(trackingScopeKey ? { trackingScopeKey } : {}),
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.config !== undefined ? { config: input.config as Prisma.InputJsonValue } : {}),
+          ...(input.scheduleMinutes !== undefined ? { scheduleMinutes: input.scheduleMinutes } : {}),
+          ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+        },
+      });
+      return mapSource(row);
     });
-    return mapSource(row);
   }
 
   // Removes a source: physically only if it never produced a run or a
@@ -184,7 +271,8 @@ export class PrismaRetrievalSourceRepository {
       if (!rows.length) throw new RetrievalSourceError("SOURCE_NOT_FOUND", "Retrieval source not found");
       const runs = await transaction.retrievalRun.count({ where: { retrievalSourceId: id } });
       const records = await transaction.sourceRecord.count({ where: { retrievalSourceId: id } });
-      if (runs === 0 && records === 0) {
+      const listings = await transaction.retrievedListing.count({ where: { retrievalSourceId: id } });
+      if (runs === 0 && records === 0 && listings === 0) {
         await transaction.retrievalSource.delete({ where: { id } });
         return "DELETED" as const;
       }
@@ -327,9 +415,20 @@ export class PrismaRetrievalSourceRepository {
           where: { id },
           data: { status: "RUNNING", startedAt: now, leaseExpiresAt: new Date(now.getTime() + leaseSeconds * 1000) },
         });
+        // A source created before feature 13 starts its first scope
+        // generation here, adopting the pre-feature-13 baseline (its settings
+        // have not changed since, or the scope would already be set).
+        let trackingScopeKey = queued.retrievalSource.trackingScopeKey;
+        if (!trackingScopeKey) {
+          trackingScopeKey = randomUUID();
+          await transaction.retrievedListing.updateMany({
+            where: { retrievalSourceId: queued.retrievalSourceId, trackingScopeKey: "" },
+            data: { trackingScopeKey },
+          });
+        }
         const source = await transaction.retrievalSource.update({
           where: { id: queued.retrievalSourceId },
-          data: { lastRunAt: now },
+          data: { lastRunAt: now, trackingScopeKey },
         });
         return { run: mapRun(run), source: mapSource(source) };
       }
@@ -416,6 +515,121 @@ export class PrismaRetrievalSourceRepository {
       },
     });
     return result.count;
+  }
+
+  // Records what one run saw (feature 13), in one transaction:
+  // - stored listings without a row get one (LISTED, first seen now);
+  // - every listing seen listed (the run's coverage IDs and stored
+  //   listings) becomes LISTED; one that was REMOVED counts as reappeared,
+  //   one that was MISSING simply clears; its opportunity's lastSeenAt moves;
+  // - on a qualifying complete run of a removal-capable source, a LISTED
+  //   listing not seen becomes MISSING, and a MISSING one is confirmed
+  //   REMOVED once it has been absent from two consecutive qualifying
+  //   checks at least 24 hours after the first miss.
+  // HISTORICAL rows change only when seen. Absence on any other run is
+  // ignored. SourceRecord.lastObservedAt (content observed) is not touched.
+  async recordListingObservations(input: ListingObservationInput): Promise<ListingObservationOutcome> {
+    const none: ListingObservationOutcome = { applied: false, observed: 0, missing: 0, removed: 0, reappeared: 0 };
+    return this.database.$transaction(async (transaction) => {
+      if (input.coverageComplete !== null) {
+        await transaction.retrievalRun.update({ where: { id: input.runId }, data: { listingCoverageComplete: input.coverageComplete } });
+      }
+      const sources = await transaction.$queryRaw<Array<{ trackingScopeKey: string | null }>>`
+        SELECT "trackingScopeKey" FROM "RetrievalSource" WHERE "id" = ${input.sourceId}::uuid FOR UPDATE`;
+      if (sources[0]?.trackingScopeKey !== input.trackingScopeKey) return none;
+      const scope = { retrievalSourceId: input.sourceId, trackingScopeKey: input.trackingScopeKey };
+      const source = await transaction.retrievalSource.findUniqueOrThrow({ where: { id: input.sourceId }, select: { adapterKey: true } });
+      for (const listing of input.stored) {
+        await transaction.retrievedListing.upsert({
+          where: { retrievalSourceId_trackingScopeKey_externalId: { ...scope, externalId: listing.externalId } },
+          create: {
+            ...scope,
+            source: source.adapterKey,
+            externalId: listing.externalId,
+            opportunityId: listing.opportunityId,
+            removalCapable: input.removalCapable,
+            state: "LISTED",
+            firstSeenAt: input.at,
+            lastSeenAt: input.at,
+            lastSeenRunId: input.runId,
+            sourceExpiresAt: listing.sourceExpiresAt,
+          },
+          update: {
+            ...(listing.sourceExpiresAt ? { sourceExpiresAt: listing.sourceExpiresAt } : {}),
+          },
+        });
+        if (listing.opportunityId) {
+          await transaction.retrievedListing.updateMany({
+            where: { ...scope, externalId: listing.externalId, opportunityId: null },
+            data: { opportunityId: listing.opportunityId },
+          });
+        }
+      }
+      const seen = [...new Set([...input.observedListingIds, ...input.stored.map((listing) => listing.externalId)])];
+      const reappeared = await transaction.$executeRaw`
+        UPDATE "RetrievedListing" SET "state" = 'LISTED', "reappearedAt" = ${input.at}, "reappearances" = "reappearances" + 1,
+          "missingSince" = NULL, "missedCompleteRuns" = 0, "lastSeenAt" = GREATEST("lastSeenAt", ${input.at}),
+          "lastSeenRunId" = ${input.runId}::uuid, "updatedAt" = now()
+        WHERE "retrievalSourceId" = ${input.sourceId}::uuid AND "trackingScopeKey" = ${input.trackingScopeKey}
+          AND "state" = 'REMOVED' AND "externalId" = ANY(${seen}::text[])`;
+      const listed = await transaction.$executeRaw`
+        UPDATE "RetrievedListing" SET "state" = 'LISTED', "missingSince" = NULL, "missedCompleteRuns" = 0,
+          "lastSeenAt" = GREATEST("lastSeenAt", ${input.at}), "lastSeenRunId" = ${input.runId}::uuid, "updatedAt" = now()
+        WHERE "retrievalSourceId" = ${input.sourceId}::uuid AND "trackingScopeKey" = ${input.trackingScopeKey}
+          AND "state" IN ('HISTORICAL', 'LISTED', 'MISSING') AND "externalId" = ANY(${seen}::text[])`;
+      await transaction.$executeRaw`
+        UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${input.at})
+        WHERE "id" IN (
+          SELECT "opportunityId" FROM "RetrievedListing"
+          WHERE "retrievalSourceId" = ${input.sourceId}::uuid AND "trackingScopeKey" = ${input.trackingScopeKey}
+            AND "opportunityId" IS NOT NULL AND "externalId" = ANY(${seen}::text[])
+        )`;
+      let missing = 0;
+      let removed = 0;
+      if (input.qualifying && input.removalCapable) {
+        // MISSING rows first, so a row that only now goes missing is not
+        // counted twice in one run.
+        const confirmed = await transaction.$queryRaw<Array<{ state: RetrievedListingStateValue }>>`
+          UPDATE "RetrievedListing" SET "missedCompleteRuns" = "missedCompleteRuns" + 1,
+            "state" = CASE
+              WHEN "missedCompleteRuns" + 1 >= ${removalConfirmationChecks}
+                AND ${input.at}::timestamptz - "missingSince" >= ${`${removalConfirmationMs} milliseconds`}::interval
+              THEN 'REMOVED'::"RetrievedListingState" ELSE 'MISSING'::"RetrievedListingState" END,
+            "removedAt" = CASE
+              WHEN "missedCompleteRuns" + 1 >= ${removalConfirmationChecks}
+                AND ${input.at}::timestamptz - "missingSince" >= ${`${removalConfirmationMs} milliseconds`}::interval
+              THEN ${input.at}::timestamptz ELSE "removedAt" END,
+            "updatedAt" = now()
+          WHERE "retrievalSourceId" = ${input.sourceId}::uuid AND "trackingScopeKey" = ${input.trackingScopeKey}
+            AND "state" = 'MISSING' AND NOT ("externalId" = ANY(${seen}::text[]))
+          RETURNING "state"`;
+        removed = confirmed.filter((row) => row.state === "REMOVED").length;
+        missing = await transaction.$executeRaw`
+          UPDATE "RetrievedListing" SET "state" = 'MISSING', "missingSince" = ${input.at}, "missedCompleteRuns" = 1, "updatedAt" = now()
+          WHERE "retrievalSourceId" = ${input.sourceId}::uuid AND "trackingScopeKey" = ${input.trackingScopeKey}
+            AND "state" = 'LISTED' AND NOT ("externalId" = ANY(${seen}::text[]))`;
+      }
+      return { applied: true, observed: reappeared + listed, missing, removed, reappeared };
+    });
+  }
+
+  // An opportunity's tracked listings, oldest first (feature 13).
+  async listingsForOpportunity(opportunityId: string): Promise<RetrievedListingRecord[]> {
+    const rows = await this.database.retrievedListing.findMany({
+      where: { opportunityId },
+      orderBy: [{ firstSeenAt: "asc" }, { id: "asc" }],
+      include: {
+        retrievalSource: {
+          select: { name: true, adapterKey: true, sourceCategory: true, scheduleMinutes: true, enabled: true, archivedAt: true, trackingScopeKey: true },
+        },
+      },
+    });
+    return rows.map(({ retrievalSource: { trackingScopeKey, ...retrievalSource }, trackingScopeKey: rowScope, lastSeenRunId: _run, createdAt: _created, updatedAt: _updated, ...row }) => ({
+      ...row,
+      // Before a pre-feature-13 source first runs, its baseline is current.
+      currentScope: rowScope === (trackingScopeKey ?? ""),
+      retrievalSource,
+    }));
   }
 
   // When each of these source listing IDs was last checked by a retrieval

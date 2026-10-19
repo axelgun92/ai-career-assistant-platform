@@ -10,7 +10,7 @@ import { formatResidency, workArrangementLabel } from "../opportunity-facts";
 type Optional =
   | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
   | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority"
-  | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged";
+  | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged" | "noLongerListed";
 type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
 
 // The application tracker's state, kept to one badge plus the next follow-up.
@@ -131,6 +131,9 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
               ) : null}
               {opportunity.listingChanged ? (
                 <span className="status-label status-label-deferred">Listing changed</span>
+              ) : null}
+              {opportunity.noLongerListed ? (
+                <span className="status-label status-label-muted">No longer listed</span>
               ) : null}
               {applicationUrl ? (
                 <ExternalLink href={applicationUrl}>Application page</ExternalLink>

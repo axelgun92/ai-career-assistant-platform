@@ -19,7 +19,7 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
 - The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
 - The features 1–10 gap audit is complete (October 17, 2026), and the Features 1–10 Gap Closure is committed (`d573acf`).
-- Feature 11A (automated retrieval from the verified official API and feed sources) is committed (`fad2341`), and Feature 11B (the verified public/guest-endpoint and public-HTML sources) is committed (`2a1d8c2`). Feature 12 (source health and conservative retrieval) is implemented and verified and awaiting review (not committed). Main-product features 13–18 follow.
+- Feature 11A (automated retrieval from the verified official API and feed sources) is committed (`fad2341`), and Feature 11B (the verified public/guest-endpoint and public-HTML sources) is committed (`2a1d8c2`). Feature 12 (source health and conservative retrieval) is committed (`f10a02b`). Feature 13 (posting history and listing removal) is implemented and verified and awaiting review (not committed). Main-product features 14–18 follow.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
 **Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
@@ -123,13 +123,17 @@ These features are part of the intended main product and must be complete before
       - Workday (employer career sites; stateless JSON POST list with offset paging, capped detail requests, tenant-scoped listing IDs), Workable (the Jobs by Workable search; token paging, complete inline text) and Wellfound (embedded state of the public Customer Success role page; up to 11 pages, 2 s apart);
       - a JSON POST transport method and source-specific request intervals and page caps, with the existing limits and status handling;
       - Welcome to the Jungle / Otta registered but unverified (no anonymous listing interface on its current logged-out site); it may be reconsidered with browser-assisted retrieval (feature 14).
-12. Source health monitoring and conservative retrieval: pacing, backoff, failure isolation and freshness checks. **Implemented and verified October 18, 2026; awaiting review:**
+12. Source health monitoring and conservative retrieval: pacing, backoff, failure isolation and freshness checks. **Complete (`f10a02b`, October 18, 2026):**
     - 5xx classified as `SERVER_ERROR`; any server error, like a 429 or 401/403, stops further requests to that host for the run; a valid Retry-After (429 or 503) is honoured in full; no retries within a run, no automatic disabling;
     - one backoff gate per source (`RetrievalSource.nextEligibleAt`) written with each run's outcome: escalating backoff capped at 7 days, at least a day after an access or contract failure; neutral outcomes on our side never count;
     - Run now never passes a rate limit or a wait the source asked for; other backoff only with an explicit "Run now anyway"; a settings change clears only our own backoff;
     - health, last successful retrieval, next run, staleness (2× the schedule) and empty-result notes on `/sources`; read-only `pnpm app:doctor` warnings.
     - *(Scope change, October 18, 2026: listing expiry/removal detection moved from feature 12 to feature 13.)*
-13. Ghost-job/posting-history intelligence, including listing expiry/removal detection and reappearance (moved from feature 12 on October 18, 2026).
+13. Ghost-job/posting-history intelligence, including listing expiry/removal detection and reappearance (moved from feature 12 on October 18, 2026). **Implemented and verified October 19, 2026; awaiting review:**
+    - listing coverage recorded before the title filter; removal confirmed only by Greenhouse, Lever and Ashby, and by Workday and SmartRecruiters when their stated total is read in full and the unique IDs equal it exactly;
+    - a listing ledger (`RetrievedListing`) per opaque tracking-scope generation: a retrieval-scope settings change starts a fresh generation (A → B → A never inherits history); pre-feature-13 listings backfilled as HISTORICAL, never as currently listed;
+    - MISSING after one qualifying complete miss, REMOVED after two at least 24 hours apart; only REMOVED → LISTED is a reappearance; bounded or incomplete runs never infer absence; source expiry dates are display-only;
+    - deterministic posting-history facts in the evaluator's input shape, contract-tested but **withheld** from `loadSubject()` and the evaluator (no routing, cost or recommendation change); a "Posting history" section on the opportunity page, a current-scope "No longer listed" dashboard badge, and an evaluation warning (not a block); no automatic lifecycle change.
 14. Browser extension companion using the same backend, account, data, evaluator, lifecycle, provenance, budget, and dashboard as the main app.
 15. Source intelligence: source quality, duplicate rates, reliability, cost per useful job, and outcomes by source.
 16. Job-market analytics: salary, role, location, skills/requirements, seniority, and recommendation trends.

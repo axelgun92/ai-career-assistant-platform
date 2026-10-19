@@ -69,6 +69,7 @@ export function EvaluationExperience({
   evaluable = true,
   deferral = null,
   activeProfile = null,
+  listingWarning = null,
 }: {
   opportunity: OpportunityPresentation;
   // False for archived/closed opportunities; the API enforces the same rule.
@@ -76,6 +77,9 @@ export function EvaluationExperience({
   // An open request waiting for budget; evaluating again resumes it.
   deferral?: DeferralView | null;
   activeProfile?: { id: string; version: number } | null;
+  // Feature 13: shown before an evaluation is requested for a listing that is
+  // no longer listed; a warning, never a block.
+  listingWarning?: string | null;
 }) {
   // `evaluation` is what is displayed; `latest` is the newest evaluation, which
   // drives status, failure details, and the queued-too-long notice.
@@ -291,6 +295,11 @@ export function EvaluationExperience({
         <div id="evaluation-status-message" aria-live="polite">
           {!evaluable && !active ? (
             <p>This opportunity is archived. Restore it to request another evaluation.</p>
+          ) : null}
+          {listingWarning && evaluable && !active ? (
+            <p className="field-help" role="note">
+              {listingWarning}
+            </p>
           ) : null}
           {notice ? <p className="success-message">{notice}</p> : null}
           {error ? <p className="error-message">{error}</p> : null}

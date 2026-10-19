@@ -1,7 +1,7 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
-import { collectPages, mapKeptItems, parseItems, parseResponse } from "../collection";
-import type { SourceAdapter } from "../contract";
+import { collectPages, itemId, listingCoverage, mapKeptItems, parseItems, parseResponse } from "../collection";
+import type { ListingCoverage, SourceAdapter } from "../contract";
 import { getJson } from "../transport";
 import { companyNameSchema, isoDate, slugSchema, workplaceType } from "./shared";
 
@@ -11,7 +11,9 @@ import { companyNameSchema, isoDate, slugSchema, workplaceType } from "./shared"
 // description (opening and body), its lists (each a heading and <li>
 // items) and its additional section. The API returns no company name, so
 // the source is configured with one. No salaryRange appeared on the
-// verified site, so salary is not mapped from Lever.
+// verified site, so salary is not mapped from Lever. The array is the whole
+// site, so a complete run can show that a tracked posting is gone (feature
+// 13); the configured company name is display-only, not retrieval scope.
 
 const configSchema = z.object({ site: slugSchema, company: companyNameSchema }).strict();
 type LeverConfig = z.infer<typeof configSchema>;
@@ -67,10 +69,17 @@ export const leverAdapter: SourceAdapter<LeverConfig> = {
   verified: true,
   attribution: null,
   verificationUrl: (config) => `https://api.lever.co/v0/postings/${encodeURIComponent(config.site)}?mode=json`,
-  collect(context, config) {
-    return collectPages(context, async () => {
+  listingCoverage: "complete-board",
+  trackingScope: (config) => ({ site: config.site }),
+  async collect(context, config) {
+    let coverage: ListingCoverage | undefined;
+    const result = await collectPages(context, async () => {
       const url = leverAdapter.verificationUrl(config);
       const response = parseResponse(z.array(z.unknown()), await getJson(context.transport, url), url);
+      coverage = listingCoverage(
+        response.map((posting) => itemId(z.object({ id: z.string() }).passthrough(), posting, (value) => value.id)),
+        { readWholeListing: true },
+      );
       const { valid, issues } = parseItems(postingSchema, response);
       const mapped = mapKeptItems(leverAdapter, context, valid, {
         title: (posting) => posting.text,
@@ -105,5 +114,6 @@ export const leverAdapter: SourceAdapter<LeverConfig> = {
       });
       return { listings: mapped.listings, issues: [...issues, ...mapped.issues], fetched: response.length, more: false };
     });
+    return coverage ? { ...result, coverage } : result;
   },
 };

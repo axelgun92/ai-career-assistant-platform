@@ -111,6 +111,9 @@ export interface RetrievalRunCounts {
   changed: number;
   probable: number;
   failed: number;
+  // Feature 13: tracked listings seen listed, newly missing, confirmed
+  // removed and listed again after a removal in this run.
+  listings?: { observed: number; missing: number; removed: number; reappeared: number };
 }
 
 export function emptyRetrievalRunCounts(): RetrievalRunCounts {

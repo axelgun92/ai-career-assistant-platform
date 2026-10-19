@@ -7,6 +7,9 @@ import { EvaluationExperience } from "@/components/evaluation/evaluation-experie
 import { ExternalLink, safeExternalUrl } from "@/components/external-link";
 import { OpportunityActions } from "@/components/opportunity-actions";
 import { OpportunityProvenance } from "@/components/opportunity-provenance";
+import { PostingHistory, toPostingHistoryListing } from "@/components/posting-history";
+import { isNoLongerListed } from "@ai-career/core";
+import { getListingHistory } from "@/server/retrieval-service";
 import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
@@ -119,6 +122,15 @@ export default async function OpportunityPage({
       });
       return [];
     });
+
+  const listings = await getListingHistory(detail.opportunity.id).catch((error: unknown) => {
+    console.error("Posting history could not be loaded", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return [];
+  });
+  const noLongerListed = isNoLongerListed(listings.map(toPostingHistoryListing));
+  const now = new Date();
 
   const tracking = await Promise.all([
     getApplicationStore().getByOpportunity(detail.opportunity.id),
@@ -234,6 +246,11 @@ export default async function OpportunityPage({
         evaluable={lifecycle?.evaluable ?? true}
         deferral={deferral}
         activeProfile={activeProfile}
+        listingWarning={
+          noLongerListed
+            ? "This listing is no longer listed on the sources that can confirm it (see Posting history). You can still evaluate it."
+            : null
+        }
         opportunity={{
           id: detail.opportunity.id,
           title: detail.opportunity.title ?? "Untitled opportunity",
@@ -249,6 +266,8 @@ export default async function OpportunityPage({
         opportunity={detail.opportunity}
         sourceRecords={detail.sourceRecords}
       />
+
+      <PostingHistory listings={listings} sourceRecords={detail.sourceRecords} now={now} />
 
       <details className="source-details">
         <summary>Normalized opportunity and source details</summary>

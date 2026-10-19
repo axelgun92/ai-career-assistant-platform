@@ -1,7 +1,7 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
-import { collectPages, mapKeptItems, parseItems, parseResponse } from "../collection";
-import type { SourceAdapter } from "../contract";
+import { collectPages, itemId, listingCoverage, mapKeptItems, parseItems, parseResponse } from "../collection";
+import type { ListingCoverage, SourceAdapter } from "../contract";
 import { getJson } from "../transport";
 import { companyNameSchema, isoDate, slugSchema, workplaceType } from "./shared";
 
@@ -15,7 +15,9 @@ import { companyNameSchema, isoDate, slugSchema, workplaceType } from "./shared"
 // … Multiple Ranges" over GBP and EUR tiers), so neither is normalized and
 // every tier is kept as source data.
 // The API returns no company name, so the source is configured with one.
-// Unlisted postings are not retrieved.
+// Unlisted postings are not retrieved. The response is the whole board, so a
+// complete run can show that a tracked posting is gone or unlisted (feature
+// 13); the configured company name is display-only, not retrieval scope.
 
 const configSchema = z.object({ board: slugSchema, company: companyNameSchema }).strict();
 type AshbyConfig = z.infer<typeof configSchema>;
@@ -97,10 +99,21 @@ export const ashbyAdapter: SourceAdapter<AshbyConfig> = {
   verified: true,
   attribution: null,
   verificationUrl: (config) => `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(config.board)}?includeCompensation=true`,
-  collect(context, config) {
-    return collectPages(context, async () => {
+  listingCoverage: "complete-board",
+  trackingScope: (config) => ({ board: config.board }),
+  async collect(context, config) {
+    let coverage: ListingCoverage | undefined;
+    const result = await collectPages(context, async () => {
       const url = ashbyAdapter.verificationUrl(config);
       const response = parseResponse(responseSchema, await getJson(context.transport, url), url);
+      // Unlisted postings are not on the public board, for coverage too.
+      const coverageItem = z.object({ id: z.string(), isListed: z.boolean().nullish() }).passthrough();
+      coverage = listingCoverage(
+        response.jobs
+          .filter((job) => coverageItem.safeParse(job).data?.isListed !== false)
+          .map((job) => itemId(coverageItem, job, (value) => value.id)),
+        { readWholeListing: true },
+      );
       const { valid, issues } = parseItems(jobSchema, response.jobs);
       const listed = valid.filter((job) => job.isListed !== false);
       const mapped = mapKeptItems(ashbyAdapter, context, listed, {
@@ -140,5 +153,6 @@ export const ashbyAdapter: SourceAdapter<AshbyConfig> = {
       });
       return { listings: mapped.listings, issues: [...issues, ...mapped.issues], fetched: response.jobs.length, more: false };
     });
+    return coverage ? { ...result, coverage } : result;
   },
 };

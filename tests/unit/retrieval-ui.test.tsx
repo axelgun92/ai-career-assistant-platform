@@ -12,6 +12,8 @@ const { SourcesManager } = await import("../../apps/web/src/components/sources/s
 const { OpportunityProvenance } = await import("../../apps/web/src/components/opportunity-provenance");
 const { OpportunityList } = await import("../../apps/web/src/components/dashboard/opportunity-list");
 const { scheduleLabel } = await import("../../apps/web/src/components/sources/source-labels");
+const { PostingHistory } = await import("../../apps/web/src/components/posting-history");
+type RetrievedListingRecord = import("@ai-career/database").RetrievedListingRecord;
 type SourceView = import("../../apps/web/src/components/sources/types").SourceView;
 type AdapterView = import("../../apps/web/src/components/sources/types").AdapterView;
 
@@ -301,5 +303,50 @@ describe("retrieval provenance and dashboard", () => {
     expect(html).toContain("Found via Test Board");
     expect(html.match(/Listing changed/g)).toHaveLength(1);
     expect(html).toContain("Applicant tracking system");
+    const gone = renderToStaticMarkup(<OpportunityList opportunities={[{ ...row("three", "Test Board", false), noLongerListed: true }, row("four", null, false)]} />);
+    expect(gone.match(/No longer listed/g)).toHaveLength(1);
+  });
+
+  // Feature 13.
+  describe("posting history", () => {
+    const at = (iso: string) => new Date(iso);
+    const tracked = (overrides: Partial<RetrievedListingRecord> = {}): RetrievedListingRecord => ({
+      id: "l1", retrievalSourceId: sourceId, source: "greenhouse", externalId: "1", opportunityId: "o1", removalCapable: true,
+      state: "LISTED", firstSeenAt: at("2026-10-01T09:00:00Z"), lastSeenAt: at("2026-10-19T09:00:00Z"), missingSince: null,
+      missedCompleteRuns: 0, removedAt: null, reappearedAt: null, reappearances: 0, sourceExpiresAt: null, currentScope: true,
+      retrievalSource: { name: "Acme Greenhouse", adapterKey: "greenhouse", sourceCategory: "ATS", scheduleMinutes: 720, enabled: true, archivedAt: null },
+      ...overrides,
+    });
+    const now = at("2026-10-19T12:00:00Z");
+    const render = (listings: RetrievedListingRecord[]) => renderToStaticMarkup(<PostingHistory listings={listings} sourceRecords={[]} now={now} />);
+
+    it("words each listing's status conservatively and lists the observed facts without a risk label", () => {
+      const html = render([
+        tracked(),
+        tracked({ id: "l2", state: "HISTORICAL", lastSeenAt: at("2026-10-10T09:00:00Z") }),
+        tracked({ id: "l3", state: "MISSING", missingSince: at("2026-10-19T08:00:00Z"), lastSeenAt: at("2026-10-18T21:00:00Z") }),
+        tracked({ id: "l4", state: "UNTRACKED", currentScope: false }),
+        tracked({ id: "l5", removalCapable: false, retrievalSource: { name: "Remote OK", adapterKey: "remote-ok", sourceCategory: "JOB_BOARD", scheduleMinutes: 720, enabled: true, archivedAt: null }, sourceExpiresAt: at("2026-11-01T00:00:00Z") }),
+      ]);
+      expect(html).toContain("Posting history");
+      expect(html).toContain("Still listed (seen 2026-10-19 09:00 UTC)");
+      expect(html).toContain("Last observed 2026-10-10 09:00 UTC; current status unknown");
+      expect(html).toContain("Not found in the latest complete check (since 2026-10-19 08:00 UTC)");
+      expect(html).toContain("No longer tracked: the source&#x27;s settings changed");
+      expect(html).toContain("This source shows a limited window, so it cannot confirm that a listing was removed.");
+      expect(html).toContain("The source states it expires 2026-11-01");
+      expect(html).toContain("Listed on the employer&#x27;s board");
+      expect(html).not.toMatch(/Ghost|risk/i);
+      expect(html).not.toContain("No longer listed</strong>");
+    });
+
+    it("shows No longer listed only when the badge rule holds, and nothing for a manual opportunity", () => {
+      const removed = tracked({ state: "REMOVED", missingSince: at("2026-10-17T09:00:00Z"), removedAt: at("2026-10-18T10:00:00Z"), lastSeenAt: at("2026-10-17T08:00:00Z") });
+      const html = render([removed]);
+      expect(html).toContain("<strong>No longer listed</strong>");
+      expect(html).toContain("No longer listed (not found since 2026-10-17 09:00 UTC; confirmed 2026-10-18 10:00 UTC)");
+      expect(render([removed, tracked({ id: "l2", removalCapable: false, lastSeenAt: at("2026-10-19T09:00:00Z"), retrievalSource: { name: "Remote OK", adapterKey: "remote-ok", sourceCategory: "JOB_BOARD", scheduleMinutes: 720, enabled: true, archivedAt: null } })])).not.toContain("<strong>No longer listed</strong>");
+      expect(render([])).toBe("");
+    });
   });
 });

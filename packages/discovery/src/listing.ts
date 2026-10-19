@@ -40,7 +40,7 @@ function collapse(value: string | null): string | null {
   return collapsed ? collapsed : null;
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     return `{${Object.keys(value)

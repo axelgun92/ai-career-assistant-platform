@@ -124,7 +124,8 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - deduplication with provenance retention for captured listings (an exact duplicate is added to the saved opportunity as another source; a possible duplicate is flagged and never merged), a serialized guard against paying twice for one listing, and normalized company names (Features 1–10 Gap Closure, `d573acf`);
 - automated retrieval from the verified official API and feed sources (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads): sources managed on `/sources` and disabled until enabled, title-only Customer Success role-family discovery, cross-source deduplication with employer-link preference, changed-listing observations, and no automatic evaluation (Feature 11A, `fad2341`);
 - automated retrieval from the verified public/guest-endpoint and public-HTML sources (Workday career sites, the Workable job search, the Wellfound role page) through the same path; Welcome to the Jungle / Otta registered but not enabled (Feature 11B, `2a1d8c2`);
-- source health and conservative retrieval: escalating backoff after source failures (capped at 7 days), a source's Retry-After honoured in full, any 5xx stopping a host for the run, no in-run retries or automatic disabling, derived health and freshness on `/sources`, Run now that cannot override a rate limit or requested wait, and read-only doctor warnings (Feature 12: implemented and verified, awaiting review);
+- source health and conservative retrieval: escalating backoff after source failures (capped at 7 days), a source's Retry-After honoured in full, any 5xx stopping a host for the run, no in-run retries or automatic disabling, derived health and freshness on `/sources`, Run now that cannot override a rate limit or requested wait, and read-only doctor warnings (Feature 12, `f10a02b`);
+- posting history: listing coverage recorded before the title filter, removal confirmed only by complete boards (Greenhouse, Lever, Ashby; Workday and SmartRecruiters when their stated total is read exactly), a listing ledger per tracking-scope generation, reappearance, a "Posting history" section, a "No longer listed" dashboard badge, and evaluator-shaped facts withheld from the evaluator (Feature 13: implemented and verified, awaiting review);
 - persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
 - Task 7 normalized salary/currency/position/residency contract (main-product branch);
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
@@ -135,7 +136,8 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### In progress
 
-- Feature 12 is implemented and verified and awaiting review (not committed): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
+- Feature 13 is implemented and verified and awaiting review (not committed): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
+- Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
 - Feature 11B is complete (`2a1d8c2`, October 18, 2026): the Workday, Workable and Wellfound adapters, a JSON POST transport method and source-specific request intervals and page caps; Welcome to the Jungle / Otta registered but unverified.
 - Feature 11A is complete (`fad2341`, October 18, 2026): the collection framework, eight verified official API/feed adapters, the retrieval worker and `/sources`, title-only role-family discovery, cross-source deduplication (`core-dedup-v2`), canonical-link precedence and changed-listing observations.
 - The Features 1–10 Gap Closure is complete (`d573acf`, October 17, 2026).
@@ -143,8 +145,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### Main-product work still required before final acceptance
 
-- close Feature 12 (review, then commit);
-- feature 13 — posting-history/ghost-job intelligence, including listing expiry/removal detection;
+- close Feature 13 (review, then commit);
 - feature 14 — browser extension companion;
 - feature 15 — source intelligence;
 - feature 16 — job-market analytics;
@@ -241,7 +242,7 @@ Superseded PRD/TDD versions are kept for history in the `Archive/` folders besid
 The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A and Feature 11B are complete, and Feature 12 is implemented and under review;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B and Feature 12 are complete, and Feature 13 is implemented and under review;
 3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
@@ -258,4 +259,4 @@ Setup, startup, worker operations, deterministic testing and troubleshooting are
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A and 11B are complete, and Feature 12 is implemented and verified and awaiting review. Main-product features 13–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B and 12 are complete, and Feature 13 is implemented and verified and awaiting review. Main-product features 14–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

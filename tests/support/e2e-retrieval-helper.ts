@@ -18,7 +18,11 @@ import { createRetrievalWorker } from "../../apps/web/src/server/retrieval-worke
 // "changed" serves Greenhouse with the Customer Success posting's
 // description extended; "rate-limited" answers Greenhouse with a 429 and a
 // two-hour Retry-After (feature 12). expire-gate moves a source's backoff
-// gate into the past, standing in for the wait. Only the isolated test
+// gate into the past, standing in for the wait. Feature 13: "board" serves
+// the Greenhouse fixture as a whole, consistent board (meta.total equal to
+// its jobs) and "board-shrunk" the same board without the Customer Success
+// posting; --at-hours=N runs the iteration N hours from now (without queueing
+// scheduled runs), so the 24-hour removal rule can be exercised. Only the isolated test
 // database is ever used (Playwright points DATABASE_URL at it).
 
 const database = getDatabaseClient();
@@ -43,6 +47,11 @@ const fixtureCompanies = ["Workday, Inc.", "Pragma (formerly Logisy)", "Medsende
 const workablePage = JSON.stringify({ ...JSON.parse(fixtureFile("workable", "response.json")), nextPageToken: null });
 
 function body(variant: string | undefined) {
+  if (variant === "board" || variant === "board-shrunk") {
+    const value = JSON.parse(fixture) as { jobs: Array<{ title: string }>; meta: { total: number } };
+    const jobs = variant === "board" ? value.jobs : value.jobs.filter((job) => !job.title.startsWith("Customer Success"));
+    return JSON.stringify({ ...value, jobs, meta: { ...value.meta, total: jobs.length } });
+  }
   if (variant !== "changed") return fixture;
   const value = JSON.parse(fixture) as { jobs: Array<{ content: string }> };
   value.jobs[0]!.content += "&lt;p&gt;Added after first retrieval: lead quarterly business reviews.&lt;/p&gt;";
@@ -65,6 +74,7 @@ async function resetFixtureListings() {
     if (!leaves.length) break;
     await database.sourceRecord.deleteMany({ where: { id: { in: leaves.map((leaf) => leaf.id) } } });
   }
+  await database.retrievedListing.deleteMany({ where: { OR: fixtureListings } });
   await database.opportunity.deleteMany({ where: { id: { in: opportunityIds } } });
   await database.company.deleteMany({ where: { name: { in: fixtureCompanies }, opportunities: { none: {} } } });
 }
@@ -73,7 +83,12 @@ try {
   if (command === "reset-fixture-listings") {
     await resetFixtureListings();
   } else if (command === "run-retrieval") {
-    const store = new PrismaRetrievalSourceRepository();
+    const atHours = Number(process.argv.find((arg) => arg.startsWith("--at-hours="))?.slice("--at-hours=".length) ?? "0");
+    const clock = () => new Date(Date.now() + atHours * 60 * 60 * 1000);
+    const repository = new PrismaRetrievalSourceRepository();
+    const store = Object.assign(Object.create(repository) as PrismaRetrievalSourceRepository, {
+      enqueueDueRuns: atHours ? async () => 0 : repository.enqueueDueRuns.bind(repository),
+    });
     const worker = createRetrievalWorker({
       store,
       ingestion: createRetrievalIngestionService({
@@ -94,7 +109,7 @@ try {
         }),
       discovery: customerSuccessDiscoveryConfiguration,
       env: () => ({}),
-      now: () => new Date(),
+      now: clock,
       log: { info: () => undefined, warn: () => undefined },
       lastChecked: (source, externalIds) => store.lastCheckedListings(source, externalIds),
     });

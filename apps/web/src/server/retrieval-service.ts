@@ -5,7 +5,7 @@ import {
   type RetrievalRunRecord,
   type RetrievalSourceRecord,
 } from "@ai-career/database";
-import { defaultAdapterRegistry, missingEnvironment, type AdapterRegistry, type AnySourceAdapter } from "@ai-career/discovery";
+import { defaultAdapterRegistry, missingEnvironment, trackingScopeOf, type AdapterRegistry, type AnySourceAdapter } from "@ai-career/discovery";
 import { z } from "zod";
 
 // Configured retrieval sources (/sources). Each source is one adapter with
@@ -216,7 +216,15 @@ export function createRetrievalService(input: {
         throw new RetrievalServiceError("ADAPTER_UNKNOWN", "Unknown source type", 400);
       }
       const config = parsed.data.config !== undefined ? parseConfig(adapter!, parsed.data.config) : undefined;
-      const updated = await input.store.update(id, { ...parsed.data, config }).catch(mapStoreError);
+      // Feature 13: a change to the fields that decide which listings the
+      // source retrieves starts a fresh tracking scope; a display-only change
+      // (such as a fallback company name) does not.
+      let rotateTrackingScope = false;
+      if (config !== undefined && adapter) {
+        const previous = adapter.configSchema.safeParse(source.config);
+        rotateTrackingScope = !previous.success || trackingScopeOf(adapter, previous.data) !== trackingScopeOf(adapter, config);
+      }
+      const updated = await input.store.update(id, { ...parsed.data, config }, now(), { rotateTrackingScope }).catch(mapStoreError);
       return toSummary(updated);
     },
 
@@ -250,6 +258,14 @@ export function createRetrievalService(input: {
 export type RetrievalService = ReturnType<typeof createRetrievalService>;
 
 let service: RetrievalService | undefined;
+
+let listingStore: PrismaRetrievalSourceRepository | undefined;
+
+// An opportunity's tracked listings for its posting history (feature 13).
+export function getListingHistory(opportunityId: string) {
+  listingStore ??= new PrismaRetrievalSourceRepository();
+  return listingStore.listingsForOpportunity(opportunityId);
+}
 
 export function getRetrievalService(): RetrievalService {
   service ??= createRetrievalService({ store: new PrismaRetrievalSourceRepository() });

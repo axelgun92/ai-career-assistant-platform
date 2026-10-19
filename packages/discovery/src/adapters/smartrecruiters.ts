@@ -1,6 +1,6 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
-import { mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
+import { itemId, listingCoverage, mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
 import { AdapterError, isStopError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
 import { getJson } from "../transport";
 import { slugSchema } from "./shared";
@@ -100,6 +100,9 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
   requiredEnv: [],
   verified: true,
   attribution: null,
+  listingCoverage: "complete-when-total-fits",
+  // pageSize only changes how many pages a run needs, not which listings.
+  trackingScope: (config) => ({ company: config.company }),
   verificationUrl: (config) => listUrl({ ...config, pageSize: 10 }),
   verificationFollowUpUrl: (first, config) => {
     const parsed = listSchema.safeParse(first);
@@ -113,6 +116,9 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
     const summaries: Summary[] = [];
     const seen = new Set<string>();
     let totalFound: number | null = null;
+    // Every list-level ID read, title match or not (feature 13).
+    const listedIds: Array<string | null> = [];
+    let readWholeListing = false;
     for (let page = 0; page < Math.max(1, context.maxPages); page += 1) {
       const offset = page * config.pageSize;
       const url = listUrl(config, offset);
@@ -127,6 +133,7 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
       }
       totalFound = list.totalFound ?? totalFound;
       result.fetched += list.content.length;
+      listedIds.push(...list.content.map((item) => itemId(z.object({ id: z.string() }).passthrough(), item, (value) => value.id)));
       const parsed = parseItems(summarySchema, list.content);
       result.issues.push(...parsed.issues);
       // A posting released while paging shifts later pages by one; it is
@@ -137,8 +144,14 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
         summaries.push(summary);
       }
       const end = offset + list.content.length;
-      if (list.content.length < config.pageSize || (list.totalFound != null && end >= list.totalFound)) break;
+      if (list.content.length < config.pageSize || (list.totalFound != null && end >= list.totalFound)) {
+        readWholeListing = true;
+        break;
+      }
     }
+    // Complete only when the stated total was read in full within the page
+    // cap, as exactly that many unique IDs (never on a halt or at the cap).
+    result.coverage = listingCoverage(listedIds, { readWholeListing: readWholeListing && !result.halted && totalFound !== null, statedTotal: totalFound });
     // After a 429, an access refusal or a server error nothing more is requested.
     if (result.halted && isStopError(result.halted)) return result;
     // Only titles that match are considered for a detail request.

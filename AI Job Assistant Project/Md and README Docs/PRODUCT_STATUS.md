@@ -31,7 +31,7 @@ Manual Opportunity
 → Lifecycle and application workflow
 ```
 
-Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, awaiting review) back a failing source off, honour a source's request to wait, and show each source's health and freshness. The manual workflow is unchanged and remains the stable foundation.
+Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, committed as `f10a02b`) back a failing source off, honour a source's request to wait, and show each source's health and freshness. Posting history (Feature 13, awaiting review) records where and when each retrieved listing was seen, confirms removal only from sources that show their whole board, and shows a listing that returns as listed again. The manual workflow is unchanged and remains the stable foundation.
 
 ```text
 Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workable, Wellfound)
@@ -195,6 +195,16 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+Feature 13, posting history and listing removal, is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 12 was committed as `f10a02b` (October 18, 2026). Feature 13 adds an objective posting history for retrieved listings, without changing how they are retrieved, ingested, deduplicated or evaluated:
+
+- **What a run saw:** each run records the IDs of every listing the source listed, before the role-title filter, so a listing whose title changes is still seen. Only Greenhouse, Lever and Ashby, and Workday and SmartRecruiters when a run reads their stated total in full (exactly that many listings), can confirm that a listing is gone; the other sources only record sightings.
+- **Removal and reappearance:** a listing missing from one complete check is "Not found in the latest complete check"; missing from two, at least 24 hours apart, it is "No longer listed". A listing that returns is "Listed again". An expiry date a source states is shown, but is never treated as removal.
+- **Source settings:** changing what a source retrieves (its board, site, company or career site) starts fresh tracking; changing it back does not bring the old history back. Listings found before Feature 13 show "Last observed …; current status unknown" until they are seen again.
+- **Where it shows:** a "Posting history" section on the opportunity page with objective facts (for example "Listed on the employer's board" or "Removed by the employer, still visible elsewhere"), a "No longer listed" dashboard badge when every source that can confirm it has, and a warning, not a block, before evaluating such a listing. Nothing closes or archives an opportunity automatically.
+- **Evaluator:** the facts are ready in Ghost Job Risk's input shape but are not passed to the evaluator yet; Ghost Job Risk stays Unknown, and evaluation cost and recommendations are unchanged, until the coordinated evaluator integration.
+
+*(Earlier status, superseded on October 19, 2026 when Feature 12 was committed as `f10a02b`. It read as follows.)*
+
 Feature 12, source health and conservative retrieval, is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 11B was committed as `2a1d8c2` (October 18, 2026). Feature 12 adds deterministic health and backoff around the existing sources, without changing any adapter:
 
 - **Stopping politely within a run:** a server error (any 5xx, now its own `SERVER_ERROR` code), like a rate limit (429) or an access refusal (401/403), stops all further requests to that source for the run. Nothing is retried within a run.
@@ -264,15 +274,15 @@ Task 8 and Task 9 are complete. In order:
 2. Done: the Features 1–10 Gap Closure (`d573acf`, October 17, 2026). *(Earlier step: "Now: the Features 1–10 Gap Closure. The audit is complete; the implementation is verified and awaiting review, then the versioned-specification check and the commit.")*
 3. Done: Feature 11A (`fad2341`, October 18, 2026), with Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8 and Customer Success TDD v1.6. *(Earlier step: "Now: Feature 11A, implemented and verified, awaiting review.")*
 4. Done: Feature 11B (`2a1d8c2`, October 18, 2026), with Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9 and Customer Success TDD v1.7. *(Earlier step: "Now: Feature 11B, implemented and verified, awaiting review.")*
-5. Now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10, Customer Success TDD v1.8).
-6. Build the rest of main-product features 13–18:
-   - ghost-job/posting-history intelligence, including listing expiry/removal detection (moved from feature 12);
+5. Done: Feature 12 (`f10a02b`, October 18, 2026), with Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10 and Customer Success TDD v1.8. *(Earlier step: "Now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting review.")*
+6. Now: Feature 13, posting history and listing removal, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11, Customer Success TDD v1.9).
+7. Build the rest of main-product features 14–18:
    - browser extension companion;
    - source intelligence;
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-7. Only after features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+8. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 

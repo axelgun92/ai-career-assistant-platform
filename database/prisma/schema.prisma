@@ -169,6 +169,7 @@ model Opportunity {
   semanticOperations    SemanticOperationAttempt[]
   duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
   referencedAsDuplicate DuplicateReference[]       @relation("DuplicateReferenceTarget")
+  retrievedListings     RetrievedListing[]
   createdAt             DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime                   @updatedAt @db.Timestamptz(3)
 
@@ -266,6 +267,19 @@ enum RetrievalRunStatus {
   FAILED
 }
 
+// A tracked listing's state (feature 13). HISTORICAL: known from records
+// retrieved before feature 13, current status unknown. LISTED: seen in the
+// source's listing. MISSING: absent from one qualifying complete check.
+// REMOVED: absent from two consecutive qualifying complete checks at least
+// 24 hours apart. UNTRACKED: belongs to an earlier tracking scope.
+enum RetrievedListingState {
+  HISTORICAL
+  LISTED
+  MISSING
+  REMOVED
+  UNTRACKED
+}
+
 enum RetrievalTrigger {
   MANUAL
   SCHEDULE
@@ -288,6 +302,13 @@ model RetrievalSource {
   // The earliest time the next run may start after source failures (backoff
   // or a wait the source asked for); null when the normal schedule applies.
   nextEligibleAt  DateTime?      @db.Timestamptz(3)
+  // The current tracking-scope generation (feature 13): an opaque key,
+  // replaced whenever a settings change alters which listings the source
+  // retrieves, so a new scope never inherits an earlier scope's listing
+  // history. Null only for a source created before feature 13 until its
+  // first run.
+  trackingScopeKey String?
+  listings         RetrievedListing[]
   archivedAt      DateTime?      @db.Timestamptz(3)
   runs            RetrievalRun[]
   sourceRecords   SourceRecord[]
@@ -313,7 +334,11 @@ model RetrievalRun {
   // When the source asked us to wait until (a valid Retry-After on a 429 or
   // 503 in this run).
   retryAfterUntil   DateTime?          @db.Timestamptz(3)
+  // Whether the run read the source's whole listing as one consistent
+  // snapshot (feature 13); null when the adapter reports no coverage.
+  listingCoverageComplete Boolean?
   sourceRecords     SourceRecord[]
+  sightedListings   RetrievedListing[]
   createdAt         DateTime           @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
 
@@ -895,4 +920,42 @@ model ApplicationInterview {
   updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
 
   @@index([applicationId, scheduledAt])
+}
+
+// One listing of a configured source within one tracking scope (feature 13):
+// its positive sightings, absences from complete checks, confirmed removal and
+// reappearance. A row exists only for a listing that was stored. lastSeenAt is
+// the last time the listing was seen listed; SourceRecord.lastObservedAt stays
+// the last time its content was observed.
+model RetrievedListing {
+  id                 String                @id @default(uuid()) @db.Uuid
+  retrievalSourceId  String                @db.Uuid
+  retrievalSource    RetrievalSource       @relation(fields: [retrievalSourceId], references: [id], onDelete: Cascade)
+  // The source's scope generation; '' for the pre-feature-13 baseline.
+  trackingScopeKey   String
+  // The adapter key, as on SourceRecord.source.
+  source             String
+  externalId         String
+  opportunityId      String?               @db.Uuid
+  opportunity        Opportunity?          @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  // Whether the source can confirm removal (captured from its adapter).
+  removalCapable     Boolean               @default(false)
+  state              RetrievedListingState
+  firstSeenAt        DateTime              @db.Timestamptz(3)
+  lastSeenAt         DateTime              @db.Timestamptz(3)
+  lastSeenRunId      String?               @db.Uuid
+  lastSeenRun        RetrievalRun?         @relation(fields: [lastSeenRunId], references: [id], onDelete: SetNull)
+  missingSince       DateTime?             @db.Timestamptz(3)
+  missedCompleteRuns Int                   @default(0)
+  removedAt          DateTime?             @db.Timestamptz(3)
+  reappearedAt       DateTime?             @db.Timestamptz(3)
+  reappearances      Int                   @default(0)
+  // An expiry the source itself states (display only).
+  sourceExpiresAt    DateTime?             @db.Timestamptz(3)
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @db.Timestamptz(3)
+
+  @@unique([retrievalSourceId, trackingScopeKey, externalId])
+  @@index([opportunityId])
+  @@index([lastSeenRunId])
 }

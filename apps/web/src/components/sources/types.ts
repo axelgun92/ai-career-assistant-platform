@@ -9,6 +9,7 @@ export interface RunCountsView {
   changed: number;
   probable: number;
   failed: number;
+  listings?: { observed: number; missing: number; removed: number; reappeared: number };
 }
 
 export interface RunView {
@@ -21,6 +22,8 @@ export interface RunView {
   counts: RunCountsView | null;
   errorCode: string | null;
   errorMessage: string | null;
+  // Feature 13: whether the run read the source's whole listing.
+  listingCoverageComplete: boolean | null;
 }
 
 export interface AdapterConfigFieldView {

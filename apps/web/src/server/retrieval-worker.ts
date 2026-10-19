@@ -1,6 +1,8 @@
 import {
+  classifyRunOutcome,
   emptyRetrievalRunCounts,
   type DiscoveryConfiguration,
+  type RawOpportunity,
   type RetrievalIngestionService,
   type RetrievalRunCounts,
 } from "@ai-career/core";
@@ -8,6 +10,7 @@ import type { PrismaRetrievalSourceRepository, RetrievalRunRecord, RetrievalSour
 import {
   AdapterError,
   createTitleMatcher,
+  isRemovalCapable,
   missingEnvironment,
   type AdapterRegistry,
   type RetrievalTransport,
@@ -23,7 +26,7 @@ import { classifyWorkerError, formatWorkerError } from "./worker-errors";
 
 export type RetrievalRunStore = Pick<
   PrismaRetrievalSourceRepository,
-  "enqueueDueRuns" | "claimNextRun" | "finishRun" | "failInterruptedRuns"
+  "enqueueDueRuns" | "claimNextRun" | "finishRun" | "failInterruptedRuns" | "recordListingObservations"
 >;
 
 export interface RetrievalWorkerDependencies {
@@ -70,6 +73,16 @@ const safeMessages: Record<string, string> = {
   ADAPTER_UNAVAILABLE: "This source cannot run (unknown, unverified or missing settings).",
   INTERNAL: "Retrieval failed unexpectedly.",
 };
+
+// The expiry a source states for a listing (We Work Remotely and Himalayas
+// expiresAt, Workday endDate): display-only evidence, never removal.
+function sourceExpiresAt(listing: RawOpportunity): Date | null {
+  const metadata = (listing.sourceMetadata ?? {}) as Record<string, unknown>;
+  const value = metadata.expiresAt ?? metadata.endDate;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies) {
   const keepTitle = createTitleMatcher(dependencies.discovery.titleTerms);
@@ -128,12 +141,16 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     counts.fetched = result.fetched;
     counts.keptByTerms = result.listings.length + result.issues.length;
     counts.failed = result.issues.length;
+    const stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }> = [];
     for (const listing of result.listings) {
       try {
         const ingested = await dependencies.ingestion.ingest({
           ...listing,
           retrieval: { ...listing.retrieval!, retrievalSourceId: source.id, retrievalRunId: run.id },
         });
+        if (listing.externalId) {
+          stored.push({ externalId: listing.externalId, opportunityId: ingested.opportunityId ?? null, sourceExpiresAt: sourceExpiresAt(listing) });
+        }
         if (ingested.outcome === "CREATED") {
           counts.created += 1;
           if (ingested.decision === "PROBABLE_MATCH") counts.probable += 1;
@@ -146,10 +163,46 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
       }
     }
 
-    const stored = counts.created + counts.attached + counts.unchanged + counts.changed;
-    if (result.halted) return finish(run, stored ? "PARTIAL" : "FAILED", counts, result.halted.code, result.halted);
-    if (counts.failed) return finish(run, stored ? "PARTIAL" : "FAILED", counts, "LISTING_FAILURES");
-    return finish(run, "COMPLETED", counts, null);
+    const storedCount = counts.created + counts.attached + counts.unchanged + counts.changed;
+    const status: RetrievalRunOutcome["status"] = result.halted || counts.failed ? (storedCount ? "PARTIAL" : "FAILED") : "COMPLETED";
+    const errorCode = result.halted ? result.halted.code : counts.failed ? "LISTING_FAILURES" : null;
+    await recordObservations(run, source, adapter, result, stored, { status, errorCode }, counts);
+    return finish(run, status, counts, errorCode, result.halted ?? undefined);
+  }
+
+  // Feature 13: what the run saw, after its listings are stored. Absence
+  // counts only on a complete run of a removal-capable source that was a
+  // successful retrieval; a failure here never fails the run.
+  async function recordObservations(
+    run: RetrievalRunRecord,
+    source: RetrievalSourceRecord,
+    adapter: NonNullable<ReturnType<AdapterRegistry["get"]>>,
+    result: { coverage?: { observedListingIds: string[]; complete: boolean }; halted: AdapterError | null },
+    stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }>,
+    outcome: { status: RetrievalRunOutcome["status"]; errorCode: string | null },
+    counts: RetrievalRunCounts,
+  ) {
+    if (!source.trackingScopeKey) return;
+    const removalCapable = isRemovalCapable(adapter);
+    const complete = result.coverage?.complete === true && !result.halted;
+    try {
+      const recorded = await dependencies.store.recordListingObservations({
+        sourceId: source.id,
+        runId: run.id,
+        trackingScopeKey: source.trackingScopeKey,
+        removalCapable,
+        stored,
+        observedListingIds: result.coverage?.observedListingIds ?? [],
+        coverageComplete: result.coverage ? complete : null,
+        qualifying: removalCapable && complete && classifyRunOutcome(outcome) === "success",
+        at: dependencies.now(),
+      });
+      if (recorded.applied) {
+        counts.listings = { observed: recorded.observed, missing: recorded.missing, removed: recorded.removed, reappeared: recorded.reappeared };
+      }
+    } catch (error) {
+      dependencies.log.warn(`run ${run.id} could not record listing observations ${formatWorkerError(error)}`);
+    }
   }
 
   return {

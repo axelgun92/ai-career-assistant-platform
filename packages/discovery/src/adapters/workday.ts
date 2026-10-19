@@ -1,6 +1,6 @@
 import { htmlToText } from "@ai-career/normalization";
 import { z } from "zod";
-import { mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
+import { itemId, listingCoverage, mapKeptItems, parseItems, parseResponse, prioritizeDetailRequests } from "../collection";
 import { AdapterError, isStopError, type CollectResult, type ListingIssue, type SourceAdapter } from "../contract";
 import { getJson, postJson } from "../transport";
 import { companyNameSchema, isoDate } from "./shared";
@@ -154,6 +154,13 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
   requiredEnv: [],
   verified: true,
   attribution: null,
+  listingCoverage: "complete-when-total-fits",
+  // The career site (host, tenant and site, without a locale segment); the
+  // fallback company name is display-only.
+  trackingScope: (config) => {
+    const { host, tenant, site: name } = site(config);
+    return { host, tenant, site: name };
+  },
   verificationUrl: (config) => listUrl(config),
   verificationBody: () => workdayListBody(0),
   verificationFollowUpUrl: (first, config) => {
@@ -170,6 +177,9 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
     const postings: Posting[] = [];
     const seen = new Set<string>();
     let total: number | null = null;
+    // Every list-level ID read, title match or not (feature 13).
+    const listedIds: Array<string | null> = [];
+    let readWholeListing = false;
     for (let page = 0; page < Math.max(1, context.maxPages); page += 1) {
       const offset = page * pageSize;
       let list: z.infer<typeof listSchema>;
@@ -183,6 +193,7 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
       }
       if (page === 0) total = list.total ?? null;
       result.fetched += list.jobPostings.length;
+      listedIds.push(...list.jobPostings.map((item) => itemId(postingSchema, item, (posting) => workdayListingId(config, posting.externalPath))));
       const parsed = parseItems(postingSchema, list.jobPostings);
       result.issues.push(...parsed.issues);
       // A posting released while paging shifts later pages by one; it is
@@ -193,8 +204,14 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
         postings.push(posting);
       }
       const end = offset + list.jobPostings.length;
-      if (list.jobPostings.length < pageSize || (total !== null && end >= total)) break;
+      if (list.jobPostings.length < pageSize || (total !== null && end >= total)) {
+        readWholeListing = true;
+        break;
+      }
     }
+    // Complete only when the first page's total was read in full within the
+    // page cap, as exactly that many unique IDs (never on a halt or at the cap).
+    result.coverage = listingCoverage(listedIds, { readWholeListing: readWholeListing && !result.halted && total !== null, statedTotal: total });
     // After a 429, an access refusal or a server error nothing more is requested.
     if (result.halted && isStopError(result.halted)) return result;
     const matches = postings

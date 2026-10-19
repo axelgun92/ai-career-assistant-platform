@@ -10,10 +10,10 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.9.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.10.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.8.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.8.docx`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.10.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.11.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.9.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.9.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
@@ -27,10 +27,10 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.9.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.8.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.10.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.8.docx` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.10.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.9.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.11.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.9.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
@@ -141,13 +141,16 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   public-HTML sources (Workday, Workable, Wellfound; Welcome to the Jungle / Otta registered but
   unverified) (Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9,
   Customer Success TDD v1.7)
-→ now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting
-  review (not committed); its versioned-specification check produced Core AI Framework PRD v1.9,
-  Customer Success PRD v1.8, Core Platform TDD v1.10 and Customer Success TDD v1.8 (Semantic
-  Evaluation Playbook v1.3 unchanged)
-→ remaining main-product features 13–18 (posting-history/ghost intelligence, including listing
-  expiry/removal detection, browser extension companion, source intelligence, market analytics,
-  personal job-search analytics, company intelligence)
+→ Feature 12: complete (f10a02b, October 18, 2026): source health and conservative retrieval
+  (Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10, Customer
+  Success TDD v1.8)
+→ now: Feature 13, posting history and listing removal, implemented and verified, awaiting review
+  (not committed); its versioned-specification check produced Core AI Framework PRD v1.10,
+  Customer Success PRD v1.9, Core Platform TDD v1.11 and Customer Success TDD v1.9 (Semantic
+  Evaluation Playbook v1.3 unchanged); its posting-history facts are withheld from the evaluator
+  until the coordinated integration
+→ remaining main-product features 14–18 (browser extension companion, source intelligence, market
+  analytics, personal job-search analytics, company intelligence)
 → only after features 1–18: deliberate evaluator/product integration, full isolated verification,
   evaluator freeze, deliberate merge
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)

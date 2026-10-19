@@ -55,6 +55,16 @@ function RunLine({ run }: { run: RunView }) {
           <RunCounts run={run} />
         </>
       ) : null}
+      {run.listingCoverageComplete !== null ? (
+        <span className="field-help"> {run.listingCoverageComplete ? "Read the whole list." : "Limited window."}</span>
+      ) : null}
+      {run.counts?.listings && (run.counts.listings.missing || run.counts.listings.removed || run.counts.listings.reappeared) ? (
+        <span className="field-help">
+          {" "}
+          Tracked listings: {run.counts.listings.observed} seen, {run.counts.listings.missing} not found, {run.counts.listings.removed} confirmed
+          removed, {run.counts.listings.reappeared} listed again.
+        </span>
+      ) : null}
       {run.errorMessage ? <span className="field-help"> {run.errorMessage}</span> : null}
     </li>
   );

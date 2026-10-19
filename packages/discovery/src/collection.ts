@@ -1,6 +1,40 @@
 import type { RawOpportunity } from "@ai-career/core";
-import { AdapterError, type AnySourceAdapter, type CollectContext, type CollectResult, type ListingIssue } from "./contract";
-import { buildRetrievedListing, type RetrievedListingInput } from "./listing";
+import { AdapterError, type AnySourceAdapter, type CollectContext, type CollectResult, type ListingCoverage, type ListingIssue } from "./contract";
+import { buildRetrievedListing, canonicalJson, type RetrievedListingInput } from "./listing";
+
+// A run's listing coverage (feature 13) from the IDs of every item the
+// source listed, before the title filter (null where an item has no usable
+// ID). It is complete only when the caller read the whole listing, every
+// item had an ID and, where the source states a total, the unique IDs equal
+// it exactly: fewer or more means the listing changed while it was read or
+// was not read in full.
+export function listingCoverage(
+  ids: ReadonlyArray<string | null | undefined>,
+  options: { readWholeListing: boolean; statedTotal?: number | null },
+): ListingCoverage {
+  const unique = new Set<string>();
+  let missingId = false;
+  for (const id of ids) {
+    if (id) unique.add(id);
+    else missingId = true;
+  }
+  const total = options.statedTotal;
+  const totalMatches = total === undefined || total === null || unique.size === total;
+  return { observedListingIds: [...unique], complete: options.readWholeListing && !missingId && totalMatches };
+}
+
+// The retrieval scope of a source's configuration, comparable across
+// settings changes (feature 13): the adapter's scope fields, or the whole
+// configuration.
+export function trackingScopeOf(adapter: AnySourceAdapter, config: unknown): string {
+  return canonicalJson(adapter.trackingScope ? adapter.trackingScope(config) : config);
+}
+
+// The item's ID by a lenient read, or null when it has none.
+export function itemId<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, item: unknown, id: (value: T) => string): string | null {
+  const parsed = schema.safeParse(item);
+  return parsed.success ? id(parsed.data) || null : null;
+}
 
 // Shared per-item handling for adapters: the title filter first (nothing
 // else about a listing is looked at before it), then the mapping. A listing

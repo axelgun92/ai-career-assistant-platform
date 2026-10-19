@@ -28,6 +28,7 @@ function sourceRecord(overrides: Partial<RetrievalSourceRecord> = {}): Retrieval
     scheduleMinutes: 720,
     lastRunAt: null,
     nextEligibleAt: null,
+    trackingScopeKey: "scope-1",
     archivedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -48,6 +49,7 @@ function runRecord(): RetrievalRunRecord {
     errorCode: null,
     errorMessage: null,
     retryAfterUntil: null,
+    listingCoverageComplete: null,
     createdAt: now,
   };
 }
@@ -62,6 +64,7 @@ function fakeStore(source = sourceRecord()) {
       return { ...runRecord(), status: input.status };
     }),
     failInterruptedRuns: vi.fn(async () => 0),
+    recordListingObservations: vi.fn(async () => ({ applied: false, observed: 0, missing: 0, removed: 0, reappeared: 0 })),
   };
   return { store, finished };
 }

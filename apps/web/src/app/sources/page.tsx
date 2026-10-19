@@ -19,6 +19,7 @@ function runView(run: RetrievalRunRecord): RunView {
     counts: run.counts,
     errorCode: run.errorCode,
     errorMessage: run.errorMessage,
+    listingCoverageComplete: run.listingCoverageComplete,
   };
 }
 

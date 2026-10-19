@@ -106,6 +106,17 @@ export interface CollectContext {
   lastChecked?: (externalIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
 }
 
+// Which listing IDs one run saw in the source's own listing, before the
+// local title filter (feature 13). complete says the run read the source's
+// whole listing as one consistent snapshot: every page needed, every item
+// with a usable ID and, where the source states a total, exactly that many
+// unique IDs. Only a complete run of a removal-capable adapter can show
+// that a tracked listing is absent; any other run only records sightings.
+export interface ListingCoverage {
+  observedListingIds: string[];
+  complete: boolean;
+}
+
 export interface CollectResult {
   // Listings kept by the title terms, mapped to RawOpportunity with
   // retrieval provenance (without the source and run ids, which the worker
@@ -118,7 +129,16 @@ export interface CollectResult {
   // the listings collected before it are still returned.
   halted: AdapterError | null;
   requests: number;
+  // Set by adapters that can see the source's listing IDs (feature 13).
+  coverage?: ListingCoverage;
 }
+
+// What a run of an adapter can say about absence (feature 13):
+// - complete-board: one response holds the whole board;
+// - complete-when-total-fits: paged, complete only when the source's stated
+//   total is read in full within the page cap;
+// - bounded: a window, feed or search scope; absence never means removal.
+export type ListingCoverageKind = "complete-board" | "complete-when-total-fits" | "bounded";
 
 // A configuration field shown on /sources for this adapter.
 export interface AdapterConfigField {
@@ -155,7 +175,21 @@ export interface SourceAdapter<Config = unknown> {
   // page cap other than the worker's default.
   minRequestIntervalMs?: number;
   maxPagesPerRun?: number;
+  // Feature 13. Unset means bounded.
+  listingCoverage?: ListingCoverageKind;
+  // The configuration fields that decide which listings a run retrieves
+  // (feature 13). A settings change that alters them starts a new tracking
+  // scope; display-only fields (such as a fallback company name) are left
+  // out. Unset means the whole configuration. A code change to a
+  // configuration-free adapter's fixed query or page must rotate its sources'
+  // tracking scopes explicitly rather than inherit the old history.
+  trackingScope?(config: Config): unknown;
   collect(context: CollectContext, config: Config): Promise<CollectResult>;
 }
 
 export type AnySourceAdapter = SourceAdapter<any>;
+
+// Whether a complete run of this adapter can confirm that a listing is gone.
+export function isRemovalCapable(adapter: Pick<AnySourceAdapter, "listingCoverage">): boolean {
+  return adapter.listingCoverage === "complete-board" || adapter.listingCoverage === "complete-when-total-fits";
+}
