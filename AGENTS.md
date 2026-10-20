@@ -10,10 +10,10 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.11.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.12.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.10.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.10.docx`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.12.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.13.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.11.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.11.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
@@ -27,10 +27,10 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.11.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.10.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.12.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.10.docx` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.12.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.11.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.13.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.11.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
@@ -122,7 +122,7 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order (October 19, 2026). The intended main product is features 1–18:
+Current order (October 20, 2026). The intended main product is features 1–18:
 
 ```text
 Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
@@ -147,15 +147,20 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
 → Feature 13: complete (d1bf217, October 19, 2026): posting history and listing removal (Core AI
   Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11, Customer Success TDD
   v1.9); its posting-history facts are withheld from the evaluator until the coordinated integration
-→ now: Feature 14, browser-assisted retrieval for public, logged-out LinkedIn job pages plus source
-  audits and corrections (We Work Remotely all-jobs RSS, Wellfound 12-second cadence), implemented
-  and verified, awaiting review (not committed); the LinkedIn adapter is unverified and cannot be
-  enabled until a live logged-out check succeeds; the Manifest V3 browser extension is deferred
-  (an optional future idea); its versioned-specification check produced Core AI Framework PRD
-  v1.11, Customer Success PRD v1.10, Core Platform TDD v1.12 and Customer Success TDD v1.10
-  (Semantic Evaluation Playbook v1.3 unchanged)
-→ remaining main-product features 15–18 (source intelligence, market analytics, personal
-  job-search analytics, company intelligence)
+→ Feature 14 (two parts; not complete until 14B is accepted):
+  → 14A: complete and accepted (dd77d29, October 20, 2026): browser-assisted automated retrieval
+    for public, logged-out LinkedIn job pages plus source audits and corrections (We Work Remotely
+    all-jobs RSS, Wellfound 12-second cadence) (Core AI Framework PRD v1.11, Customer Success PRD
+    v1.10, Core Platform TDD v1.12, Customer Success TDD v1.10); the LinkedIn source stays
+    unverified and disabled (its local adapter check discovered 60 public jobs, then the first job
+    page answered HTTP 429); a later job-page check needs separate approval
+  → now: 14B, the browser-extension companion: required main-product work, not yet implemented
+    (an October 19 implementation instruction incorrectly treated 14B as deferred, optional and not
+    required; no approved roadmap or product-scope revision removed it; corrected October 20 in Core
+    AI Framework PRD v1.12, Customer Success PRD v1.11, Core Platform TDD v1.13 and Customer Success
+    TDD v1.11, preserving Feature 14A's accepted implementation)
+→ then main-product features 15–18 (source intelligence, market analytics, personal job-search
+  analytics, company intelligence), after 14B is accepted
 → only after features 1–18: deliberate evaluator/product integration, full isolated verification,
   evaluator freeze, deliberate merge
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)

@@ -154,7 +154,8 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### In progress
 
-- Feature 14 is implemented and verified and awaiting review (not committed): a reusable browser-assisted runner (a fresh logged-out Playwright/Chromium context per run, navigation only, sequential at least 5 seconds apart, page budgets, timeouts and a page-size limit, a stop with no further request on any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie, handed to Feature 12 backoff); the LinkedIn adapter for public, logged-out job search and job pages, with separate discovery and detail budgets and a pending queue of discovered matches kept in the `RetrievedListing` ledger (unverified: the Claude cloud check met HTTP 429 and an anti-bot interstitial and stopped as designed; a local logged-out browser check loaded normal public results, so it remains viable and awaits a local-runtime verification of the adapter); We Work Remotely on its all-jobs RSS feed; Wellfound at 12 seconds between requests; Welcome to the Jungle / Otta is reclassified as public logged-out webpage retrieval (no public jobs API) and stays an unverified candidate: its tested public surfaces expose no usable job records (the search page has no listings; the company jobs page, reachable logged out from a local browser though the Claude cloud browser got a CloudFront 403, renders only a job count and "no jobs found"). No migration. The Manifest V3 extension is deferred.
+- Feature 14B, the browser-extension companion, is next and not started (required main-product work; Feature 14 is not complete until it is accepted).
+- Feature 14A is complete (`dd77d29`, accepted October 20, 2026; LinkedIn stays unverified and disabled after its local adapter check met HTTP 429 on a job page): a reusable browser-assisted runner (a fresh logged-out Playwright/Chromium context per run, navigation only, sequential at least 5 seconds apart, page budgets, timeouts and a page-size limit, a stop with no further request on any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie, handed to Feature 12 backoff); the LinkedIn adapter for public, logged-out job search and job pages, with separate discovery and detail budgets and a pending queue of discovered matches kept in the `RetrievedListing` ledger (unverified: the Claude cloud check met HTTP 429 and an anti-bot interstitial and stopped as designed; a local logged-out browser check loaded normal public results, and the exact adapter's local check discovered 60 public jobs, then the first job page answered HTTP 429, so the source stays unverified and disabled); We Work Remotely on its all-jobs RSS feed; Wellfound at 12 seconds between requests; Welcome to the Jungle / Otta is reclassified as public logged-out webpage retrieval (no public jobs API) and stays an unverified candidate: its tested public surfaces expose no usable job records (the search page has no listings; the company jobs page, reachable logged out from a local browser though the Claude cloud browser got a CloudFront 403, renders only a job count and "no jobs found"). No migration. The browser-extension companion is Feature 14B, not part of 14A.
 - Feature 13 is complete (`d1bf217`, October 19, 2026): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
 - Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
 - Feature 11B is complete (`2a1d8c2`, October 18, 2026): the Workday, Workable and Wellfound adapters, a JSON POST transport method and source-specific request intervals and page caps; Welcome to the Jungle / Otta registered but unverified.
@@ -164,7 +165,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### Main-product work still required before final acceptance
 
-- close Feature 14 (review, then commit);
+- feature 14B — browser extension companion (next; not started; Feature 14 is not complete until it is accepted);
 - source intelligence;
 - job-market analytics;
 - personal job-search analytics;
@@ -228,7 +229,7 @@ Current design targets:
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest / Jest + Playwright
 - **Browser-assisted retrieval:** Playwright (`playwright-core`) driving headless Chromium, logged out, retrieval worker only (feature 14)
-- **Browser extension:** TypeScript + Chrome Manifest V3 (deferred October 19, 2026; an optional future idea)
+- **Browser extension:** TypeScript + Chrome Manifest V3 (Feature 14B; not yet built)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -258,12 +259,12 @@ The following repository documentation also exists (paths are listed in the "Doc
 The current development order is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B and Feature 12 are complete, Feature 12 and Feature 13 are complete, and Feature 14 is implemented and under review;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B and Feature 12 are complete, Feature 12, Feature 13 and Feature 14A are complete, and Feature 14B (the browser-extension companion) is next;
 3. build any still-missing main-product features through feature 18, including retrieval and analytics/intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add features 19–23 later.
 
-The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension, if built later, is a companion client to the same backend/data/evaluator/dashboard, not a separate product; it is deferred (October 19, 2026).
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension (Feature 14B) is a companion client to the same backend/data/evaluator/dashboard, not a separate product.
 
 ## Local Development
 
@@ -307,7 +308,7 @@ This was handled with a temporary preload workaround. It has not been establishe
 ```text
 apps/
   web/                 Next.js application and server-side worker/API code
-  extension/           Browser-extension placeholder (the extension is deferred)
+  extension/           Browser-extension placeholder (Feature 14B; not yet built)
 
 database/
   prisma/              Prisma schema and migrations
@@ -359,9 +360,9 @@ Each source uses the least intrusive method that works. The labels below describ
 | Public feed | Working Nomads | The public `exposed_jobs` JSON feed (labelled an official public feed in code); the site's internal `/jobsapi/_search` is not used, intercepted or replayed |
 | Public structured data, no browser | Workday, Workable | Workday tenant career-site JSON; Workable's anonymous search JSON (not its large XML feed) |
 | Public data embedded in a webpage | Wellfound | The role page's embedded state; at least 12 seconds between requests, sequential |
-| Browser-assisted, public and logged-out | LinkedIn | Fresh logged-out Chromium context per run; navigation only; stops on any access friction; a sign-in modal over visible results is not a block; unverified until a local-runtime check of the adapter (the Claude cloud check met HTTP 429 and an anti-bot interstitial; a local browser loaded public results) |
+| Browser-assisted, public and logged-out | LinkedIn | Fresh logged-out Chromium context per run; navigation only; stops on any access friction; a sign-in modal over visible results is not a block; unverified and disabled (the Claude cloud check met HTTP 429 and an anti-bot interstitial; the local adapter check discovered public jobs, then a job page answered HTTP 429) |
 | Public logged-out webpage (candidate) | Welcome to the Jungle / Otta | No public jobs API; unverified: the search page has no listings in its HTML; the company jobs page needs JavaScript and, rendered in a local browser, showed a job count but no job records; the Claude cloud browser got a CloudFront 403 (environment-specific) |
-| Deferred | the Manifest V3 extension | an optional future idea |
+| Not yet built (Feature 14B, next) | the browser-extension companion | capture of the job page the user is viewing; uses the same backend, data, evaluator and dashboard |
 
 No adapter reads `robots.txt`; the conservative cadence, page caps, stop rules and Feature 12 backoff are the politeness controls today.
 
@@ -369,4 +370,4 @@ No adapter reads `robots.txt`; the conservative cadence, page caps, stop rules a
 
 **Active development**
 
-Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B, 12 and 13 are complete, and Feature 14 (browser-assisted LinkedIn retrieval and source corrections; the extension deferred) is implemented and verified and awaiting review. Main-product features 15–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B, 12, 13 and 14A (browser-assisted LinkedIn retrieval and source corrections, `dd77d29`) are complete, and Feature 14B (the browser-extension companion) is next; Feature 14 is not complete until it is accepted. Main-product features 15–18 follow 14B. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

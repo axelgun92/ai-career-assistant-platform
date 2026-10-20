@@ -150,20 +150,20 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - Feature 13, posting history and listing removal (complete, `d1bf217`):
   - each retrieved listing records where and when it was seen; a listing is confirmed "No longer listed" only by a source that shows its whole board, after two complete checks at least a day apart, and one that returns is "Listed again";
   - a "Posting history" section on the opportunity page and a "No longer listed" dashboard badge; nothing closes an opportunity automatically, and Ghost Job Risk does not use this history yet.
-- Feature 14, browser-assisted retrieval and source corrections (implemented and verified; awaiting review, not committed):
-  - LinkedIn's public, logged-out job search and job pages, read in a headless browser started fresh for each run with no account, cookies or stored state, one page at a time at least 5 seconds apart; any refusal, sign-in wall or challenge ends the run and the source backs off. Listed on `/sources` but not enableable until a live check succeeds;
+- Feature 14A, browser-assisted retrieval and source corrections (complete, `dd77d29`; LinkedIn stays unverified and disabled):
+  - LinkedIn's public, logged-out job search and job pages, read in a headless browser started fresh for each run with no account, cookies or stored state, one page at a time at least 5 seconds apart; any refusal, sign-in wall or challenge ends the run and the source backs off. Listed on `/sources` but not enableable: its local adapter check discovered 60 public jobs, then the first job page answered HTTP 429;
   - We Work Remotely reads its all-jobs RSS feed (Customer Success titles kept locally); Wellfound waits at least 12 seconds between requests;
-  - the Manifest V3 browser extension is deferred (an optional future idea).
+  - the browser-extension companion is not part of 14A: it is Feature 14B, next.
 
 ### In Progress
 
-- Feature 14 is implemented and verified on the isolated test database and is awaiting review; it is not committed yet. Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`) and 13 (`d1bf217`) are complete.
+- Feature 14B, the browser-extension companion, is next and not started (required main-product work; Feature 14 is not complete until it is accepted). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`) are complete.
 - The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- close Feature 14 (review, then commit); *(feature 14 was planned as the browser extension companion; on October 19, 2026 it became browser-assisted LinkedIn retrieval and source corrections, and the extension is deferred)*;
+- feature 14B — browser extension companion (next; not started; Feature 14 is not complete until it is accepted);
 - feature 15 — source intelligence;
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
@@ -229,7 +229,7 @@ Current design targets:
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest + Playwright
 - **Browser-assisted retrieval:** Playwright (`playwright-core`) with headless Chromium, logged out, retrieval worker only (feature 14)
-- **Browser extension:** TypeScript + Chrome Manifest V3 (deferred October 19, 2026; an optional future idea)
+- **Browser extension:** TypeScript + Chrome Manifest V3 (Feature 14B; not yet built)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -263,13 +263,13 @@ The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
 2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit is complete and the Features 1–10 Gap Closure is implemented and under review;
-3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14; the browser extension companion originally planned there is deferred), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, next), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 
 *(Earlier order, superseded on October 15, 2026: finish the evaluator, complete the remaining main-product work, integrate into a usable product, then add retrieval, then expand discovery and analytics.)*
 
-The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension, if built later, is a companion client to the same backend, data, evaluator and dashboard, not a separate product; it is deferred (October 19, 2026).
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension (Feature 14B) is a companion client to the same backend, data, evaluator and dashboard, not a separate product.
 
 ## Local Development
 
@@ -399,7 +399,7 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `pnpm app:doctor` warns about company names | Companies saved before the deduplication release have no normalized name, so the company filter lists them separately. Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, against this database. |
 | "This listing is a duplicate of an opportunity that already has an evaluation…" | The opportunity is an exact duplicate (same listing URL, or same job ID at the same company) of one that already has an evaluation or a pending request, so evaluating it would pay twice. Open the other opportunity, or choose **Not the same job** on this page if they are different jobs (reversible with **Undo**). |
 | `pnpm app:doctor` warns that deferrals use another profile version | Each deferral resumes with the profile version it was requested with. On `/budget`, resume to keep that version, or cancel and request again to use the active one. |
-| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna; LinkedIn, awaiting a local-runtime verification of the adapter; Welcome to the Jungle / Otta, whose tested public pages show no usable job records) or needs environment variables that are not set (LinkedIn needs `RETRIEVAL_BROWSER_EXECUTABLE`); the card says which. |
+| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna; LinkedIn, whose adapter check from a local runtime was rate-limited by LinkedIn on its first job page; Welcome to the Jungle / Otta, whose tested public pages show no usable job records) or needs environment variables that are not set (LinkedIn needs `RETRIEVAL_BROWSER_EXECUTABLE`); the card says which. |
 | A LinkedIn run failed with "refused access" | LinkedIn answered 403 or 999, or showed a sign-in wall, authwall, checkpoint or challenge. The run stopped at once and the source waits at least a day (longer after repeated failures). Nothing logs in or works around it; if it persists, leave LinkedIn disabled. |
 | A LinkedIn run failed with "internal error" right away | The browser could not start: check that `RETRIEVAL_BROWSER_EXECUTABLE` points to a Chromium or Chrome binary. |
 | The browser-driver integration test cannot launch Chromium | Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an installed Chromium (as for E2E), or install Playwright's Chromium. |
@@ -441,10 +441,10 @@ Known points for later features:
 - the manual submission schema, `submit()` and `POST /api/opportunities` stay manual-specific; retrieval enters through `createRetrievalIngestionService` and the worker;
 - merging opportunities that already have history is not done (by decision); posting history (feature 13) is recorded per listing in `RetrievedListing`, and its facts are not yet passed to the evaluator;
 - the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates and changed observations come after it), and retrieved source items live under `rawPayload.source`, never as posting history;
-- `apps/extension` is a placeholder for the browser extension, which is deferred (October 19, 2026; it was planned as feature 14) and, if built, must feed the same backend.
+- `apps/extension` is a placeholder for the browser-extension companion (Feature 14B, next), which must feed the same backend.
 
 ## Project Status
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) and Feature 12 (source health and conservative retrieval, `f10a02b`) are complete, Feature 13 (posting history and listing removal, `d1bf217`) is complete, Feature 14 (browser-assisted LinkedIn retrieval and source corrections; the browser extension deferred) is implemented and verified and awaiting review, and main-product features 15–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) and Feature 12 (source health and conservative retrieval, `f10a02b`) are complete, Feature 13 (posting history and listing removal, `d1bf217`) and Feature 14A (browser-assisted LinkedIn retrieval and source corrections, `dd77d29`) are complete, Feature 14B (the browser-extension companion) is next, and main-product features 15–18 follow it. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

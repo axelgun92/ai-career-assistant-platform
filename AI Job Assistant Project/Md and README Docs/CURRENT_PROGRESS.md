@@ -1,9 +1,25 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 19, 2026
+**Last updated:** October 20, 2026
 
 ## Current Objective
+
+**Feature 14B — the browser-extension companion** is the next main-product task. It is required main-product work and is not yet implemented (no extension code exists; `apps/extension` holds only a placeholder). Feature 14 has two parts and is **not complete until 14B is accepted**; there is no Feature 14C.
+
+**Feature 14A — browser-assisted automated retrieval and source corrections** is complete and accepted: committed and pushed as `dd77d298cfb0888f8914e1592d30d426b30fe6c4` on `claude/gallant-pasteur-y1ou3i` (October 20, 2026) and accepted after the local-runtime LinkedIn adapter check. On October 20, 2026 the committed adapter (`dd77d29`) was run from the local WSL runtime with one search page and one job page: the public search page returned HTTP 200 and 60 public job cards were discovered (the "Sign in to view more jobs" modal did not prevent it); the first job-detail page returned HTTP 429, and the run stopped at once as RATE_LIMITED, with no retry and no listing emitted. Feature 14A was accepted on that result; LinkedIn itself stays unverified and disabled (a source-side rate limit, not an implementation defect) and is not retried. Any later live check of LinkedIn's job pages is a separate, explicitly approved source-enablement decision.
+
+In order, what follows:
+
+1. Next: Feature 14B, the browser-extension companion (not started; its scope and decisions are recorded in the read-only Feature 14 audit of October 20, 2026).
+2. Then: main-product features 15–18, after 14B is accepted. Feature 15 does not begin before then unless Alex changes the roadmap.
+3. Only after features 1–18: deliberate evaluator/product integration (including how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved.
+
+*(Correction, October 20, 2026: An October 19, 2026 implementation instruction incorrectly treated Feature 14B, the required browser-extension companion, as deferred, an optional future idea and not required. No approved roadmap or authoritative product-scope revision removed Feature 14B from the main product. This correction (October 20, 2026) resolves that inconsistency while preserving Feature 14A's accepted implementation. From October 19 this document repeated that instruction, calling the browser extension "deferred" or "an optional future idea"; those statements are superseded. The corrected specification versions are Core AI Framework PRD v1.12, Customer Success PRD v1.11, Core Platform TDD v1.13 and Customer Success TDD v1.11.)*
+
+*(Earlier objective, superseded on October 20, 2026 when Feature 14A was committed as `dd77d29` and accepted. It read as follows.)*
 
 **Feature 14 — browser-assisted retrieval and source corrections** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 13 was committed as `d1bf217` (October 19, 2026).
 
@@ -104,9 +120,15 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 ## Recently Completed (October 14–19, 2026)
 
-### Feature 14 — browser-assisted retrieval and source corrections (implemented and verified October 19, 2026; awaiting user review; not committed)
+### Feature 14A — browser-assisted retrieval and source corrections (committed `dd77d29` and accepted, October 20, 2026)
 
-**Scope (approved October 19, 2026, with a scope change).** Part A: browser-assisted, automated retrieval for **public, logged-out LinkedIn** job pages only. Part B: source audits and corrections. Part C: the Manifest V3 manual-capture extension is **deferred** (an optional future idea): no manifest, popup, `activeTab`/`scripting` permissions, localhost bridge, pairing token or extension E2E were built. No evaluator change, no migration, no AI calls, no broad crawling.
+*(Heading corrected on October 20, 2026 from "Feature 14 — …": this record covers Feature 14A only. Feature 14B, the browser-extension companion, is required and not yet implemented, so Feature 14 as a whole is not complete.)*
+
+*(Heading updated on October 20, 2026 after the commit and acceptance; it read "implemented and verified October 19, 2026; awaiting user review; not committed". The record below is preserved as written.)*
+
+**Acceptance (October 20, 2026).** On October 20, 2026 the committed adapter (`dd77d29`) was run from the local WSL runtime with one search page and one job page: the public search page returned HTTP 200 and 60 public job cards were discovered (the "Sign in to view more jobs" modal did not prevent it); the first job-detail page returned HTTP 429, and the run stopped at once as RATE_LIMITED, with no retry and no listing emitted. Feature 14A was accepted on that result; LinkedIn itself stays unverified and disabled (a source-side rate limit, not an implementation defect) and is not retried.
+
+**Scope (approved October 19, 2026, with a scope change).** Part A: browser-assisted, automated retrieval for **public, logged-out LinkedIn** job pages only. Part B: source audits and corrections. Part C: the Manifest V3 manual-capture extension is **deferred** (an optional future idea): no manifest, popup, `activeTab`/`scripting` permissions, localhost bridge, pairing token or extension E2E were built. No evaluator change, no migration, no AI calls, no broad crawling. *(Correction, October 20, 2026: An October 19, 2026 implementation instruction incorrectly treated Feature 14B, the required browser-extension companion, as deferred, an optional future idea and not required. No approved roadmap or authoritative product-scope revision removed Feature 14B from the main product. This correction (October 20, 2026) resolves that inconsistency while preserving Feature 14A's accepted implementation. Part C above records that instruction as it was given; Feature 14B remains required main-product work and is next.)*
 
 **Access model (A1).** A fresh, non-persistent browser context per run, asserted to start with no cookies; no profile, `userDataDir`, storage state, credentials or account; no login, applying, saving, following, messaging or connections; no proxy rotation, IP hopping, stealth, fingerprint or user-agent changes, CAPTCHA solving, or challenge/authwall/access-control bypass. The adapter only opens URLs and reads the returned document (the session API exposes only `open`). An account cookie (`li_at`) appearing would stop the run.
 
@@ -197,7 +219,7 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 - **Not repeated:** LinkedIn (cloud 429 anti-bot response; local logged-out browser success), Welcome to the Jungle (cloud 403; local rendered page with no job records), Workday and Workable (routes unchanged since their 11B verification), Greenhouse, Lever and Ashby (unchanged), Adzuna (disabled, needs credentials).
 - No implementation defect was found; no production code changed in this pass.
 
-**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/`:
+**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/`. *(Status correction, October 20, 2026: Core Platform TDD v1.13, Core AI Framework PRD v1.12, Customer Success PRD v1.11 and Customer Success TDD v1.11 supersede the versions below. They record Feature 14A as accepted, with the local LinkedIn evidence, and Feature 14B as required, pending and next, replacing wording that called the extension deferred or optional. The versions below moved unchanged into `Archive/`.)*
 
 - **Core Platform TDD v1.12:** a §51 "Browser-Assisted Retrieval and Source Corrections (Feature 14)" section, the sequence and the dependency.
 - **Core AI Framework PRD v1.11** and **Customer Success PRD v1.10:** current status, revision history and dependencies.
@@ -886,7 +908,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-Feature 14 (browser-assisted LinkedIn retrieval and source corrections) is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+Feature 14B (the browser-extension companion) is the next main-product task and has not started. Feature 14A (browser-assisted LinkedIn retrieval and source corrections) was committed as `dd77d29` and accepted on October 20, 2026; Feature 14 as a whole is not complete until 14B is accepted. Features 15–18 follow 14B.
+
+*(Earlier status, superseded on October 20, 2026: "Feature 14 (browser-assisted LinkedIn retrieval and source corrections) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `dd77d29` and accepted.)*
 
 *(Earlier status, superseded on October 19, 2026: "Feature 13 (posting history and listing removal) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `d1bf217`.)*
 
@@ -1614,10 +1638,10 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`) and 13 (`d1bf217`) are committed, and Feature 14 is implemented and verified (October 19, 2026).
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`, accepted October 20, 2026) are committed; Feature 14B is not yet implemented.
 
-1. Next: user review of Feature 14, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: user review of Feature 11A …", of Feature 11B, of Feature 12 and of Feature 13, superseded October 18–19, 2026 after the commits `fad2341`, `2a1d8c2`, `f10a02b` and `d1bf217`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
-2. Then: main-product features 15–18: source intelligence, market analytics, personal job-search analytics, and company intelligence. *(Earlier step: "main-product features 14–18: browser extension, …"; feature 14 became browser-assisted LinkedIn retrieval and source corrections on October 19, 2026, and the extension is deferred as an optional future idea.)*
+1. Next: Feature 14B, the browser-extension companion; Feature 14 is not complete until it is accepted. *(Earlier steps: "Next: user review of Feature 11A …", of Feature 11B, of Feature 12, of Feature 13 and of Feature 14A, superseded October 18–20, 2026 after the commits `fad2341`, `2a1d8c2`, `f10a02b`, `d1bf217` and `dd77d29`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
+2. Then, after 14B is accepted, features 15–18 in order: source intelligence, market analytics, personal job-search analytics, and company intelligence. *(Earlier step: "main-product features 14–18: browser extension, …"; on October 19, 2026 the browser-assisted LinkedIn retrieval and source corrections became feature 14A, and the browser-extension companion remains feature 14B, next.)*
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.
