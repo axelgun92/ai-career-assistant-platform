@@ -102,6 +102,13 @@ export interface ListingObservationInput {
   stored: ReadonlyArray<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }>;
   // Every listing ID the run saw listed, before the title filter.
   observedListingIds: readonly string[];
+  // Feature 14: title-matching listings the run found whose details may
+  // not be stored yet; each gets a row (no opportunity) if it has none, so a
+  // later run can fetch its details. See pendingListings.
+  discovered?: readonly string[];
+  // Feature 14: pending listings (no opportunity yet) whose job page the
+  // source no longer serves; their rows are dropped from the queue.
+  unavailable?: readonly string[];
   // The adapter reported coverage, and whether it was complete.
   coverageComplete: boolean | null;
   // A complete run that was a successful retrieval: absence counts.
@@ -519,6 +526,8 @@ export class PrismaRetrievalSourceRepository {
 
   // Records what one run saw (feature 13), in one transaction:
   // - stored listings without a row get one (LISTED, first seen now);
+  // - discovered listings without a row get one with no opportunity yet
+  //   (feature 14), and an unavailable pending one loses its row;
   // - every listing seen listed (the run's coverage IDs and stored
   //   listings) becomes LISTED; one that was REMOVED counts as reappeared,
   //   one that was MISSING simply clears; its opportunity's lastSeenAt moves;
@@ -565,7 +574,30 @@ export class PrismaRetrievalSourceRepository {
           });
         }
       }
-      const seen = [...new Set([...input.observedListingIds, ...input.stored.map((listing) => listing.externalId)])];
+      const storedIds = new Set(input.stored.map((listing) => listing.externalId));
+      const discovered = [...new Set(input.discovered ?? [])].filter((externalId) => !storedIds.has(externalId));
+      if (discovered.length) {
+        await transaction.retrievedListing.createMany({
+          data: discovered.map((externalId) => ({
+            ...scope,
+            source: source.adapterKey,
+            externalId,
+            removalCapable: input.removalCapable,
+            state: "LISTED" as const,
+            firstSeenAt: input.at,
+            lastSeenAt: input.at,
+            lastSeenRunId: input.runId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      const unavailable = [...new Set(input.unavailable ?? [])].filter((externalId) => !storedIds.has(externalId));
+      if (unavailable.length) {
+        // Only a discovery placeholder: a row with a stored listing keeps
+        // its history.
+        await transaction.retrievedListing.deleteMany({ where: { ...scope, externalId: { in: unavailable }, opportunityId: null } });
+      }
+      const seen = [...new Set([...input.observedListingIds, ...discovered, ...storedIds])];
       const reappeared = await transaction.$executeRaw`
         UPDATE "RetrievedListing" SET "state" = 'LISTED', "reappearedAt" = ${input.at}, "reappearances" = "reappearances" + 1,
           "missingSince" = NULL, "missedCompleteRuns" = 0, "lastSeenAt" = GREATEST("lastSeenAt", ${input.at}),
@@ -630,6 +662,19 @@ export class PrismaRetrievalSourceRepository {
       currentScope: rowScope === (trackingScopeKey ?? ""),
       retrievalSource,
     }));
+  }
+
+  // Feature 14: listings a source discovered in its current tracking scope
+  // whose details are not stored yet (a ledger row without an opportunity),
+  // first discovered since the given time, oldest first. A browser-assisted
+  // adapter fetches them gradually across runs.
+  async pendingListings(sourceId: string, trackingScopeKey: string, since: Date, limit = 200): Promise<Array<{ externalId: string; firstSeenAt: Date }>> {
+    return this.database.retrievedListing.findMany({
+      where: { retrievalSourceId: sourceId, trackingScopeKey, opportunityId: null, state: "LISTED", firstSeenAt: { gte: since } },
+      orderBy: [{ firstSeenAt: "asc" }, { externalId: "asc" }],
+      take: limit,
+      select: { externalId: true, firstSeenAt: true },
+    });
   }
 
   // When each of these source listing IDs was last checked by a retrieval

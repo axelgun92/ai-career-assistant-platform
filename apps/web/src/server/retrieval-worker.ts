@@ -9,10 +9,13 @@ import {
 import type { PrismaRetrievalSourceRepository, RetrievalRunRecord, RetrievalSourceRecord } from "@ai-career/database";
 import {
   AdapterError,
+  createBrowserSession,
   createTitleMatcher,
   isRemovalCapable,
   missingEnvironment,
   type AdapterRegistry,
+  type BrowserDriver,
+  type BrowserSession,
   type RetrievalTransport,
 } from "@ai-career/discovery";
 import { classifyWorkerError, formatWorkerError } from "./worker-errors";
@@ -44,6 +47,18 @@ export interface RetrievalWorkerDependencies {
   // checked; adapters use it to send detail requests to unseen listings
   // first. See PrismaRetrievalSourceRepository.lastCheckedListings.
   lastChecked?: (source: string, externalIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
+  // Feature 14: the source's discovered listings still waiting for their
+  // details. See PrismaRetrievalSourceRepository.pendingListings.
+  pendingListings?: (sourceId: string, trackingScopeKey: string, since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date }>>;
+  // Feature 14: launches a fresh logged-out browser for one run of an
+  // adapter that requires one (see packages/browser-retrieval), and turns
+  // its pages into documents. Without it such an adapter cannot run.
+  browser?: {
+    launch(): Promise<BrowserDriver>;
+    parse(html: string, url: string): Document;
+    // How the session waits between page loads (tests pass a fake).
+    sleep?: (ms: number) => Promise<void>;
+  };
   maxPages?: number;
   maxDetailRequests?: number;
   leaseSeconds?: number;
@@ -114,8 +129,31 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     if (!adapter || !adapter.verified || missingEnvironment(adapter, dependencies.env()).length) {
       return finish(run, "FAILED", counts, "ADAPTER_UNAVAILABLE");
     }
+    if (adapter.requiresBrowser && !dependencies.browser) return finish(run, "FAILED", counts, "ADAPTER_UNAVAILABLE");
     const config = adapter.configSchema.safeParse(source.config);
     if (!config.success) return finish(run, "FAILED", counts, "CONFIG");
+
+    // A browser-assisted adapter gets a fresh browser for this run only,
+    // closed whatever happens.
+    let driver: BrowserDriver | null = null;
+    let browser: BrowserSession | undefined;
+    if (adapter.requiresBrowser && dependencies.browser) {
+      try {
+        driver = await dependencies.browser.launch();
+      } catch (error) {
+        dependencies.log.warn(`run ${run.id} could not start the browser ${formatWorkerError(error)}`);
+        return finish(run, "FAILED", counts, "INTERNAL");
+      }
+      browser = createBrowserSession(driver, {
+        minIntervalMs: adapter.minRequestIntervalMs ?? 5_000,
+        maxNavigations: adapter.browser?.maxNavigations ?? 1,
+        ...(adapter.browser?.authCookieNames ? { authCookieNames: adapter.browser.authCookieNames } : {}),
+        ...(adapter.browser?.detectFriction ? { detectFriction: adapter.browser.detectFriction } : {}),
+        parse: dependencies.browser.parse,
+        ...(dependencies.browser.sleep ? { sleep: dependencies.browser.sleep } : {}),
+      });
+    }
+    const trackingScopeKey = source.trackingScopeKey;
 
     let result;
     try {
@@ -129,6 +167,10 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
           maxPages: adapter.maxPagesPerRun ?? dependencies.maxPages ?? defaultMaxPagesPerRun,
           maxDetailRequests: dependencies.maxDetailRequests ?? defaultMaxDetailRequestsPerRun,
           ...(dependencies.lastChecked ? { lastChecked: (ids: readonly string[]) => dependencies.lastChecked!(adapter.key, ids) } : {}),
+          ...(browser ? { browser } : {}),
+          ...(dependencies.pendingListings && trackingScopeKey
+            ? { pendingListings: (since: Date) => dependencies.pendingListings!(source.id, trackingScopeKey, since) }
+            : {}),
         },
         config.data,
       );
@@ -136,6 +178,10 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
       if (error instanceof AdapterError) return finish(run, "FAILED", counts, error.code, error);
       dependencies.log.warn(`run ${run.id} failed in the adapter ${formatWorkerError(error)}`);
       return finish(run, "FAILED", counts, "INTERNAL");
+    } finally {
+      if (driver) {
+        await driver.close().catch((error: unknown) => dependencies.log.warn(`run ${run.id} could not close the browser ${formatWorkerError(error)}`));
+      }
     }
 
     counts.fetched = result.fetched;
@@ -177,7 +223,12 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     run: RetrievalRunRecord,
     source: RetrievalSourceRecord,
     adapter: NonNullable<ReturnType<AdapterRegistry["get"]>>,
-    result: { coverage?: { observedListingIds: string[]; complete: boolean }; halted: AdapterError | null },
+    result: {
+      coverage?: { observedListingIds: string[]; complete: boolean };
+      halted: AdapterError | null;
+      discovered?: string[];
+      unavailable?: string[];
+    },
     stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }>,
     outcome: { status: RetrievalRunOutcome["status"]; errorCode: string | null },
     counts: RetrievalRunCounts,
@@ -193,6 +244,8 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
         removalCapable,
         stored,
         observedListingIds: result.coverage?.observedListingIds ?? [],
+        ...(result.discovered?.length ? { discovered: result.discovered } : {}),
+        ...(result.unavailable?.length ? { unavailable: result.unavailable } : {}),
         coverageComplete: result.coverage ? complete : null,
         qualifying: removalCapable && complete && classifyRunOutcome(outcome) === "success",
         at: dependencies.now(),

@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development  
-**Last updated:** October 18, 2026
+**Last updated:** October 19, 2026
 
 ## Purpose
 
@@ -31,11 +31,11 @@ Manual Opportunity
 → Lifecycle and application workflow
 ```
 
-Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, committed as `f10a02b`) back a failing source off, honour a source's request to wait, and show each source's health and freshness. Posting history (Feature 13, awaiting review) records where and when each retrieved listing was seen, confirms removal only from sources that show their whole board, and shows a listing that returns as listed again. The manual workflow is unchanged and remains the stable foundation.
+Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, committed as `f10a02b`) back a failing source off, honour a source's request to wait, and show each source's health and freshness. Posting history (Feature 13, committed as `d1bf217`) records where and when each retrieved listing was seen, confirms removal only from sources that show their whole board, and shows a listing that returns as listed again. Browser-assisted retrieval of public, logged-out LinkedIn job pages (Feature 14, awaiting review) is built and tested but cannot be enabled until a live check succeeds; We Work Remotely now reads its all-jobs feed. The manual workflow is unchanged and remains the stable foundation.
 
 ```text
-Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workable, Wellfound)
-→ Retrieval worker (title-term filter, raw source preserved)
+Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workable, Wellfound; LinkedIn once verified)
+→ Retrieval worker (title-term filter, raw source preserved; a logged-out browser only for LinkedIn)
 → Deterministic normalization
 → Deduplication (attach, flag or create; employer link preferred; changes recorded)
 → Dashboard, unevaluated until the user requests an evaluation
@@ -195,6 +195,31 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+Feature 14, browser-assisted retrieval and source corrections, is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 13 was committed as `d1bf217` (October 19, 2026). Feature 14:
+
+- **LinkedIn (public, logged-out pages only):** a new source that reads LinkedIn's public job search and public job pages in a headless browser started fresh for each run, with no account, cookies, profile or stored state. It never signs in, applies, saves, follows or messages, and only opens and reads pages, one at a time and at least 5 seconds apart. Any refusal (HTTP 403, 429 or 999), sign-in wall, authwall, checkpoint, CAPTCHA or challenge ends the run, and the source waits through Feature 12's backoff; nothing is retried or worked around.
+- **Discovery and details separately:** each run reads up to 4 search pages (at most 100 results; both adjustable within hard caps of 8 and 200) and keeps the Customer Success titles. It then opens at most 20 job pages (hard cap 25). Matches whose page has not been read yet are remembered and read first in later runs, oldest first, even after they leave the search; stored jobs are re-read only when last checked over a week ago. LinkedIn never confirms that a listing is gone.
+- **Not enabled yet, but viable:** from the Claude cloud environment, LinkedIn answered the single automated check with HTTP 429 and an anti-bot page, so retrieval stopped there as designed. A separate logged-out check from a local browser loaded normal public results (about 11,000 Customer Success jobs in the United States, with titles, companies, locations and links), under a "Sign in to view more jobs" modal that did not hide them. So LinkedIn is not generally blocked: the cloud result is specific to that environment. The adapter, built against synthetic pages, still needs one controlled check of its own from the local runtime before it can be enabled. The source is listed on `/sources` but cannot be enabled until one logged-out check of a real search page and job page succeeds (`pnpm sources:verify linkedin`). It also needs `RETRIEVAL_BROWSER_EXECUTABLE` (a Chromium or Chrome binary) for the retrieval worker.
+- **We Work Remotely** now reads its official all-jobs RSS feed and applies the Customer Success title filter itself, instead of one category feed; it never reads WWR's web pages.
+- **Wellfound** requests are now at least 12 seconds apart (was 2), still one at a time from the page's embedded data.
+- **Audited and unchanged:** Greenhouse, Lever, Ashby, SmartRecruiters, Himalayas, Remote OK, Working Nomads (its public `exposed_jobs` feed, not the site's internal search), Workday (tenant JSON) and Workable (anonymous JSON). Adzuna stays disabled until verified.
+- **Welcome to the Jungle / Otta:** now treated as a public-webpage source (it has no public jobs API) rather than ruled out by its terms, but still not enabled, because no tested public page shows usable job records. Its public search page shows no listings. From the Claude cloud environment a browser load was refused (HTTP 403), but a local browser check loaded its public company jobs page without any block; that page needs JavaScript and, once rendered, showed a job count but "We didn’t find any jobs for your search", with no job details.
+- **Deferred:** the Manifest V3 browser extension for capturing the page you are viewing is not built. It remains an optional future idea; adding jobs by hand stays the way to capture a single page.
+
+How each source is read (least intrusive method that works):
+
+| Method | Sources |
+| --- | --- |
+| Official API or feed | Greenhouse, Lever, Ashby, SmartRecruiters, Himalayas, Remote OK, We Work Remotely (RSS), Adzuna (once credentials exist and it is verified) |
+| Public feed | Working Nomads (`exposed_jobs` JSON) |
+| Public structured data, no browser | Workday (tenant career-site JSON), Workable (anonymous search JSON) |
+| Public data embedded in a webpage | Wellfound (conservative 12-second cadence) |
+| Browser-assisted, public and logged-out | LinkedIn (viable: public results load from a local browser; the adapter awaits a local-runtime check; the Claude cloud check met an anti-bot page) |
+| Public logged-out webpage (candidate) | Welcome to the Jungle / Otta (unverified: its tested public pages expose no usable job records) |
+| Deferred | the browser extension |
+
+*(Earlier status, superseded on October 19, 2026 when Feature 13 was committed as `d1bf217`. It read as follows.)*
+
 Feature 13, posting history and listing removal, is implemented and verified on the isolated test database and awaiting user review; it is not committed. Feature 12 was committed as `f10a02b` (October 18, 2026). Feature 13 adds an objective posting history for retrieved listings, without changing how they are retrieved, ingested, deduplicated or evaluated:
 
 - **What a run saw:** each run records the IDs of every listing the source listed, before the role-title filter, so a listing whose title changes is still seen. Only Greenhouse, Lever and Ashby, and Workday and SmartRecruiters when a run reads their stated total in full (exactly that many listings), can confirm that a listing is gone; the other sources only record sightings.
@@ -275,14 +300,14 @@ Task 8 and Task 9 are complete. In order:
 3. Done: Feature 11A (`fad2341`, October 18, 2026), with Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8 and Customer Success TDD v1.6. *(Earlier step: "Now: Feature 11A, implemented and verified, awaiting review.")*
 4. Done: Feature 11B (`2a1d8c2`, October 18, 2026), with Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9 and Customer Success TDD v1.7. *(Earlier step: "Now: Feature 11B, implemented and verified, awaiting review.")*
 5. Done: Feature 12 (`f10a02b`, October 18, 2026), with Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10 and Customer Success TDD v1.8. *(Earlier step: "Now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting review.")*
-6. Now: Feature 13, posting history and listing removal, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11, Customer Success TDD v1.9).
-7. Build the rest of main-product features 14–18:
-   - browser extension companion;
+6. Done: Feature 13 (`d1bf217`, October 19, 2026), with Core AI Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11 and Customer Success TDD v1.9. *(Earlier step: "Now: Feature 13, posting history and listing removal, implemented and verified, awaiting review.")*
+7. Now: Feature 14, browser-assisted LinkedIn retrieval and source corrections, implemented and verified, awaiting review. Its versioned-specification check is done (Core AI Framework PRD v1.11, Customer Success PRD v1.10, Core Platform TDD v1.12, Customer Success TDD v1.10). The browser extension originally planned as feature 14 is deferred as an optional future idea. *(Earlier plan for this step: "browser extension companion".)*
+8. Build the rest of main-product features 15–18:
    - source intelligence;
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-8. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+9. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 
@@ -331,7 +356,8 @@ Beyond the Customer Success product:
 - Core remains domain-neutral.
 - Customer Success owns its salary thresholds and affordability policy.
 - Retrieval must feed the existing normalization/dedup/evaluator boundary rather than create a second evaluator.
-- The browser extension is a companion to the same application, backend, data, evaluator, lifecycle, provenance, budget, and dashboard.
+- The browser extension, if it is ever built, is a companion to the same application, backend, data, evaluator, lifecycle, provenance, budget, and dashboard. It is deferred (October 19, 2026) as an optional future idea.
+- Browser-assisted retrieval is public and logged-out only: no account, cookies or stored state, no account actions, and no proxy rotation, stealth, fingerprint changes, CAPTCHA solving or access-control bypass.
 - Paid provider calls require explicit authorization.
 - Experiments/tests must not use the normal application database without explicit authorization.
 - Historical milestone/status documents should remain truthful history; current-state documents should reflect the latest accepted implementation.

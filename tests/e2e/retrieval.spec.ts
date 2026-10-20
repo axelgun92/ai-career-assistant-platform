@@ -6,9 +6,10 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { build } from "esbuild";
 
-// Features 11A, 11B, 12 and 13: Greenhouse, Workday, Workable and Wellfound sources added and
+// Features 11A, 11B, 12, 13 and 14: Greenhouse, Workday, Workable and Wellfound sources added and
 // run from /sources, a rate-limited source's health and Run now gate, and a
-// listing's posting history through removal and reappearance. The retrieval worker iteration runs in a helper with
+// listing's posting history through removal and reappearance, and LinkedIn
+// (browser-assisted, not yet verified) shown but not enabled. The retrieval worker iteration runs in a helper with
 // the fixture transport (the committed fixtures); nothing reaches the
 // network. The tests share fixture listings, so they run in order.
 test.describe.configure({ mode: "serial" });
@@ -150,7 +151,7 @@ async function enableAndRun(card: ReturnType<Page["getByRole"]>) {
   return JSON.parse(await runHelper("run-retrieval")) as { status: string; counts: Record<string, number> };
 }
 
-test("Workday, Workable and Wellfound sources run from /sources; Welcome to the Jungle cannot be enabled", async ({ page }) => {
+test("Workday, Workable and Wellfound sources run from /sources; Welcome to the Jungle and LinkedIn cannot be enabled", async ({ page }) => {
   const suffix = randomUUID().slice(0, 8);
   const workday = await addSource(page, "workday", `Workday E2E ${suffix}`, { "Career site address": "https://workday.wd5.myworkdayjobs.com/Workday" });
   await expect(workday).toContainText("Workday (employer ATS · public guest endpoint) · Career site address: https://workday.wd5.myworkdayjobs.com/Workday");
@@ -180,6 +181,12 @@ test("Workday, Workable and Wellfound sources run from /sources; Welcome to the 
   const jungle = await addSource(page, "welcome-to-the-jungle", `WTTJ E2E ${suffix}`);
   await expect(jungle).toContainText("Cannot be enabled");
   await expect(jungle.getByRole("button", { name: "Enable" })).toBeDisabled();
+
+  // Feature 14: LinkedIn is browser-assisted and not yet verified live.
+  const linkedin = await addSource(page, "linkedin", `LinkedIn E2E ${suffix}`, { "Search keywords": '"customer success"' });
+  await expect(linkedin).toContainText("LinkedIn (job board · browser-assisted)");
+  await expect(linkedin).toContainText("Cannot be enabled");
+  await expect(linkedin.getByRole("button", { name: "Enable" })).toBeDisabled();
 });
 
 test("a rate-limited source shows when it may run again, Run now waits, and a later success is healthy", async ({ page }) => {

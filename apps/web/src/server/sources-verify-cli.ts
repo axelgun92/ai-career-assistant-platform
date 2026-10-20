@@ -4,6 +4,7 @@ import path from "node:path";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   AdapterError,
+  createBrowserSession,
   createFetchTransport,
   createFixtureTransport,
   createPoliteTransport,
@@ -12,6 +13,8 @@ import {
   missingEnvironment,
   redactUrl,
   type AnySourceAdapter,
+  type BrowserDriver,
+  type BrowserSession,
   type TransportResponse,
 } from "@ai-career/discovery";
 
@@ -26,6 +29,12 @@ import {
 // mapping runs over them offline and a summary is printed. --offline reruns
 // only the mapping over responses saved earlier, with no network access.
 // No database is read or written.
+//
+// A browser-assisted adapter (LinkedIn, feature 14) is verified the same way
+// through a fresh, logged-out browser (RETRIEVAL_BROWSER_EXECUTABLE): one
+// public page and the one page its follow-up names, with the run's usual
+// interval and stop checks. Pass a configuration with one search page and
+// one job page, for example --config '{"maxSearchPages":1,"maxDetailsPerRun":1}'.
 
 function argument(name: string): string | null {
   const index = process.argv.indexOf(name);
@@ -52,6 +61,12 @@ interface SavedResponse {
   contentType: string | null;
   bytes: number;
   capturedAt: string;
+  // Browser-assisted pages: where the browser ended up, the names (never
+  // values) of the cookies it held, and the response headers (Set-Cookie as
+  // names only).
+  finalUrl?: string;
+  cookieNames?: string[];
+  headers?: Record<string, string>;
 }
 
 async function capture(adapter: AnySourceAdapter, config: unknown, rawDir: string): Promise<Record<string, TransportResponse>> {
@@ -63,6 +78,7 @@ async function capture(adapter: AnySourceAdapter, config: unknown, rawDir: strin
   const missing = missingEnvironment(adapter, process.env);
   if (missing.length) fail(`set ${missing.join(" and ")} first`);
   mkdirSync(target, { recursive: true });
+  if (adapter.requiresBrowser) return captureInBrowser(adapter, config, target);
   const transport = createPoliteTransport(
     createFetchTransport({ userAgent: process.env.RETRIEVAL_USER_AGENT }),
     adapter.minRequestIntervalMs ? { minIntervalMs: adapter.minRequestIntervalMs } : {},
@@ -109,12 +125,78 @@ async function capture(adapter: AnySourceAdapter, config: unknown, rawDir: strin
   return recorded;
 }
 
+async function captureInBrowser(adapter: AnySourceAdapter, config: unknown, target: string): Promise<Record<string, TransportResponse>> {
+  const { launchBrowserDriver, parseHtml } = await import("@ai-career/browser-retrieval");
+  const driver = await launchBrowserDriver({ executablePath: process.env.RETRIEVAL_BROWSER_EXECUTABLE! });
+  const recorded: Record<string, TransportResponse> = {};
+  const saved: SavedResponse[] = [];
+  // Saves each page as the browser returned it, before the stop checks.
+  const recording: BrowserDriver = {
+    async navigate(url, options) {
+      const page = await driver.navigate(url, options);
+      const file = `response-${saved.length + 1}.html`;
+      writeFileSync(path.join(target, file), page.html);
+      recorded[url] = { url: page.finalUrl, status: page.status ?? 0, contentType: "text/html", body: page.html };
+      saved.push({
+        file,
+        url: redactUrl(url),
+        status: page.status ?? 0,
+        contentType: "text/html",
+        bytes: Buffer.byteLength(page.html),
+        capturedAt: new Date().toISOString(),
+        finalUrl: redactUrl(page.finalUrl),
+        cookieNames: [...page.cookieNames],
+        ...(page.headers ? { headers: { ...page.headers } } : {}),
+      });
+      console.info(`[sources:verify] BROWSER ${redactUrl(url)} -> ${page.status ?? "-"} ${redactUrl(page.finalUrl)} ${Buffer.byteLength(page.html)} bytes`);
+      return page;
+    },
+    close: () => driver.close(),
+  };
+  const session = browserSession(adapter, recording, parseHtml, 2);
+  try {
+    const first = await session.open(adapter.verificationUrl(config));
+    const followUp = first.status === 200 ? (adapter.verificationFollowUpUrl?.(first.document, config) ?? null) : null;
+    if (followUp) await session.open(followUp);
+    else console.info("[sources:verify] no job in the first page; the follow-up page was not opened");
+  } catch (error) {
+    if (!(error instanceof AdapterError)) throw error;
+    console.error(`[sources:verify] the browser stopped: ${error.code} ${error.message}`);
+  } finally {
+    await driver.close();
+  }
+  writeFileSync(path.join(target, "responses.json"), `${JSON.stringify({ adapter: adapter.key, config, responses: saved }, null, 2)}\n`);
+  return recorded;
+}
+
+function browserSession(adapter: AnySourceAdapter, driver: BrowserDriver, parse: (html: string, url: string) => Document, maxNavigations: number): BrowserSession {
+  return createBrowserSession(driver, {
+    minIntervalMs: adapter.minRequestIntervalMs ?? 5_000,
+    maxNavigations,
+    ...(adapter.browser?.authCookieNames ? { authCookieNames: adapter.browser.authCookieNames } : {}),
+    ...(adapter.browser?.detectFriction ? { detectFriction: adapter.browser.detectFriction } : {}),
+    parse,
+  });
+}
+
+// Replays saved pages; a page that was not captured fails like a load error.
+function savedPagesDriver(responses: Record<string, TransportResponse>): BrowserDriver {
+  return {
+    async navigate(url) {
+      const page = responses[url];
+      if (!page) throw new Error("not captured");
+      return { status: page.status, finalUrl: page.url, html: page.body, cookieNames: [] };
+    },
+    async close() {},
+  };
+}
+
 function loadSaved(rawDir: string): Record<string, TransportResponse> {
   const index = JSON.parse(readFileSync(path.join(rawDir, "responses.json"), "utf8")) as { responses: SavedResponse[] };
   return Object.fromEntries(
     index.responses.map((saved) => [
       saved.url,
-      { url: saved.url.replace(/^POST (\S+) .*$/s, "$1"), status: saved.status, contentType: saved.contentType, body: readFileSync(path.join(rawDir, saved.file), "utf8") },
+      { url: saved.finalUrl ?? saved.url.replace(/^POST (\S+) .*$/s, "$1"), status: saved.status, contentType: saved.contentType, body: readFileSync(path.join(rawDir, saved.file), "utf8") },
     ]),
   );
 }
@@ -122,6 +204,11 @@ function loadSaved(rawDir: string): Record<string, TransportResponse> {
 async function checkMapping(adapter: AnySourceAdapter, config: unknown, responses: Record<string, TransportResponse>) {
   // Every listing is mapped (no title filter) so the contract check does
   // not depend on the response containing a Customer Success job.
+  let browser: BrowserSession | undefined;
+  if (adapter.requiresBrowser) {
+    const { parseHtml } = await import("@ai-career/browser-retrieval");
+    browser = browserSession({ ...adapter, minRequestIntervalMs: 0 }, savedPagesDriver(responses), parseHtml, adapter.browser?.maxNavigations ?? 2);
+  }
   try {
     const result = await adapter.collect(
       {
@@ -132,6 +219,7 @@ async function checkMapping(adapter: AnySourceAdapter, config: unknown, response
         now: () => new Date(),
         maxPages: 1,
         maxDetailRequests: 1,
+        ...(browser ? { browser } : {}),
       },
       config,
     );

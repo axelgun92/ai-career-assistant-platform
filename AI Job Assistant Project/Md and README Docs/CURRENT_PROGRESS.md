@@ -5,6 +5,18 @@
 
 ## Current Objective
 
+**Feature 14 — browser-assisted retrieval and source corrections** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 13 was committed as `d1bf217` (October 19, 2026).
+
+In order, what follows:
+
+1. Next: user review of Feature 14, then the checkpoint commit and the personal-file refresh. LinkedIn is a viable source awaiting one controlled local-runtime verification of the Feature 14 adapter itself, after this code is synced locally (the Claude cloud automated Chromium got HTTP 429 and an anti-bot interstitial, but a local logged-out browser check loaded normal public results); Welcome to the Jungle stays disabled because WTTJ's tested public surfaces (the search page, and the company jobs page checked locally) expose no usable job records. Any further check is a separate, approved decision, never a workaround.
+2. Then: main-product features 15–18.
+3. Only after features 1–18: deliberate evaluator/product integration (including how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+
+Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone 4 contract is preserved. The Manifest V3 browser extension, originally planned as feature 14, is deferred as an optional future idea.
+
+*(Earlier objective, superseded on October 19, 2026 when Feature 13 had been committed as `d1bf217` and Feature 14 implemented. It read as follows.)*
+
 **Feature 13 — posting history and listing removal** is implemented and verified on `claude/gallant-pasteur-y1ou3i` and is awaiting user review. It is not committed or pushed yet. Its documentation closeout, including the versioned PRD/TDD check, is done; it closes with the review and then the checkpoint commit. Feature 12 was committed as `f10a02b` (October 18, 2026).
 
 In order, what follows:
@@ -92,7 +104,119 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 ## Recently Completed (October 14–19, 2026)
 
-### Feature 13 — posting history and listing removal (implemented and verified October 19, 2026; awaiting user review; not committed)
+### Feature 14 — browser-assisted retrieval and source corrections (implemented and verified October 19, 2026; awaiting user review; not committed)
+
+**Scope (approved October 19, 2026, with a scope change).** Part A: browser-assisted, automated retrieval for **public, logged-out LinkedIn** job pages only. Part B: source audits and corrections. Part C: the Manifest V3 manual-capture extension is **deferred** (an optional future idea): no manifest, popup, `activeTab`/`scripting` permissions, localhost bridge, pairing token or extension E2E were built. No evaluator change, no migration, no AI calls, no broad crawling.
+
+**Access model (A1).** A fresh, non-persistent browser context per run, asserted to start with no cookies; no profile, `userDataDir`, storage state, credentials or account; no login, applying, saving, following, messaging or connections; no proxy rotation, IP hopping, stealth, fingerprint or user-agent changes, CAPTCHA solving, or challenge/authwall/access-control bypass. The adapter only opens URLs and reads the returned document (the session API exposes only `open`). An account cookie (`li_at`) appearing would stop the run.
+
+**What changed.**
+
+- **Runner (A2–A4)** (`packages/discovery/src/browser.ts`): `createBrowserSession(driver, options)`: sequential navigation with at least the adapter's minimum interval between starts (LinkedIn 5 s; no concurrency); a per-run navigation cap; a 30 s timeout; a 5 MB page limit; generic friction detection (authwall, login, signup, checkpoint, challenge, `uas/login` or CAPTCHA paths; CAPTCHA or challenge widgets) plus the adapter's own (LinkedIn's join form or security-check page). 429 → `RATE_LIMITED` (with Retry-After); 401/403/999, friction or an account cookie → `ACCESS_DENIED`; 5xx → `SERVER_ERROR`; a failed load → `NETWORK`. After any stop, every later `open` is refused without navigating. Feature 12 then backs the source off (at least a day after an access refusal); nothing is retried.
+- **Driver** (new `packages/browser-retrieval`): `launchBrowserDriver({ executablePath })` with `playwright-core` (headless Chromium, `serviceWorkers: "block"`, no downloads, images/fonts/media aborted), and `parseHtml` with jsdom (scripts not run). Configured by the optional `RETRIEVAL_BROWSER_EXECUTABLE`; loaded dynamically by the retrieval worker CLI and `sources:verify` only.
+- **Worker:** for `requiresBrowser` adapters, one driver per run, closed in `finally`; no browser configured → `ADAPTER_UNAVAILABLE`; a launch failure → `INTERNAL` (neutral for health). It passes `pendingListings` and records `discovered` and `unavailable`.
+- **LinkedIn adapter (A5–A8)** (`packages/discovery/src/adapters/linkedin.ts`; `BROWSER_ASSISTED`, `JOB_BOARD`, `PUBLIC_SEARCH`, `verified: false`):
+  - deterministic public search URLs (`keywords`, optional `location`, `f_TPR`, `f_WT=2` for remote, `start`), keywords defaulting to the domain's search query (`"customer success"`);
+  - discovery: pages by the number of results each page actually returned (never an assumed page size), ending on an empty, repeated or short page, within `maxSearchPages` (default 4, hard cap 8) and `maxDiscovered` (default 100, hard cap 200). The existing Customer Success title filter runs on the cards. Coverage is reported (all card IDs) and never complete;
+  - details, a separate budget: `maxDetailsPerRun` (default 20, hard cap 25). Order: pending matches from earlier runs (oldest first, up to 30 days), then this run's unseen matches, then stored matches last checked over 7 days ago. 404/410 marks a pending job unavailable; three unreadable pages in a row halt the run;
+  - parsing: schema.org JobPosting JSON-LD first, then the public page's title, description, criteria and salary; no value is invented; the source URL is the public job page and `applicationUrl` only the external apply address the page states;
+  - bounded and never removal-capable (Feature 13 rules unchanged). No query segmentation to get around caps.
+- **Cross-run pool (no migration):** title matches without stored details are kept as current-scope `RetrievedListing` rows with no opportunity (LISTED, not removal-capable); `pendingListings(sourceId, scopeKey, since)` returns them oldest first; the existing stored-listing path attaches the opportunity when their details are read; an unavailable job's placeholder is deleted. Stored jobs are detected with the existing `lastCheckedListings`.
+- **`sources:verify`:** a browser-assisted adapter is verified through a fresh logged-out browser: one search page and the first job page it lists (`verificationFollowUpUrl` now receives the page as a `Document`), saved outside the repository and replayed offline.
+- **We Work Remotely (B1):** the official all-jobs feed `https://weworkremotely.com/remote-jobs.rss` with our own title filter; attribution and links kept; a legacy `category` setting is accepted and ignored; no HTML, browser or extension.
+- **Wellfound (B2):** `minRequestIntervalMs` 12,000 (was 2,000); sequential; embedded state unchanged.
+- **Welcome to the Jungle / Otta (B11, revised by the October 19 addendum):** reclassified as public logged-out webpage retrieval (`retrievalType` `PUBLIC_HTML`; no public jobs API identified; bounded; not removal-capable) and treated as an active candidate, not disabled because of its terms. Live inspection (October 19, 2026): one plain GET of `https://www.welcometothejungle.com/en/jobs?query=customer%20success` (through the existing verification tool) answered 200 with 537 KB of HTML for a sign-up and matching landing page: no listings, no job links, no job data in its embedded React data, and the query ignored. One logged-out headless-browser load of the same page (through the Feature 14 session) was refused by WTTJ's CloudFront firewall: HTTP 403 "Request blocked". That is a stop condition, so no further WTTJ request was made (no retry, no company page, no workaround). At that point no public listing surface had been retrieved without a block; the adapter's comment records all of the evidence below. *Local check (later on October 19, 2026; the scheduled cloud company-page check was cancelled):* a local WSL browser check run by Alex then loaded the public company jobs page (`/en/companies/wttj/jobs`, which ends at `/en/companies-v1/wttj/jobs`) logged out with no 403, 429, CAPTCHA, sign-in wall or challenge, and with JavaScript rendering showed the company shell and a "Jobs 16" tab but "We didn’t find any jobs for your search": no job cards, links, IDs, descriptions, locations, employment types or dates. Plain HTML is insufficient and JavaScript rendering is required for the page state, but even rendered, this public company page exposed no usable job records. So: Claude cloud headless browser, HTTP 403 (environment-specific, not a universal block); local WSL browser, page reachable; public rendered page, no usable job records. **Final Feature 14 status:** registered candidate, `PUBLIC_HTML`, bounded and not removal-capable, public logged-out webpage retrieval technically possible in principle, but unverified and disabled because the tested public surfaces expose no usable job records (not because of its terms, and not because it is universally blocked). No hidden or internal API discovery or reverse engineering was done, and no other WTTJ route was tried.
+
+**Audits (no code change).**
+
+- **Workday (B3):** the tenant career-site JSON (`/wday/cxs/<tenant>/<site>/jobs`), stateless POST, bounded; preserved. No adapter reads `robots.txt` (reported; supporting it would be a framework addition).
+- **Workable (B4):** the anonymous Jobs by Workable search JSON; left alone; the ~850 MB XML feed is not used.
+- **Working Nomads (B5):** the public `https://www.workingnomads.com/api/exposed_jobs/` JSON feed; `/jobsapi/_search` is **not** intercepted or replayed.
+- **Remote OK, SmartRecruiters, Himalayas (B6–B8):** their official public API/feed endpoints, as verified in 11A. Himalayas' `expiresAt` stays display-only (Feature 13).
+- **Adzuna (B9):** disabled (unverified, needs credentials). **Greenhouse, Lever, Ashby (B10):** no work.
+
+**Tests.**
+
+- **Unit:** new `browser-retrieval.test.ts` (40): sequential one-at-a-time navigation and the interval; the navigation cap; stops on 429 (Retry-After), 403, 999, 401, 503, authwall/login/checkpoint redirects, a CAPTCHA, a challenge iframe, LinkedIn's anti-bot interstitial (with 200 or 429), an account cookie, an oversized page and a failed load, each with no later navigation; the adapter's friction check; the `open`-only API; search-card parsing (URN or link IDs, unidentified cards, no-results versus unrecognized); job pages with and without JSON-LD, null on a changed layout, no invented application URL; deterministic URLs and defaults; the verification pair (one search page and the first job page it lists); strict config rejecting credentials, cookies, profiles, proxies and over-cap budgets; registration (browser-assisted, unverified, not removal-capable, scope excluding budgets); the 100-result pool across 4 pages with a 20-page detail budget; caps; paging by actual counts and early ends; pending-first ordering, no refetch of fresh stored jobs and the 7-day refresh; mapping and normalization; unavailable pages and the three-in-a-row halt; first-page blocks failing the run; later blocks keeping what was found. New `browser-retrieval-worker.test.ts` (7): no browser or executable → unavailable; launch failure → internal; one fresh browser per run, paced and closed; the discovered pool and unavailable IDs reaching the ledger; 999/429/authwall failing the run with Feature 12 data (Retry-After) and no further navigation; a stop during details keeping stored listings. `retrieval-adapters.test.ts` (+1): WWR reads only the all-jobs feed and filters titles itself. `retrieval-adapters-11b.test.ts` (+1): Wellfound 12-second sequential cadence through the polite transport, and a 429 or 403 stopping with no further request.
+- **Integration:** new `linkedin-retrieval.test.ts` (3, isolated test database): the discovered pool persisted as pending rows and worked through over four runs within a 2-page budget, never refetching stored jobs, bounded rows never MISSING, no evaluation created and the provenance recorded; a gone pending job leaving the queue; HTTP 999 failing the run with at least a day of backoff, no further navigation and Run now refused. New `browser-driver.test.ts` (4): the real Playwright driver and headless Chromium against a local 127.0.0.1 server: no cookie carried into a new run, images and fonts not requested, statuses and Retry-After reported, a closed driver refusing navigation, an authwall redirect stopping the session, and a self-reloading 429 page producing exactly one request with headers kept and cookie values dropped.
+- **E2E:** `retrieval.spec.ts` (extended): a LinkedIn source on `/sources` shows "LinkedIn (job board · browser-assisted)" and cannot be enabled.
+
+**Verification** (isolated test database only; no paid or provider calls; normal application database untouched):
+
+- typecheck and lint clean; `git diff --check` clean;
+- unit 54 files / 1,362 tests; integration 30 files / 258 tests; E2E 37/37; production build succeeds; `pnpm db:verify-migrations` (19 migrations, only the known documented drift; no new migration);
+- `apps/web/next-env.d.ts` unchanged (the dev server rewrote it during E2E and the build; it was reverted each time).
+
+**LinkedIn live verification (Part E).** *First attempt (earlier on October 19, recorded as written):* The Claude cloud environment's egress proxy answered HTTP 403 to `CONNECT www.linkedin.com:443` (policy denial; re-checked on October 19, 2026 with a single CONNECT probe that reached no LinkedIn server). No LinkedIn page was loaded, so the parsers rest on synthetic pages modelled on the public layout, and the adapter stays `verified: false` and cannot be enabled. To verify it, add `www.linkedin.com` to the environment's allowed domains (Network access in the environment settings), then run `pnpm sources:verify linkedin --config '{"maxSearchPages":1,"maxDetailsPerRun":1}' --raw-dir <dir outside the repository>` with `RETRIEVAL_BROWSER_EXECUTABLE` set, and mark the adapter verified only if both pages map.
+
+*Network check and second attempt (after the October 19 addendum):* the environment's allowlist is enforced by the upstream gateway and is not readable from the session, so each host was probed with a CONNECT and a TLS handshake only (no HTTP request). `www.linkedin.com`, `linkedin.com`, `static.licdn.com`, `www.welcometothejungle.com` and `app.welcometothejungle.com` all completed TLS with their own certificates and the gateway logged no refusal, so nothing further needs allowlisting and no setting was changed (the minimum LinkedIn set is `www.linkedin.com`; images and media are not loaded, and `static.licdn.com` is reachable too). One minimal logged-out verification then ran (`pnpm sources:verify linkedin --config '{"maxSearchPages":1,"maxDetailsPerRun":1}'`, fresh browser): the first and only request, one public search page, was answered with **HTTP 429** and LinkedIn's anti-bot interstitial (24 KB: an obfuscated script that computes a cookie and a one-second meta refresh to the home page; a Cloudflare `__cf_bm` cookie was set). The session stopped as RATE_LIMITED and made no second request; the interstitial was not executed, solved or retried. The raw page stays outside Git. Outcome (environment-specific): the Claude cloud environment's automated headless Chromium received HTTP 429 and an anti-bot response; this does not establish how LinkedIn treats a local runtime or an ordinary local Chrome, which remain a separate future decision. The adapter stays `verified: false` and disabled, and the LinkedIn friction check now also recognises this interstitial (a refresh-only page with no job content) whatever its status. Node's built-in `fetch` in this environment needs `NODE_USE_ENV_PROXY=1` to reach the proxy (used for the WTTJ check); Chromium uses the proxy without configuration.
+
+*Offline diagnosis of that single 429 (no further LinkedIn request; the challenge script was read as text, never executed):*
+
+- **Verified:**
+  - The response was HTTP 429 for `https://www.linkedin.com/jobs/search?keywords=%22customer+success%22&f_TPR=r604800&f_WT=2&start=0`, with no redirect: the final address equals the request.
+  - The 24,644-byte body has no visible content. It holds one inline script, no external resources, and `<meta http-equiv="refresh" content="1;url=https://www.linkedin.com">` (the fallback for clients without JavaScript).
+  - The script is an obfuscated CryptoJS HMAC-SHA256 routine. On `window.onload` it sets a 20-minute `ccookie=<value>|<hash>` cookie, then reloads the same URL with an added `original_referer` parameter (the referrer, truncated to 200 characters).
+  - The script reads no `navigator`, `webdriver`, `userAgent`, screen, canvas or WebGL properties. The decision to serve it was therefore made on the server from the request alone, before any page-side check.
+  - After the response the context held one cookie, `__cf_bm`. That is Cloudflare's bot-management cookie name; its domain and value were not recorded. There was no `ccookie`, so the script had not completed when the cookies were read.
+  - The run stopped as RATE_LIMITED and our code issued no further navigation.
+  - Response headers, including any Retry-After, were not recorded: the driver then kept only the parsed Retry-After, and the verification tool logged no headers.
+  - **Browser configuration** (measured locally against a 127.0.0.1 echo server with the same launch options): Chromium 141.0.7390.37, `headless: true` (Playwright's headless mode, no display).
+  - **User agent:** `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36`.
+  - **Request headers:** `sec-ch-ua: "Chromium";v="141", "Not?A_Brand";v="8"`, `sec-ch-ua-platform: "Linux"`, `accept-language: en-US,en;q=0.9`, ordinary `accept` and `sec-fetch-*` values, and `pragma: no-cache` / `cache-control: no-cache`. A first navigation in ordinary Chrome sends neither of the last two; here they come from the driver's request interception, which disables the cache.
+  - **Visible to the page:** `navigator.webdriver` is `true`, the timezone is UTC, the screen is 1280×720 and there are 4 cores.
+  - **Network path:** direct egress is impossible (a direct HTTPS request to example.com fails), so Chromium necessarily went through the environment's agent proxy and gateway. At the moment of the verification launch the gateway logged Chromium's background requests to www.google.com as refused. The CONNECT tunnel to LinkedIn is end to end: its certificate is LinkedIn's own (DigiCert), so Chromium's own TLS and HTTP reached LinkedIn unmodified.
+  - The block came on the first request, before any LinkedIn parsing or paging logic ran.
+  - The request was well formed: the URL is the documented public search form and the headers are standard. No evidence of a malformed request exists.
+- **Plausible inferences:**
+  - The request left from a shared cloud or datacenter egress, not a residential connection. The egress IP was not looked up.
+  - IP or ASN reputation, or rate limits on that shared egress, are a likely factor (the status is 429, and it came on the very first request, with no earlier traffic of ours).
+  - Automated-browser signals visible in the request itself are a likely contributing factor: the `HeadlessChrome` user agent, the Chromium-only client hints and the no-cache headers. The headless TLS fingerprint may also differ from desktop Chrome, but this was not verifiable.
+  - The challenge is a JavaScript-capability check served to traffic already classified as suspicious.
+- **Unknown from one response:**
+  - LinkedIn's actual reasons and which signal weighed most.
+  - Whether the same request from a residential local runtime, or from an ordinary local Chrome, would be served normally.
+  - Whether a Retry-After was sent.
+  - The cookie's issuing domain.
+  - Whether Chromium's own execution of the page script began its reload before the browser closed. The missing `ccookie` suggests not, but it cannot be proven.
+- **Best-supported explanation:** a combination of a shared cloud egress and plainly automated-browser request signals (the `HeadlessChrome` user agent), classified server-side before any page script ran. Malformed implementation behaviour is not supported by the evidence.
+- **Changes made from this diagnosis** (no LinkedIn request, no change to proxy, network, user agent or fingerprint, and no stealth):
+  - The driver now refuses any main-frame navigation the page starts by itself, such as a script reload or meta refresh, so a challenge page can never cause a further request after a stop. A local test shows a self-reloading 429 page producing exactly one request.
+  - The driver now records the response headers (Set-Cookie reduced to cookie names), and `sources:verify` saves them, so a future approved check keeps them.
+
+*Local LinkedIn check (later on October 19, 2026, run by Alex outside Claude cloud):* a controlled logged-out check from a local browser-automation environment (not Claude cloud) then loaded `https://www.linkedin.com/jobs/search/?keywords=Customer%20Success&location=United%20States&f_WT=2` successfully (no 429, 403, 999, CAPTCHA, challenge or login interaction), with public job cards (title, company, location, public job link, relative posting time) for about 11,000 results under a dismissible "Sign in to view more jobs" modal. Examples included Trustpilot, Commas, JustPark, MongoDB, Copado, MaintainX and Cvent; the final address added `position=1&pageNum=0`. The exact user agent and egress type were not recorded. **Interpretation:** the Claude cloud 429 is environment-specific (Claude cloud headless Chromium → 429 anti-bot response); LinkedIn public, logged-out retrieval remains a viable Feature 14 source and is not generally blocked; the MV3 extension is not needed for it and stays deferred. The adapter stays `verified: false` until one controlled local-runtime verification of the Feature 14 adapter itself (`pnpm sources:verify linkedin --config '{"maxSearchPages":1,"maxDetailsPerRun":1}' --raw-dir <dir>` with `RETRIEVAL_BROWSER_EXECUTABLE` set) succeeds after this code is synced locally. **Changes from it (no LinkedIn request from Claude cloud):** the sign-in modal over still-present public results is no longer treated as a login wall (it was, which would have stopped a run); a sign-in form with no job content still is. The search URL now uses the verified `/jobs/search/` form.
+
+**Final bounded live source pass (October 20, 2026, approved; one request per source, production adapter code and routes, the real fetch transport through the environment proxy, raw responses kept outside Git, no browser, no retries):**
+
+- **We Work Remotely** (required contract check): `GET https://weworkremotely.com/remote-jobs.rss` → 200, valid RSS, 91 items. The existing parser mapped all 91 with no issues; the Customer Success title filter kept 3 (for example "Client Success Manager - Enterprise Accounts", FIXD Automotive), each with its WWR link as source and application link and "We Work Remotely" as source name. The committed fixture was re-captured from this response (3 of 91 items, byte-for-byte, no contact data), and its tests updated. WWR stays verified.
+- **Wellfound:** `GET https://wellfound.com/role/customer-success-specialist` (one page) → 200; embedded Next.js data present; 41 listings parsed, 18 kept by the title filter; 12-second interval, sequential, bounded.
+- **Working Nomads:** `GET https://www.workingnomads.com/api/exposed_jobs/` → 200 JSON; 41 jobs mapped with no issues (none matched Customer Success at the time); no `/jobsapi/_search`, no Elasticsearch request and no browser.
+- **Remote OK:** `GET https://remoteok.com/api` → 200 JSON; 99 jobs mapped, 3 kept, each with the Remote OK link and "via Remote OK" attribution.
+- **Himalayas:** `GET https://himalayas.app/jobs/api?limit=20` → 200 JSON; 20 jobs mapped (none matched at the time); `nextCursor` present and not followed; links taken from `applicationLink`, which now carries `?utm_source=api` (tracking parameters are already dropped from listing URL keys, so no false changes).
+- **SmartRecruiters:** `GET https://api.smartrecruiters.com/v1/companies/BoschGroup/postings?limit=10` → 200 JSON; the list contract parsed (10 postings, coverage IDs read). No detail request was made (minimal smoke test); mapping, which uses details, is covered by the verified fixture and is unchanged by Feature 14.
+- **Not repeated:** LinkedIn (cloud 429 anti-bot response; local logged-out browser success), Welcome to the Jungle (cloud 403; local rendered page with no job records), Workday and Workable (routes unchanged since their 11B verification), Greenhouse, Lever and Ashby (unchanged), Adzuna (disabled, needs credentials).
+- No implementation defect was found; no production code changed in this pass.
+
+**Versioned specifications.** New versions were built from the current ones, and the previous versions moved unchanged into `Archive/`:
+
+- **Core Platform TDD v1.12:** a §51 "Browser-Assisted Retrieval and Source Corrections (Feature 14)" section, the sequence and the dependency.
+- **Core AI Framework PRD v1.11** and **Customer Success PRD v1.10:** current status, revision history and dependencies.
+- **Customer Success TDD v1.10:** status, revision history and the dependencies.
+
+The Semantic Evaluation Playbook is unchanged.
+
+**Known issues and observations.**
+
+- The LinkedIn parsers have not met a live page (the cloud check was stopped by an anti-bot interstitial; the successful local check was a manual browser load, not this adapter). The public search may show more results only to signed-in users; the adapter reads what is public and stops on a real sign-in wall. Its public layout may differ (class names, a guest search endpoint instead of the full page, a consent or sign-in modal); the adapter fails closed (a contract mismatch or a stop), never guessing.
+- The We Work Remotely fixture is now captured from the all-jobs feed (see the live source pass below); the October 17 category-feed fixture it replaced used the same RSS item format.
+- A LinkedIn search past its last page may answer something other than an empty list; a non-200 later page halts discovery for that run (PARTIAL) rather than failing it.
+- A 404 job page counts as a listing issue, so a run whose only detail is gone finishes `LISTING_FAILURES` (neutral for health).
+- No adapter honours `robots.txt`; the controls are the cadence, caps, stop rules and backoff.
+- The browser-driver integration test needs a Chromium: `PLAYWRIGHT_CHROMIUM_EXECUTABLE` here (as for E2E), or Playwright's own.
+
+### Feature 13 — posting history and listing removal (committed `d1bf217`, October 19, 2026)
+
+*(Heading updated on October 19, 2026 after the commit; it read "implemented and verified October 19, 2026; awaiting user review; not committed". The record below is preserved as written.)*
 
 **Scope (approved, with the final corrections of October 19, 2026).** An objective, conservative posting history per retrieved listing: sightings, confirmed removal only where a source provably shows its whole board, reappearance, the source's stated expiry, and deterministic posting-history facts. No adapter retrieval change beyond coverage, no ingestion or deduplication change, no evaluator change, no live source requests and no AI calls. Out of scope: feeding the evaluator, text-based ghost signals, new-ID repost and requisition-frequency patterns (feature 18), browser-assisted sources (feature 14).
 
@@ -762,7 +886,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-Feature 13 (posting history and listing removal) is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+Feature 14 (browser-assisted LinkedIn retrieval and source corrections) is implemented and verified and awaiting user review (see "Recently Completed"). It is not committed.
+
+*(Earlier status, superseded on October 19, 2026: "Feature 13 (posting history and listing removal) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `d1bf217`.)*
 
 *(Earlier status, superseded on October 19, 2026: "Feature 12 (source health and conservative retrieval) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `f10a02b`.)*
 
@@ -1488,10 +1614,10 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`) and 12 (`f10a02b`) are committed, and Feature 13 is implemented and verified (October 19, 2026).
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`) and 13 (`d1bf217`) are committed, and Feature 14 is implemented and verified (October 19, 2026).
 
-1. Next: user review of Feature 13, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: user review of Feature 11A …", of Feature 11B and of Feature 12, superseded October 18–19, 2026 after the commits `fad2341`, `2a1d8c2` and `f10a02b`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
-2. Then: main-product features 14–18: browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence.
+1. Next: user review of Feature 14, then the checkpoint commit and the personal-file refresh. *(Earlier steps: "Next: user review of Feature 11A …", of Feature 11B, of Feature 12 and of Feature 13, superseded October 18–19, 2026 after the commits `fad2341`, `2a1d8c2`, `f10a02b` and `d1bf217`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
+2. Then: main-product features 15–18: source intelligence, market analytics, personal job-search analytics, and company intelligence. *(Earlier step: "main-product features 14–18: browser extension, …"; feature 14 became browser-assisted LinkedIn retrieval and source corrections on October 19, 2026, and the extension is deferred as an optional future idea.)*
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.

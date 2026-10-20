@@ -8,6 +8,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@ai-career/browser-retrieval": fileURLToPath(
+        new URL("./packages/browser-retrieval/src/index.ts", import.meta.url),
+      ),
       "@ai-career/core": fileURLToPath(
         new URL("./packages/core/src/index.ts", import.meta.url),
       ),

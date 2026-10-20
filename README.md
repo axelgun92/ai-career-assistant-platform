@@ -147,20 +147,23 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - Feature 12, source health and conservative retrieval (complete, `f10a02b`):
   - a failing source is tried again less often (up to once a week), a source's own Retry-After is honoured in full, nothing is retried within a run and no source is disabled automatically;
   - each source on `/sources` shows its health, last successful retrieval and next run; Run now cannot override a rate limit or a wait the source asked for;
-- Feature 13, posting history and listing removal (implemented and verified; awaiting review, not committed):
+- Feature 13, posting history and listing removal (complete, `d1bf217`):
   - each retrieved listing records where and when it was seen; a listing is confirmed "No longer listed" only by a source that shows its whole board, after two complete checks at least a day apart, and one that returns is "Listed again";
   - a "Posting history" section on the opportunity page and a "No longer listed" dashboard badge; nothing closes an opportunity automatically, and Ghost Job Risk does not use this history yet.
+- Feature 14, browser-assisted retrieval and source corrections (implemented and verified; awaiting review, not committed):
+  - LinkedIn's public, logged-out job search and job pages, read in a headless browser started fresh for each run with no account, cookies or stored state, one page at a time at least 5 seconds apart; any refusal, sign-in wall or challenge ends the run and the source backs off. Listed on `/sources` but not enableable until a live check succeeds;
+  - We Work Remotely reads its all-jobs RSS feed (Customer Success titles kept locally); Wellfound waits at least 12 seconds between requests;
+  - the Manifest V3 browser extension is deferred (an optional future idea).
 
 ### In Progress
 
-- Feature 13 is implemented and verified on the isolated test database and is awaiting review; it is not committed yet. Features 11A (`fad2341`), 11B (`2a1d8c2`) and 12 (`f10a02b`) are complete.
+- Feature 14 is implemented and verified on the isolated test database and is awaiting review; it is not committed yet. Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`) and 13 (`d1bf217`) are complete.
 - The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- close Feature 13 (review, then commit);
-- feature 14 — browser extension companion;
+- close Feature 14 (review, then commit); *(feature 14 was planned as the browser extension companion; on October 19, 2026 it became browser-assisted LinkedIn retrieval and source corrections, and the extension is deferred)*;
 - feature 15 — source intelligence;
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
@@ -225,7 +228,8 @@ Current design targets:
 - **Validation:** Zod / JSON Schema
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest + Playwright
-- **Browser extension:** TypeScript + Chrome Manifest V3
+- **Browser-assisted retrieval:** Playwright (`playwright-core`) with headless Chromium, logged out, retrieval worker only (feature 14)
+- **Browser extension:** TypeScript + Chrome Manifest V3 (deferred October 19, 2026; an optional future idea)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -259,13 +263,13 @@ The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
 2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit is complete and the Features 1–10 Gap Closure is implemented and under review;
-3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, the browser extension companion, source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14; the browser extension companion originally planned there is deferred), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 
 *(Earlier order, superseded on October 15, 2026: finish the evaluator, complete the remaining main-product work, integrate into a usable product, then add retrieval, then expand discovery and analytics.)*
 
-The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension is a companion client to the same backend, data, evaluator and dashboard, not a separate product.
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension, if built later, is a companion client to the same backend, data, evaluator and dashboard, not a separate product; it is deferred (October 19, 2026).
 
 ## Local Development
 
@@ -303,7 +307,7 @@ pnpm app:doctor               # read-only check of everything above
 | Required by the worker | the row above plus `EVALUATION_JOB_LEASE_SECONDS`, `EVALUATION_WORKER_POLL_MS` |
 | Optional (accepted defaults) | `AI_DEFAULT_REASONING_EFFORT`, `AI_OPERATION_EXECUTION_OVERRIDES_JSON`, `AI_PRICING_*`, `AI_*_COST_PER_MILLION_TOKENS`, `AI_LONG_CONTEXT_*`, `AI_PRICING_EFFECTIVE_FROM` |
 | Leave unset | `AI_EXECUTION_POLICY_VERSION`: the policy version is built into the evaluator and changes with it. An override goes stale, mislabels evaluations and weakens the worker's queued-policy check; `pnpm app:doctor` warns about one. |
-| Retrieval (optional) | `RETRIEVAL_WORKER_POLL_MS` (default 60000), `RETRIEVAL_USER_AGENT` (default: an identifying product string), `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` (Adzuna also stays disabled until it is verified) |
+| Retrieval (optional) | `RETRIEVAL_WORKER_POLL_MS` (default 60000), `RETRIEVAL_USER_AGENT` (default: an identifying product string), `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` (Adzuna also stays disabled until it is verified), `RETRIEVAL_BROWSER_EXECUTABLE` (a Chromium or Chrome binary for browser-assisted sources, LinkedIn; without it they cannot be enabled) |
 | Test-only (optional) | `TEST_DATABASE_URL`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE` |
 
 Without an OpenAI key (empty, or the old `YOUR_OPENAI_API_KEY` placeholder) the product still runs: capture, dashboard, profile, budget, applications and existing results all work. Requesting an evaluation returns "AI evaluation is not configured" (nothing is queued), and the worker refuses to start with a clear message. Changing AI settings requires restarting the web app and worker.
@@ -332,20 +336,22 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
 - **Errors.** Temporary infrastructure problems (database unreachable or restarting, dropped connections, timeouts) are logged without details and retried with backoff (capped at 30 s). Configuration problems and unexpected errors stop the worker with a non-zero exit code instead of looping. Evaluation failures are recorded on the evaluation and the worker continues.
 - **Shutdown.** Ctrl-C stops after the current task; a second Ctrl-C exits immediately (the task is then recovered as above).
 
-### 5a. Sources and the retrieval worker (features 11A, 11B, 12 and 13)
+### 5a. Sources and the retrieval worker (features 11A, 11B, 12, 13 and 14)
 
 - **Sources.** Add a source on `/sources`: the source type, its board, site or company identifier (Lever and Ashby also need the company name, which their APIs do not return; Workday needs the employer's career-site address, for example `https://acme.wd5.myworkdayjobs.com/External`, and takes an optional company name used only when a posting names none), an optional name, and a schedule (12 hours by default). Workable and Wellfound need no settings: they search for Customer Success roles themselves. Every source starts disabled, and nothing is retrieved until you enable it. A newly enabled source runs at the worker's next check, then on its schedule. Run now queues a run for an enabled source. Removing a source that has run archives it (its listings keep their provenance); a source that never ran is deleted.
-- **One worker.** `pnpm worker:retrieval` takes its own database lock; a second one exits. `pnpm worker:retrieval:once` processes the queued and due runs once and exits. It contacts only enabled sources: one request at a time per host, at least 1 s apart (2 s for Wellfound). It stops a host for the rest of the run on HTTP 429 (rate limited), 401/403 (access refused) or any 5xx (server error), never retries within a run, and refuses responses over 10 MB. It never starts an evaluation.
+- **One worker.** `pnpm worker:retrieval` takes its own database lock; a second one exits. `pnpm worker:retrieval:once` processes the queued and due runs once and exits. It contacts only enabled sources: one request at a time per host, at least 1 s apart (12 s for Wellfound, 5 s between LinkedIn pages). It stops a host for the rest of the run on HTTP 429 (rate limited), 401/403 (access refused) or any 5xx (server error), never retries within a run, and refuses responses over 10 MB. It never starts an evaluation.
 - **Source health and backoff (feature 12).** After a source failure the next run waits longer: after a rate limit, the schedule doubled per consecutive failure; after a server or network error, the normal schedule the first time and then doubling; after an access refusal or a changed response format, at least a day, then doubling. Every wait is capped at 7 days, except that a source's own Retry-After (on a 429 or 503) is honoured in full however long it is. Failures on our side (an interrupted worker, an internal error) never count, and no source is disabled automatically. Each source card shows its health (Healthy, Degraded, Failing, Needs attention, Rate limited, Waiting), the last attempt, the last successful retrieval, the next run and why, and the latest failure; it notes a stale source (no successful retrieval for two schedule intervals) and a successful run that found no listings. A run stopped part-way by the source never counts as a successful retrieval.
 - **Run now and waits.** Run now is disabled while a source is rate limited ("Rate limited until …") or waiting as the source asked ("Retry after … (requested by the source)"); neither can be overridden. During our own backoff, Run now asks first and "Run now anyway" sends one run. Changing a source's settings (through `PATCH /api/sources/<id>`) clears our own backoff but never a source's wait; enabling or disabling a source keeps any wait.
 - **Posting history (feature 13).** Each run also records which listings the source listed, before the role-title filter, so a stored listing whose title changes is still seen. A listing missing from one complete check shows "Not found in the latest complete check"; missing from two consecutive complete checks at least 24 hours apart it is "No longer listed", and a listing that returns is "Listed again". Only Greenhouse, Lever and Ashby (one response with the whole board), and Workday and SmartRecruiters when a run reads exactly the total they state (at most 100 and 500 postings), can confirm removal; Wellfound, Himalayas, Remote OK, Working Nomads, Workable and We Work Remotely show a limited window and only record sightings. An expiry date a source states is shown, never treated as removal. Changing what a source retrieves (its board, site, company identifier or career site) starts fresh tracking, and changing it back does not bring back the old history; changing only a display name does not. Listings retrieved before feature 13 show "Last observed …; current status unknown" until they are seen again. The opportunity page has a "Posting history" section, dashboard rows show "No longer listed" when every source that can confirm it has, and evaluating such a listing shows a warning but is allowed. Nothing closes or archives an opportunity automatically, and the posting-history facts are not passed to the evaluator yet.
+- **LinkedIn, browser-assisted (feature 14).** LinkedIn has no public API, so its public, logged-out job search and job pages are read in headless Chromium (set `RETRIEVAL_BROWSER_EXECUTABLE`). Each run starts a fresh browser with no account, cookies, profile or stored state and closes it afterwards; it only opens and reads pages (no sign-in, applying, saving, following, messaging or clicking), one at a time and at least 5 s apart, and skips images, fonts and media. A run reads up to `maxSearchPages` search pages (default 4, at most 8) and keeps up to `maxDiscovered` results (default 100, at most 200), filters the titles, then opens at most `maxDetailsPerRun` job pages (default 20, at most 25). Matches whose page is not read yet are remembered and read first in later runs, oldest first, even after they leave the search; stored jobs are re-read only after a week. Any HTTP 403, 429 or 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie ends the run immediately with no further request, and Feature 12's backoff applies (at least a day after an access refusal). LinkedIn never confirms removal. The adapter is not yet verified against live pages: from the Claude cloud environment its single check met HTTP 429 and LinkedIn's anti-bot page (a stop), while a separate local logged-out browser check loaded normal public results under a "Sign in to view more jobs" modal, which the adapter does not treat as a block while results are present. The source cannot be enabled until `pnpm sources:verify linkedin --config '{"maxSearchPages":1,"maxDetailsPerRun":1}' --raw-dir <dir>` succeeds and the adapter is marked verified.
+- **We Work Remotely (feature 14).** Reads the official all-jobs RSS feed (`https://weworkremotely.com/remote-jobs.rss`) and keeps Customer Success titles locally; a category saved earlier is ignored. It never reads WWR's web pages.
 - **What a run does.** Only listings whose title contains a Customer Success role-family term are kept.
   - A new listing is normalized and deduplicated like a manual capture.
   - A listing seen again unchanged only updates its last-seen time.
   - A changed listing is stored as a new, linked version, and the opportunity keeps its original description.
   - Run history on `/sources` shows each run's counts and, if it failed, a safe reason.
   - **Coverage per run:** SmartRecruiters reads up to the newest 500 postings, Workday the first 100 postings its listing endpoint returns (5 pages of 20; Workday does not state the order), Workable a bounded window of its search results (up to 5 pages, relevance order) and Wellfound up to 11 pages of its role page. Sources whose lists lack full descriptions (SmartRecruiters, Workday) fetch at most 25 details per run, new listings first.
-- **Verifying a source contract.** `pnpm sources:verify <adapter> --config '<json>' --raw-dir <directory outside the repository>` makes that adapter's single verification request and checks the mapping. `--offline <directory>` re-checks saved responses without the network. It touches no database. Only run it with approval for that source.
+- **Verifying a source contract.** `pnpm sources:verify <adapter> --config '<json>' --raw-dir <directory outside the repository>` makes that adapter's single verification request and checks the mapping (for LinkedIn, one search page and its first job page in a fresh logged-out browser). `--offline <directory>` re-checks saved responses without the network. It touches no database. Only run it with approval for that source.
 
 ### 6. Deterministic, no-paid-call workflow
 
@@ -393,7 +399,10 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `pnpm app:doctor` warns about company names | Companies saved before the deduplication release have no normalized name, so the company filter lists them separately. Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, against this database. |
 | "This listing is a duplicate of an opportunity that already has an evaluation…" | The opportunity is an exact duplicate (same listing URL, or same job ID at the same company) of one that already has an evaluation or a pending request, so evaluating it would pay twice. Open the other opportunity, or choose **Not the same job** on this page if they are different jobs (reversible with **Undo**). |
 | `pnpm app:doctor` warns that deferrals use another profile version | Each deferral resumes with the profile version it was requested with. On `/budget`, resume to keep that version, or cancel and request again to use the active one. |
-| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna; Welcome to the Jungle / Otta, whose logged-out site offers no public job search) or needs environment variables that are not set; the card says which. |
+| A source cannot be enabled on `/sources` | Its adapter is awaiting verification (Adzuna; LinkedIn, awaiting a local-runtime verification of the adapter; Welcome to the Jungle / Otta, whose tested public pages show no usable job records) or needs environment variables that are not set (LinkedIn needs `RETRIEVAL_BROWSER_EXECUTABLE`); the card says which. |
+| A LinkedIn run failed with "refused access" | LinkedIn answered 403 or 999, or showed a sign-in wall, authwall, checkpoint or challenge. The run stopped at once and the source waits at least a day (longer after repeated failures). Nothing logs in or works around it; if it persists, leave LinkedIn disabled. |
+| A LinkedIn run failed with "internal error" right away | The browser could not start: check that `RETRIEVAL_BROWSER_EXECUTABLE` points to a Chromium or Chrome binary. |
+| The browser-driver integration test cannot launch Chromium | Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to an installed Chromium (as for E2E), or install Playwright's Chromium. |
 | `pnpm app:doctor` warns that the retrieval worker is not running | A source is enabled but no worker runs it. Start `pnpm worker:retrieval`. |
 | A retrieval run failed with "refused access" or "rate-limited" | The source answered 401/403 or 429; retrieval from it stopped for that run. Nothing is retried automatically within the run; check the source's settings (board name, career-site address) and wait for the next scheduled run. Some sources limit requests from particular networks (Workable answered one network with 429 while others worked), so a persistent rate limit can depend on where the worker runs. |
 | A run failed with "server error" | The source answered with a 5xx; retrieval from it stopped for that run. The first time, the source runs again on its normal schedule; repeated failures wait longer (up to 7 days). |
@@ -432,10 +441,10 @@ Known points for later features:
 - the manual submission schema, `submit()` and `POST /api/opportunities` stay manual-specific; retrieval enters through `createRetrievalIngestionService` and the worker;
 - merging opportunities that already have history is not done (by decision); posting history (feature 13) is recorded per listing in `RetrievedListing`, and its facts are not yet passed to the evaluator;
 - the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates and changed observations come after it), and retrieved source items live under `rawPayload.source`, never as posting history;
-- `apps/extension` is a placeholder for the browser extension (feature 14), which must feed the same backend.
+- `apps/extension` is a placeholder for the browser extension, which is deferred (October 19, 2026; it was planned as feature 14) and, if built, must feed the same backend.
 
 ## Project Status
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) and Feature 12 (source health and conservative retrieval, `f10a02b`) are complete, Feature 13 (posting history and listing removal) is implemented and verified and awaiting review, and main-product features 14–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) and Feature 12 (source health and conservative retrieval, `f10a02b`) are complete, Feature 13 (posting history and listing removal, `d1bf217`) is complete, Feature 14 (browser-assisted LinkedIn retrieval and source corrections; the browser extension deferred) is implemented and verified and awaiting review, and main-product features 15–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

@@ -13,6 +13,7 @@ import {
   himalayasPageUrl,
   prioritizeDetailRequests,
   splitWwrTitle,
+  weWorkRemotelyFeedUrl,
   workingNomadsId,
   type AnySourceAdapter,
   type CollectContext,
@@ -87,8 +88,10 @@ describe("verified adapters: common contract", () => {
   it.each(Object.keys(configs))("%s maps every fixture listing to a valid retrieved RawOpportunity", async (key) => {
     const fixture = meta(key);
     expect(adapter(key).verified).toBe(true);
-    // The fixture was captured with the adapter's own verification request.
-    expect(fixture.request).toBe(`GET ${adapter(key).verificationUrl(adapter(key).configSchema.parse(configs[key]))}`);
+    // The fixture was captured with the adapter's own verification request
+    // (for We Work Remotely, the all-jobs feed, re-captured for feature 14).
+    const request = `GET ${adapter(key).verificationUrl(adapter(key).configSchema.parse(configs[key]))}`;
+    expect(fixture.request).toBe(request);
     expect(fixture.trimmedTo).toMatch(/^3 of \d+ items$/);
     const result = await collect(key, { keepAll: true });
     expect(result.issues).toEqual([]);
@@ -126,7 +129,7 @@ describe("verified adapters: common contract", () => {
       ashby: ["Founding Customer Success Manager - APAC"],
       smartrecruiters: [],
       "remote-ok": ["Customer Success Associate", "Consultant Implementation Engineer"],
-      "we-work-remotely": ["Lead Enterprise Revenue Architect (Customer Success)", "Scaled Customer Success Manager"],
+      "we-work-remotely": ["Client Success Manager - Enterprise Accounts", "Solutions Engineer - Customer Success"],
       himalayas: [],
       // Its category is Customer Success, but only the title is matched.
       "working-nomads": [],
@@ -247,16 +250,54 @@ describe("Remote OK", () => {
 describe("We Work Remotely", () => {
   it("splits company and title, uses the guid as identity and joins the location fields", async () => {
     const listings = (await collect("we-work-remotely", { keepAll: true })).listings;
-    const dropbox = byId(listings, "https://weworkremotely.com/remote-jobs/dropbox-scaled-customer-success-manager");
-    expect(dropbox).toMatchObject({
-      company: "Dropbox",
-      title: "Scaled Customer Success Manager",
-      location: "Anywhere in the World, California, 🇺🇸 United States of America",
+    expect(byId(listings, "https://weworkremotely.com/remote-jobs/fixd-automotive-client-success-manager-enterprise-accounts")).toMatchObject({
+      company: "FIXD Automotive",
+      title: "Client Success Manager - Enterprise Accounts",
+      location: "USA Only",
       employmentType: "Full-Time",
-      postingDate: "2026-10-06T22:42:07.000Z",
+      postingDate: "2026-10-19T19:48:25.000Z",
       retrieval: { sourceCategory: "JOB_BOARD" },
     });
+    // Region and state joined.
+    expect(byId(listings, "https://weworkremotely.com/remote-jobs/growth-minded-senior-data-engineer")).toMatchObject({
+      company: "Growth Minded",
+      title: "Senior Data Engineer",
+      location: "Anywhere in the World, Maryland",
+    });
     expect(splitWwrTitle("No separator here")).toEqual({ company: null, title: "No separator here" });
+  });
+
+  it("reads only the official all-jobs RSS feed (feature 14) and applies the Customer Success title filter itself", async () => {
+    const wwr = adapter("we-work-remotely");
+    expect(weWorkRemotelyFeedUrl).toBe("https://weworkremotely.com/remote-jobs.rss");
+    // A category saved before feature 14 is accepted and ignored.
+    const legacy = wwr.configSchema.parse({ category: "remote-customer-support-jobs" });
+    expect(wwr.verificationUrl(legacy)).toBe(weWorkRemotelyFeedUrl);
+    expect(wwr.trackingScope!(legacy)).toEqual(wwr.trackingScope!(wwr.configSchema.parse({})));
+    expect(wwr.configFields).toEqual([]);
+    const transport = createFixtureTransport({ [weWorkRemotelyFeedUrl]: { status: 200, contentType: "application/rss+xml", body: read("we-work-remotely", "response.rss") } });
+    const result = await wwr.collect(
+      {
+        transport,
+        discovery: customerSuccessDiscoveryConfiguration,
+        keepTitle: createTitleMatcher(customerSuccessDiscoveryConfiguration.titleTerms),
+        env: {},
+        now: () => new Date("2026-10-19T09:00:00.000Z"),
+        maxPages: 5,
+        maxDetailRequests: 25,
+      },
+      legacy,
+    );
+    // One request, the feed: never a job page.
+    expect(transport.requested).toEqual([weWorkRemotelyFeedUrl]);
+    expect(result.fetched).toBe(3);
+    expect(result.listings.map((listing) => listing.title)).toEqual(["Client Success Manager - Enterprise Accounts", "Solutions Engineer - Customer Success"]);
+    // Attribution and the WWR link are kept.
+    expect(result.listings[1]).toMatchObject({
+      sourceUrl: "https://weworkremotely.com/remote-jobs/new-law-business-model-solutions-engineer-customer-success",
+      applicationUrl: "https://weworkremotely.com/remote-jobs/new-law-business-model-solutions-engineer-customer-success",
+      sourceMetadata: { sourceName: "We Work Remotely" },
+    });
   });
 
   it("reports a non-RSS body as a contract mismatch", async () => {

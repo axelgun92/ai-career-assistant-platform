@@ -39,6 +39,24 @@ function readConfiguration() {
   }
 }
 
+// Feature 14: browser-assisted sources get a fresh logged-out Chromium per
+// run. The browser package loads only when a browser is configured.
+function browserLauncher(executablePath: string) {
+  const loaded = import("@ai-career/browser-retrieval");
+  let parse: ((html: string, url: string) => Document) | null = null;
+  return {
+    async launch() {
+      const browser = await loaded;
+      parse = browser.parseHtml;
+      return browser.launchBrowserDriver({ executablePath });
+    },
+    parse(html: string, url: string) {
+      if (!parse) throw new Error("The browser has not been launched");
+      return parse(html, url);
+    },
+  };
+}
+
 async function main(): Promise<number> {
   const settings = readConfiguration();
   if (!settings) return 1;
@@ -74,6 +92,8 @@ async function main(): Promise<number> {
     now: () => new Date(),
     log,
     lastChecked: (source, externalIds) => sources.lastCheckedListings(source, externalIds),
+    pendingListings: (sourceId, trackingScopeKey, since) => sources.pendingListings(sourceId, trackingScopeKey, since),
+    ...(settings.RETRIEVAL_BROWSER_EXECUTABLE ? { browser: browserLauncher(settings.RETRIEVAL_BROWSER_EXECUTABLE) } : {}),
   });
   try {
     return await runRetrievalWorkerLoop({

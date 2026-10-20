@@ -174,10 +174,13 @@ export function readEvaluationWorkerEnvironment(
   return evaluationWorkerEnvironmentSchema.parse(environment);
 }
 
-// The retrieval worker (feature 11). Both settings are optional.
+// The retrieval worker (feature 11). Every setting is optional.
+// RETRIEVAL_BROWSER_EXECUTABLE (feature 14) is the Chromium or Chrome binary
+// for browser-assisted sources (LinkedIn); without it they cannot run.
 export const retrievalWorkerEnvironmentSchema = z.object({
   RETRIEVAL_WORKER_POLL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
   RETRIEVAL_USER_AGENT: z.string().trim().min(1).max(200).optional(),
+  RETRIEVAL_BROWSER_EXECUTABLE: z.string().trim().min(1).max(500).optional(),
 });
 
 export type RetrievalWorkerEnvironment = z.infer<typeof retrievalWorkerEnvironmentSchema>;

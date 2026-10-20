@@ -6,6 +6,7 @@ import type {
   SourceCategory,
 } from "@ai-career/core";
 import type { z } from "zod";
+import type { BrowserSession } from "./browser";
 import type { RetrievalTransport } from "./transport";
 
 // The Core collection contract (Core TDD §8): a source adapter turns one
@@ -104,6 +105,13 @@ export interface CollectContext {
   // unseen listings go first and stored ones take turns. Without it every
   // listing counts as unseen.
   lastChecked?: (externalIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
+  // Feature 14: the run's browser session, for adapters that require one.
+  browser?: BrowserSession;
+  // Feature 14: listings this source discovered in earlier runs (title
+  // matches) whose details have not been stored yet, oldest first, so a
+  // later run can fetch them even after they leave the search window. Only
+  // those first discovered since the given time.
+  pendingListings?: (since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date }>>;
 }
 
 // Which listing IDs one run saw in the source's own listing, before the
@@ -131,6 +139,13 @@ export interface CollectResult {
   requests: number;
   // Set by adapters that can see the source's listing IDs (feature 13).
   coverage?: ListingCoverage;
+  // Feature 14: the title-matching listings this run found. Any whose
+  // details are not stored is tracked as pending, so later runs can fetch
+  // it (CollectContext.pendingListings).
+  discovered?: string[];
+  // Feature 14: pending listings whose page the source no longer serves
+  // (HTTP 404 or 410); they leave the pending queue.
+  unavailable?: string[];
 }
 
 // What a run of an adapter can say about absence (feature 13):
@@ -169,6 +184,8 @@ export interface SourceAdapter<Config = unknown> {
   verificationUrl(config: Config): string;
   // When the verification request is a JSON POST (Workday), its body.
   verificationBody?(config: Config): unknown;
+  // The first response's parsed JSON, or for a browser-assisted adapter its
+  // page as a Document.
   verificationFollowUpUrl?(firstResponse: unknown, config: Config): string | null;
   // Source-specific limits, where a source's verified contract calls for
   // them: a longer minimum interval between requests to its host, and a
@@ -177,6 +194,15 @@ export interface SourceAdapter<Config = unknown> {
   maxPagesPerRun?: number;
   // Feature 13. Unset means bounded.
   listingCoverage?: ListingCoverageKind;
+  // Feature 14: the adapter reads pages through a logged-out browser
+  // session (context.browser) instead of the HTTP transport. The browser
+  // options apply to that session.
+  requiresBrowser?: boolean;
+  browser?: {
+    authCookieNames?: readonly string[];
+    detectFriction?: (page: { finalUrl: string; document: Document }) => string | null;
+    maxNavigations: number;
+  };
   // The configuration fields that decide which listings a run retrieves
   // (feature 13). A settings change that alters them starts a new tracking
   // scope; display-only fields (such as a fallback company name) are left

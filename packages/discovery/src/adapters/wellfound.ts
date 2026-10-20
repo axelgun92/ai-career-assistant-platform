@@ -131,8 +131,9 @@ export const wellfoundAdapter: SourceAdapter<WellfoundConfig> = {
   requiredEnv: [],
   verified: true,
   attribution: null,
-  // At least 2 seconds between requests, and every verified page (11).
-  minRequestIntervalMs: 2_000,
+  // At least 12 seconds between requests (feature 14: a deliberately slow,
+  // sequential cadence), and every verified page (11).
+  minRequestIntervalMs: 12_000,
   maxPagesPerRun: 11,
   verificationUrl: () => wellfoundRolePage,
   collect(context) {

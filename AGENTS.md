@@ -10,10 +10,10 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.10.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.11.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.9.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.9.docx`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.11.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.12.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.10.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.10.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
@@ -27,10 +27,10 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.10.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.9.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.11.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.9.docx` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.11.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.10.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.12.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.10.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
@@ -122,7 +122,7 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order (October 18, 2026). The intended main product is features 1–18:
+Current order (October 19, 2026). The intended main product is features 1–18:
 
 ```text
 Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
@@ -144,13 +144,18 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
 → Feature 12: complete (f10a02b, October 18, 2026): source health and conservative retrieval
   (Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10, Customer
   Success TDD v1.8)
-→ now: Feature 13, posting history and listing removal, implemented and verified, awaiting review
-  (not committed); its versioned-specification check produced Core AI Framework PRD v1.10,
-  Customer Success PRD v1.9, Core Platform TDD v1.11 and Customer Success TDD v1.9 (Semantic
-  Evaluation Playbook v1.3 unchanged); its posting-history facts are withheld from the evaluator
-  until the coordinated integration
-→ remaining main-product features 14–18 (browser extension companion, source intelligence, market
-  analytics, personal job-search analytics, company intelligence)
+→ Feature 13: complete (d1bf217, October 19, 2026): posting history and listing removal (Core AI
+  Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11, Customer Success TDD
+  v1.9); its posting-history facts are withheld from the evaluator until the coordinated integration
+→ now: Feature 14, browser-assisted retrieval for public, logged-out LinkedIn job pages plus source
+  audits and corrections (We Work Remotely all-jobs RSS, Wellfound 12-second cadence), implemented
+  and verified, awaiting review (not committed); the LinkedIn adapter is unverified and cannot be
+  enabled until a live logged-out check succeeds; the Manifest V3 browser extension is deferred
+  (an optional future idea); its versioned-specification check produced Core AI Framework PRD
+  v1.11, Customer Success PRD v1.10, Core Platform TDD v1.12 and Customer Success TDD v1.10
+  (Semantic Evaluation Playbook v1.3 unchanged)
+→ remaining main-product features 15–18 (source intelligence, market analytics, personal
+  job-search analytics, company intelligence)
 → only after features 1–18: deliberate evaluator/product integration, full isolated verification,
   evaluator freeze, deliberate merge
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)
@@ -182,7 +187,8 @@ Retrieval (feature 11) follows these rules:
 - deduplication resolves duplicate opportunities;
 - the existing evaluator decides suitability;
 - retrieval must not become a second evaluator, and never starts an evaluation;
-- a new or changed source contract is verified with one approved live request and a small sanitized fixture before its adapter can be enabled.
+- a new or changed source contract is verified with one approved live request and a small sanitized fixture before its adapter can be enabled;
+- each source uses the least intrusive method that works (feature 14): an official API or feed first, then public structured data without a browser, then public data embedded in a webpage, and a browser only where the public data needs one. Browser-assisted retrieval (LinkedIn only) is public and logged-out: a fresh browser context per run with no account, cookies, profile or stored state; it only opens and reads pages, sequentially and at least 5 seconds apart within bounded page budgets, and any 403, 429, 999, login wall, authwall, checkpoint, CAPTCHA or challenge stops the run for Feature 12 backoff. No login, account actions, proxy rotation, stealth, fingerprint changes, CAPTCHA solving or access-control bypass, and no query splitting to get around a source's result caps.
 
 Once a job source has enough evidence to classify it under an established retrieval category, stop investigating that source unless more detail is actually required.
 

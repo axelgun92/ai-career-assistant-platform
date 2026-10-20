@@ -6,15 +6,26 @@ export * from "./rss";
 export * from "./listing";
 export * from "./collection";
 export * from "./embedded-state";
+export * from "./browser";
 export * from "./registry";
 export { adzunaAdapter } from "./adapters/adzuna";
 export { ashbyAdapter, ashbySalaryText, ashbyStructuredSalary } from "./adapters/ashby";
 export { greenhouseAdapter } from "./adapters/greenhouse";
 export { himalayasAdapter, himalayasPageUrl } from "./adapters/himalayas";
 export { leverAdapter, leverPostingHtml } from "./adapters/lever";
+export {
+  detectLinkedInFriction,
+  linkedinAdapter,
+  linkedInHardLimits,
+  linkedInJobUrl,
+  linkedInKeywords,
+  linkedInSearchUrl,
+  parseLinkedInJobPage,
+  parseLinkedInSearchPage,
+} from "./adapters/linkedin";
 export { remoteOkAdapter } from "./adapters/remote-ok";
 export { smartRecruitersAdapter, smartRecruitersJobAdHtml } from "./adapters/smartrecruiters";
-export { splitWwrTitle, weWorkRemotelyAdapter } from "./adapters/we-work-remotely";
+export { splitWwrTitle, weWorkRemotelyAdapter, weWorkRemotelyFeedUrl } from "./adapters/we-work-remotely";
 export { workingNomadsAdapter, workingNomadsId } from "./adapters/working-nomads";
 export { welcomeToTheJungleAdapter } from "./adapters/welcome-to-the-jungle";
 export { readWellfoundPage, wellfoundAdapter, wellfoundPageUrl, wellfoundRolePage } from "./adapters/wellfound";

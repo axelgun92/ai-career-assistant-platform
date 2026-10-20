@@ -3,6 +3,7 @@ import { ashbyAdapter } from "./adapters/ashby";
 import { greenhouseAdapter } from "./adapters/greenhouse";
 import { himalayasAdapter } from "./adapters/himalayas";
 import { leverAdapter } from "./adapters/lever";
+import { linkedinAdapter } from "./adapters/linkedin";
 import { remoteOkAdapter } from "./adapters/remote-ok";
 import { smartRecruitersAdapter } from "./adapters/smartrecruiters";
 import { weWorkRemotelyAdapter } from "./adapters/we-work-remotely";
@@ -43,6 +44,7 @@ export const sourceAdapters: readonly AnySourceAdapter[] = [
   workdayAdapter,
   workableAdapter,
   wellfoundAdapter,
+  linkedinAdapter,
   adzunaAdapter,
   welcomeToTheJungleAdapter,
 ];

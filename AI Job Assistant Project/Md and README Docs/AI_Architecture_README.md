@@ -143,7 +143,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 - automated retrieval from the verified official API and feed sources (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads): sources managed on `/sources` and disabled until enabled, title-only Customer Success role-family discovery, cross-source deduplication with employer-link preference, changed-listing observations, and no automatic evaluation (Feature 11A, `fad2341`);
 - automated retrieval from the verified public/guest-endpoint and public-HTML sources (Workday career sites, the Workable job search, the Wellfound role page) through the same path; Welcome to the Jungle / Otta registered but not enabled (Feature 11B, `2a1d8c2`);
 - source health and conservative retrieval: escalating backoff after source failures (capped at 7 days), a source's Retry-After honoured in full, any 5xx stopping a host for the run, no in-run retries or automatic disabling, derived health and freshness on `/sources`, Run now that cannot override a rate limit or requested wait, and read-only doctor warnings (Feature 12, `f10a02b`);
-- posting history: listing coverage recorded before the title filter, removal confirmed only by complete boards (Greenhouse, Lever, Ashby; Workday and SmartRecruiters when their stated total is read exactly), a listing ledger per tracking-scope generation, reappearance, a "Posting history" section, a "No longer listed" dashboard badge, and evaluator-shaped facts withheld from the evaluator (Feature 13: implemented and verified, awaiting review);
+- posting history: listing coverage recorded before the title filter, removal confirmed only by complete boards (Greenhouse, Lever, Ashby; Workday and SmartRecruiters when their stated total is read exactly), a listing ledger per tracking-scope generation, reappearance, a "Posting history" section, a "No longer listed" dashboard badge, and evaluator-shaped facts withheld from the evaluator (Feature 13, `d1bf217`);
 - persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
 - Task 7 normalized salary/currency/position/residency contract;
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
@@ -154,7 +154,8 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### In progress
 
-- Feature 13 is implemented and verified and awaiting review (not committed): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
+- Feature 14 is implemented and verified and awaiting review (not committed): a reusable browser-assisted runner (a fresh logged-out Playwright/Chromium context per run, navigation only, sequential at least 5 seconds apart, page budgets, timeouts and a page-size limit, a stop with no further request on any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie, handed to Feature 12 backoff); the LinkedIn adapter for public, logged-out job search and job pages, with separate discovery and detail budgets and a pending queue of discovered matches kept in the `RetrievedListing` ledger (unverified: the Claude cloud check met HTTP 429 and an anti-bot interstitial and stopped as designed; a local logged-out browser check loaded normal public results, so it remains viable and awaits a local-runtime verification of the adapter); We Work Remotely on its all-jobs RSS feed; Wellfound at 12 seconds between requests; Welcome to the Jungle / Otta is reclassified as public logged-out webpage retrieval (no public jobs API) and stays an unverified candidate: its tested public surfaces expose no usable job records (the search page has no listings; the company jobs page, reachable logged out from a local browser though the Claude cloud browser got a CloudFront 403, renders only a job count and "no jobs found"). No migration. The Manifest V3 extension is deferred.
+- Feature 13 is complete (`d1bf217`, October 19, 2026): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
 - Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
 - Feature 11B is complete (`2a1d8c2`, October 18, 2026): the Workday, Workable and Wellfound adapters, a JSON POST transport method and source-specific request intervals and page caps; Welcome to the Jungle / Otta registered but unverified.
 - Feature 11A is complete (`fad2341`, October 18, 2026): the collection framework, eight verified official API/feed adapters, the retrieval worker and `/sources`, title-only role-family discovery, cross-source deduplication (`core-dedup-v2`), canonical-link precedence and changed-listing observations.
@@ -163,8 +164,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### Main-product work still required before final acceptance
 
-- close Feature 13 (review, then commit);
-- browser extension companion;
+- close Feature 14 (review, then commit);
 - source intelligence;
 - job-market analytics;
 - personal job-search analytics;
@@ -227,7 +227,8 @@ Current design targets:
 - **Validation:** Zod / JSON Schema
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest / Jest + Playwright
-- **Browser extension:** TypeScript + Chrome Manifest V3
+- **Browser-assisted retrieval:** Playwright (`playwright-core`) driving headless Chromium, logged out, retrieval worker only (feature 14)
+- **Browser extension:** TypeScript + Chrome Manifest V3 (deferred October 19, 2026; an optional future idea)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -257,12 +258,12 @@ The following repository documentation also exists (paths are listed in the "Doc
 The current development order is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
-2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B and Feature 12 are complete, and Feature 13 is implemented and under review;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B and Feature 12 are complete, Feature 12 and Feature 13 are complete, and Feature 14 is implemented and under review;
 3. build any still-missing main-product features through feature 18, including retrieval and analytics/intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add features 19–23 later.
 
-The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension is a companion client to the same backend/data/evaluator/dashboard, not a separate product.
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension, if built later, is a companion client to the same backend/data/evaluator/dashboard, not a separate product; it is deferred (October 19, 2026).
 
 ## Local Development
 
@@ -306,7 +307,7 @@ This was handled with a temporary preload workaround. It has not been establishe
 ```text
 apps/
   web/                 Next.js application and server-side worker/API code
-  extension/           Browser-extension placeholder
+  extension/           Browser-extension placeholder (the extension is deferred)
 
 database/
   prisma/              Prisma schema and migrations
@@ -321,7 +322,8 @@ packages/
   evidence/            Evidence contracts
   normalization/       Opportunity normalization
   shared/              Environment and shared server configuration
-  discovery/           Collection framework and verified source adapters (features 11A and 11B; feature 12 stop rules; feature 13 listing coverage)
+  discovery/           Collection framework and source adapters (features 11A and 11B; feature 12 stop rules; feature 13 listing coverage; feature 14 browser session and LinkedIn)
+  browser-retrieval/   Logged-out Playwright/Chromium driver for browser-assisted sources (feature 14; retrieval worker only)
   deduplication/       Domain-neutral deduplication package
 
 tests/
@@ -335,7 +337,7 @@ tests/
 - This is a private pnpm monorepo.
 - Core remains domain-neutral; Customer Success rules live under `domains/customer-success`.
 - Manual opportunities are normalized and persisted in PostgreSQL.
-- Retrieved listings (features 11A and 11B) are collected by the single retrieval worker from sources enabled on `/sources`, through an injectable transport with politeness and size limits; feature 12 adds a backoff gate per source, written with each run's outcome, and source health derived from run history (`packages/core/src/retrieval-health.ts`); feature 13 records each listing's sightings, confirmed removal and reappearance in `RetrievedListing` and derives posting-history facts (`packages/core/src/posting-history.ts`), which are not passed to the evaluator. They are normalized and deduplicated in the same capture transaction as manual captures and arrive unevaluated.
+- Retrieved listings (features 11A and 11B) are collected by the single retrieval worker from sources enabled on `/sources`, through an injectable transport with politeness and size limits; feature 12 adds a backoff gate per source, written with each run's outcome, and source health derived from run history (`packages/core/src/retrieval-health.ts`); feature 13 records each listing's sightings, confirmed removal and reappearance in `RetrievedListing` and derives posting-history facts (`packages/core/src/posting-history.ts`), which are not passed to the evaluator; feature 14 adds a fresh logged-out browser per run for browser-assisted sources (LinkedIn) and keeps their discovered-but-not-yet-read matches as pending ledger rows. They are normalized and deduplicated in the same capture transaction as manual captures and arrive unevaluated.
 - Evaluation tasks are stored in PostgreSQL and processed by the background worker.
 - Semantic results use strict structured outputs, schema validation, evidence-reference validation, Unknown preservation, contradiction preservation, and bounded retry/call budgets.
 - Provider calls and retries persist model, prompt version, token usage, pricing version, estimated cost, status, and duration.
@@ -347,8 +349,24 @@ tests/
 - Real evaluations can incur API charges and send the configured job description, company/opportunity data, profile-derived evidence, preferences, and intermediate stage results to OpenAI.
 
 
+### Source retrieval methods (feature 14)
+
+Each source uses the least intrusive method that works. The labels below describe how a source is read, not a claim about any source's terms; the adapter's own `retrievalType` keeps the established categories (for example `PUBLIC_GUEST_INTERNAL_ENDPOINT` for Workday and Workable).
+
+| Method | Sources | Notes |
+| --- | --- | --- |
+| Official API or feed | Greenhouse, Lever, Ashby, SmartRecruiters, Himalayas, Remote OK, We Work Remotely, Adzuna | We Work Remotely: the all-jobs RSS feed (`remote-jobs.rss`) with the local title filter; Adzuna only once credentials exist and it is verified (disabled) |
+| Public feed | Working Nomads | The public `exposed_jobs` JSON feed (labelled an official public feed in code); the site's internal `/jobsapi/_search` is not used, intercepted or replayed |
+| Public structured data, no browser | Workday, Workable | Workday tenant career-site JSON; Workable's anonymous search JSON (not its large XML feed) |
+| Public data embedded in a webpage | Wellfound | The role page's embedded state; at least 12 seconds between requests, sequential |
+| Browser-assisted, public and logged-out | LinkedIn | Fresh logged-out Chromium context per run; navigation only; stops on any access friction; a sign-in modal over visible results is not a block; unverified until a local-runtime check of the adapter (the Claude cloud check met HTTP 429 and an anti-bot interstitial; a local browser loaded public results) |
+| Public logged-out webpage (candidate) | Welcome to the Jungle / Otta | No public jobs API; unverified: the search page has no listings in its HTML; the company jobs page needs JavaScript and, rendered in a local browser, showed a job count but no job records; the Claude cloud browser got a CloudFront 403 (environment-specific) |
+| Deferred | the Manifest V3 extension | an optional future idea |
+
+No adapter reads `robots.txt`; the conservative cadence, page caps, stop rules and Feature 12 backoff are the politeness controls today.
+
 ## Project Status
 
 **Active development**
 
-Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B and 12 are complete, and Feature 13 is implemented and verified and awaiting review. Main-product features 14–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B, 12 and 13 are complete, and Feature 14 (browser-assisted LinkedIn retrieval and source corrections; the extension deferred) is implemented and verified and awaiting review. Main-product features 15–18 follow. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.

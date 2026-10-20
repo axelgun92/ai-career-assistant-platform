@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-career/browser-retrieval": "workspace:*",
     "@ai-career/core": "workspace:*",
     "@ai-career/customer-success": "workspace:*",
     "@ai-career/database": "workspace:*",

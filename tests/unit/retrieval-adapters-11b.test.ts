@@ -9,6 +9,7 @@ import { rawOpportunitySchema, type RawOpportunity } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   createFixtureTransport,
+  createPoliteTransport,
   createTitleMatcher,
   defaultAdapterRegistry,
   fixtureRequestKey,
@@ -411,9 +412,9 @@ describe("Wellfound", () => {
   };
   const byId = (listings: RawOpportunity[], id: string) => listings.find((listing) => listing.externalId === id)!;
 
-  it("is a verified Type 4 marketplace adapter with the approved 2-second interval and 11-page cap", () => {
+  it("is a verified Type 4 marketplace adapter with the 12-second interval (feature 14) and 11-page cap", () => {
     const meta = JSON.parse(read("wellfound", "meta.json"));
-    expect(wellfoundAdapter).toMatchObject({ verified: true, retrievalType: "PUBLIC_HTML", sourceCategory: "MARKETPLACE", sourceType: "PUBLIC_SEARCH", minRequestIntervalMs: 2000, maxPagesPerRun: 11 });
+    expect(wellfoundAdapter).toMatchObject({ verified: true, retrievalType: "PUBLIC_HTML", sourceCategory: "MARKETPLACE", sourceType: "PUBLIC_SEARCH", minRequestIntervalMs: 12_000, maxPagesPerRun: 11 });
     expect(meta.request).toBe(`GET ${wellfoundAdapter.verificationUrl({})}`);
     expect(meta.trimmedTo).toBe("3 of 39 items");
     expect(wellfoundAdapter.configFields).toEqual([]);
@@ -459,6 +460,33 @@ describe("Wellfound", () => {
       // Compensation text is source data only.
       expect(opportunity.salaryMin).toBeNull();
       expect(opportunity.timeZoneRequirements).toBeNull();
+    }
+  });
+
+  it("pages sequentially at least 12 seconds apart through the polite transport, and stops on a rate limit or refusal without retrying", async () => {
+    const pageWith = (pageCount: number) => editState((state) => {
+      resultsOf(state).pageCount = pageCount;
+    });
+    let time = 0;
+    const waits: number[] = [];
+    const fixtures = createFixtureTransport({ [page1Url]: html(pageWith(3)), [`${page1Url}?page=2`]: html(pageWith(3)), [`${page1Url}?page=3`]: html(pageWith(3)) });
+    const polite = createPoliteTransport(fixtures, {
+      minIntervalMs: wellfoundAdapter.minRequestIntervalMs!,
+      now: () => time,
+      sleep: async (ms) => {
+        waits.push(ms);
+        time += ms;
+      },
+    });
+    await wellfoundAdapter.collect(context(polite, { maxPages: wellfoundAdapter.maxPagesPerRun! }), {});
+    expect(fixtures.requested).toEqual([page1Url, `${page1Url}?page=2`, `${page1Url}?page=3`]);
+    expect(waits).toEqual([12_000, 12_000]);
+
+    for (const [status, code] of [[429, "RATE_LIMITED"], [403, "ACCESS_DENIED"]] as const) {
+      const stopped = createFixtureTransport({ [page1Url]: html(pageWith(3)), [`${page1Url}?page=2`]: html("", status), [`${page1Url}?page=3`]: html(pageWith(3)) });
+      const result = await wellfoundAdapter.collect(context(createPoliteTransport(stopped, { minIntervalMs: 12_000, sleep: async () => undefined }), { maxPages: 11 }), {});
+      expect(result.halted?.code).toBe(code);
+      expect(stopped.requested).toEqual([page1Url, `${page1Url}?page=2`]);
     }
   });
 
@@ -517,9 +545,9 @@ describe("Wellfound", () => {
 });
 
 describe("Welcome to the Jungle / Otta", () => {
-  it("is registered as Type 3 but unverified, so it cannot be enabled or collect anything", async () => {
+  it("is registered as public webpage retrieval (feature 14) but unverified, so it cannot be enabled or collect anything", async () => {
     expect(defaultAdapterRegistry.get("welcome-to-the-jungle")).toBe(welcomeToTheJungleAdapter);
-    expect(welcomeToTheJungleAdapter).toMatchObject({ verified: false, retrievalType: "PUBLIC_GUEST_INTERNAL_ENDPOINT", sourceCategory: "JOB_BOARD" });
+    expect(welcomeToTheJungleAdapter).toMatchObject({ verified: false, retrievalType: "PUBLIC_HTML", sourceCategory: "JOB_BOARD" });
     await expect(welcomeToTheJungleAdapter.collect(context(createFixtureTransport({})), {})).rejects.toMatchObject({ code: "CONFIG" });
   });
 });
