@@ -12,7 +12,10 @@ import { aiConfigurationStatus, describeConfigurationProblem } from "./ai-config
 
 // `pnpm app:doctor`: strictly read-only diagnostics. It only reads environment
 // variables, files and the database (SELECT queries). It never writes,
-// never runs recovery, and never prints values of variables.
+// never runs recovery, and never prints values of variables, with one
+// exception: the database name and host it connected to (never the user or
+// password), so you can confirm which database you are about to use, such as
+// a separate acceptance database (feature 14B).
 
 export type CheckLevel = "PASS" | "WARN" | "FAIL";
 
@@ -25,6 +28,8 @@ export interface DoctorCheck {
 // The only database access the doctor has: reads.
 export interface DoctorReads {
   ping(): Promise<void>;
+  // The name of the database connected to.
+  databaseName?(): Promise<string>;
   appliedMigrations(): Promise<Array<{ name: string; finished: boolean }>>;
   activeCustomerSuccessProfile(): Promise<{ version: number; storesLimitations: boolean } | null>;
   workerConnected(): Promise<boolean>;
@@ -34,6 +39,8 @@ export interface DoctorReads {
   openDeferrals(): Promise<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
   // Companies `pnpm db:backfill-dedup` would give a normalized name.
   companiesNeedingBackfill(): Promise<number>;
+  // Browsers paired with the extension companion (feature 14B), unrevoked.
+  activeExtensionPairings?(): Promise<number>;
   // Automated retrieval (feature 11): enabled sources, failed runs in the
   // last 24 hours and whether the retrieval worker holds its lock; with
   // feature 12, what each enabled source's health is derived from.
@@ -71,6 +78,16 @@ const variableNames = (error: unknown) =>
 function nodeAtLeast(version: string, major: number, minor: number) {
   const [actualMajor = 0, actualMinor = 0] = version.split(".").map(Number);
   return actualMajor > major || (actualMajor === major && actualMinor >= minor);
+}
+
+// Host and port only, never the user or password.
+function databaseHost(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host || null;
+  } catch {
+    return null;
+  }
 }
 
 function minutes(ms: number) {
@@ -138,7 +155,9 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
 
   try {
     await reads.ping();
-    add("PASS", "Database", "reachable");
+    const name = reads.databaseName ? await reads.databaseName().catch(() => null) : null;
+    const host = databaseHost(inputs.environment.DATABASE_URL);
+    add("PASS", "Database", name ? `reachable: database ${name}${host ? ` on ${host}` : ""}` : "reachable");
   } catch {
     add("FAIL", "Database", "not reachable; start PostgreSQL and check DATABASE_URL");
     return checks;
@@ -213,6 +232,19 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
           "against this database when you choose (it also records duplicates among existing opportunities)."
       : "normalized",
   );
+
+  if (reads.activeExtensionPairings) {
+    const paired = await reads.activeExtensionPairings().catch(() => null);
+    if (paired === null) {
+      add("WARN", "Browser extension", "paired browsers could not be read; run pnpm db:migrate");
+    } else {
+      add(
+        "PASS",
+        "Browser extension",
+        paired > 0 ? `${paired} browser${paired === 1 ? "" : "s"} paired; manage pairings on /extension` : "no browser paired (optional; pair one on /extension)",
+      );
+    }
+  }
 
   if (reads.retrieval) {
     const retrieval = await reads.retrieval(inputs.now);
@@ -297,6 +329,10 @@ export function createDoctorReads(client: {
     async ping() {
       await client.$queryRaw`SELECT 1`;
     },
+    async databaseName() {
+      const rows = (await client.$queryRaw`SELECT current_database() AS "name"`) as Array<{ name: string }>;
+      return rows[0]?.name ?? "";
+    },
     async appliedMigrations() {
       const rows = (await client.$queryRaw`
         SELECT "migration_name" AS "name", ("finished_at" IS NOT NULL AND "rolled_back_at" IS NULL) AS "finished"
@@ -317,6 +353,11 @@ export function createDoctorReads(client: {
       return rows.filter((row) => normalizeCompanyName(row.name) !== null).length;
     },
     queueSnapshot: (now) => helpers.queueSnapshot(now),
+    async activeExtensionPairings() {
+      const rows = (await client.$queryRaw`
+        SELECT count(*)::int AS "count" FROM "ExtensionPairing" WHERE "revokedAt" IS NULL`) as Array<{ count: number }>;
+      return rows[0]?.count ?? 0;
+    },
     async retrieval(now) {
       const sources = (await client.$queryRaw`
         SELECT "id", "adapterKey", "name", "scheduleMinutes", "lastRunAt", "nextEligibleAt" FROM "RetrievalSource"

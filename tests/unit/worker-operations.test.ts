@@ -295,6 +295,23 @@ describe("pnpm app:doctor checks", () => {
     for (const secret of ["secret-password", "YOUR_OPENAI_API_KEY", "localhost:5432"]) expect(text).not.toContain(secret);
   });
 
+  it("names the database it reached, never the user or password, and counts paired browsers (feature 14B)", async () => {
+    const run = async (overrides: Partial<DoctorReads>) =>
+      formatDoctorChecks(await runDoctorChecks({
+        environment, nodeVersion: "22.1.0", migrationFolders: ["001_init"], prismaClientGenerated: true,
+        reads: reads(overrides), now,
+      }));
+    const text = await run({ databaseName: async () => "ai_career_assistant_acceptance", activeExtensionPairings: async () => 0 });
+    expect(text).toContain("PASS  Database: reachable: database ai_career_assistant_acceptance on localhost:5432");
+    expect(text).toContain("PASS  Browser extension: no browser paired (optional; pair one on /extension)");
+    expect(text).not.toContain("secret-password");
+    expect(text).not.toContain("postgres:");
+    expect(await run({ activeExtensionPairings: async () => 2 })).toContain("Browser extension: 2 browsers paired; manage pairings on /extension");
+    expect(await run({ activeExtensionPairings: async () => Promise.reject(new Error("relation does not exist")) })).toContain(
+      "WARN  Browser extension: paired browsers could not be read; run pnpm db:migrate",
+    );
+  });
+
   it("reports companies awaiting the deduplication backfill without running it", async () => {
     const run = async (count: number) =>
       formatDoctorChecks(await runDoctorChecks({

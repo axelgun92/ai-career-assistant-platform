@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Job Assistant</title>
+    <link rel="stylesheet" href="extension.css" />
+  </head>
+  <body class="popup">
+    <main>
+      <h1>AI Job Assistant</h1>
+      <p id="connection" class="muted">Connecting…</p>
+      <p id="page-site"></p>
+
+      <section id="saved" hidden>
+        <p id="saved-message"></p>
+      </section>
+
+      <div id="read-actions" hidden>
+        <button type="button" id="read">Read this page</button>
+      </div>
+
+      <section id="preview" hidden aria-labelledby="preview-heading">
+        <h2 id="preview-heading">Preview</h2>
+        <p id="preview-source" class="muted"></p>
+        <p class="muted">Check and correct the details. Nothing is sent until you press Save.</p>
+        <label for="preview-title">Title</label>
+        <input id="preview-title" type="text" maxlength="300" autocomplete="off" />
+        <label for="preview-company">Company</label>
+        <input id="preview-company" type="text" maxlength="200" placeholder="Unknown" autocomplete="off" />
+        <label for="preview-location">Location</label>
+        <input id="preview-location" type="text" maxlength="200" placeholder="Unknown" autocomplete="off" />
+        <label for="preview-description">Description</label>
+        <textarea id="preview-description" class="description" rows="8" maxlength="50000"></textarea>
+        <p id="preview-notes" class="muted"></p>
+        <p>
+          <button type="button" id="use-selection" class="link" hidden>Use my selected text instead</button>
+          <button type="button" id="use-page" class="link" hidden>Use the page's job details instead</button>
+        </p>
+        <button type="button" id="save">Save to AI Job Assistant</button>
+      </section>
+
+      <section id="result" hidden aria-live="polite">
+        <p id="result-message"></p>
+        <p id="evaluation-state"></p>
+        <p id="evaluation-request" hidden></p>
+        <button type="button" id="request-evaluation" hidden>Request evaluation</button>
+        <button type="button" id="open-app" class="secondary" hidden>Open in AI Job Assistant</button>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+      <p class="footer"><button type="button" id="options" class="link">Options</button></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

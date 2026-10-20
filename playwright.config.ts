@@ -32,7 +32,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -66,6 +66,14 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/golden-path\.spec\.ts$/,
       dependencies: ["dashboard"],
+    },
+    {
+      // Feature 14B: the built extension in its own persistent Chromium
+      // profile. It activates a profile and evaluates, so it runs last.
+      name: "extension",
+      use: chromium,
+      testMatch: /\/extension\.spec\.ts$/,
+      dependencies: ["acceptance"],
     },
   ],
   webServer: {

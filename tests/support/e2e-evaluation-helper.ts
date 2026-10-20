@@ -208,6 +208,16 @@ try {
         update: { userProfileId: previousActiveId },
       });
     }
+  } else if (command === "cleanup-extension-pairings") {
+    // Feature 14B: pairings an extension spec created, by label, and the
+    // source records captured with them.
+    const pairings = await database.extensionPairing.findMany({ where: { label: process.argv[3]! }, select: { id: true } });
+    for (const pairing of pairings) {
+      await database.sourceRecord.deleteMany({
+        where: { source: "browser-extension", sourceMetadata: { path: ["capture", "pairingId"], equals: pairing.id } },
+      });
+    }
+    await database.extensionPairing.deleteMany({ where: { id: { in: pairings.map((pairing) => pairing.id) } } });
   } else {
     throw new Error("Unknown deterministic E2E helper command");
   }

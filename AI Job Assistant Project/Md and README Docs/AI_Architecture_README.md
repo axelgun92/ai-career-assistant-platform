@@ -154,7 +154,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### In progress
 
-- Feature 14B, the browser-extension companion, is next and not started (required main-product work; Feature 14 is not complete until it is accepted).
+- Feature 14B, the browser-extension companion, is implemented and verified (October 20, 2026) and awaits review and local acceptance; it is not committed (Feature 14 is not complete until it is accepted). It is a source-collection boundary only: captures enter retrieval ingestion with `BROWSER_EXTENSION` provenance, and evaluation is only ever the user's explicit request through the existing path.
 - Feature 14A is complete (`dd77d29`, accepted October 20, 2026; LinkedIn stays unverified and disabled after its local adapter check met HTTP 429 on a job page): a reusable browser-assisted runner (a fresh logged-out Playwright/Chromium context per run, navigation only, sequential at least 5 seconds apart, page budgets, timeouts and a page-size limit, a stop with no further request on any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie, handed to Feature 12 backoff); the LinkedIn adapter for public, logged-out job search and job pages, with separate discovery and detail budgets and a pending queue of discovered matches kept in the `RetrievedListing` ledger (unverified: the Claude cloud check met HTTP 429 and an anti-bot interstitial and stopped as designed; a local logged-out browser check loaded normal public results, and the exact adapter's local check discovered 60 public jobs, then the first job page answered HTTP 429, so the source stays unverified and disabled); We Work Remotely on its all-jobs RSS feed; Wellfound at 12 seconds between requests; Welcome to the Jungle / Otta is reclassified as public logged-out webpage retrieval (no public jobs API) and stays an unverified candidate: its tested public surfaces expose no usable job records (the search page has no listings; the company jobs page, reachable logged out from a local browser though the Claude cloud browser got a CloudFront 403, renders only a job count and "no jobs found"). No migration. The browser-extension companion is Feature 14B, not part of 14A.
 - Feature 13 is complete (`d1bf217`, October 19, 2026): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
 - Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
@@ -165,7 +165,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### Main-product work still required before final acceptance
 
-- feature 14B — browser extension companion (next; not started; Feature 14 is not complete until it is accepted);
+- feature 14B — browser extension companion (implemented, awaiting review and local acceptance; Feature 14 is not complete until it is accepted);
 - source intelligence;
 - job-market analytics;
 - personal job-search analytics;
@@ -229,7 +229,7 @@ Current design targets:
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest / Jest + Playwright
 - **Browser-assisted retrieval:** Playwright (`playwright-core`) driving headless Chromium, logged out, retrieval worker only (feature 14)
-- **Browser extension:** TypeScript + Chrome Manifest V3 (Feature 14B; not yet built)
+- **Browser extension:** TypeScript + Chrome Manifest V3, bundled with esbuild, loaded unpacked (Feature 14B; `apps/extension`)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -308,7 +308,7 @@ This was handled with a temporary preload workaround. It has not been establishe
 ```text
 apps/
   web/                 Next.js application and server-side worker/API code
-  extension/           Browser-extension placeholder (Feature 14B; not yet built)
+  extension/           Browser-extension companion (Feature 14B; Manifest V3, loaded unpacked)
 
 database/
   prisma/              Prisma schema and migrations
@@ -362,7 +362,7 @@ Each source uses the least intrusive method that works. The labels below describ
 | Public data embedded in a webpage | Wellfound | The role page's embedded state; at least 12 seconds between requests, sequential |
 | Browser-assisted, public and logged-out | LinkedIn | Fresh logged-out Chromium context per run; navigation only; stops on any access friction; a sign-in modal over visible results is not a block; unverified and disabled (the Claude cloud check met HTTP 429 and an anti-bot interstitial; the local adapter check discovered public jobs, then a job page answered HTTP 429) |
 | Public logged-out webpage (candidate) | Welcome to the Jungle / Otta | No public jobs API; unverified: the search page has no listings in its HTML; the company jobs page needs JavaScript and, rendered in a local browser, showed a job count but no job records; the Claude cloud browser got a CloudFront 403 (environment-specific) |
-| Not yet built (Feature 14B, next) | the browser-extension companion | capture of the job page the user is viewing; uses the same backend, data, evaluator and dashboard |
+| Browser extension, on request (Feature 14B, awaiting acceptance) | any job page the user is viewing and chooses to save | the user's own page view only; structured data, LinkedIn job-detail areas, the selection, or main content; same backend, data, evaluator and dashboard |
 
 No adapter reads `robots.txt`; the conservative cadence, page caps, stop rules and Feature 12 backoff are the politeness controls today.
 

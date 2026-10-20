@@ -51,6 +51,8 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  apps/extension: {}
+
   apps/web:
     dependencies:
       '@ai-career/browser-retrieval':

@@ -136,7 +136,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### In progress
 
-- Feature 14B, the browser-extension companion, is next and not started (required main-product work; Feature 14 is not complete until it is accepted).
+- Feature 14B, the browser-extension companion, is implemented and verified (October 20, 2026) and awaits review and local acceptance; it is not committed (Feature 14 is not complete until it is accepted).
 - Feature 14A is complete (`dd77d29`, accepted October 20, 2026; LinkedIn stays unverified and disabled): browser-assisted retrieval for public, logged-out LinkedIn job pages (a fresh logged-out Chromium context per run, navigation only, at least 5 seconds between pages, separate discovery and detail budgets, a pending queue of discovered matches in the existing ledger, a stop and Feature 12 backoff on any access friction; unverified and disabled: its local adapter check discovered 60 public jobs, then the first job page answered HTTP 429), We Work Remotely on its all-jobs RSS feed, and Wellfound at 12 seconds between requests; the other sources were audited and are unchanged. The browser-extension companion is Feature 14B, not part of 14A.
 - Feature 13 is complete (`d1bf217`, October 19, 2026): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
 - Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
@@ -147,7 +147,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### Main-product work still required before final acceptance
 
-- feature 14B — browser extension companion (next; not started; Feature 14 is not complete until it is accepted);
+- feature 14B — browser extension companion (implemented, awaiting review and local acceptance; Feature 14 is not complete until it is accepted);
 - feature 15 — source intelligence;
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
@@ -211,7 +211,7 @@ Current design targets:
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest / Jest + Playwright
 - **Browser-assisted retrieval:** Playwright (`playwright-core`) with headless Chromium, logged out, retrieval worker only (feature 14)
-- **Browser extension:** TypeScript + Chrome Manifest V3 (Feature 14B; not yet built)
+- **Browser extension:** TypeScript + Chrome Manifest V3, bundled with esbuild, loaded unpacked (Feature 14B; `apps/extension`)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -245,7 +245,7 @@ The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
 2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B, Feature 12, Feature 13 and Feature 14A are complete, and Feature 14B (the browser-extension companion) is next;
-3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, next), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, implemented, awaiting review and local acceptance), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 

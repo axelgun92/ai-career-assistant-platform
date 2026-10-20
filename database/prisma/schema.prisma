@@ -959,3 +959,17 @@ model RetrievedListing {
   @@index([opportunityId])
   @@index([lastSeenRunId])
 }
+
+// A browser paired with the extension companion (feature 14B). Only the
+// SHA-256 hash of the pairing credential is stored, never the credential;
+// the hint is its last characters, for recognizing it in the list. A revoked
+// pairing is kept (revokedAt set) so its captures' provenance stays readable.
+model ExtensionPairing {
+  id         String    @id @default(uuid()) @db.Uuid
+  label      String
+  tokenHash  String    @unique
+  tokenHint  String
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+}

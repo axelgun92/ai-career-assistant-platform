@@ -153,17 +153,22 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - Feature 14A, browser-assisted retrieval and source corrections (complete, `dd77d29`; LinkedIn stays unverified and disabled):
   - LinkedIn's public, logged-out job search and job pages, read in a headless browser started fresh for each run with no account, cookies or stored state, one page at a time at least 5 seconds apart; any refusal, sign-in wall or challenge ends the run and the source backs off. Listed on `/sources` but not enableable: its local adapter check discovered 60 public jobs, then the first job page answered HTTP 429;
   - We Work Remotely reads its all-jobs RSS feed (Customer Success titles kept locally); Wellfound waits at least 12 seconds between requests;
-  - the browser-extension companion is not part of 14A: it is Feature 14B, next.
+  - the browser-extension companion is not part of 14A: it is Feature 14B.
 
 ### In Progress
 
-- Feature 14B, the browser-extension companion, is next and not started (required main-product work; Feature 14 is not complete until it is accepted). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`) are complete.
+- Feature 14B, the browser-extension companion, is implemented and verified with automated tests and awaits review and local Chrome acceptance; it is not committed yet (Feature 14 is not complete until it is accepted):
+  - a Chrome Manifest V3 extension (`apps/extension`) that saves the job page you are viewing, only when you ask, into the same ingestion, deduplication, provenance and lifecycle as every other source;
+  - it reads structured job data, LinkedIn's job-detail areas only (on LinkedIn job pages), your selected text, or (not on LinkedIn) the page's main content;
+  - saving never evaluates; "Request evaluation" uses the existing evaluation path and the popup shows the persisted result;
+  - browsers are paired on the new Extension page (`/extension`) with a revocable credential shown once and stored only as a hash. See "5b. The browser extension" below.
+- Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`) are complete.
 - The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- feature 14B — browser extension companion (next; not started; Feature 14 is not complete until it is accepted);
+- feature 14B — browser extension companion (implemented, awaiting review and local acceptance; Feature 14 is not complete until it is accepted);
 - feature 15 — source intelligence;
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
@@ -229,7 +234,7 @@ Current design targets:
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest + Playwright
 - **Browser-assisted retrieval:** Playwright (`playwright-core`) with headless Chromium, logged out, retrieval worker only (feature 14)
-- **Browser extension:** TypeScript + Chrome Manifest V3 (Feature 14B; not yet built)
+- **Browser extension:** TypeScript + Chrome Manifest V3, bundled with esbuild, loaded unpacked (Feature 14B; `apps/extension`)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -263,7 +268,7 @@ The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
 2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit is complete and the Features 1–10 Gap Closure is implemented and under review;
-3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, next), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, implemented, awaiting review and local acceptance), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 
@@ -353,6 +358,18 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
   - **Coverage per run:** SmartRecruiters reads up to the newest 500 postings, Workday the first 100 postings its listing endpoint returns (5 pages of 20; Workday does not state the order), Workable a bounded window of its search results (up to 5 pages, relevance order) and Wellfound up to 11 pages of its role page. Sources whose lists lack full descriptions (SmartRecruiters, Workday) fetch at most 25 details per run, new listings first.
 - **Verifying a source contract.** `pnpm sources:verify <adapter> --config '<json>' --raw-dir <directory outside the repository>` makes that adapter's single verification request and checks the mapping (for LinkedIn, one search page and its first job page in a fresh logged-out browser). `--offline <directory>` re-checks saved responses without the network. It touches no database. Only run it with approval for that source.
 
+### 5b. The browser extension (Feature 14B)
+
+- **Build and load.** Run `pnpm extension:build`, which writes `apps/extension/dist` (git-ignored). Open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select `apps/extension/dist`. After a rebuild, press the extension's reload button.
+- **Pair.** In the app, open **Extension**, create a pairing and copy the credential (shown once; only its hash is stored). Paste it with the app's address (for example `http://localhost:3000`) into the extension's Options. Revoke a pairing there at any time; the next request from that browser gets 401.
+- **Capture.** On a job page, click the toolbar icon, then **Read this page**, check (and if needed correct) the editable preview, then **Save to AI Job Assistant**. Nothing is sent before Save.
+  - The extension reads that one page only after you click, and sends only the job's fields to the local app's `/api/extension/*` routes.
+  - It reads structured job data first; on LinkedIn, only the job-detail areas of a job page; then your selected text; then, except on LinkedIn, the page's main content.
+  - Unrecognised sites are kept as the lowest-priority source.
+  - A saved job is never evaluated automatically: **Request evaluation** uses the existing path, within your budget.
+- **Permissions:** `activeTab`, `scripting` and `storage`, plus host access to `127.0.0.1` and `localhost` only. There are no content scripts and no access to other tabs, history or cookies; a minimal service worker only restricts the extension's storage to its own pages. Details, privacy and the acceptance runbook (on a dedicated acceptance database) are in `apps/extension/README.md`.
+- **Doctor.** `pnpm app:doctor` now names the database it connected to (name and host only) and counts paired browsers.
+
 ### 6. Deterministic, no-paid-call workflow
 
 Every automated test uses a deterministic fixture provider; no test can make a paid call. There is deliberately no "fake AI" mode for normal use, because fixture results would be stored as if real.
@@ -441,7 +458,7 @@ Known points for later features:
 - the manual submission schema, `submit()` and `POST /api/opportunities` stay manual-specific; retrieval enters through `createRetrievalIngestionService` and the worker;
 - merging opportunities that already have history is not done (by decision); posting history (feature 13) is recorded per listing in `RetrievedListing`, and its facts are not yet passed to the evaluator;
 - the evaluator reads an opportunity's oldest `SourceRecord` (attached duplicates and changed observations come after it), and retrieved source items live under `rawPayload.source`, never as posting history;
-- `apps/extension` is a placeholder for the browser-extension companion (Feature 14B, next), which must feed the same backend.
+- the browser-extension companion (`apps/extension`, Feature 14B) enters through `POST /api/extension/captures`, which maps a capture to a retrieved listing with `BROWSER_EXTENSION` provenance and uses `createRetrievalIngestionService`; it never evaluates, and its evaluation wrappers call the existing evaluation handlers.
 
 ## Project Status
 

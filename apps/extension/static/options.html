@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Job Assistant Companion options</title>
+    <link rel="stylesheet" href="extension.css" />
+  </head>
+  <body class="options">
+    <main>
+      <h1>AI Job Assistant Companion</h1>
+      <p>
+        Connect this browser to your local AI Job Assistant. On its <strong>Extension</strong> page, create a pairing and
+        paste the credential here. The credential stays in this browser only and is sent only to the address below.
+      </p>
+      <form id="settings-form">
+        <label for="backend-url">AI Job Assistant address</label>
+        <input id="backend-url" type="url" required placeholder="http://localhost:3000" autocomplete="off" />
+        <label for="credential">Pairing credential</label>
+        <input id="credential" type="password" placeholder="aija_…" autocomplete="off" spellcheck="false" />
+        <p id="paired-state" class="muted"></p>
+        <p>
+          <button type="submit" id="save">Save</button>
+          <button type="button" id="test" class="secondary">Test connection</button>
+          <button type="button" id="forget" class="link" hidden>Forget pairing</button>
+        </p>
+      </form>
+      <p id="status" class="muted" role="status"></p>
+      <p class="muted">
+        The extension reads a page only when you press <em>Read this page</em>, and sends only that job posting's details.
+        It never reads other tabs, your browsing history, cookies, or account pages.
+      </p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

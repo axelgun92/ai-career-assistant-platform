@@ -1,0 +1,109 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+body {
+  margin: 0;
+  padding: 12px 14px;
+}
+
+body.popup {
+  width: 360px;
+}
+
+body.options main {
+  max-width: 34rem;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+h2 {
+  margin: 12px 0 4px;
+  font-size: 1rem;
+}
+
+p {
+  margin: 6px 0;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 6px 0;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  resize: vertical;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+button {
+  margin: 4px 6px 4px 0;
+  padding: 6px 12px;
+  border: 1px solid #1d4ed8;
+  border-radius: 4px;
+  background: #1d4ed8;
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: transparent;
+  color: #1d4ed8;
+}
+
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+label {
+  display: block;
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px;
+  font: inherit;
+}
+
+.footer {
+  margin-top: 12px;
+}

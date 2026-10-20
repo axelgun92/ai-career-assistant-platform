@@ -13,3 +13,4 @@ export * from "./posting-history";
 export * from "./opportunity-lifecycle";
 export * from "./budget";
 export * from "./application";
+export * from "./extension-capture";

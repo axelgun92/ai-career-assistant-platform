@@ -10,6 +10,69 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026.
 
+### Feature 14B — browser-extension companion (October 20, 2026; implemented and verified, awaiting review and local acceptance; not committed)
+
+Built to the approved Feature 14B plan (decisions D1–D4 and O1–O4) and the Feature 14B implementation prompt (decisions D1–D8).
+
+- **Extension** (`apps/extension`, TypeScript, Manifest V3, esbuild, `pnpm extension:build`, loaded unpacked):
+  - a popup that reads the job page you are viewing only on "Read this page", shows an editable preview (title, company, location, description; corrected fields named in `editedFields`), and sends it only on "Save";
+  - a self-contained page reader that takes no arguments and has no storage, cookie or network access;
+  - local envelope validation with the server's schema;
+  - one API client limited to `/api/extension/*` on a local backend;
+  - options that keep the backend address and pairing credential in `chrome.storage.local` only, restricted to the extension's own pages with `setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`;
+  - a minimal service worker that only applies that restriction on installation and browser start.
+  - Permissions: `activeTab`, `scripting` and `storage`, plus host access to `127.0.0.1` and `localhost` only. No content scripts.
+- **Extraction:**
+  - schema.org JobPosting data first;
+  - on LinkedIn job pages only, a reader limited to the job-detail areas, then the user's selection, with no whole-page fallback, and never account, profile, messaging, feed or cookies;
+  - the user's selection;
+  - everywhere except LinkedIn, the page's main content.
+  - Welcome to the Jungle and Otta go through the generic path. Nothing is invented.
+- **Capture API** (`POST /api/extension/captures`):
+  - a strict envelope (128 KB, 50,000-character description, no HTML);
+  - server-side site classification: known ATS, job-board and marketplace hosts, every other host AGGREGATOR with its real host kept;
+  - LinkedIn canonical job URLs;
+  - mapped to a retrieved listing with `BROWSER_EXTENSION` / `BROWSER_ASSISTED` provenance and ingested through `createRetrievalIngestionService`: created, attached, unchanged or changed, with existing link precedence.
+  - Captures never evaluate.
+  - Also `GET /api/extension/status` and `GET /api/extension/lookup`.
+- **Evaluation from the extension:**
+  - the explicit "Request evaluation" and the status read go through credential-gated wrappers (`/api/extension/opportunities/:id/evaluation-requests` and `…/evaluation`);
+  - the wrappers call the existing `handleProductionEvaluationPost` and `handleProductionEvaluationGet` unchanged;
+  - the popup shows only the persisted state and recommendation.
+- **Pairing:**
+  - an Extension page (`/extension`, in the header) to create, list and revoke pairings;
+  - the credential (`aija_` plus 32 random bytes) is shown once and stored only as a SHA-256 hash;
+  - a constant-time check, web origins refused (403), no CORS (`OPTIONS` → 405);
+  - pairing management is same-origin only and refuses Bearer credentials.
+- **Migration:** `20261020090000_extension_pairing` (additive; one table, no foreign keys), applied only to the isolated test database.
+- **Doctor:** names the connected database (name and host only) and counts paired browsers.
+- **Checks made during implementation:**
+  - Chrome storage restriction: supported, Chrome 102 and later (the manifest requires 120). In Chromium 141 a page-injected script reads `chrome.storage.local` by default and is refused after the restriction.
+  - Shell `DATABASE_URL` precedence over `.env`: proved for `app:doctor`, Prisma, `next dev` and `dotenv/config` with a temporary decoy `.env`.
+- **Acceptance runbook** (`apps/extension/README.md`), with a local fixture page (`apps/extension/fixtures/acceptance-job.html`):
+  - a dedicated `ai_career_assistant_acceptance` database, selected in the shell;
+  - the doctor's database line checked before and after migrating;
+  - an offline evaluation mode with no provider call.
+- **Tests:**
+  - unit: `extension-extract` (13), `extension-client` (16), `extension-server` (41), plus doctor and navigation checks; 1,433 unit tests in all;
+  - integration: `extension-capture` (7, on the test database); 265 integration tests in all;
+  - E2E: a new Playwright `extension` project (6) that loads the built extension into Chromium through `launchPersistentContext`, with DNS limited to `127.0.0.1` and `localhost`. It covers:
+    - the service worker and storage closed to page scripts;
+    - pairing, the editable preview, and no capture request before Save;
+    - created, unchanged and possible-duplicate results;
+    - Open in AI Job Assistant;
+    - Request evaluation with its queued, running, completed and failed states (the deterministic helper worker, fixture transport);
+    - a page with no job;
+    - the LinkedIn reader with decoys and Welcome to the Jungle in real Chromium (pages answered by Playwright);
+    - revocation and route refusals.
+  - Full E2E chain on the test database: 43/43 passed (7.2 min), including the 6 extension tests.
+  - The production web build passes.
+- **Unchanged:** evaluator internals, model routing, semantic schemas and recommendation logic.
+- **Spec versions:** Core Platform TDD v1.14, Customer Success TDD v1.12, Core AI Framework PRD v1.13 and Customer Success PRD v1.12; the previous versions moved unchanged into `Archive/`. TDD v1.14 also:
+  - corrects Section 9's stale "verified browser-assisted sources include LinkedIn and Upwork": LinkedIn's browser-assisted support is implemented, but the source is unverified and disabled after HTTP 429; Upwork is Freelance-domain;
+  - records the approved pairing-credential exception and the user-requested evaluation rule.
+- **Remaining:** Alex's review, Alex's local Chrome acceptance on the acceptance database, and the commit (on approval).
+
 ### Feature 14A — browser-assisted LinkedIn retrieval and source corrections (October 19, 2026; awaiting review)
 
 *(Correction, October 20, 2026: heading changed from "Feature 14 — …". This entry covers Feature 14A. Feature 14B, the browser-extension companion, is required main-product work, is not yet implemented and is next, so Feature 14 is not complete. New specification versions record this: Core Platform TDD v1.13, Core AI Framework PRD v1.12, Customer Success AI Assistant PRD v1.11 and Customer Success Assistant TDD v1.11, with the previous versions moved to `Archive/`.)*

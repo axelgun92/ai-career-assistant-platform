@@ -1616,3 +1616,19 @@ main {
   margin: 0.25rem 0;
   overflow-wrap: anywhere;
 }
+
+/* Browser extension pairing (feature 14B) */
+.pairing-credential {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #a16207;
+  border-radius: 0.5rem;
+  background: #fefce8;
+}
+
+.pairing-credential code {
+  display: block;
+  padding: 0.5rem;
+  overflow-wrap: anywhere;
+  background: #ffffff;
+}

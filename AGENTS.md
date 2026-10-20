@@ -10,10 +10,10 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.12.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.13.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.11.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.11.docx`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.13.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.14.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.12.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.12.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
@@ -27,10 +27,10 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.12.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.11.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.13.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.11.docx` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.13.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.12.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.14.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.12.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
@@ -154,7 +154,9 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
     v1.10, Core Platform TDD v1.12, Customer Success TDD v1.10); the LinkedIn source stays
     unverified and disabled (its local adapter check discovered 60 public jobs, then the first job
     page answered HTTP 429); a later job-page check needs separate approval
-  → now: 14B, the browser-extension companion: required main-product work, not yet implemented
+  → now: 14B, the browser-extension companion: required main-product work, implemented and verified
+    October 20, 2026 (apps/extension, /api/extension/*, /extension); awaiting Alex's review and local
+    Chrome acceptance on a dedicated acceptance database; not committed
     (an October 19 implementation instruction incorrectly treated 14B as deferred, optional and not
     required; no approved roadmap or product-scope revision removed it; corrected October 20 in Core
     AI Framework PRD v1.12, Customer Success PRD v1.11, Core Platform TDD v1.13 and Customer Success

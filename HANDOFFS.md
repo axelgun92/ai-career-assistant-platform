@@ -1078,3 +1078,26 @@ Feature 14 adds browser-assisted retrieval for public, logged-out LinkedIn job p
 Final Integration Checklist: items 1–4 are shared-contract changes to note in the Codex review list. Feature 14 changes nothing on the evaluator side.
 
 *(Annotation, October 20, 2026: Feature 14A, this record, was committed as `dd77d29` and accepted after the local-runtime LinkedIn adapter check (60 public jobs discovered; the first job page answered HTTP 429 and the run stopped with no retry). LinkedIn stays `verified: false` and disabled. Feature 14B, the browser-extension companion, is required main-product work, not yet implemented and next, so Feature 14 is not complete; its shared-boundary changes will be recorded here when it is built. The record above is preserved as written.)*
+
+### Feature 14B — shared-boundary record (October 20, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-20\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and local Chrome acceptance; not committed (every entry above is preserved as written)
+
+Feature 14B adds the browser-extension companion. It is a source-collection boundary only. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic or `loadSubject()` changed.**
+
+1. **Shared contract** (`packages/core/src/extension-capture.ts`, exported from `@ai-career/core`): `extensionCaptureSchema` (strict, `schemaVersion: 1`), `cleanCapturedText`, `cleanPageUrl` and `linkedInJobIdFromUrl`, plus `editedFields` (the preview fields the user corrected before saving, kept in `sourceMetadata.capture.editedFields`). The extension bundles this file; the server parses every capture again with it.
+2. **Ingestion:** a capture becomes a retrieved listing through the existing `buildRetrievedListing` and `createRetrievalIngestionService`. It carries:
+   - `source: "browser-extension"`, `sourceType: BROWSER_EXTENSION`, `retrievalType: BROWSER_ASSISTED`;
+   - the server-derived `sourceCategory`: known ATS, job-board and marketplace hosts, every other host AGGREGATOR;
+   - `retrievalSourceId` and `retrievalRunId` null, so there are no Feature 13 ledger rows;
+   - `externalId` `"linkedin:<id>"` (with the canonical `/jobs/view/<id>` URL) or `"<site>:<URL key>"`;
+   - `sourceMetadata.capture` holding `pairingId`, `extractor`, `capturedAt`, `extensionVersion`, `host`, `site`, `knownHost`, `siteJobId` and `notes`.
+
+   The evaluator reads such a record like any retrieved source record: its oldest `SourceRecord`, with the description as captured text.
+3. **Evaluation:** a capture never evaluates. The extension's evaluation request and status routes are credential-gated wrappers that call the existing `handleProductionEvaluationPost` and `handleProductionEvaluationGet` unchanged. Budget, duplicate-spend, queueing, retries and persistence are untouched.
+4. **Schema:** migration `20261020090000_extension_pairing` (additive): the `ExtensionPairing` table (`tokenHash` unique, no foreign keys).
+
+Final Integration Checklist: items 1–2 are shared-contract additions to note in the Codex review list. Feature 14B changes nothing on the evaluator side.

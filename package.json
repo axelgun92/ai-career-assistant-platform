@@ -11,6 +11,7 @@
     "dev": "pnpm --filter @ai-career/web dev",
     "build": "pnpm --filter @ai-career/web build",
     "start": "pnpm --filter @ai-career/web start",
+    "extension:build": "pnpm --filter @ai-career/extension build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",

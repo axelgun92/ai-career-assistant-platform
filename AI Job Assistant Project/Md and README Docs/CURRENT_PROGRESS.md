@@ -5,13 +5,15 @@
 
 ## Current Objective
 
-**Feature 14B — the browser-extension companion** is the next main-product task. It is required main-product work and is not yet implemented (no extension code exists; `apps/extension` holds only a placeholder). Feature 14 has two parts and is **not complete until 14B is accepted**; there is no Feature 14C.
+**Feature 14B — the browser-extension companion** is implemented and verified with automated tests on `claude/gallant-pasteur-y1ou3i`, and awaits Alex's review and local Chrome acceptance. It is **not committed or pushed**. It was built to the approved Feature 14B plan (decisions D1–D4 and O1–O4, October 20, 2026); see "Feature 14B" under Recently Completed. Feature 14 is **not complete until 14B is accepted**; there is no Feature 14C, and Feature 15 does not start before then.
+
+*(Earlier wording, superseded on October 20, 2026 when 14B was implemented: "Feature 14B … is the next main-product task. It is required main-product work and is not yet implemented (no extension code exists; `apps/extension` holds only a placeholder).")*
 
 **Feature 14A — browser-assisted automated retrieval and source corrections** is complete and accepted: committed and pushed as `dd77d298cfb0888f8914e1592d30d426b30fe6c4` on `claude/gallant-pasteur-y1ou3i` (October 20, 2026) and accepted after the local-runtime LinkedIn adapter check. On October 20, 2026 the committed adapter (`dd77d29`) was run from the local WSL runtime with one search page and one job page: the public search page returned HTTP 200 and 60 public job cards were discovered (the "Sign in to view more jobs" modal did not prevent it); the first job-detail page returned HTTP 429, and the run stopped at once as RATE_LIMITED, with no retry and no listing emitted. Feature 14A was accepted on that result; LinkedIn itself stays unverified and disabled (a source-side rate limit, not an implementation defect) and is not retried. Any later live check of LinkedIn's job pages is a separate, explicitly approved source-enablement decision.
 
 In order, what follows:
 
-1. Next: Feature 14B, the browser-extension companion (not started; its scope and decisions are recorded in the read-only Feature 14 audit of October 20, 2026).
+1. Next: Alex's review of Feature 14B (implementation, verification and documentation, including the new spec versions, are done), then its local acceptance in Chrome on a dedicated acceptance database (`apps/extension/README.md`, "Local acceptance runbook"), then the checkpoint commit on Alex's approval. *(Earlier step: "Next: Feature 14B, the browser-extension companion (not started …)", superseded October 20, 2026 when it was implemented.)*
 2. Then: main-product features 15–18, after 14B is accepted. Feature 15 does not begin before then unless Alex changes the roadmap.
 3. Only after features 1–18: deliberate evaluator/product integration (including how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
 
@@ -118,7 +120,79 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–19, 2026)
+## Recently Completed (October 14–20, 2026)
+
+### Feature 14B — browser-extension companion (implemented and verified October 20, 2026; awaiting review and local acceptance; not committed)
+
+**What it is.** A TypeScript Manifest V3 extension in `apps/extension` that saves the job page Alex is viewing into the local AI Job Assistant, only when asked. It is a source-collection boundary only: no evaluator, model calls, prompts, budget, recommendation logic, lifecycle or database of its own.
+
+**Approved decisions it implements (October 20, 2026).**
+- **D1, evaluation.** A capture only saves. After a save, an explicit **Request evaluation** goes through an authenticated extension wrapper to the existing production evaluation handler. The popup shows only the persisted queued, running, completed or failed state and the recommendation, read-only.
+- **D2, LinkedIn.** Job pages only, read through structured data, then a reader limited to LinkedIn's job-detail areas, then Alex's selection. There is no whole-page fallback. Account, profile, messaging, feed, cookies and other tabs are never read. It complements 14A and does not address 14A's HTTP 429.
+- **D3, WTTJ/Otta.** Generic extraction only; there is no site reader.
+- **D4, authentication.** A revocable pairing credential, shown once and stored server-side only as a SHA-256 hash. The extension keeps it only in `chrome.storage.local`.
+- **O1, unknown hosts.** Accepted as AGGREGATOR, the lowest link precedence, with the real host and capture provenance kept.
+- **O2, acceptance database.** A dedicated local acceptance database.
+- **O3, stale Core TDD wording.** Corrected at the 14B closeout spec version.
+- **O4, evaluation routes.** The credential protects the extension's evaluation request and status wrappers under `/api/extension/*`.
+
+**Built.**
+- **The extension** (`apps/extension`):
+  - `manifest.json` with exactly `activeTab`, `scripting` and `storage`, host access to `127.0.0.1` and `localhost` only, no content scripts, and a minimal service worker (`service-worker.ts`).
+  - The service worker only restricts the extension's storage to its own pages, on installation and every browser start.
+  - `extract.ts`: one self-contained page reader, injected only on "Read this page", taking no arguments and using no storage, cookies or network.
+  - `envelope.ts`: local validation with the server's own schema, and the user's corrections from the editable preview, named in `editedFields`.
+  - `api.ts`: the only `fetch`, limited to `/api/extension/*` on a local backend.
+  - `settings.ts`: `chrome.storage.local` only, restricted with `setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`.
+  - The popup: an editable preview (title, company, location, description; nothing sent before Save), Save, Request evaluation, and the persisted state.
+  - The options page, and `build.mjs` (esbuild, writing `dist/`, which is git-ignored).
+  - `pnpm extension:build`.
+- **Core:** `packages/core/src/extension-capture.ts`, the strict capture envelope (128 KB body, 50,000-character description, no HTML), the user-corrected `editedFields`, text cleaning, URL cleaning and LinkedIn job-ID parsing, shared by the server and the extension.
+- **Server:**
+  - `extension-auth.ts`: credential generation and hashing; the Bearer check with constant-time comparison; refusal of web origins; same-origin-only pairing management that refuses Bearer credentials; JSON bodies capped, with 415, 413 and 400 responses.
+  - `extension-capture.ts`: site classification (known ATS, job-board and marketplace hosts, everything else AGGREGATOR); page identity (LinkedIn canonical `/jobs/view/<id>` and `linkedin:<id>`, otherwise `<site>:<cleaned URL key>`); and the mapping to `buildRetrievedListing` with `BROWSER_EXTENSION` / `BROWSER_ASSISTED`, then `createRetrievalIngestionService`. Captures are not title-filtered; `outsideRoleFamilies` is informational.
+  - `extension-api.ts`: the handlers.
+  - Seven route files under `apps/web/src/app/api/extension/`: captures, status, lookup, pairings, pairings/[id]/revoke, opportunities/[id]/evaluation-requests and opportunities/[id]/evaluation. `OPTIONS` returns 405 and no CORS headers are emitted.
+- **App:** an **Extension** page (`/extension`) to create, list and revoke pairings, added to the header navigation. The doctor names the connected database (name and host only) and counts paired browsers.
+- **Database:** one additive migration, `20261020090000_extension_pairing` (the `ExtensionPairing` table, with no foreign keys; rollback is `DROP TABLE "ExtensionPairing";`). It was applied only to the isolated test database, and `db:verify-migrations` passes with 20 migrations. Also `PrismaExtensionPairingRepository` and the read-only `PrismaExtensionLookupRepository`.
+- **Unchanged:** evaluator internals, model routing, semantic schemas and recommendation logic.
+
+**Differences from the approved plan's wording, all approved or required by the implementation prompt.**
+- **Unknown-host identity (approved refinement, October 20, 2026).** An unrecognised site's listing identity is its cleaned page URL. Any identifier the page declares (for example a JSON-LD `identifier`) is kept as capture metadata (`siteJobId`) and not trusted as identity. Known sites keep their URL-based ID rules (LinkedIn's job ID).
+- **A minimal service worker.** The plan text said "no service worker". The Feature 14B implementation prompt lists one, with an E2E check that it starts. It only restricts storage.
+- **An editable preview.** The plan text said the preview is read-only. The implementation prompt requires it to be editable and testable. Corrected fields are named in the capture (`editedFields`) for provenance.
+
+**Implementation-time checks from the plan.**
+- **Chrome storage restriction:** `chrome.storage.local.setAccessLevel` is supported (Chrome 102 and later; the manifest requires 120). In Chromium 141 a scratch control showed that a page-injected script reads `chrome.storage.local` by default and is refused after `TRUSTED_CONTEXTS` is set. The extension E2E checks that a page-injected script cannot read the extension's storage, while its own pages can.
+- **Shell `DATABASE_URL` precedence:** proved with a temporary decoy `.env` naming a nonexistent database, removed afterwards. With the shell variable, `pnpm app:doctor`, Prisma (`db:status`, the same config `app:setup` uses), `next dev` (`/api/health`) and `dotenv/config` (the worker's loader) each used the shell's database. Without it, each read the decoy, which proves `.env` is loaded otherwise. The normal application database was never involved.
+
+**Verified (October 20, 2026; isolated test database only; no live third-party requests; no provider or evaluator calls beyond the fixture transport).**
+- typecheck and lint, including the new extension package;
+- unit tests: 57 files and 1,433 tests, among them `extension-extract` (13), `extension-client` (16) and `extension-server` (41), plus doctor and navigation checks;
+- integration on the test database: 31 files and 265 tests, including `extension-capture` (7);
+- E2E: the `extension` Playwright project (6 tests) loads the built unpacked extension into Chromium 141 with `launchPersistentContext`, with DNS limited to `127.0.0.1` and `localhost`. The full E2E chain passed 43/43 (7.2 min) after the service worker and editable preview were added (and 39/39 before them);
+- the production web build; `pnpm extension:build`; `db:verify-migrations`; `git diff --check`; `apps/web/next-env.d.ts` left unchanged.
+
+The extension E2E covers:
+- the service worker starting, and storage closed to page scripts;
+- pairing through the UI, and the editable preview;
+- that no capture request is made before Save;
+- created, unchanged and possible-duplicate results, and a corrected title being saved;
+- Open in AI Job Assistant;
+- Request evaluation with its queued, running, completed (with the recommendation) and failed states;
+- a page with no job;
+- the LinkedIn reader in real Chromium, with profile, message and feed decoys and no whole-page fallback, and the Welcome to the Jungle generic path, on pages Playwright answers itself;
+- revocation (then 401), and the routes' refusals.
+
+**Versioned specifications.** Core Platform TDD v1.14, Customer Success TDD v1.12, Core AI Framework PRD v1.13 and Customer Success PRD v1.12 are built from the previous versions, which moved unchanged into `Archive/`. Core Platform TDD v1.14:
+- records Feature 14B's implementation status (Section 51);
+- notes in Section 45 that evaluation after capture is only ever the user's explicit request;
+- records the approved pairing-credential exception to the general rule against secrets in browser storage;
+- corrects Section 9's stale wording (D7/O3): browser-assisted support for LinkedIn is implemented, but the source remains unverified and disabled after the local check (search page HTTP 200 with 60 cards, first job page HTTP 429), and Upwork belongs to the Freelance Writing domain, implying no Customer Success verification.
+
+The others refresh the 14B status and their dependencies.
+
+**What remains.** Alex's review of this implementation, then Alex's local acceptance in Chrome on a dedicated acceptance database (runbook in `apps/extension/README.md`), then the checkpoint commit (only on Alex's approval). Feature 14 is complete only then, and Alex's personal documentation copies are exported only then.
 
 ### Feature 14A — browser-assisted retrieval and source corrections (committed `dd77d29` and accepted, October 20, 2026)
 
@@ -908,7 +982,7 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-Feature 14B (the browser-extension companion) is the next main-product task and has not started. Feature 14A (browser-assisted LinkedIn retrieval and source corrections) was committed as `dd77d29` and accepted on October 20, 2026; Feature 14 as a whole is not complete until 14B is accepted. Features 15–18 follow 14B.
+Feature 14B (the browser-extension companion) is implemented and verified (October 20, 2026) and awaits Alex's review and local acceptance; it is not committed. Feature 14A (browser-assisted LinkedIn retrieval and source corrections) was committed as `dd77d29` and accepted on October 20, 2026; Feature 14 as a whole is not complete until 14B is accepted. Features 15–18 follow 14B.
 
 *(Earlier status, superseded on October 20, 2026: "Feature 14 (browser-assisted LinkedIn retrieval and source corrections) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `dd77d29` and accepted.)*
 
@@ -1638,9 +1712,9 @@ Revised roadmap:
 
 Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are complete.
 
-The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`, accepted October 20, 2026) are committed; Feature 14B is not yet implemented.
+The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`, accepted October 20, 2026) are committed; Feature 14B is implemented and verified (October 20, 2026), awaiting review and local acceptance, and not committed.
 
-1. Next: Feature 14B, the browser-extension companion; Feature 14 is not complete until it is accepted. *(Earlier steps: "Next: user review of Feature 11A …", of Feature 11B, of Feature 12, of Feature 13 and of Feature 14A, superseded October 18–20, 2026 after the commits `fad2341`, `2a1d8c2`, `f10a02b`, `d1bf217` and `dd77d29`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
+1. Next: Alex's review and local Chrome acceptance of Feature 14B (implemented October 20, 2026), then its checkpoint commit and documentation closeout; Feature 14 is not complete until it is accepted. *(Earlier steps: "Next: Feature 14B, the browser-extension companion", superseded October 20, 2026 when it was implemented; "Next: user review of Feature 11A …", of Feature 11B, of Feature 12, of Feature 13 and of Feature 14A, superseded October 18–20, 2026 after the commits `fad2341`, `2a1d8c2`, `f10a02b`, `d1bf217` and `dd77d29`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
 2. Then, after 14B is accepted, features 15–18 in order: source intelligence, market analytics, personal job-search analytics, and company intelligence. *(Earlier step: "main-product features 14–18: browser extension, …"; on October 19, 2026 the browser-assisted LinkedIn retrieval and source corrections became feature 14A, and the browser-extension companion remains feature 14B, next.)*
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
