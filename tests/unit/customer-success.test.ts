@@ -24,6 +24,10 @@ function createSubject(input: {
   rawText: string;
   title?: string;
   salaryText?: string | null;
+  compensationBasis?: "BASE" | "OTE" | null;
+  salaryMinimum?: number | null;
+  salaryMaximum?: number | null;
+  currency?: string | null;
 }) {
   const subject = createNeutralEvaluationSubject();
   subject.opportunity.domain = "customer-success";
@@ -31,10 +35,11 @@ function createSubject(input: {
   subject.opportunity.companyName = "Example Technology";
   subject.opportunity.jobDescription = input.rawText;
   subject.opportunity.salaryText = input.salaryText ?? null;
+  subject.opportunity.compensationBasis = input.compensationBasis ?? null;
   const compensation = parseCompensation(subject.opportunity.salaryText);
-  subject.opportunity.salaryMin = compensation.minimum;
-  subject.opportunity.salaryMax = compensation.maximum;
-  subject.opportunity.currency = compensation.currency;
+  subject.opportunity.salaryMin = input.salaryMinimum ?? compensation.minimum;
+  subject.opportunity.salaryMax = input.salaryMaximum ?? compensation.maximum;
+  subject.opportunity.currency = input.currency ?? compensation.currency;
   const residency = parseResidency({ location: null, rawText: input.rawText });
   subject.opportunity.residencyRequirement = residency.requirement;
   subject.opportunity.residencyRegions = residency.regions;
@@ -50,6 +55,10 @@ async function run(input: {
   rawText?: string;
   title?: string;
   salaryText?: string | null;
+  compensationBasis?: "BASE" | "OTE" | null;
+  salaryMinimum?: number | null;
+  salaryMaximum?: number | null;
+  currency?: string | null;
   operations?: CustomerSuccessSemanticOperations;
 }) {
   const fixture = createCustomerSuccessFixtureOperations({
@@ -67,6 +76,10 @@ async function run(input: {
       ].join(" "),
     title: input.title,
     salaryText: input.salaryText,
+    compensationBasis: input.compensationBasis,
+    salaryMinimum: input.salaryMinimum,
+    salaryMaximum: input.salaryMaximum,
+    currency: input.currency,
   });
   const repository = new InMemoryEvaluationRepository(subject);
   const executor = createEvaluationExecutor(repository);
@@ -156,6 +169,72 @@ describe("Customer Success domain foundation", () => {
       rawText: `Remote - United States only. Salary ${salary}.`,
     });
     expect(result.domainResult!.hardFilters.salary.result).toBe(expected);
+  });
+
+  it.each([null, "BASE"] as const)(
+    "evaluates a disclosed salary with basis %s through the full deterministic stage",
+    async (compensationBasis) => {
+      const { result } = await run({
+        salaryText: "$70,000-$90,000 USD",
+        compensationBasis,
+        rawText: "Remote - United States only. Salary $70,000-$90,000 USD.",
+      });
+      expect(result.domainResult!.hardFilters.salary.result).toBe("PASS");
+    },
+  );
+
+  it("keeps an explicit OTE range factual while salary eligibility remains Unknown", async () => {
+    const { result } = await run({
+      salaryText: "$105,000-$155,000 USD OTE",
+      compensationBasis: "OTE",
+      salaryMinimum: 105_000,
+      salaryMaximum: 155_000,
+      currency: "USD",
+      rawText:
+        "Remote - United States only. Compensation is $105,000-$155,000 USD OTE.",
+    });
+    const hardFilters = result.domainResult!.hardFilters;
+    expect(hardFilters.reconstruction.salary).toMatchObject({
+      minimum: 105_000,
+      maximum: 155_000,
+      currency: "USD",
+    });
+    expect(hardFilters.salary).toMatchObject({
+      result: "UNKNOWN",
+      evidenceReferences: expect.arrayContaining([
+        "salary-compensation-basis",
+      ]),
+    });
+    expect(hardFilters.salary.explanation).toContain("explicitly OTE");
+    expect(
+      result.evaluation.evidenceRecords.find(
+        (item) => item.referenceId === "salary-compensation-basis",
+      ),
+    ).toMatchObject({
+      sourceText: "$105,000-$155,000 USD OTE",
+      claim: "The normalized compensation basis is OTE.",
+    });
+  });
+
+  it("uses foreign currency only for evaluator-side conversion and preserves source facts", async () => {
+    const { result, subject } = await run({
+      salaryText: "€58,000-€68,000 EUR",
+      salaryMinimum: 58_000,
+      salaryMaximum: 68_000,
+      currency: "EUR",
+      rawText: "Remote. Candidates must reside in Spain. Salary €58,000-€68,000 EUR.",
+    });
+    expect(result.domainResult!.hardFilters.salary.result).toBe("PASS");
+    expect(result.domainResult!.hardFilters.reconstruction.salary).toMatchObject({
+      minimum: 58_000,
+      maximum: 68_000,
+      currency: "EUR",
+    });
+    expect(subject.opportunity).toMatchObject({
+      salaryMin: 58_000,
+      salaryMax: 68_000,
+      currency: "EUR",
+    });
   });
 
   it("reviews the conditional non-US band only for configured viable residence", async () => {

@@ -9,6 +9,7 @@ function evaluate(input: {
   minimum: number | null;
   maximum?: number | null;
   currency?: string | null;
+  compensationBasis?: "BASE" | "OTE" | null;
   residencyRequirement: "US_REQUIRED" | "NON_US" | null;
   residencyRegions?: string[];
   substantiallyLowerCostCountries?: string[];
@@ -17,6 +18,7 @@ function evaluate(input: {
     minimum: input.minimum,
     maximum: input.maximum ?? input.minimum,
     currency: input.currency === undefined ? "USD" : input.currency,
+    compensationBasis: input.compensationBasis ?? null,
     residencyRequirement: input.residencyRequirement,
     residencyRegions: input.residencyRegions ?? [],
     substantiallyLowerCostCountries:
@@ -106,7 +108,7 @@ describe("Customer Success salary policy", () => {
 
   it("uses the versioned ECB cross-rate configuration", () => {
     expect(customerSuccessSalaryPolicy.version).toBe(
-      "cs-salary-policy-v2-ecb-2026-10-14",
+      "cs-salary-policy-v3-ecb-2026-10-14",
     );
     expect(salaryAmountInUsd(10_000, "EUR")).toBe(11_195);
     expect(salaryAmountInUsd(10_000, "GBP")).toBe(13_266.58);
@@ -152,6 +154,36 @@ describe("Customer Success salary policy", () => {
         residencyRequirement: "US_REQUIRED",
       }).result,
     ).toBe("FAIL");
+  });
+
+  it.each([null, "BASE"] as const)(
+    "evaluates an ordinary stated range with basis %s normally",
+    (compensationBasis) => {
+      expect(
+        evaluate({
+          minimum: 70_000,
+          maximum: 90_000,
+          compensationBasis,
+          residencyRequirement: "US_REQUIRED",
+        }),
+      ).toMatchObject({ result: "PASS", reason: "US_THRESHOLD" });
+    },
+  );
+
+  it("keeps explicit OTE facts but does not treat them as confirmed base salary", () => {
+    expect(
+      evaluate({
+        minimum: 105_000,
+        maximum: 155_000,
+        compensationBasis: "OTE",
+        residencyRequirement: "US_REQUIRED",
+      }),
+    ).toMatchObject({
+      result: "UNKNOWN",
+      reason: "OTE_NOT_CONFIRMED_BASE",
+      minimumUsd: null,
+      maximumUsd: null,
+    });
   });
 
   it("keeps a max-only disclosure Unknown unless even its maximum is below the floor", () => {

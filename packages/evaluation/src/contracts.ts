@@ -182,8 +182,20 @@ export interface EvaluationProvenanceContext {
   sourceText: string | null;
 }
 
+/**
+ * Evaluator-side view of the finalized shared-Core compensation-basis contract.
+ *
+ * This compatibility type lets the evaluator branch consume the field without
+ * redefining the shared Core opportunity schema before the product/evaluator
+ * integration merge.
+ */
+export type EvaluationCompensationBasis = "BASE" | "OTE";
+
 export interface EvaluationSubject {
-  opportunity: NormalizedOpportunity & { id: string };
+  opportunity: NormalizedOpportunity & {
+    id: string;
+    compensationBasis: EvaluationCompensationBasis | null;
+  };
   rawSources: EvaluationSourceContext[];
   provenance: EvaluationProvenanceContext[];
   userProfile: {

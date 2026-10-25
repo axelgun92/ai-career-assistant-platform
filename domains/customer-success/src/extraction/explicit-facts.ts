@@ -141,7 +141,25 @@ function parseSalary(
             currencyProvenance.kind === "DIRECT" ? "EXPLICIT" : "DERIVED",
         })
       : null;
-  const evidenceRecords = [item, currencyEvidence].filter(
+  const basis = context.opportunity.compensationBasis;
+  const basisProvenance = context.provenance.find(
+    (provenance) => provenance.fieldName === "compensationBasis",
+  );
+  const basisEvidence =
+    basis !== null
+      ? evidence({
+          context,
+          referenceId: "salary-compensation-basis",
+          criterionId: "salary",
+          claim: `The normalized compensation basis is ${basis}.`,
+          sourceField: basisProvenance?.sourceField ?? "compensationBasis",
+          sourceText: basisProvenance?.sourceText ?? supplied ?? sourceText,
+          provenance: basisProvenance,
+          origin:
+            basisProvenance?.kind === "DIRECT" ? "EXPLICIT" : "DERIVED",
+        })
+      : null;
+  const evidenceRecords = [item, currencyEvidence, basisEvidence].filter(
     (record): record is EvidenceRecordDraft => record !== null,
   );
   return {

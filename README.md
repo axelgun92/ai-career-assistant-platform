@@ -99,6 +99,15 @@ Current accepted semantic model routing:
 
 Model routing is treated as an execution detail. It does not change the meaning of the domain schemas, stage outputs, evidence rules, Unknown handling, contradictions, or recommendation behavior.
 
+### Deterministic salary eligibility contract
+
+The Customer Success salary Hard Filter consumes normalized Core facts rather than re-parsing compensation text. Its integration contract is `salaryMin`, `salaryMax`, `currency`, `salaryText`, `compensationBasis`, `residencyRequirement`, and `residencyRegions`.
+
+- `compensationBasis = BASE` and a `null`/unknown basis use the existing versioned FX and residency-selected salary thresholds.
+- `compensationBasis = OTE` preserves the stated numeric range and original currency as facts, but the range does not establish qualifying base salary; base-salary eligibility remains Unknown unless a separate future contract supplies qualifying base evidence.
+- USD-equivalent conversion is evaluator-only. It never overwrites the persisted opportunity currency or compensation values.
+- Residency selects the U.S. or non-U.S. salary-policy branch. Work authorization remains a separate concept and `UserEligibility` is not evaluator input.
+
 ## Current Development Status
 
 ### Implemented

@@ -45,6 +45,7 @@ export function createNeutralEvaluationSubject(): EvaluationSubject {
       salaryMin: null,
       salaryMax: null,
       salaryText: null,
+      compensationBasis: null,
       bonus: null,
       equity: null,
       currency: null,

@@ -2,7 +2,7 @@ import { fieldsWithheldFromEvaluator } from "../../database/src/evaluation-repos
 import { describe, expect, it } from "vitest";
 
 describe("evaluation input contract", () => {
-  it("releases salary, currency, and residency while retaining unrelated withholding", () => {
+  it("releases compensation, currency, and residency while retaining unrelated withholding", () => {
     expect(fieldsWithheldFromEvaluator).toEqual([
       "remoteStatus",
       "seniority",
@@ -14,7 +14,9 @@ describe("evaluation input contract", () => {
       expect.arrayContaining([
         "salaryMin",
         "salaryMax",
+        "salaryText",
         "currency",
+        "compensationBasis",
         "residencyRequirement",
         "residencyRegions",
       ]),

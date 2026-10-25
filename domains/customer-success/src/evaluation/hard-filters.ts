@@ -40,6 +40,7 @@ function salaryResult(
     minimum: salary.minimum,
     maximum: salary.maximum,
     currency: salary.currency,
+    compensationBasis: context.opportunity.compensationBasis,
     residencyRequirement: context.opportunity.residencyRequirement,
     residencyRegions: context.opportunity.residencyRegions,
     substantiallyLowerCostCountries:
@@ -55,6 +56,8 @@ function salaryResult(
       "Salary currency is Unknown or unsupported, so no raw amount was compared with USD thresholds.",
     UNKNOWN_RESIDENCY:
       "Residency eligibility is Unknown, so the U.S. or non-U.S. salary policy cannot be selected.",
+    OTE_NOT_CONFIRMED_BASE:
+      "The disclosed range is explicitly OTE, not confirmed base salary, so base-salary eligibility remains Unknown.",
     CONFLICTING_SALARY:
       "The normalized salary bounds conflict, so salary eligibility remains Unknown.",
     CONFLICTING_RESIDENCY:
@@ -218,7 +221,7 @@ function travelResult(data: CustomerSuccessDomainData): Criterion {
 export function createHardFiltersStage() {
   return defineEvaluationStage<CustomerSuccessDomainData, HardFiltersData>({
     id: "hard-filters",
-    version: "cs-hard-filters-v2",
+    version: "cs-hard-filters-v3",
     ruleVersion: "cs-rules-v1.2",
     promptVersion: "cs-jd-reconstruction-v1",
     onFailure: "STOP",

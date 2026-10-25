@@ -18,6 +18,7 @@ describe("Customer Success normalized salary and residency evidence", () => {
     subject.opportunity.salaryMin = 70_000;
     subject.opportunity.salaryMax = 70_000;
     subject.opportunity.currency = "EUR";
+    subject.opportunity.compensationBasis = "BASE";
     subject.opportunity.residencyRequirement = "NON_US";
     subject.opportunity.residencyRegions = ["ES", "PT"];
     subject.provenance.push(
@@ -40,6 +41,16 @@ describe("Customer Success normalized salary and residency evidence", () => {
         normalizedValue: "EUR",
         sourceReference: "manual-submission",
         sourceText: "70,000 EUR",
+      },
+      {
+        id: "compensation-basis-provenance",
+        sourceRecordId: subject.rawSources[0]!.id,
+        fieldName: "compensationBasis",
+        sourceField: "compensationText",
+        kind: "DETERMINISTIC",
+        normalizedValue: "BASE",
+        sourceReference: "manual-submission",
+        sourceText: "Base salary 70,000 EUR",
       },
       {
         id: "spain-residency-provenance",
@@ -94,12 +105,18 @@ describe("Customer Success normalized salary and residency evidence", () => {
     expect(facts.salary.evidenceReferences).toEqual([
       "salary-disclosed",
       "salary-currency-normalized",
+      "salary-compensation-basis",
     ]);
     expect(
       facts.evidence.find(
         (item) => item.referenceId === "salary-currency-normalized",
       )?.provenanceId,
     ).toBe("currency-provenance");
+    expect(
+      facts.evidence.find(
+        (item) => item.referenceId === "salary-compensation-basis",
+      )?.provenanceId,
+    ).toBe("compensation-basis-provenance");
     expect(
       facts.evidence
         .filter((item) => item.criterionId === "residency")

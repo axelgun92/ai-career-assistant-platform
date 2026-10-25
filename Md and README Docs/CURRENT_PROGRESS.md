@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 15, 2026
+**Last updated:** October 25, 2026
 
 ## Current Objective
 
@@ -64,6 +64,16 @@ Finish the evaluator and remaining main-product work in parallel so they can be 
 - The conditional $50,000–$54,999 non-U.S. band uses the existing configured `substantiallyLowerCostCountries` preference plus explicit normalized residency geography; insufficient context remains Unknown.
 - Added focused offline coverage for threshold boundaries, currency/residency separation, normalization/provenance, conflict handling, and the evaluator withholding boundary. No provider calls or database migrations/writes were performed.
 - Final Task 7 → evaluator integration, database-backed migration assertions, and full evaluator/product acceptance remain deferred until the main product and evaluator are both complete.
+
+#### Milestone 4 finalized compensation-basis integration — October 25, 2026 (Codex)
+
+- Added the evaluator-side compatibility boundary for the finalized shared-Core `compensationBasis` contract (`BASE | OTE | null`) without redefining the shared Core opportunity enum/schema on this branch.
+- The final main-product handoff is exactly `salaryMin`, `salaryMax`, `currency`, `salaryText`, `compensationBasis`, `residencyRequirement`, and `residencyRegions`, with provenance for the normalized compensation and residency fields.
+- `BASE` and a null/unknown basis continue through the existing deterministic salary thresholds and versioned FX policy. Explicit `OTE` preserves its numeric bounds and original currency but produces Unknown confirmed-base-salary eligibility rather than Pass or Fail from the total range.
+- Bumped only the affected deterministic identifiers to `cs-hard-filters-v3` and `cs-salary-policy-v3-ecb-2026-10-14`. Evaluation, domain, rules, semantic prompt, and routing identifiers remain unchanged.
+- Original currency remains persisted unchanged; USD-equivalent conversion remains evaluator-only. Residency still selects the salary-policy branch, while work authorization remains separate and `UserEligibility` remains outside evaluator input.
+- The evaluator repository reads the integrated persisted field when present and safely treats its absence or an invalid value as Unknown until the main-product/Core contract is merged. The shared Core enum/schema and Prisma schema were intentionally not duplicated here.
+- The richer `EVALUATOR_STATUS.md`, `PRODUCT_STATUS.md`, `HANDOFFS.md`, `CHANGELOG.md`, `AGENT_WORKSTREAMS.md`, and historical milestone files do not exist on this evaluator branch; synchronize this entry into those authoritative main-product documents during deliberate evaluator/product integration rather than creating divergent copies here.
 
 #### Organizational Maturity mixed-state stabilization — October 10, 2026
 

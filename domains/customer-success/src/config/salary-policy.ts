@@ -8,7 +8,7 @@ import {
 } from "@ai-career/core";
 
 export const customerSuccessSalaryPolicy = {
-  version: "cs-salary-policy-v2-ecb-2026-10-14",
+  version: "cs-salary-policy-v3-ecb-2026-10-14",
   source:
     "European Central Bank euro foreign exchange reference rates, 2026-10-14",
   sourceUrl:
@@ -50,6 +50,7 @@ export interface SalaryPolicyDecision {
     | "UNKNOWN_SALARY"
     | "UNKNOWN_CURRENCY"
     | "UNKNOWN_RESIDENCY"
+    | "OTE_NOT_CONFIRMED_BASE"
     | "CONFLICTING_SALARY"
     | "CONFLICTING_RESIDENCY"
     | "US_THRESHOLD"
@@ -145,6 +146,7 @@ export function evaluateSalaryPolicy(input: {
   minimum: number | null;
   maximum: number | null;
   currency: string | null;
+  compensationBasis: "BASE" | "OTE" | null;
   residencyRequirement: ResidencyRequirement | null;
   residencyRegions: readonly string[];
   substantiallyLowerCostCountries: readonly string[];
@@ -163,6 +165,13 @@ export function evaluateSalaryPolicy(input: {
     input.minimum > input.maximum
   ) {
     return { ...base, result: "UNKNOWN", reason: "CONFLICTING_SALARY" };
+  }
+  if (input.compensationBasis === "OTE") {
+    return {
+      ...base,
+      result: "UNKNOWN",
+      reason: "OTE_NOT_CONFIRMED_BASE",
+    };
   }
   if (input.currency === null) {
     return { ...base, result: "UNKNOWN", reason: "UNKNOWN_CURRENCY" };

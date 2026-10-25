@@ -10,6 +10,7 @@ import {
   type EvaluationRepository,
   type EvaluationSnapshot,
   type EvaluationSubject,
+  type EvaluationCompensationBasis,
   type JsonValue,
   type PersistedStageResult,
 } from "@ai-career/evaluation";
@@ -46,9 +47,13 @@ function residencyRequirement(
     : null;
 }
 
+function compensationBasis(value: unknown): EvaluationCompensationBasis | null {
+  return value === "BASE" || value === "OTE" ? value : null;
+}
+
 function mapOpportunity(
   record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
-): NormalizedOpportunity & { id: string } {
+): EvaluationSubject["opportunity"] {
   return {
     ...mapOpportunityFields(record),
     ...withheldValues,
@@ -57,7 +62,13 @@ function mapOpportunity(
 
 function mapOpportunityFields(
   record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
-): NormalizedOpportunity & { id: string } {
+): EvaluationSubject["opportunity"] {
+  // The evaluator branch deliberately does not redefine the shared Core/Prisma
+  // contract. After product integration the generated record contains this
+  // finalized field; until then an absent field safely reads as Unknown.
+  const integratedRecord = record as typeof record & {
+    compensationBasis?: unknown;
+  };
   return {
     id: record.id,
     domain: record.domain,
@@ -88,6 +99,7 @@ function mapOpportunityFields(
     salaryMin: record.salaryMin?.toNumber() ?? null,
     salaryMax: record.salaryMax?.toNumber() ?? null,
     salaryText: record.salaryText,
+    compensationBasis: compensationBasis(integratedRecord.compensationBasis),
     bonus: record.bonus,
     equity: record.equity,
     currency: record.currency,
