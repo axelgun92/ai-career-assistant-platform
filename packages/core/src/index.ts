@@ -1,4 +1,5 @@
 export * from "./deduplication";
+export * from "./eligibility";
 export * from "./field-provenance";
 export * from "./geography";
 export * from "./manual-opportunity";

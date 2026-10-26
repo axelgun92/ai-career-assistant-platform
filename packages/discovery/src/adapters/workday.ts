@@ -259,6 +259,8 @@ export const workdayAdapter: SourceAdapter<WorkdayConfig> = {
           postingDate: isoDate(info.startDate),
           sourceUrl: pageUrl,
           applicationUrl: pageUrl,
+          // The ATS posting page, where its application starts.
+          sourceFacts: { applicationUrlBasis: "SOURCE_POSTING_PAGE" },
           structured: { workplaceType: workplace(remoteType) },
           material: { remoteType, locations },
           metadata: {

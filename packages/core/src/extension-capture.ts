@@ -14,6 +14,7 @@ export const extensionCaptureLimits = {
   url: 2048,
   title: 300,
   description: 50_000,
+  pageText: 20_000,
   shortText: 200,
   employmentType: 50,
   postedAt: 40,
@@ -113,8 +114,22 @@ export const extensionCaptureFieldsSchema = z
     workplaceType: z.enum(["REMOTE", "HYBRID", "ONSITE"]).nullable().default(null),
     employmentType: optionalText(extensionCaptureLimits.employmentType),
     postedAt: optionalText(extensionCaptureLimits.postedAt),
+    // A closing date the page's structured data states (JobPosting validThrough).
+    closingDate: optionalText(extensionCaptureLimits.postedAt),
     applicationUrl: httpUrl.nullable().default(null),
+    // How the page shows where to apply: an explicit apply link (the URL
+    // above), the page itself holding the application form, or structured
+    // data saying the job is applied to on this page. The server, not the
+    // page, decides the URL for the last two (the captured page's own).
+    applicationUrlBasis: z.enum(["PAGE_APPLY_LINK", "PAGE_APPLICATION_FORM", "STRUCTURED_DIRECT_APPLY"]).nullable().default(null),
     siteJobId: z.string().trim().min(1).max(extensionCaptureLimits.siteJobId).regex(/^\S+$/).nullable().default(null),
+    // Where a remote role may be done from, as the page's structured data
+    // names it (JobPosting applicantLocationRequirements): place names, not
+    // an office. Additive; an older envelope still validates.
+    remoteLocations: z.array(z.string().trim().min(1).max(extensionCaptureLimits.shortText)).max(10).default([]),
+    // A seniority or experience-level label the page states in its own job
+    // metadata (LinkedIn's "Seniority level"), kept as stated.
+    seniority: optionalText(extensionCaptureLimits.shortText),
   })
   .strict();
 
@@ -126,6 +141,14 @@ export const extensionCaptureSchema = z
     capturedAt: z.iso.datetime({ offset: true }),
     extensionVersion: z.string().regex(/^\d+(\.\d+){0,3}$/),
     fields: extensionCaptureFieldsSchema,
+    // The page's document title, as neutral context: Core's shared
+    // normalization may read the employer from it. Not sent from LinkedIn.
+    pageTitle: z.string().trim().min(1).max(extensionCaptureLimits.title).nullable().default(null),
+    // The job's bounded page content around a structured description or a
+    // selection (labelled job metadata such as "Remote Type: Hybrid"), as
+    // plain neutral context: Core reads only labelled values from it. Not
+    // sent from LinkedIn.
+    pageText: z.string().trim().min(1).max(extensionCaptureLimits.pageText).nullable().default(null),
     notes: z.array(z.string().trim().min(1).max(extensionCaptureLimits.shortText)).max(extensionCaptureLimits.notes).default([]),
     editedFields: z
       .array(z.enum(extensionEditableFieldValues))

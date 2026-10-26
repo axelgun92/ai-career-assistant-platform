@@ -27,9 +27,19 @@ export interface ExtractedPosting {
   workplaceType: "REMOTE" | "HYBRID" | "ONSITE" | null;
   employmentType: string | null;
   postedAt: string | null;
+  closingDate: string | null;
   applicationUrl: string | null;
+  applicationUrlBasis: ApplicationEvidenceBasis | null;
   siteJobId: string | null;
+  // Where a remote role may be done from, as the page's structured data
+  // names it (applicantLocationRequirements): place names, never an office.
+  remoteLocations: string[];
+  // A seniority label the page's own job metadata states, as stated.
+  seniority: string | null;
 }
+
+// How the page shows where to apply (see the envelope's applicationUrlBasis).
+export type ApplicationEvidenceBasis = "PAGE_APPLY_LINK" | "PAGE_APPLICATION_FORM" | "STRUCTURED_DIRECT_APPLY";
 
 export interface PageExtraction {
   pageUrl: string;
@@ -38,12 +48,26 @@ export interface PageExtraction {
   posting: ExtractedPosting | null;
   // The user's selected text, offered as an alternative description.
   selection: { title: string | null; description: string } | null;
+  // The document's title, as neutral page context for Core (which may read
+  // the employer from it). Never sent from LinkedIn.
+  pageTitle: string | null;
+  // The job's bounded page content around a structured description or a
+  // selection (for example a "Remote Type: Hybrid" row beside it), as plain
+  // neutral context for Core, which reads only labelled values from it.
+  // Never sent from LinkedIn, and null when the description already is the
+  // page's main content.
+  pageText: string | null;
+  // Where to apply, as the page itself shows it (not on LinkedIn, whose
+  // reader takes only the job's stated apply link): the page holds the
+  // application form, its structured data says it is applied to directly,
+  // or one explicit "Apply" link names a destination.
+  application: { url: string | null; basis: ApplicationEvidenceBasis } | null;
   notes: string[];
   problem: "LINKEDIN_NOT_JOB_PAGE" | "NO_JOB_CONTENT" | null;
 }
 
 export function extractJobPosting(): PageExtraction {
-  const limits = { title: 300, description: 50_000, short: 200, employmentType: 50, postedAt: 40, siteJobId: 100, url: 2048 };
+  const limits = { title: 300, description: 50_000, pageText: 20_000, short: 200, employmentType: 50, postedAt: 40, siteJobId: 100, url: 2048 };
   const notes: string[] = [];
 
   const line = (value: unknown, max: number): string | null => {
@@ -68,11 +92,40 @@ export function extractJobPosting(): PageExtraction {
   // Text of an element with block boundaries as line breaks, read from a
   // copy without scripts, styles, forms and navigation.
   const removedInCopies = "script, style, noscript, template, svg, iframe, object, embed, form, button, input, select, textarea, nav, [role=navigation], [aria-hidden=true]";
-  const textOf = (element: Element, extraRemoved = ""): string => {
+  // A list of other jobs ("Related Jobs", "Similar roles", "More jobs from
+  // …") is never part of this job: the heading and what it introduces are
+  // left out (its own container, or, when that container also holds the
+  // job's title, everything after the heading in it).
+  const otherJobsHeading =
+    /^(?:(?:related|similar|recommended|recent|latest|more|other)(?:\s+(?:open|remote))?\s+(?:jobs|roles|positions|openings|listings)(?:\s+(?:at|from|like|for you)\b.*)?|you may also like|people also viewed)$/i;
+  const withoutOtherJobs = (copy: Element) => {
+    for (const heading of [...copy.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]")]) {
+      const text = (heading.textContent ?? "").replace(/\s+/g, " ").trim();
+      // (A copy is not in the document: containment, not isConnected.)
+      if (!copy.contains(heading) || text.length > 60 || !otherJobsHeading.test(text)) continue;
+      const container = heading.parentElement;
+      if (!container || container === copy || container.querySelector("h1")) {
+        let next = heading.nextElementSibling;
+        while (next) {
+          const after = next.nextElementSibling;
+          next.remove();
+          next = after;
+        }
+        heading.remove();
+      } else {
+        container.remove();
+      }
+    }
+  };
+  // `lines`: every visible item on its own line (page context, where a label
+  // and its value are often separate inline elements: "Visa Sponsorship"
+  // "Not Available").
+  const textOf = (element: Element, extraRemoved = "", lines = false): string => {
     const copy = element.cloneNode(true) as Element;
     copy.querySelectorAll(extraRemoved ? `${removedInCopies}, ${extraRemoved}` : removedInCopies).forEach((node) => node.remove());
+    withoutOtherJobs(copy);
     copy.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
-    copy.querySelectorAll("p, div, li, h1, h2, h3, h4, h5, h6, tr, section, article, ul, ol, dl, dt, dd, blockquote, pre").forEach((node) => {
+    copy.querySelectorAll(lines ? "*" : "p, div, li, h1, h2, h3, h4, h5, h6, tr, section, article, ul, ol, dl, dt, dd, blockquote, pre").forEach((node) => {
       node.append("\n");
     });
     return block(copy.textContent ?? "");
@@ -106,8 +159,12 @@ export function extractJobPosting(): PageExtraction {
     workplaceType: null,
     employmentType: null,
     postedAt: null,
+    closingDate: null,
     applicationUrl: null,
+    applicationUrlBasis: null,
     siteJobId: null,
+    remoteLocations: [],
+    seniority: null,
   });
 
   const pageUrl = location.href;
@@ -121,11 +178,15 @@ export function extractJobPosting(): PageExtraction {
     return location.pathname.startsWith("/jobs/") && current && /^\d{5,20}$/.test(current) ? current : null;
   })();
   if (linkedIn && !linkedInJobId) {
-    return { pageUrl, linkedIn, extractor: null, posting: null, selection: null, notes, problem: "LINKEDIN_NOT_JOB_PAGE" };
+    return { pageUrl, linkedIn, extractor: null, posting: null, selection: null, pageTitle: null, pageText: null, application: null, notes, problem: "LINKEDIN_NOT_JOB_PAGE" };
   }
+  // The tab's title without a notification count. It is not interpreted
+  // here: Core decides what, if anything, it states.
+  const documentTitle = linkedIn ? null : line(document.title.replace(/^\(\d+\)\s*/, ""), limits.title);
 
   // 1. schema.org JobPosting (JSON-LD). Only the posting's own fields are
   //    read from it.
+  let directApply = false;
   const structured = (): ExtractedPosting | null => {
     const postings: Record<string, unknown>[] = [];
     const visit = (node: unknown, depth: number) => {
@@ -143,29 +204,48 @@ export function extractJobPosting(): PageExtraction {
         // Malformed structured data is ignored.
       }
     });
+    // A posting with its own description is preferred over one without.
+    let partial: ExtractedPosting | null = null;
     for (const posting of postings) {
       const title = line(posting.title, limits.title);
+      // Structured data without a description still states the posting's
+      // own fields; the description is then read from the page's main
+      // content (below).
       const description = capDescription(htmlText(posting.description));
-      if (!title || !description) continue;
+      if (!title) continue;
       const result = empty();
       result.title = title;
       result.description = description;
       const organization = posting.hiringOrganization;
       result.company = line(typeof organization === "object" && organization ? (organization as Record<string, unknown>).name : organization, limits.short);
+      const named = (value: unknown): string | null => {
+        if (typeof value === "string") return line(value, limits.short);
+        if (!value || typeof value !== "object") return null;
+        const record = value as Record<string, unknown>;
+        return line(record.name, limits.short) ?? named(record.addressCountry) ?? named(record.address);
+      };
       const places = Array.isArray(posting.jobLocation) ? posting.jobLocation : posting.jobLocation ? [posting.jobLocation] : [];
-      const placeNames = places.flatMap((place) => {
+      const readPlaces = places.flatMap((place) => {
         const address = place && typeof place === "object" ? (place as Record<string, unknown>).address : null;
         if (!address || typeof address !== "object") return [];
         const parts = address as Record<string, unknown>;
         const country = parts.addressCountry && typeof parts.addressCountry === "object" ? (parts.addressCountry as Record<string, unknown>).name : parts.addressCountry;
         const name = [parts.addressLocality, parts.addressRegion, country].map((part) => line(part, limits.short)).filter(Boolean).join(", ");
-        return name ? [name] : [];
+        return name ? [{ name, office: Boolean(line(parts.addressLocality, limits.short) || line(parts.streetAddress, limits.short)) }] : [];
       });
-      result.location = line(placeNames.join("; "), limits.short);
       const locationTypes = [posting.jobLocationType].flat().map((value) => String(value ?? "").toUpperCase());
-      if (locationTypes.includes("TELECOMMUTE")) result.workplaceType = "REMOTE";
+      const remote = locationTypes.includes("TELECOMMUTE");
+      if (remote) result.workplaceType = "REMOTE";
+      // A remote posting's jobLocation with a street or city is an office
+      // (schema.org: where the business is), not where the role is done;
+      // a country or region alone still is the role's place.
+      result.location = line(readPlaces.filter((place) => !remote || !place.office).map((place) => place.name).join("; "), limits.short);
+      const requirements = [posting.applicantLocationRequirements].flat().map(named).filter((name): name is string => Boolean(name));
+      result.remoteLocations = [...new Set(requirements)].slice(0, 10);
       result.employmentType = line([posting.employmentType].flat().filter((value) => typeof value === "string").join(", "), limits.employmentType);
       result.postedAt = line(posting.datePosted, limits.postedAt);
+      result.closingDate = line(posting.validThrough, limits.postedAt);
+      directApply = posting.directApply === true || posting.directApply === "true";
       const identifier = posting.identifier;
       const id = line(identifier && typeof identifier === "object" ? (identifier as Record<string, unknown>).value : identifier, limits.siteJobId);
       result.siteJobId = id && !/\s/.test(id) ? id : null;
@@ -185,9 +265,46 @@ export function extractJobPosting(): PageExtraction {
         result.salaryPeriod = unit === "YEAR" || unit === "MONTH" || unit === "WEEK" || unit === "DAY" || unit === "HOUR" ? unit : null;
       }
       if (linkedInJobId) result.siteJobId = linkedInJobId;
-      return result;
+      if (result.description) return result;
+      partial ??= result;
     }
-    return null;
+    return partial;
+  };
+
+  // 1b. schema.org JobPosting as microdata (itemprop attributes in the page,
+  //     as some ATS pages publish it): the same posting fields.
+  const microdata = (): ExtractedPosting | null => {
+    const scope = document.querySelector('[itemscope][itemtype*="schema.org/JobPosting" i]');
+    if (!scope) return null;
+    const value = (element: Element | null): string | null => {
+      if (!element) return null;
+      const content = element.getAttribute("content") ?? (element.tagName === "TIME" ? element.getAttribute("datetime") : null);
+      return line(content ?? element.textContent, limits.short);
+    };
+    const property = (root: Element, name: string) => root.querySelector(`[itemprop~="${name}"]`);
+    const title = value(property(scope, "title"));
+    if (!title) return null;
+    const result = empty();
+    result.title = title;
+    const descriptionElement = property(scope, "description");
+    result.description = descriptionElement ? capDescription(textOf(descriptionElement) || null) : null;
+    const organization = property(scope, "hiringOrganization");
+    result.company = organization ? value(property(organization, "name")) ?? value(organization) : null;
+    const placeNames = [...scope.querySelectorAll('[itemprop~="jobLocation"]')].flatMap((place) => {
+      const name = ["addressLocality", "addressRegion", "addressCountry"].map((part) => value(property(place, part))).filter(Boolean).join(", ");
+      return name ? [name] : [];
+    });
+    const remote = /telecommute/i.test(value(property(scope, "jobLocationType")) ?? "");
+    if (remote) result.workplaceType = "REMOTE";
+    result.location = remote ? null : line(placeNames.join("; "), limits.short);
+    result.employmentType = line(value(property(scope, "employmentType")), limits.employmentType);
+    result.postedAt = line(value(property(scope, "datePosted")), limits.postedAt);
+    result.closingDate = line(value(property(scope, "validThrough")), limits.postedAt);
+    const requirements = [...scope.querySelectorAll('[itemprop~="applicantLocationRequirements"]')]
+      .map((element) => value(property(element, "name")) ?? value(element))
+      .filter((name): name is string => Boolean(name));
+    result.remoteLocations = [...new Set(requirements)].slice(0, 10);
+    return result;
   };
 
   // 2. LinkedIn: only LinkedIn's job-detail areas (the job's top card and
@@ -243,6 +360,17 @@ export function extractJobPosting(): PageExtraction {
       limits.short,
     );
     result.salaryText = firstText([".compensation__salary", ".salary.compensation__salary"], limits.short);
+    // The job's own criteria list ("Seniority level", "Employment type"), as
+    // the public job page shows it and the automated LinkedIn reader reads
+    // it, and the posting's stated age ("2 weeks ago").
+    for (const item of document.querySelectorAll(".description__job-criteria-item")) {
+      const label = line(item.querySelector(".description__job-criteria-subheader, h3")?.textContent, limits.short)?.toLowerCase();
+      const value = line(item.querySelector(".description__job-criteria-text, span")?.textContent, limits.short);
+      if (!label || !value) continue;
+      if (label === "seniority level") result.seniority = value;
+      if (label === "employment type") result.employmentType = line(value, limits.employmentType);
+    }
+    result.postedAt = firstText([".posted-time-ago__text", ".jobs-unified-top-card__posted-date"], limits.postedAt);
     // The public job page states an employer's own apply link here; Easy
     // Apply has none, and none is invented.
     const applyCode = document.querySelector("code#applyUrl");
@@ -254,6 +382,7 @@ export function extractJobPosting(): PageExtraction {
       } catch {
         result.applicationUrl = null;
       }
+      if (result.applicationUrl) result.applicationUrlBasis = "PAGE_APPLY_LINK";
     }
     result.siteJobId = linkedInJobId;
     return result;
@@ -276,35 +405,142 @@ export function extractJobPosting(): PageExtraction {
   const selection = selectionText ? { title: pageTitle(), description: selectionText } : null;
 
   // 4. Everywhere but LinkedIn: the page's main content, without its
-  //    navigation, header, footer and side panels.
+  //    navigation, header, footer, side panels and lists of other jobs.
+  const sideParts = "header, footer, aside, [role=banner], [role=contentinfo], [role=complementary]";
+  const widgets = ["similar", "related", "recommend", "more-jobs", "other-jobs", "share", "social", "newsletter", "cookie", "consent", "promo", "advert"]
+    .flatMap((word) => [`[class*="${word}" i]`, `[id*="${word}" i]`, `[aria-label*="${word}" i]`])
+    .join(", ");
+  // The job's own container: <main> (or role=main); otherwise the <article>
+  // that holds the job's title (a page's first <article> may be another
+  // job's card); otherwise the nearest container of the title that holds
+  // substantial text, never the whole body.
+  const mainRoot = (): Element | null => {
+    const main = document.querySelector("main") ?? document.querySelector("[role=main]");
+    if (main) return main;
+    const heading = document.querySelector("h1");
+    const articles = [...document.querySelectorAll("article")];
+    const own = heading ? articles.find((article) => article.contains(heading)) : articles.length === 1 ? articles[0] : undefined;
+    if (own) return own;
+    let element = heading?.parentElement ?? null;
+    while (element && element !== document.body) {
+      if ((element.textContent ?? "").trim().length >= 500) return element;
+      element = element.parentElement;
+    }
+    return null;
+  };
   const mainContent = (): ExtractedPosting | null => {
     if (linkedIn) return null;
-    const root = document.querySelector("main") ?? document.querySelector("[role=main]") ?? document.querySelector("article");
+    const root = mainRoot();
     if (!root) return null;
-    const description = capDescription(textOf(root, "header, footer, aside, [role=banner], [role=contentinfo], [role=complementary]") || null);
+    const description = capDescription(textOf(root, `${sideParts}, ${widgets}`) || null);
     if (!description || description.length < 100) return null;
     const result = empty();
     result.title = pageTitle();
     result.description = description;
     if (!result.title) return null;
-    notes.push("Read from the page's main content; company and location were not detected");
     return result;
   };
 
-  const fromStructured = structured();
-  if (fromStructured) return { pageUrl, linkedIn, extractor: "structured-data", posting: fromStructured, selection, notes, problem: null };
+  // Page context: the job's bounded content (its container, as above),
+  //    without navigation, header, footer, side panels, forms, lists of other
+  //    jobs, and recommendation, related-job, sharing, newsletter and cookie
+  //    widgets; one visible item per line, plain text only; not on LinkedIn.
+  //    Core reads only labelled values and whole job-metadata items from it.
+  const pageContext = (): string | null => {
+    if (linkedIn) return null;
+    const root = mainRoot();
+    if (!root) return null;
+    const text = textOf(root, `${sideParts}, ${widgets}`, true);
+    if (!text) return null;
+    if (text.length > limits.pageText) notes.push("Page context shortened to 20,000 characters");
+    return text.slice(0, limits.pageText);
+  };
+
+  // Where to apply, everywhere but LinkedIn. Only explicit evidence counts:
+  //  - an application form on this page: a form with a résumé/CV upload, or
+  //    with name and email fields and an upload, and a submit or apply
+  //    control (search, sign-in and newsletter forms have neither);
+  //  - otherwise one explicit apply link to another address, outside
+  //    navigation, header, footer, side panels and related-job widgets: a
+  //    link whose whole text is an apply phrase, or a link to this posting's
+  //    own application page ("…/apply", "…/application"); two different
+  //    destinations are ambiguous, and none is taken;
+  //  - otherwise the posting's structured data saying it is applied to
+  //    directly (that flag never outranks a stated application page).
+  const controlText = (element: Element): string =>
+    (element instanceof HTMLInputElement ? element.value : element.textContent ?? "").replace(/\s+/g, " ").trim();
+  const fieldKey = (element: Element): string =>
+    ["name", "id", "autocomplete", "aria-label", "accept"].map((name) => element.getAttribute(name) ?? "").join(" ");
+  const applicationForm = (): boolean =>
+    [...document.querySelectorAll("form")].some((form) => {
+      const uploads = [...form.querySelectorAll('input[type="file" i]')];
+      if (!uploads.length) return false;
+      const fields = [...form.querySelectorAll("input")].map(fieldKey);
+      const resume = uploads.some((upload) => /resume|résumé|curriculum|\bcv\b/i.test(`${fieldKey(upload)} ${upload.closest("label, div, fieldset")?.textContent ?? ""}`));
+      const person = fields.filter((key) => /first.?name|last.?name|given-name|family-name|full.?name|e-?mail/i.test(key)).length >= 2;
+      const submit = [...form.querySelectorAll('button, input[type="submit" i]')].some((control) => /submit|apply/i.test(controlText(control)));
+      return (resume || person) && submit;
+    });
+  const applyLink = (): string | null => {
+    const excluded = `nav, header, footer, aside, [role=navigation], [role=banner], [role=contentinfo], [role=complementary], ${widgets}`;
+    const here = new URL(pageUrl);
+    const targets = new Set<string>();
+    for (const anchor of document.querySelectorAll("a[href]")) {
+      if (anchor.closest(excluded)) continue;
+      const target = httpUrl((anchor as HTMLAnchorElement).href);
+      if (!target) continue;
+      const url = new URL(target);
+      // A link within this page (#apply) leads to no other destination.
+      if (url.origin === here.origin && url.pathname === here.pathname && url.search === here.search) continue;
+      const phrase = controlText(anchor).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+      const stated = /^(?:apply|apply now|apply here|apply for (?:this )?(?:job|position|role)|apply to (?:this )?(?:job|position|role)|apply on (?:the )?(?:company|employer)(?:'s)? (?:site|website)|apply on (?:their )?website|submit (?:an |your )?application|i'm interested|i am interested)$/i.test(phrase);
+      const trimmed = (path: string) => path.replace(/\/+$/, "");
+      const ownApplicationPage = url.origin === here.origin && /^\/(?:apply|application)$/i.test(trimmed(url.pathname).slice(trimmed(here.pathname).length)) &&
+        trimmed(url.pathname).startsWith(trimmed(here.pathname));
+      if (!stated && !ownApplicationPage) continue;
+      url.hash = "";
+      targets.add(url.href);
+    }
+    return targets.size === 1 ? [...targets][0]! : null;
+  };
+  const fromMain = mainContent();
+  // Structured data whose own description is missing takes the page's main
+  // content as its description (its other fields are still the posting's).
+  const fromStructured = ((): ExtractedPosting | null => {
+    const posting = structured() ?? microdata();
+    if (!posting) return null;
+    if (posting.description) return posting;
+    if (linkedIn || !fromMain?.description) return null;
+    return { ...posting, description: fromMain.description };
+  })();
+  const application = ((): PageExtraction["application"] => {
+    if (linkedIn) return null;
+    if (applicationForm()) return { url: null, basis: "PAGE_APPLICATION_FORM" };
+    const link = applyLink();
+    if (link) return { url: link, basis: "PAGE_APPLY_LINK" };
+    return directApply ? { url: null, basis: "STRUCTURED_DIRECT_APPLY" } : null;
+  })();
+  // The page's own evidence of where to apply, on a posting that states none.
+  const withApplication = (posting: ExtractedPosting): ExtractedPosting =>
+    application && !posting.applicationUrlBasis ? { ...posting, applicationUrl: application.url, applicationUrlBasis: application.basis } : posting;
+  if (fromStructured) {
+    return { pageUrl, linkedIn, extractor: "structured-data", posting: withApplication(fromStructured), selection, pageTitle: documentTitle, pageText: pageContext(), application, notes, problem: null };
+  }
   if (linkedIn) {
     const fromReader = linkedInReader();
-    if (fromReader) return { pageUrl, linkedIn, extractor: "site:linkedin", posting: fromReader, selection, notes, problem: null };
+    if (fromReader) return { pageUrl, linkedIn, extractor: "site:linkedin", posting: fromReader, selection, pageTitle: documentTitle, pageText: null, application, notes, problem: null };
   }
   if (selection && selection.title) {
     const result = empty();
     result.title = selection.title;
     result.description = selection.description;
     if (linkedInJobId) result.siteJobId = linkedInJobId;
-    return { pageUrl, linkedIn, extractor: "selection", posting: result, selection: null, notes, problem: null };
+    return { pageUrl, linkedIn, extractor: "selection", posting: withApplication(result), selection: null, pageTitle: documentTitle, pageText: pageContext(), application, notes, problem: null };
   }
-  const fromMain = mainContent();
-  if (fromMain) return { pageUrl, linkedIn, extractor: "main-content", posting: fromMain, selection, notes, problem: null };
-  return { pageUrl, linkedIn, extractor: null, posting: null, selection, notes, problem: "NO_JOB_CONTENT" };
+  // The page context still goes with a main-content description: it carries
+  // the job's metadata items one per line, which the description's running
+  // text does not.
+  if (fromMain) notes.push("Read from the page's main content; company and location were not detected");
+  if (fromMain) return { pageUrl, linkedIn, extractor: "main-content", posting: withApplication(fromMain), selection, pageTitle: documentTitle, pageText: pageContext(), application, notes, problem: null };
+  return { pageUrl, linkedIn, extractor: null, posting: null, selection, pageTitle: documentTitle, pageText: selection ? pageContext() : null, application, notes, problem: "NO_JOB_CONTENT" };
 }

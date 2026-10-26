@@ -15,7 +15,9 @@ import { rawOpportunitySchema, type RawOpportunity } from "./raw-opportunity";
 // another source (exact duplicate). UNCHANGED: the same source listing seen
 // again with the same content; only last-seen times move. CHANGED: the same
 // source listing with different material content; a new linked observation
-// is stored and the opportunity itself is not changed.
+// is stored, and if it is the listing that created the opportunity, its
+// current facts are re-projected from the new version (history is kept and
+// nothing is evaluated).
 export type RetrievedListingOutcome = "CREATED" | "ATTACHED" | "UNCHANGED" | "CHANGED";
 
 export interface RetrievedListingResult {

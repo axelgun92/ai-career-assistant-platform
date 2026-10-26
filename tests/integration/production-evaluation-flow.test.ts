@@ -795,11 +795,14 @@ describe("production evaluation vertical slice", () => {
         },
       },
     });
+    // Nothing was entered on the form. The job text's explicit "Salary:"
+    // line is the only fact the shared job-text fallback can read (title,
+    // company and location are not stated in it).
     expect(persistedOpportunity).toMatchObject({
       title: null,
       companyId: null,
       location: null,
-      salaryText: null,
+      salaryText: "Salary: $70,000 per year.",
     });
     expect(persistedOpportunity.jobDescription).not.toBeNull();
     expect(persistedOpportunity.sourceRecords).toHaveLength(1);

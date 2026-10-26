@@ -1,4 +1,4 @@
-import type { CoreEvaluationContext } from "@ai-career/evaluation";
+import { evaluatedSource, type CoreEvaluationContext } from "@ai-career/evaluation";
 import type { EvidenceRecordDraft } from "@ai-career/evidence";
 import type {
   CustomerSuccessDomainData,
@@ -16,7 +16,9 @@ type ExplicitFacts = Pick<
 };
 
 function sourceContext(context: CoreEvaluationContext<CustomerSuccessDomainData>) {
-  const source = context.rawSources[0];
+  // The source version this evaluation evaluates (never a position in the
+  // list of every stored version).
+  const source = evaluatedSource(context);
   const descriptionProvenance = context.provenance.find(
     (item) => item.fieldName === "jobDescription",
   );

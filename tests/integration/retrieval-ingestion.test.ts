@@ -214,10 +214,10 @@ describe("retrieval ingestion", () => {
     expect(changed!.rawDescription).toContain("expansion");
     expect(salaryChanged).toMatchObject({ previousSourceRecordId: changed!.id });
     expect(salaryChanged!.lastObservedAt.toISOString()).toBe("2026-10-21T09:00:00.000Z");
-    const unchangedOpportunity = await database.opportunity.findUniqueOrThrow({ where: { id: opportunity.id } });
-    // The canonical description and fields are the first-seen ones.
-    expect(unchangedOpportunity.jobDescription).toBe(original!.rawDescription);
-    expect(unchangedOpportunity.salaryMax?.toNumber()).toBe(100000);
+    const current = await database.opportunity.findUniqueOrThrow({ where: { id: opportunity.id } });
+    // The opportunity shows the latest version of its originating listing; every earlier version is kept.
+    expect(current.jobDescription).toBe(salaryChanged!.rawDescription);
+    expect(current.salaryMax?.toNumber()).toBe(110000);
     const detail = await repository.findOpportunityDetail(opportunity.id);
     expect(detail!.sourceRecords.map((item) => item.previousSourceRecordId)).toEqual([null, original!.id, changed!.id]);
     expect(detail!.sourceRecords[0]).toMatchObject({ retrievalSourceName: `Test ATS ${token}`, sourceCategory: "ATS" });

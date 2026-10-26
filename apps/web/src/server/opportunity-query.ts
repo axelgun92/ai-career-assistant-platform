@@ -143,7 +143,6 @@ export interface OpportunityQuery {
   title: string | null;
   location: string | null;
   salary: "stated" | "not-stated" | null;
-  department: string | null;
   currency: SalaryCurrency | null;
   salaryMin: number | null;
   salaryMax: number | null;
@@ -271,7 +270,6 @@ export function parseOpportunityQuery(
     title: text(params, "title"),
     location: text(params, "location"),
     salary: salary === "stated" || salary === "not-stated" ? salary : null,
-    department: text(params, "department", 120),
     currency,
     salaryMin,
     salaryMax,
@@ -295,7 +293,7 @@ export function serializeOpportunityQuery(
   for (const key of ["rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority", "residency"] as const) {
     for (const value of query[key]) params.append(key, value);
   }
-  for (const key of ["source", "company", "domain", "title", "location", "salary", "department", "currency"] as const) {
+  for (const key of ["source", "company", "domain", "title", "location", "salary", "currency"] as const) {
     const value = query[key];
     if (value) params.set(key, value);
   }
@@ -333,7 +331,7 @@ export function pageCountFor(total: number, pageSize: number): number {
 
 const filterKeys = [
   "q", "rec", "eval", "priority", "role", "segment", "sourceType", "arrangement", "seniority", "residency",
-  "source", "company", "domain", "title", "location", "salary", "department", "currency",
+  "source", "company", "domain", "title", "location", "salary", "currency",
   "salaryMin", "salaryMax", "from", "to",
 ] as const;
 
@@ -353,7 +351,7 @@ export function clearFilters(query: OpportunityQuery): OpportunityQuery {
   return withChanges(query, {
     q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [], arrangement: [], seniority: [], residency: [],
     source: null, company: null, domain: null, title: null, location: null, salary: null,
-    department: null, currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
+    currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
   });
 }
 
@@ -376,7 +374,6 @@ export interface OpportunityListFilters {
   titleContains: string | null;
   locationContains: string | null;
   salaryStated: boolean | null;
-  department: string | null;
   salaryCurrency: string | null;
   // Range overlap: the stated range can reach at least / at most this amount.
   salaryAtLeast: number | null;
@@ -405,7 +402,6 @@ export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
     titleContains: query.title,
     locationContains: query.location,
     salaryStated: query.salary === null ? null : query.salary === "stated",
-    department: query.department,
     salaryCurrency: query.currency,
     salaryAtLeast: query.salaryMin,
     salaryAtMost: query.salaryMax,

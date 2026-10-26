@@ -10,6 +10,7 @@ import {
   type RawOpportunity,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
+import { onTargetStatementFor, readJobTextFacts, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
 import {
   seniorityFromTitle,
@@ -17,10 +18,28 @@ import {
   workArrangementFromLocation,
 } from "./position";
 
-export { bareDollarCurrencySourceField, parseCompensation, type ParsedCompensation } from "./compensation";
+export {
+  bareDollarCurrencySourceField,
+  parseCompensation,
+  type CompensationGeography,
+  type ParsedCompensation,
+} from "./compensation";
+export {
+  jobTextSourceFields,
+  onTargetStatementFor,
+  pageContextEvidence,
+  pageContextSourceFields,
+  parseUnambiguousDate,
+  readJobTextFacts,
+  standardizeSeniorityLabel,
+  type EvidenceFact,
+  type JobTextFacts,
+  type JobTextInput,
+  type TextFact,
+} from "./job-text-facts";
 export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 export { decodeHtmlEntities, htmlToText, markdownToText } from "./html-text";
-export { createRetrievedOpportunityNormalizer } from "./retrieved";
+export { createRetrievedOpportunityNormalizer, structuredCompensationApplies } from "./retrieved";
 export { parseResidency, residencySourceFields, type ParsedResidency, type ResidencyStatement } from "./residency";
 
 function normalizeOptionalText(value: string | null): string | null {
@@ -94,26 +113,57 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       }
 
       const title = normalizeOptionalText(rawOpportunity.title);
-      const companyName = normalizeOptionalText(rawOpportunity.company);
-      const location = normalizeOptionalText(rawOpportunity.location);
-      const salaryText = normalizeOptionalText(rawOpportunity.salaryText);
+      const statedCompany = normalizeOptionalText(rawOpportunity.company);
+      const statedLocation = normalizeOptionalText(rawOpportunity.location);
+      const statedSalaryText = normalizeOptionalText(rawOpportunity.salaryText);
       const domain = normalizeOptionalText(rawOpportunity.domain);
-      const postingDate = parseExplicitDate(rawOpportunity.postingDate);
+      const statedPostingDate = parseExplicitDate(rawOpportunity.postingDate);
       const details = statedDetails(rawOpportunity);
-      const closingDate = parseExplicitDate(details.closingDate, "closing date");
-      const department = normalizeOptionalText(details.department);
-      // Only as the user stated it; the job text is never scanned for it.
-      const timeZoneRequirements = normalizeOptionalText(details.timeZoneRequirements);
-      const employmentType = standardizeEmploymentType(
-        normalizeOptionalText(rawOpportunity.employmentType),
-      );
+      const statedClosingDate = parseExplicitDate(details.closingDate, "closing date");
+      const statedDepartment = normalizeOptionalText(details.department);
+      const statedTimeZone = normalizeOptionalText(details.timeZoneRequirements);
+      const statedEmploymentType = normalizeOptionalText(rawOpportunity.employmentType);
+      const sourceEmploymentType = standardizeEmploymentType(statedEmploymentType);
+      // What the user entered always wins. A fact the form left empty may be
+      // filled from the pasted job text, by the same shared reading every
+      // source path uses (explicit statements only, marked in provenance);
+      // it never replaces a value the user gave.
+      const facts = readJobTextFacts({ text: rawOpportunity.description, title, location: statedLocation, company: statedCompany, observedAt: rawOpportunity.discoveredAt });
+      const fallbacks: Array<{ fieldName: string; fact: TextFact<unknown>; normalizedValue: FieldProvenanceInput["normalizedValue"] }> = [];
+      const fallback = <T>(fieldName: string, fact: TextFact<T> | null, normalizedValue: (value: T) => FieldProvenanceInput["normalizedValue"] = String): T | null => {
+        if (!fact) return null;
+        fallbacks.push({ fieldName, fact, normalizedValue: normalizedValue(fact.value) });
+        return fact.value;
+      };
+      const isoDate = (date: Date) => date.toISOString();
+      const companyName = statedCompany ?? fallback("company.name", facts.companyName);
+      const location = statedLocation ?? fallback("location", facts.location);
+      const postingDate = statedPostingDate ?? fallback("postingDate", facts.postingDate, isoDate);
+      const closingDate = statedClosingDate ?? fallback("closingDate", facts.closingDate, isoDate);
+      const department = statedDepartment ?? fallback("department", facts.department);
+      const timeZoneRequirements = statedTimeZone ?? fallback("timeZoneRequirements", facts.timeZoneRequirements);
+      // Work authorization, sponsorship, relocation and employer of record:
+      // explicit statements in the job text only (never residency).
+      const workAuthorization = facts.workAuthorization;
+      const visaSponsorship = fallback("visaSponsorship", facts.visaSponsorship);
+      const relocationSupport = fallback("relocationSupport", facts.relocationSupport);
+      const employerOfRecord = facts.employerOfRecord;
+      const employmentType = sourceEmploymentType ?? (statedEmploymentType ? null : fallback("employmentType", facts.employmentType));
       // A stated choice takes precedence over a value read from another
       // field; a value is read from location or title only when explicit.
-      const locationArrangement = workArrangementFromLocation(location);
-      const remoteStatus = details.workArrangement ?? locationArrangement;
+      const locationArrangement = workArrangementFromLocation(statedLocation);
+      const remoteStatus = details.workArrangement ?? locationArrangement ??
+        fallback("remoteStatus", facts.remoteStatus);
+      // Several arrangements the pasted text offers as options, kept as
+      // stated when nothing names a single one.
+      const offeredArrangements = remoteStatus ? null : fallback("workArrangements", facts.workArrangements, (value) => value);
+      const workArrangements = remoteStatus ? [remoteStatus] : offeredArrangements ?? [];
       const titleSeniority = seniorityFromTitle(title);
-      const seniority = details.seniority ?? titleSeniority;
-      const compensation = parseCompensation(salaryText, details.compensationCurrency);
+      const seniority = details.seniority ?? titleSeniority ?? fallback("seniority", facts.seniority);
+      // A seniority label the pasted text states, kept as stated (the user's
+      // chosen level, when given, is the level).
+      const seniorityLabel = details.seniority ? null : fallback("seniorityLabel", facts.seniorityLabel);
+      const atsRequisitionId = rawOpportunity.requisitionId ?? fallback("atsRequisitionId", facts.requisitionId);
       // Residency: what the user stated wins; otherwise only explicit
       // statements in the location field or the job text (never currency,
       // a bare "Remote", a city/country on its own, or nationality).
@@ -124,7 +174,7 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const stated = details.residencyRequirement !== null || statedRegions !== null;
       const parsedResidency = stated
         ? null
-        : parseResidency({ location, rawText: rawOpportunity.description });
+        : parseResidency({ location, rawText: rawOpportunity.description, remote: remoteStatus === "REMOTE" });
       const residencyRegions = stated
         ? statedRegions ?? (details.residencyRequirement === "US_REQUIRED" ? ["US"] : [])
         : parsedResidency!.regions;
@@ -135,11 +185,22 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         residencyRequirementFor(statedRegions) !== details.residencyRequirement) {
         throw new Error("Manual stated details are invalid");
       }
+      // Pay stated in several regional tiers is kept whole as the salary text:
+      // read as one statement it names no single range.
+      const tiers = statedSalaryText ? null : facts.compensationTiers;
+      const textCompensation = tiers ?? facts.compensation;
+      const salaryText = statedSalaryText ?? fallback("salaryText", textCompensation);
+      const compensationField = statedSalaryText ? "compensationText" : textCompensation?.sourceField ?? "compensationText";
+      const compensation = parseCompensation(salaryText, details.compensationCurrency, { location, residencyRegions });
+      // The job text may call the same range on-target earnings (OTE takes
+      // precedence over a basis the salary text left open or gave as base).
+      const onTarget = compensation.basis === "OTE" ? null : onTargetStatementFor(rawOpportunity.description, compensation);
+      const compensationBasis = onTarget?.value ?? compensation.basis;
 
       const opportunity: NormalizedOpportunity = normalizedOpportunitySchema.parse({
         domain,
         externalListingId: rawOpportunity.externalId,
-        atsRequisitionId: rawOpportunity.requisitionId,
+        atsRequisitionId,
         canonicalUrl: rawOpportunity.sourceUrl,
         applicationUrl: rawOpportunity.applicationUrl,
         originalSource: rawOpportunity.source,
@@ -157,14 +218,22 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         department,
         employmentType,
         seniority,
+        seniorityLabel,
+        workArrangements,
         location,
         remoteStatus,
         timeZoneRequirements,
         residencyRequirement,
         residencyRegions,
+        workAuthorizationRequirement: workAuthorization?.value.requirement ?? null,
+        workAuthorizationRegions: workAuthorization?.value.regions ?? [],
+        visaSponsorship,
+        relocationSupport,
+        employerOfRecordRegions: employerOfRecord?.value ?? [],
         salaryMin: compensation.minimum,
         salaryMax: compensation.maximum,
         salaryText,
+        compensationBasis,
         bonus: null,
         equity: null,
         currency: compensation.currency,
@@ -194,13 +263,13 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
 
       const suppliedTextFields = [
         ["title", "title", rawOpportunity.title, title],
-        ["company.name", "company", rawOpportunity.company, companyName],
-        ["location", "location", rawOpportunity.location, location],
+        ["company.name", "company", rawOpportunity.company, statedCompany],
+        ["location", "location", rawOpportunity.location, statedLocation],
         [
           "salaryText",
           "compensationText",
           rawOpportunity.salaryText,
-          salaryText,
+          statedSalaryText,
         ],
         ["domain", "domain", rawOpportunity.domain, domain],
       ] as const;
@@ -250,12 +319,12 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         );
       }
 
-      if (rawOpportunity.postingDate !== null && postingDate !== null) {
+      if (rawOpportunity.postingDate !== null && statedPostingDate !== null) {
         provenance.push({
           fieldName: "postingDate",
           sourceField: "postingDate",
           kind: "DETERMINISTIC",
-          normalizedValue: postingDate.toISOString(),
+          normalizedValue: statedPostingDate.toISOString(),
           sourceReference: "manual-submission",
           sourceText: rawOpportunity.postingDate,
           collectedAt: rawOpportunity.discoveredAt,
@@ -266,7 +335,7 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         fieldName: string,
         sourceField: string,
         kind: FieldProvenanceInput["kind"],
-        normalizedValue: string | number,
+        normalizedValue: FieldProvenanceInput["normalizedValue"],
         sourceText: string,
       ) =>
         provenance.push({
@@ -279,44 +348,49 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
           collectedAt: rawOpportunity.discoveredAt,
         });
 
-      if (closingDate !== null && details.closingDate !== null) {
-        derived("closingDate", "closingDate", "DETERMINISTIC", closingDate.toISOString(), details.closingDate);
+      if (statedClosingDate !== null && details.closingDate !== null) {
+        derived("closingDate", "closingDate", "DETERMINISTIC", statedClosingDate.toISOString(), details.closingDate);
       }
-      if (department !== null && details.department !== null) {
+      if (statedDepartment !== null && details.department !== null) {
         provenance.push(
           provenanceFor({
             fieldName: "department",
             sourceField: "department",
             sourceValue: details.department,
-            normalizedValue: department,
+            normalizedValue: statedDepartment,
             collectedAt: rawOpportunity.discoveredAt,
           }),
         );
       }
-      if (timeZoneRequirements !== null && details.timeZoneRequirements !== null) {
+      if (statedTimeZone !== null && details.timeZoneRequirements !== null) {
         provenance.push(
           provenanceFor({
             fieldName: "timeZoneRequirements",
             sourceField: "timeZoneRequirements",
             sourceValue: details.timeZoneRequirements,
-            normalizedValue: timeZoneRequirements,
+            normalizedValue: statedTimeZone,
             collectedAt: rawOpportunity.discoveredAt,
           }),
         );
       }
-      if (employmentType !== null && rawOpportunity.employmentType !== null) {
+      if (sourceEmploymentType !== null && rawOpportunity.employmentType !== null) {
         derived(
           "employmentType",
           "employmentType",
-          rawOpportunity.employmentType === employmentType ? "DIRECT" : "DETERMINISTIC",
-          employmentType,
+          rawOpportunity.employmentType === sourceEmploymentType ? "DIRECT" : "DETERMINISTIC",
+          sourceEmploymentType,
           rawOpportunity.employmentType,
         );
       }
+      // Facts read from the job text: DETERMINISTIC, with their marker and
+      // the statement they came from.
+      for (const { fieldName, fact, normalizedValue } of fallbacks) {
+        derived(fieldName, fact.sourceField, "DETERMINISTIC", normalizedValue, fact.sourceText);
+      }
       if (details.workArrangement !== null) {
         derived("remoteStatus", "workArrangement", "DIRECT", details.workArrangement, details.workArrangement);
-      } else if (locationArrangement !== null && location !== null) {
-        derived("remoteStatus", "location", "DETERMINISTIC", locationArrangement, location);
+      } else if (locationArrangement !== null && statedLocation !== null) {
+        derived("remoteStatus", "location", "DETERMINISTIC", locationArrangement, statedLocation);
       }
       if (details.seniority !== null) {
         derived("seniority", "seniority", "DIRECT", details.seniority, details.seniority);
@@ -325,11 +399,23 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       }
       if (salaryText !== null) {
         if (compensation.minimum !== null) {
-          derived("salaryMin", "compensationText", "DETERMINISTIC", compensation.minimum, salaryText);
+          derived("salaryMin", compensationField, "DETERMINISTIC", compensation.minimum, salaryText);
         }
         if (compensation.maximum !== null) {
-          derived("salaryMax", "compensationText", "DETERMINISTIC", compensation.maximum, salaryText);
+          derived("salaryMax", compensationField, "DETERMINISTIC", compensation.maximum, salaryText);
         }
+        if (onTarget) {
+          derived("compensationBasis", onTarget.sourceField, "DETERMINISTIC", onTarget.value, onTarget.sourceText);
+        } else if (compensation.basis !== null) {
+          derived("compensationBasis", compensationField, "DETERMINISTIC", compensation.basis, salaryText);
+        }
+      }
+      if (workAuthorization) {
+        derived("workAuthorizationRequirement", workAuthorization.sourceField, "DETERMINISTIC", workAuthorization.value.requirement, workAuthorization.sourceText);
+        derived("workAuthorizationRegions", workAuthorization.sourceField, "DETERMINISTIC", workAuthorization.value.regions, workAuthorization.sourceText);
+      }
+      if (employerOfRecord) {
+        derived("employerOfRecordRegions", employerOfRecord.sourceField, "DETERMINISTIC", employerOfRecord.value, employerOfRecord.sourceText);
       }
       if (stated) {
         if (details.residencyRequirement !== null) {
@@ -372,7 +458,7 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
           // the bare-"$" rule, which is marked separately.
           derived(
             "currency",
-            compensation.currencyBasis === "BARE_DOLLAR_AS_USD" ? bareDollarCurrencySourceField : "compensationText",
+            compensation.currencyBasis === "BARE_DOLLAR_AS_USD" ? bareDollarCurrencySourceField : compensationField,
             "DETERMINISTIC",
             compensation.currency,
             salaryText,

@@ -15,6 +15,7 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Final routing is locked; Company Alignment and Burnout Risk use GPT-6 Luna, while the remaining accepted routes stay unchanged.
 - Task 7 normalized salary/currency/residency facts are complete at `754f956dc0860149760936a61bdace0489404b9a`.
 - Codex Milestone 4 has consumed that contract and aligned the Customer Success salary policy at `267124f`.
+- Codex has completed the evaluator side of the Feature 14B compensation-basis contract (October 25, 2026; uncommitted on `codex/evaluator-live-diagnostic`): Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Unknown for confirmed base-salary eligibility (`cs-hard-filters-v3`, `cs-salary-policy-v3-ecb-2026-10-14`).
 - Task 8 — Application Tracker completion pass is complete at `534a4c718b21086d9419c0b0d18b0c907c15b3f9`.
 - Task 9 — Operations hardening completion pass is complete (commit `feat: complete operational hardening`, October 16, 2026).
 - The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
@@ -22,7 +23,7 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - Feature 11A (automated retrieval from the verified official API and feed sources) is committed (`fad2341`), and Feature 11B (the verified public/guest-endpoint and public-HTML sources) is committed (`2a1d8c2`). Feature 12 (source health and conservative retrieval) is committed (`f10a02b`). Feature 13 (posting history and listing removal) is implemented and verified and awaiting review (not committed). Main-product features 14–18 follow.
 - Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
 
-**Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
+**Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`, with its uncommitted October 25 compensation-basis correction) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
 
 *(Earlier development order, superseded on October 15, 2026: Finish Evaluator + Finish Remaining Main Product → Integrate into a Stable Usable Product → Build Retrieval / Scraper → Expand Discovery, Analytics, and Domains. Retrieval and intelligence are now main-product features 11–18, completed before final acceptance.)*
 
@@ -56,8 +57,8 @@ The evaluator should remain stable while only demonstrated correctness/contract 
   - **GPT-5.6 Terra:** JD Reconstruction; Resume Match.
   - **GPT-5.6 Luna:** Job Evaluation; Organizational Maturity; Alex Fit; Opportunity Priority.
   - **GPT-6 Luna:** Company Alignment; Burnout Risk.
-- Milestone 4 now consumes the Task 7 salary/currency/residency contract.
-- Both the GPT-6 Luna routes and the Milestone 4 alignment are on `codex/evaluator-live-diagnostic` and reach the product only at final integration.
+- Milestone 4 now consumes the Task 7 salary/currency/residency contract and, on the evaluator worktree (October 25, 2026), the Feature 14B `compensationBasis`: an OTE-only range keeps its numbers but is Unknown for confirmed base-salary eligibility.
+- Both the GPT-6 Luna routes and the Milestone 4 work are on `codex/evaluator-live-diagnostic` and reach the product only at final integration.
 
 ### Evaluator rules
 
@@ -140,8 +141,30 @@ These features are part of the intended main product and must be complete before
       - a reusable browser-assisted runner (`packages/discovery` browser session, `packages/browser-retrieval` Playwright/Chromium driver): a fresh logged-out context per run with no cookies, profile or stored state; navigation only (no clicks, typing or account actions); one page at a time, at least 5 seconds apart; per-run page caps, timeouts and a page-size limit; images, fonts and media not downloaded; any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie stops the run with no further request and hands it to Feature 12 backoff;
       - LinkedIn (public, logged-out job search and job pages): separate discovery and detail budgets (default 4 search pages / 100 results, hard caps 8 / 200; default 20 job pages per run, hard cap 25); title matches whose details are not stored are kept as pending ledger rows (no migration) and read first in later runs, oldest first; bounded, never removal-capable; unverified and not enableable until a live logged-out verification of the adapter succeeds from a local runtime (the Claude cloud check met HTTP 429 and LinkedIn's anti-bot interstitial; a local logged-out browser check loaded normal public results; the committed adapter's local check on October 20, 2026 discovered 60 public jobs, then a job page answered HTTP 429 and the run stopped, so LinkedIn stays unverified and disabled);
       - We Work Remotely on the official all-jobs RSS feed with the local title filter; Wellfound at 12 seconds between requests; Welcome to the Jungle / Otta reclassified as public webpage retrieval but unverified (its tested public pages expose no usable job records); the other sources audited and unchanged;
-    - **14B — browser extension companion using the same backend, account, data, evaluator, lifecycle, provenance, budget, and dashboard as the main app. Implemented and verified October 20, 2026; awaiting review and local acceptance; not committed.** It never becomes a second evaluator, and its infrastructure belongs to the shared Core Platform.
+    - **14B — browser extension companion using the same backend, account, data, evaluator, lifecycle, provenance, budget, and dashboard as the main app. Committed `e6bacc6` (October 20, 2026); still open.** It never becomes a second evaluator, and its infrastructure belongs to the shared Core Platform. *(Earlier status: "Implemented and verified October 20, 2026; awaiting review and local acceptance; not committed.")*
+      - **Correction from local acceptance (implemented and verified October 23, 2026; awaiting review; not committed):** the shared Core job-text fallback.
+        - Both shared normalizers, and so every ingestion path, now read already-supported facts the source left missing from explicit statements in the job text: company, location, work arrangement, employment type, salary text and amounts, posting and closing dates, time-zone requirement, and labelled seniority and department.
+        - The browser extension also supplies bounded job-page context beside a structured description (labelled metadata only; never on LinkedIn).
+        - User-stated and structured values keep precedence, and the fallback never overwrites.
+        - A bare "$" is USD only with clear U.S. evidence.
+        - Deduplication is unchanged.
+        - Specified in Core Platform TDD v1.15 and Core AI Framework PRD v1.14.
+        - **Current-version projection (same review, implemented and verified October 23, 2026; awaiting review; not committed):**
+          - A CHANGED observation of the originating listing re-projects the opportunity's current facts; every version and its provenance are kept (`FieldProvenance.supersededAt`).
+          - Evaluations are bound to the source version they evaluate (`Evaluation.sourceRecordId`), with an opportunity-page hint when the listing has changed since.
+          - There is no automatic reevaluation.
+          - An additive migration, applied only to the isolated test database.
+        - **Shared-normalization convergence (implemented and verified October 25, 2026; awaiting review; not committed):** stated compensation keeps its numbers and basis in its original currency; work authorization is a normalized fact with a separate user-relevance layer (`UserEligibility`); explicit team statements populate the department; the application URL is captured with its basis on every path; structured closing dates are collected. An additive migration, applied only to the isolated test database.
+        - **Cross-source correction (implemented and verified October 26, 2026; awaiting review; not committed):** the batch correction from the live acceptance of every supported source.
+          - **Shared fixes:** remote-hiring geography as location and eligibility (no optional office as location); one-range compensation agreement and regional tiers with no single range; time-zone preferences; source-stated posting age; stated seniority labels (`seniorityLabel`); labelled requisition IDs; fuller labelled locations; office cadence and office-or-remote arrangements; residency lists and the continental U.S.
+          - **Extension collection fixes:** microdata, structured data without a description, the job's own container (never another job's `<article>`), other-jobs lists excluded, page context one item per line, application page above `directApply`, and the LinkedIn criteria list and posted age.
+          - **Product decisions:** Department removed from the product; Salary shown instead of a separate Compensation row.
+        - 14B closes after Alex's review and a complete cross-source live retest of every supported source domain (generic employer pages excluded), then acceptance. *(Earlier: "after Alex's review, a minimal human retest and acceptance".)*
     - *(Correction, October 20, 2026: An October 19, 2026 implementation instruction incorrectly treated Feature 14B, the required browser-extension companion, as deferred, an optional future idea and not required. No approved roadmap or authoritative product-scope revision removed Feature 14B from the main product. This correction (October 20, 2026) resolves that inconsistency while preserving Feature 14A's accepted implementation. From October 19 this item called the extension "deferred as an optional future idea"; that statement is superseded.)*
+    - **Known contract gaps recorded during the 14B correction (not built; decide before final product integration):**
+      - ~~**Work authorization and visa eligibility.** There is no normalized field, and such language is never read as residency.~~ Implemented October 25, 2026 as a separate normalized fact, interpreted for the user by a separate relevance layer.
+      - ~~**Generic employer apply-link extraction from captured pages.** Application URLs carry identity, so it needs its own approval.~~ Approved and implemented October 25, 2026 (explicit apply links and on-page application forms, with basis provenance).
+      - **Bare-"$" currency with a city-only location.** It stays Unknown: cities are not in the geography vocabulary.
 15. Source intelligence: source quality, duplicate rates, reliability, cost per useful job, and outcomes by source.
 16. Job-market analytics: salary, role, location, skills/requirements, seniority, and recommendation trends.
 17. Personal job-search analytics: best-fit roles, recurring gaps, application-to-interview outcomes, strongest sources, and wasted effort.

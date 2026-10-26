@@ -11,6 +11,7 @@ import {
 import {
   bareDollarCurrencySourceField,
   createManualOpportunityNormalizer,
+  jobTextSourceFields,
   parseCompensation,
   seniorityFromTitle,
   standardizeEmploymentType,
@@ -22,8 +23,11 @@ import {
   seniorityOptions,
 } from "../../apps/web/src/server/opportunity-query";
 
+// Amount parsing is independent of geography; these cases give a U.S.
+// location so a bare "$" reads as USD (see the bare-$ rule below).
+const unitedStates = { location: "Austin, TX" };
 const amounts = (text: string, currency: Parameters<typeof parseCompensation>[1] = null) => {
-  const parsed = parseCompensation(text, currency);
+  const parsed = parseCompensation(text, currency, unitedStates);
   return [parsed.minimum, parsed.maximum, parsed.currency];
 };
 
@@ -58,10 +62,12 @@ describe("compensation parsing", () => {
   });
 
   it("keeps ambiguous amounts Unknown while preserving the currency", () => {
-    expect(parseCompensation("$30/hour")).toMatchObject({ minimum: null, maximum: null, currency: "USD" });
+    expect(parseCompensation("$30/hour", null, unitedStates)).toMatchObject({ minimum: null, maximum: null, currency: "USD" });
     expect(parseCompensation("$6,000 per month")).toMatchObject({ minimum: null, amountsUnknownReason: "NON_ANNUAL_PERIOD" });
     expect(parseCompensation("$30-$40")).toMatchObject({ minimum: null, maximum: null });
-    expect(parseCompensation("$120k OTE")).toMatchObject({ minimum: null, amountsUnknownReason: "TOTAL_COMPENSATION" });
+    // OTE is a qualifier of the stated range, not a reason to drop it
+    // (October 25, 2026): the numbers are kept and the basis is recorded.
+    expect(parseCompensation("$120k OTE")).toMatchObject({ minimum: 120000, maximum: 120000, basis: "OTE", amountsUnknownReason: null });
     expect(parseCompensation("$72k-$88k base + $10k bonus")).toMatchObject({ minimum: null, amountsUnknownReason: "AMBIGUOUS_AMOUNTS" });
     expect(parseCompensation("$80,000 or $95,000")).toMatchObject({ minimum: null, amountsUnknownReason: "AMBIGUOUS_AMOUNTS" });
     expect(parseCompensation("$88,000 - $72,000")).toMatchObject({ minimum: null, amountsUnknownReason: "INVERTED_RANGE" });
@@ -70,7 +76,8 @@ describe("compensation parsing", () => {
 
   it("states the currency basis: explicit, bare dollar read as USD, or selected", () => {
     expect(parseCompensation("USD 80,000").currencyBasis).toBe("STATED_CODE_OR_SYMBOL");
-    expect(parseCompensation("$80,000").currencyBasis).toBe("BARE_DOLLAR_AS_USD");
+    expect(parseCompensation("$80,000", null, unitedStates).currencyBasis).toBe("BARE_DOLLAR_AS_USD");
+    expect(parseCompensation("$80,000")).toMatchObject({ currencyBasis: null, currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE" });
     expect(parseCompensation("$80,000", "CAD")).toMatchObject({ currency: "CAD", currencyBasis: "SELECTED" });
     expect(parseCompensation("80,000", "EUR")).toMatchObject({ currency: "EUR", currencyBasis: "SELECTED" });
     expect(parseCompensation(null, "GBP")).toMatchObject({ currency: "GBP", minimum: null });
@@ -92,10 +99,41 @@ describe("compensation parsing", () => {
   });
 });
 
-describe("bare $ rule (product decision: read as USD, recorded as derived)", () => {
-  it("normalizes $72,000–$88,000 to 72000–88000 USD", () => {
-    expect(parseCompensation("$72,000–$88,000")).toMatchObject({
+describe("bare $ rule (read as USD only with clear U.S. evidence, recorded as derived)", () => {
+  it("normalizes $72,000–$88,000 to 72000–88000 USD for a U.S. posting", () => {
+    expect(parseCompensation("$72,000–$88,000", null, unitedStates)).toMatchObject({
       minimum: 72000, maximum: 88000, currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD",
+    });
+  });
+
+  it.each([
+    ["a U.S. state", { location: "Boston, MA" }],
+    ["the country", { location: "Remote - United States" }],
+    ["U.S. residency regions", { location: "Remote", residencyRegions: ["US"] }],
+    ["several U.S. states", { location: "TX, FL or OH" }],
+  ])("reads USD with %s", (_label, geography) => {
+    expect(parseCompensation("$72,000–$88,000", null, geography).currency).toBe("USD");
+  });
+
+  it("reads USD when the compensation statement itself names the U.S.", () => {
+    expect(parseCompensation("The U.S. base salary range for this role is $120,000 - $150,000.").currency).toBe("USD");
+  });
+
+  it.each([
+    ["no location", {}],
+    ["a bare Remote", { location: "Remote" }],
+    ["a city alone", { location: "Chicago" }],
+    ["Canada", { location: "Toronto, ON" }],
+    ["Australia", { location: "Sydney, Australia" }],
+    ["New Zealand", { location: "Auckland, New Zealand" }],
+    ["Singapore", { location: "Singapore" }],
+    ["a global role", { location: "Remote - Worldwide" }],
+    ["U.S. and Canada", { location: "Remote (US or Canada)" }],
+    ["an ambiguous CA", { location: "San Francisco, CA" }],
+    ["non-U.S. residency", { location: "Remote", residencyRegions: ["US", "CA"] }],
+  ])("leaves the currency Unknown with %s (never CAD/AUD from a place)", (_label, geography) => {
+    expect(parseCompensation("$72,000–$88,000", null, geography)).toMatchObject({
+      minimum: 72000, maximum: 88000, currency: null, currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE",
     });
   });
 
@@ -123,9 +161,10 @@ describe("bare $ rule (product decision: read as USD, recorded as derived)", () 
 
   it("records the bare-$ currency as derived with its own marker; stated currencies are distinguishable", async () => {
     const normalizer = createManualOpportunityNormalizer();
-    const currencyRow = async (salaryText: string, compensationCurrency: string | null = null) =>
+    const currencyRow = async (salaryText: string, compensationCurrency: string | null = null, location: string | null = "Austin, TX") =>
       (await normalizer.normalize(raw({
         salaryText,
+        location,
         sourceMetadata: compensationCurrency ? { details: { compensationCurrency } } : null,
       }))).provenance.find((row) => row.fieldName === "currency");
 
@@ -137,6 +176,7 @@ describe("bare $ rule (product decision: read as USD, recorded as derived)", () 
     });
     expect(await currencyRow("CA$72,000")).toMatchObject({ sourceField: "compensationText", normalizedValue: "CAD" });
     expect(await currencyRow("$72,000", "CAD")).toMatchObject({ kind: "DIRECT", sourceField: "compensationCurrency", normalizedValue: "CAD" });
+    expect(await currencyRow("$72,000–$88,000", null, null)).toBeUndefined();
     expect(bareDollarCurrencySourceField).toBe("compensationText:bare-dollar-as-usd");
   });
 });
@@ -322,10 +362,27 @@ describe("stated time-zone requirements (G5)", () => {
     expect(padded.provenance).toContainEqual(expect.objectContaining({ fieldName: "timeZoneRequirements", kind: "DETERMINISTIC", sourceText: "  CET  " }));
   });
 
-  it("leaves it Unknown when only the job text mentions time zones", async () => {
+  it("falls back to an explicit requirement in the job text, marked as read from the text", async () => {
     const result = await createManualOpportunityNormalizer().normalize(raw({}, "Must work US Eastern (EST) hours."));
-    expect(result.opportunity.timeZoneRequirements).toBeNull();
-    expect(result.provenance.map((item) => item.fieldName)).not.toContain("timeZoneRequirements");
+    expect(result.opportunity.timeZoneRequirements).toBe("Must work US Eastern (EST) hours.");
+    expect(result.provenance).toContainEqual(expect.objectContaining({
+      fieldName: "timeZoneRequirements", kind: "DETERMINISTIC", sourceField: jobTextSourceFields.timeZoneStatement,
+      sourceText: "Must work US Eastern (EST) hours.",
+    }));
+  });
+
+  it("a stated value wins over the job text, and vague or place-only text stays Unknown", async () => {
+    const stated = await createManualOpportunityNormalizer().normalize(raw({ timeZoneRequirements: "CET" }, "Must overlap Eastern Time business hours."));
+    expect(stated.opportunity.timeZoneRequirements).toBe("CET");
+    for (const text of ["Based in New York.", "Flexible hours across time zones.", "Our office in Hartford, CT keeps business hours and you must badge in."]) {
+      const result = await createManualOpportunityNormalizer().normalize(raw({}, text));
+      expect(result.opportunity.timeZoneRequirements, text).toBeNull();
+    }
+    // A stated preference is kept, in its own words, as a preference
+    // (October 26, 2026; earlier a preference was Unknown).
+    const preferred = await createManualOpportunityNormalizer().normalize(raw({}, "Overlap with Pacific hours is preferred."));
+    expect(preferred.opportunity.timeZoneRequirements).toBe("Overlap with Pacific hours is preferred.");
+    expect(preferred.provenance).toContainEqual(expect.objectContaining({ fieldName: "timeZoneRequirements", sourceField: jobTextSourceFields.timeZonePreference }));
   });
 
   it("validates the submitted value", () => {

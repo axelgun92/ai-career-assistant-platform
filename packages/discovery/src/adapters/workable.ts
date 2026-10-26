@@ -122,6 +122,11 @@ export const workableAdapter: SourceAdapter<WorkableConfig> = {
             sourceUrl: job.url ?? null,
             applicationUrl: job.url ?? null,
             structured: { workplaceType: workplaceType(job.workplace) },
+            sourceFacts: {
+              department: job.department?.trim() || null,
+              // A jobs.workable.com listing page, which links on to the application.
+              applicationUrlBasis: job.url ? "SOURCE_LISTING_PAGE" : null,
+            },
             material: { department: job.department ?? null, workplace: job.workplace ?? null, locations },
             metadata: {
               companyId: job.company?.id === null || job.company?.id === undefined ? null : String(job.company.id),

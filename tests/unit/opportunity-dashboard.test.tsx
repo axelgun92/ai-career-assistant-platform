@@ -183,8 +183,10 @@ describe("GET /api/opportunities handler", () => {
     const input = listPage.mock.calls[0]![0];
     expect(input.sort).toBe("salary-high");
     expect(input.filters).toMatchObject({
-      workArrangements: [], seniorities: [], salaryAtLeast: null, salaryAtMost: null, salaryCurrency: null, department: "Support",
+      workArrangements: [], seniorities: [], salaryAtLeast: null, salaryAtMost: null, salaryCurrency: null,
     });
+    // An old URL's department is ignored: Department is no longer a filter.
+    expect(input.filters).not.toHaveProperty("department");
     const body = (await response.json()) as { salaryExclusions: unknown };
     expect(body.salaryExclusions).toEqual({ currency: "EUR", withoutAmount: 1, unknownCurrency: 0, otherCurrency: 2 });
   });

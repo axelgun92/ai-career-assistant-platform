@@ -13,6 +13,7 @@ const { OpportunityProvenance } = await import("../../apps/web/src/components/op
 const { OpportunityList } = await import("../../apps/web/src/components/dashboard/opportunity-list");
 const { scheduleLabel } = await import("../../apps/web/src/components/sources/source-labels");
 const { PostingHistory } = await import("../../apps/web/src/components/posting-history");
+const { ListingVersionHint } = await import("../../apps/web/src/components/evaluation/listing-version-hint");
 type RetrievedListingRecord = import("@ai-career/database").RetrievedListingRecord;
 type SourceView = import("../../apps/web/src/components/sources/types").SourceView;
 type AdapterView = import("../../apps/web/src/components/sources/types").AdapterView;
@@ -280,6 +281,18 @@ describe("retrieval provenance and dashboard", () => {
     expect(html).toContain("Listing changed since first seen</strong> (latest change found 2026-10-19 09:30 UTC)");
     expect(html).toContain("Retrieved by your source “Acme careers” in run <code>7c1d4e2f</code>");
     expect(html).toContain("A changed version of this listing, found 2026-10-19 09:30 UTC. The earlier version is kept");
+    // Core TDD §51 (v1.15): current facts are the latest version; history and evaluations are kept.
+    expect(html).toContain("The opportunity shows the latest version of the listing it was found from; every earlier version is kept below.");
+    expect(html).toContain("An earlier evaluation stays as it was and may describe an earlier version; reevaluating is up to you.");
+  });
+
+  it("hints that the latest evaluation used an earlier listing version, and shows nothing otherwise", () => {
+    const html = renderToStaticMarkup(
+      <ListingVersionHint hint={{ evaluatedAt: new Date("2026-10-19T12:00:00Z"), evaluatedVersionSeenAt: new Date("2026-10-18T09:00:00Z"), currentVersionSeenAt: new Date("2026-10-21T09:30:00Z") }} />,
+    );
+    expect(html).toContain('role="note"');
+    expect(html).toContain("The latest evaluation was made using the listing version first seen on 2026-10-18. The listing has changed since then (latest version seen on 2026-10-21). Reevaluate to evaluate the current version; the earlier evaluation is kept.");
+    expect(renderToStaticMarkup(<ListingVersionHint hint={null} />)).toBe("");
   });
 
   it("does not show a change notice for manual records", () => {
@@ -302,6 +315,7 @@ describe("retrieval provenance and dashboard", () => {
     const html = renderToStaticMarkup(<OpportunityList opportunities={[row("one", "Test Board", true), row("two", null, false)]} />);
     expect(html).toContain("Found via Test Board");
     expect(html.match(/Listing changed/g)).toHaveLength(1);
+    expect(html).toContain("Current facts show its latest version; earlier versions are kept, and an existing evaluation may describe an earlier one. Reevaluating is optional.");
     expect(html).toContain("Applicant tracking system");
     const gone = renderToStaticMarkup(<OpportunityList opportunities={[{ ...row("three", "Test Board", false), noLongerListed: true }, row("four", null, false)]} />);
     expect(gone.match(/No longer listed/g)).toHaveLength(1);

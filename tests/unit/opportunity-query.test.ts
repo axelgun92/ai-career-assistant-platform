@@ -31,7 +31,7 @@ describe("query parsing", () => {
       view: "active", q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [],
       arrangement: [], seniority: [], residency: [],
       source: null, company: null, domain: null, title: null, location: null, salary: null,
-      department: null, currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
+      currency: null, salaryMin: null, salaryMax: null, from: null, to: null,
       sort: "newest", page: 1, pageSize: 25,
     });
   });
@@ -204,7 +204,7 @@ describe("repository filter mapping", () => {
 });
 
 describe("normalized-field filters and salary sorts (Task 7 completion)", () => {
-  it("parses work arrangement, seniority, department, currency and salary amounts", () => {
+  it("parses work arrangement, seniority, currency and salary amounts, and ignores an old department filter", () => {
     const query = parse(
       "arrangement=hybrid,remote&arrangement=bogus&seniority=Senior&seniority=unknown&department=%20Customer%20Success%20" +
         "&currency=usd&salaryMin=80%2C000&salaryMax=120000&sort=salary-high",
@@ -212,7 +212,6 @@ describe("normalized-field filters and salary sorts (Task 7 completion)", () => 
     expect(query).toMatchObject({
       arrangement: ["remote", "hybrid"],
       seniority: ["senior", "unknown"],
-      department: "Customer Success",
       currency: "USD",
       salaryMin: 80000,
       salaryMax: 120000,
@@ -221,7 +220,6 @@ describe("normalized-field filters and salary sorts (Task 7 completion)", () => 
     expect(toListFilters(query)).toMatchObject({
       workArrangements: ["REMOTE", "HYBRID"],
       seniorities: ["SENIOR", "UNKNOWN"],
-      department: "Customer Success",
       salaryCurrency: "USD",
       salaryAtLeast: 80000,
       salaryAtMost: 120000,
@@ -241,8 +239,10 @@ describe("normalized-field filters and salary sorts (Task 7 completion)", () => 
   });
 
   it("serializes canonically and round-trips; existing URLs stay valid", () => {
-    const search = "arrangement=remote&seniority=senior&department=Support&currency=USD&salaryMin=80000&salaryMax=120000&sort=salary-low";
+    const search = "arrangement=remote&seniority=senior&currency=USD&salaryMin=80000&salaryMax=120000&sort=salary-low";
     expect(serializeOpportunityQuery(parse(search))).toBe(search);
+    // An old URL with a department still loads; the department is dropped.
+    expect(serializeOpportunityQuery(parse(`${search}&department=Support`))).toBe(search);
     expect(serializeOpportunityQuery(parse("salaryMin=80000"))).toBe("currency=USD&salaryMin=80000");
     const before = "rec=apply&salary=stated&from=2026-10-01&sort=priority";
     expect(serializeOpportunityQuery(parse(before))).toBe(before);
@@ -250,7 +250,7 @@ describe("normalized-field filters and salary sorts (Task 7 completion)", () => 
   });
 
   it("counts as active filters and clears with the rest", () => {
-    for (const search of ["arrangement=unknown", "seniority=mid", "department=CS", "currency=EUR", "salaryMax=90000"]) {
+    for (const search of ["arrangement=unknown", "seniority=mid", "currency=EUR", "salaryMax=90000"]) {
       expect(hasActiveFilters(parse(search))).toBe(true);
       expect(serializeOpportunityQuery(clearFilters(parse(search)))).toBe("");
     }

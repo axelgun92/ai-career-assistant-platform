@@ -10,6 +10,7 @@ import {
 import { Prisma } from "../generated/prisma/client";
 import { randomUUID } from "node:crypto";
 import { getDatabaseClient } from "./client";
+import { originatingVersion } from "./manual-opportunity-repository";
 
 function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -49,9 +50,12 @@ async function createEvaluationAndTask(
   transaction: Prisma.TransactionClient,
   input: EnqueueEvaluationInput,
 ) {
+  const version = await originatingVersion(transaction, input.opportunityId);
   const evaluation = await transaction.evaluation.create({
     data: {
       opportunityId: input.opportunityId,
+      // Bound to the version being evaluated (Core TDD §51, v1.15).
+      sourceRecordId: version?.currentId ?? null,
       userProfileId: input.userProfileId,
       domain: input.evaluator.domain,
       evaluationVersion: input.evaluator.evaluationVersion,
@@ -293,6 +297,8 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
           select: {
             opportunityId: true,
             domain: true,
+            sourceRecordId: true,
+            sourceRecord: { select: { source: true } },
             opportunity: {
               select: {
                 source: true,
@@ -380,8 +386,11 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
             evaluationId,
             opportunityId: evaluation.opportunityId,
             domain: evaluation.domain,
-            sourceRecordId: evaluation.opportunity.sourceRecords[0]?.id ?? null,
+            // The version this evaluation is bound to; an evaluation from
+            // before the binding evaluated the first source record.
+            sourceRecordId: evaluation.sourceRecordId ?? evaluation.opportunity.sourceRecords[0]?.id ?? null,
             jobSource:
+              evaluation.sourceRecord?.source ??
               evaluation.opportunity.sourceRecords[0]?.source ??
               evaluation.opportunity.source,
             operationId: attempt.operationId,

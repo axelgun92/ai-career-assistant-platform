@@ -3,7 +3,7 @@ import { z } from "zod";
 import { collectPages, mapKeptItems, parseItems, parseResponse } from "../collection";
 import type { SourceAdapter } from "../contract";
 import { getJson } from "../transport";
-import { isoDate } from "./shared";
+import { boardApplyBasis, isoDate } from "./shared";
 
 // Himalayas jobs API (aggregator, official public API). Verified October
 // 17–18, 2026 with ?limit=20 and, for page 2, ?limit=20&cursor=<nextCursor>
@@ -99,6 +99,14 @@ export const himalayasAdapter: SourceAdapter<HimalayasConfig> = {
                   salaryPeriod: periods[job.salaryPeriod?.toLowerCase() ?? ""] ?? null,
                 }
               : {},
+          sourceFacts: {
+            seniority: (job.seniority ?? []).map((value) => value.trim()).filter(Boolean),
+            // The employer's application link; Himalayas often repeats its
+            // own listing page (the guid) there, which is not one.
+            applicationUrlBasis: boardApplyBasis(job.applicationLink, job.guid) ?? "SOURCE_LISTING_PAGE",
+            // Where the remote role may be done from ("United States only").
+            remoteLocations: (job.locationRestrictions ?? []).map((value) => value.trim()).filter(Boolean),
+          },
           material: {
             locationRestrictions: job.locationRestrictions ?? [],
             timezoneRestrictions: (job.timezoneRestrictions ?? []).map(String),

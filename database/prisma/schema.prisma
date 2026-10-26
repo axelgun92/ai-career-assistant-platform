@@ -126,19 +126,37 @@ model Opportunity {
   department     String?
   employmentType String?
   seniority      String?
+  // The seniority label as stated ("Mid-Senior level"), kept even when it
+  // names no single level.
+  seniorityLabel String?
 
   location             String?
   remoteStatus         String?
+  // Every arrangement the posting states, in its order; remoteStatus is the
+  // one stated arrangement (null when several are offered).
+  workArrangements     String[] @default([])
   timeZoneRequirements String?
   // Explicit residency / geographic eligibility: US_REQUIRED, NON_US, or
   // null (Unknown); residencyRegions lists the stated eligible geographies
   // (ISO 3166-1 alpha-2 or named regions), empty when not stated.
   residencyRequirement String?
   residencyRegions     String[] @default([])
+  // Explicit work authorization (a separate concept from residency):
+  // RIGHT_TO_WORK or CITIZENSHIP and the countries it names; whether visa
+  // sponsorship and relocation support are AVAILABLE or NOT_AVAILABLE; the
+  // countries an employer of record is stated for. Null / empty = Unknown.
+  workAuthorizationRequirement String?
+  workAuthorizationRegions     String[] @default([])
+  visaSponsorship              String?
+  relocationSupport            String?
+  employerOfRecordRegions      String[] @default([])
 
   salaryMin         Decimal? @db.Decimal(12, 2)
   salaryMax         Decimal? @db.Decimal(12, 2)
   salaryText        String?
+  // What the stated range is: BASE or OTE; null when the posting does not
+  // say. The bounds are the stated numbers either way.
+  compensationBasis String?
   bonus             String?
   equity            String?
   currency          String?
@@ -232,6 +250,7 @@ model SourceRecord {
   fieldProvenance        FieldProvenance[]
   evidenceRecords        EvidenceRecord[]
   semanticOperations     SemanticOperationAttempt[]
+  evaluatedBy            Evaluation[]               @relation("EvaluatedSourceVersion")
   createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt              DateTime                   @updatedAt @db.Timestamptz(3)
 
@@ -360,6 +379,11 @@ model FieldProvenance {
   sourceText      String?          @db.Text
   collectedAt     DateTime?        @db.Timestamptz(3)
   createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  // Set when a newer source version, or a newer application link, replaced
+  // this row as the current evidence for its field. Superseded rows are kept
+  // for history (evaluation evidence may reference them) and are never
+  // deleted or changed otherwise.
+  supersededAt    DateTime?        @db.Timestamptz(3)
   evidenceRecords EvidenceRecord[]
 
   @@index([opportunityId, fieldName])
@@ -435,6 +459,12 @@ model Evaluation {
   ruleVersion        String
   promptVersion      String?
   userProfileVersion Int?
+  // The source version this evaluation evaluates, bound when it is created:
+  // the current version of the opportunity's originating listing. Null for
+  // evaluations created before the binding existed (they evaluated the
+  // opportunity's first source record).
+  sourceRecordId     String?                    @db.Uuid
+  sourceRecord       SourceRecord?              @relation("EvaluatedSourceVersion", fields: [sourceRecordId], references: [id], onDelete: SetNull)
   executionMetadata  Json?
   domainResult       Json?
   stageResults       StageResult[]
@@ -453,6 +483,7 @@ model Evaluation {
   @@index([opportunityId, createdAt])
   @@index([userProfileId])
   @@index([domain, status])
+  @@index([sourceRecordId])
 }
 
 model AiModelPricingConfiguration {
@@ -972,4 +1003,16 @@ model ExtensionPairing {
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   lastUsedAt DateTime? @db.Timestamptz(3)
   revokedAt  DateTime? @db.Timestamptz(3)
+}
+
+// The user's own work eligibility, for showing which jobs' work-
+// authorization requirements need attention (never for normalization, and
+// never part of the evaluator's profile input). One row: the countries the
+// user is authorized to work in, and the countries the user is a citizen of
+// (ISO 3166-1 alpha-2), for jobs that require citizenship.
+model UserEligibility {
+  id                 String   @id
+  authorizedRegions  String[] @default([])
+  citizenshipRegions String[] @default([])
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
 }

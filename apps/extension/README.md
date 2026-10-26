@@ -11,23 +11,27 @@ A Chrome Manifest V3 extension that saves the job posting you are viewing into y
    - saved;
    - already saved (nothing changed);
    - updated (the posting changed);
-   - added to an opportunity you already have;
-   - a possible duplicate.
+   - added to an opportunity you already have (only when it shares that listing's URL, or its listing or requisition ID at the same company);
+   - a possible duplicate (the same company with a similar title, location and description: flagged, never merged).
 5. Saving never evaluates anything. After a save, **Request evaluation** is offered. It goes through the app's existing evaluation path, with the same budget, duplicate-spend protection, queue and retries. While the popup is open it shows the persisted state (queued, running, completed or failed) and any recommendation, read-only.
 6. **Open in AI Job Assistant** opens the opportunity in the app.
 
 ## What it reads, in order
 
-1. The page's schema.org `JobPosting` data, if it has any.
-2. On LinkedIn only: a reader limited to LinkedIn's job-detail areas (the job's top card and description). It runs only on a job page (`/jobs/view/<id>`, or a jobs page showing one job with `currentJobId=<id>`).
+1. The page's schema.org `JobPosting` data, if it has any: JSON-LD, or the same fields written into the page as microdata (`itemprop`). Structured data without its own description takes the page's main content as the description. On a remote posting, an office address in the structured data is not sent as the location; the places it says a remote candidate may be in (`applicantLocationRequirements`) are sent instead.
+2. On LinkedIn only: a reader limited to LinkedIn's job-detail areas (the job's top card, description and criteria list, which states the seniority level and employment type, and the posting's stated age). It runs only on a job page (`/jobs/view/<id>`, or a jobs page showing one job with `currentJobId=<id>`).
 3. The text you selected on the page, if any.
-4. Everywhere except LinkedIn: the page's main content, without its navigation, header, footer and side panels.
+4. Everywhere except LinkedIn: the page's main content, without its navigation, header, footer, side panels and lists of other jobs ("Related Jobs", "Similar roles"). The job's own container is `<main>`, or else the `<article>` that holds the job's title, never another job's card.
 
 On LinkedIn there is no whole-page fallback. If neither the structured data nor the job-detail areas yield the job, the extension asks you to select the job description text. It never reads account or profile data, messages, the feed, cookies, other tabs or browsing history.
 
 Welcome to the Jungle and Otta pages go through the generic path (steps 1, 3 and 4); there is no site-specific reader for them. The same is true of any other site.
 
 A field the page doesn't state is left unknown. The extension never invents a company, an ID or an application link.
+
+The extension does not interpret the posting. It sends what it read, plus neutral context, never on LinkedIn:
+- the tab's title;
+- the job's own page content, with every description: the job's container without navigation, header, footer, side panels, forms, lists of other jobs, and related-job, sharing or cookie widgets, one visible item per line, up to 20,000 characters. It lets a detail shown beside the description be used: a labelled row ("Remote Type: Hybrid", "Visa Sponsorship" / "Not Available"), or an item that is only a salary, an employment type, office days, a seniority label, a country or a posting age ("$80K – $95K", "1 day a week in office", "Junior and Mid level", "Posted 1 week ago"). *(Before October 26, 2026 it was sent only beside structured data or a selection.)* AI Job Assistant's shared normalization then fills facts the page states only in its text, such as "Location: Chicago, IL", "This is a full-time, hybrid position." or a salary statement. It does this the same way for every source. A field you corrected in the preview is recorded as user-corrected, and a field you cleared stays unknown.
 
 ## Permissions
 
@@ -113,14 +117,27 @@ node database/.e2e-acceptance-helper.mjs create-profile
 - [ ] Reopen the popup: it shows *Already saved*. **Read this page**, then **Save**, reports *Already saved. Nothing changed.*
 - [ ] **Request evaluation** reports *Evaluation requested and queued.* In terminal 2, run `node database/.e2e-acceptance-helper.mjs run-worker`. While the popup is open, it then shows *Evaluation completed. Recommendation: …*, read-only.
 
-**6. Real pages, in your normal browser** (no evaluation needed). Check:
+**6. Real pages, in your normal browser** (no evaluation needed). *(October 26, 2026: the Feature 14B acceptance retest now covers every supported source domain; see the cross-source list after this step. Generic employer careers pages are not part of it.)* Check:
 - [ ] A **LinkedIn** job page (being logged in is fine): it saves with LinkedIn's job details only. The preview shows nothing from your profile, messages or feed. A non-job LinkedIn page is refused.
 - [ ] A **Welcome to the Jungle** or **Otta** job page: it saves through the generic path.
-- [ ] A **Greenhouse** or **Lever** job page you already have from a source: it is added to the existing opportunity, and the employer link is kept.
+- [ ] A **Greenhouse** or **Lever** job page you already have from that ATS source (the same page URL): it is added to the existing opportunity, and the employer link is kept. A copy of a job you saved from a *different* site, with no shared listing URL or ID, is not attached automatically. It may stay separate, or be flagged as a possible duplicate when the company, title, location and description agree closely enough. *(Corrected October 23, 2026: this step previously implied that any copy you already have is attached.)*
 - [ ] An **unrecognised employer careers page**: it saves as a lower-priority source with its real host shown. It never replaces an existing ATS link.
 - [ ] **Revoke** the pairing on `/extension`: the popup then reports the pairing is no longer valid.
 
 A real evaluation is optional. If you want one, restart the app with your own AI configuration instead of the deterministic key, and start `pnpm worker:evaluations` with the same `DATABASE_URL`. It is your own paid, local action, within your budget.
+
+**Cross-source live retest (October 26, 2026).** Capture a current Customer Success posting on each supported source:
+- Greenhouse, Lever, Ashby and SmartRecruiters;
+- Remote OK, We Work Remotely, Himalayas and Working Nomads;
+- Workday, Workable, Wellfound, LinkedIn (logged out, as before) and Welcome to the Jungle / Otta;
+- Adzuna, only from a genuine Adzuna-hosted page; otherwise record it as not retested.
+
+On each opportunity, check both the fields fixed in this batch and the fields that already worked:
+- title, company and location (a remote role shows where it may be done from, never only an optional office);
+- Salary (a normalized range, otherwise Unknown);
+- work arrangement (every option the posting offers, such as "On-site / Remote"), employment type, seniority (as stated), posting and closing dates, and time zone;
+- work authorization, sponsorship and location eligibility;
+- the application URL and its basis, and the full description (no other jobs in it).
 
 **7. Cleanup (optional).** Stop the servers, delete `database/.e2e-acceptance-helper.mjs`, then run `dropdb -h localhost -U postgres ai_career_assistant_acceptance`.
 

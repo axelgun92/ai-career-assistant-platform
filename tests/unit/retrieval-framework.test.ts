@@ -444,11 +444,15 @@ describe("retrieved-listing normalizer", () => {
     expect(opportunity.postingDate?.toISOString()).toBe("2026-10-01T12:00:00.000Z");
   });
 
-  it("reads residency only from explicit statements and never infers a time-zone requirement", async () => {
+  it("reads residency only from explicit statements and a time-zone requirement only when the text requires one", async () => {
     const { opportunity, provenance } = await normalizer.normalize(retrieved());
     expect(opportunity.residencyRequirement).toBe("US_REQUIRED");
+    // "Overlap with US Eastern hours." describes; it does not require.
     expect(opportunity.timeZoneRequirements).toBeNull();
     expect(provenance.some((item) => item.fieldName === "timeZoneRequirements")).toBe(false);
+    const required = await normalizer.normalize(retrieved({ description: "Own renewals. Candidates must be available for Eastern Time business hours." }));
+    expect(required.opportunity.timeZoneRequirements).toBe("Candidates must be available for Eastern Time business hours.");
+    expect(required.provenance).toContainEqual(expect.objectContaining({ fieldName: "timeZoneRequirements", kind: "DETERMINISTIC", sourceField: "rawText:explicit-time-zone-statement" }));
     const bare = await normalizer.normalize(retrieved({ description: "Own renewals for SaaS customers.", location: "Remote" }));
     expect(bare.opportunity.residencyRequirement).toBeNull();
     expect(bare.opportunity.residencyRegions).toEqual([]);

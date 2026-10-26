@@ -44,7 +44,9 @@ describe("the extension's page reader", () => {
       title: "Customer Success Manager",
       description: "Own onboarding and renewals.\nDrive adoption\nRun QBRs",
       company: "Northwind",
-      location: "Austin, TX, US",
+      // A remote posting's jobLocation with a city is an office, not where
+      // the role is done (October 26, 2026; earlier "Austin, TX, US").
+      location: null,
       salaryText: null,
       salaryMin: 90000,
       salaryMax: 110000,
@@ -53,9 +55,13 @@ describe("the extension's page reader", () => {
       workplaceType: "REMOTE",
       employmentType: "FULL_TIME",
       postedAt: "2026-10-15",
+      closingDate: null,
       // The posting's own URL is not an application link; none is invented.
       applicationUrl: null,
+      applicationUrlBasis: null,
       siteJobId: "REQ-123",
+      remoteLocations: [],
+      seniority: null,
     });
   });
 
@@ -194,6 +200,62 @@ describe("the extension's page reader", () => {
       const result = runExtractor(jsonLdPage({ title: "CSM", descriptionHtml: `<p>${"x".repeat(60_000)}</p>` }), "https://example.com/jobs/2");
       expect(result.posting?.description).toHaveLength(50_000);
       expect(result.notes).toContain("Description shortened to 50,000 characters");
+    });
+      it("sends the job's bounded page context beside structured data, without navigation, footer, side panels or widgets", () => {
+      const page = jsonLdPage({
+        title: "Customer Success Manager",
+        company: "Northwind",
+        descriptionHtml: "<p>Own onboarding and renewals.</p>",
+        bodyHtml: `
+          <header><nav>Location: Headerville</nav></header>
+          <main>
+            <h1>Customer Success Manager</h1>
+            <dl class="job-meta"><dt>Remote Type</dt><dd>Hybrid</dd><dt>Location</dt><dd>Toronto, Ontario, Canada</dd></dl>
+            <div class="description"><p>Own onboarding and renewals.</p></div>
+            <section class="similar-jobs"><h2>Similar jobs</h2><p>Location: Denver, CO</p><p>Remote Type: Remote</p></section>
+            <div id="related-roles">Employment Type: Contract</div>
+            <div aria-label="Share this job">Salary: $1,000,000</div>
+            <form><label>Location: Formtown</label></form>
+            <aside>Location: Asideville</aside>
+          </main>
+          <footer>Location: Footer City · Posting Date: 2001-01-01</footer>`,
+      });
+      const result = runExtractor(page, "https://careers.unknown-employer.example/roles/77");
+      expect(result.extractor).toBe("structured-data");
+      expect(result.posting?.workplaceType).toBeNull();
+      expect(result.pageText).toContain("Remote Type\nHybrid");
+      expect(result.pageText).toContain("Location\nToronto, Ontario, Canada");
+      for (const excluded of ["Headerville", "Denver", "Remote Type: Remote", "Contract", "1,000,000", "Formtown", "Asideville", "Footer City"]) {
+        expect(result.pageText, excluded).not.toContain(excluded);
+      }
+    });
+
+    it("finds the job's container around its heading on a page without a main section, but never reads the whole body", () => {
+      const meta = "<p>Remote Type: Hybrid</p>";
+      const body = `<div id="app"><nav>Location: Navtown</nav><div class="job"><h1>CSM</h1>${meta}<p>${"Own renewals. ".repeat(60)}</p></div><footer>Footer</footer></div>`;
+      const result = runExtractor(jsonLdPage({ title: "CSM", descriptionHtml: "<p>Own renewals.</p>", bodyHtml: body }), "https://careers.example.test/jobs/5");
+      expect(result.pageText).toContain("Remote Type: Hybrid");
+      expect(result.pageText).not.toContain("Navtown");
+      // Nothing substantial around the heading short of the body: no context.
+      const thin = runExtractor(jsonLdPage({ title: "CSM", descriptionHtml: "<p>Own renewals.</p>", bodyHtml: "<h1>CSM</h1><p>Remote Type: Hybrid</p>" }), "https://careers.example.test/jobs/6");
+      expect(thin.pageText).toBeNull();
+    });
+
+    it("sends no page context on LinkedIn, and sends it beside a main-content description", () => {
+      const linkedIn = runExtractor(
+        jsonLdPage({ title: "CSM", descriptionHtml: "<p>Own renewals.</p>", bodyHtml: "<main><h1>CSM</h1><p>Remote Type: Hybrid</p></main>" }),
+        "https://www.linkedin.com/jobs/view/1234567890/",
+      );
+      expect(linkedIn).toMatchObject({ extractor: "structured-data", pageText: null, pageTitle: null });
+      const main = runExtractor(
+        `<html><head><title>CSM</title></head><body><main><h1>CSM</h1><p>Remote Type: Hybrid</p><p>${"Own renewals. ".repeat(20)}</p></main></body></html>`,
+        "https://careers.example.test/jobs/7",
+      );
+      // A main-content description still sends the page context, one item
+      // per line (October 26, 2026): the job's metadata items are only
+      // readable there.
+      expect(main).toMatchObject({ extractor: "main-content" });
+      expect(main.pageText).toContain("Remote Type: Hybrid");
     });
   });
 });

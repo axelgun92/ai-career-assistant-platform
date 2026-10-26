@@ -181,11 +181,6 @@ export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErr
             </label>
           ))}
           <label>
-            Department
-            <input name="department" maxLength={120} {...errorProps("department", fieldErrors)} />
-            <FieldError name="department" fieldErrors={fieldErrors} />
-          </label>
-          <label>
             Eligible residence (countries or regions)
             <input
               name="residencyRegions"

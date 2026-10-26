@@ -39,7 +39,9 @@ const paths = {
   first: `/roles/lead-${token}-a`,
   second: `/roles/lead-${token}-b`,
   empty: `/careers-${token}`,
+  context: `/openings/context-${token}`,
 };
+const contextTitle = `Customer Success Partner ${token}`;
 
 let context: BrowserContext;
 let userDataDir = "";
@@ -83,6 +85,20 @@ const pages: Record<string, () => string> = {
   [paths.second]: () =>
     jsonLdPage({ title: `${leadTitle} (Remote)`, company: `Leadco ${token}`, descriptionHtml: description.map((line) => `<p>${line}</p>`).join(""), extra: { jobLocationType: "TELECOMMUTE" } }),
   [paths.empty]: () => `<!doctype html><html><head><title>Careers</title></head><body><div>Join us! See our open roles.</div></body></html>`,
+  // Structured data without a workplace type or location, with the job's
+  // metadata beside the description and a related-jobs widget that states
+  // something else.
+  [paths.context]: () =>
+    jsonLdPage({
+      title: contextTitle,
+      company: `Contextco ${token}`,
+      descriptionHtml: description.slice(2).map((line) => `<p>${line}</p>`).join(""),
+      bodyHtml: `<header><nav>Location: Headerville</nav></header><main><h1>${contextTitle}</h1>
+<dl class="job-meta"><dt>Remote Type</dt><dd>Hybrid</dd><dt>Location</dt><dd>Toronto, Ontario, Canada</dd></dl>
+${description.slice(2).map((line) => `<p>${line}</p>`).join("")}
+<section class="similar-jobs"><h2>Similar jobs</h2><p>Remote Type: Remote</p><p>Location: Denver, CO</p></section></main>
+<footer>Location: Footer City</footer>`,
+    }),
 };
 
 test.beforeAll(async () => {
@@ -342,6 +358,30 @@ test("a corrected preview, a possible duplicate, running and failed states, and 
 
   // The job site received only the user's own page loads.
   expect(jobRequests.filter((url) => url !== "/favicon.ico").every((url) => Object.values(paths).includes(url))).toBe(true);
+});
+
+test("job metadata shown beside a structured description reaches Core's shared normalization as page context", async () => {
+  const job = await openJobTab(paths.context);
+  const { popup } = await openPopup(job.tabId);
+  await popup.getByRole("button", { name: "Read this page" }).click();
+  await expect(popup.locator("#preview-source")).toHaveText("Read from the page's structured job data");
+  const saved = await save(popup);
+  expect(saved).toMatchObject({ outcome: "CREATED" });
+  await popup.close();
+  await job.page.close();
+
+  const app = await context.newPage();
+  await app.goto(`${appUrl}/opportunities/${saved.opportunityId}`);
+  await app.getByText("Normalized opportunity and source details").click();
+  const provenance = app.locator(".provenance-list");
+  // Read from the metadata row, with page-context provenance; the widget's
+  // "Remote", the header and the footer were never sent.
+  await expect(provenance).toContainText("remoteStatus: HYBRID");
+  await expect(provenance).toContainText("Source field: pageContext:labelled-work-arrangement; method: DETERMINISTIC");
+  await expect(provenance).toContainText("location: Toronto, Ontario, Canada");
+  await expect(provenance).toContainText("Source field: pageContext:labelled-location; method: DETERMINISTIC");
+  for (const absent of ["Headerville", "Denver", "Footer City"]) await expect(app.locator("main")).not.toContainText(absent);
+  await app.close();
 });
 
 test("the page reader in Chromium: LinkedIn job details only, no whole-page fallback; Welcome to the Jungle through the generic path", async () => {

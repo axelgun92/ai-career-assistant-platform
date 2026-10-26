@@ -447,7 +447,10 @@ describe("Wellfound", () => {
       applicationUrl: "https://wellfound.com/jobs/1716423-customer-success-specialist",
       retrieval: { retrievalType: "PUBLIC_HTML", sourceCategory: "MARKETPLACE" },
     });
-    expect(pragma.sourceMetadata).toMatchObject({ compensation: "₹30,000 – ₹50,000", remoteKind: "ONSITE", companyId: "8170167", structured: { workplaceType: "ONSITE" } });
+    expect(pragma.sourceMetadata).toMatchObject({
+      compensation: "₹30,000 – ₹50,000", remoteKind: "ONSITE", companyId: "8170167", structured: { workplaceType: "ONSITE" },
+      sourceFacts: { compensationText: "₹30,000 – ₹50,000" },
+    });
     expect(pragma.description).toContain("Facilitating the successful onboarding of new customers");
     expect(pragma.description).not.toMatch(/\*\*|###|&amp;/);
     const medsender = byId(result.listings, "4829861");
@@ -457,8 +460,10 @@ describe("Wellfound", () => {
     for (const listing of result.listings) {
       const { opportunity } = await createRetrievedOpportunityNormalizer().normalize(listing);
       expect(opportunity.status).toBe("DISCOVERED");
-      // Compensation text is source data only.
+      // The compensation text is kept as salary text, but Wellfound states no
+      // pay period, so no amount is read from it.
       expect(opportunity.salaryMin).toBeNull();
+      expect(opportunity.salaryMax).toBeNull();
       expect(opportunity.timeZoneRequirements).toBeNull();
     }
   });

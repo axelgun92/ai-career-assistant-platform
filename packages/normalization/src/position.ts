@@ -47,9 +47,26 @@ const employmentTypes: Record<string, EmploymentType> = {
   intern: "INTERNSHIP",
 };
 
+// Words that qualify an employment type without changing it
+// ("Full-time/Permanent", "Regular full-time").
+const permanence = new Set(["permanent", "regular", "perm"]);
+
 // Standardizes an employment-type value as a source states it ("Full-time",
-// "FULL_TIME", "Contract"). Combined or unrecognized values stay Unknown.
+// "FULL_TIME", "Contract", "Full-time/Permanent"). Two different types
+// ("Full-time, Contract") or unrecognized values stay Unknown.
 export function standardizeEmploymentType(value: string | null): EmploymentType | null {
   if (!value) return null;
-  return employmentTypes[value.toLowerCase().replace(/[\s_-]+/g, "")] ?? null;
+  const key = (part: string) => part.toLowerCase().replace(/[\s_-]+/g, "");
+  const direct = employmentTypes[key(value)];
+  if (direct) return direct;
+  const parts = value.split(/\s*(?:[/,&+]|\band\b)\s*|\s+(?=(?:full|part)[\s-]?time\b)/i).map((part) => part.trim()).filter(Boolean);
+  const types = new Set<EmploymentType>();
+  for (const part of parts) {
+    if (permanence.has(part.toLowerCase())) continue;
+    const words = part.split(/\s+/).filter((word) => !permanence.has(word.toLowerCase())).join(" ");
+    const type = employmentTypes[key(words)];
+    if (!type) return null;
+    types.add(type);
+  }
+  return types.size === 1 ? [...types][0]! : null;
 }

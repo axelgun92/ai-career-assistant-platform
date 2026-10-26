@@ -98,7 +98,8 @@ export function OpportunityProvenance({
       {changedAt ? (
         <p className="listing-changed" role="note">
           <strong>Listing changed since first seen</strong> (latest change found {timestamp(changedAt)}). The opportunity
-          keeps the description it was first saved with; every retrieved version is kept below.
+          shows the latest version of the listing it was found from; every earlier version is kept below. An earlier
+          evaluation stays as it was and may describe an earlier version; reevaluating is up to you.
         </p>
       ) : null}
       <dl>

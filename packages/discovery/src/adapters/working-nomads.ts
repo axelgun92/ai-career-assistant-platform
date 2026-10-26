@@ -64,6 +64,8 @@ export const workingNomadsAdapter: SourceAdapter<WorkingNomadsConfig> = {
           postingDate: isoDate(job.pub_date),
           sourceUrl: job.url,
           applicationUrl: job.url,
+          // Working Nomads' own link to the listing.
+          sourceFacts: { applicationUrlBasis: "SOURCE_LISTING_PAGE" },
           material: { category: job.category_name ?? null, tags: tagList(job.tags) },
           metadata: { category: job.category_name ?? null, tags: tagList(job.tags) },
           sourceItem: job,

@@ -105,10 +105,6 @@ export function OpportunityFilters({
   }, []);
   const filtersOpen = hasActiveFilters({ ...query, q: "" });
   // Keep the current selections visible even when no row has them yet.
-  const departmentChoices: Array<{ value: string; count: number | null }> = [...options.departments];
-  if (query.department && !departmentChoices.some((choice) => choice.value === query.department)) {
-    departmentChoices.push({ value: query.department, count: null });
-  }
   const currencyChoices = [
     ...new Set([defaultSalaryCurrency, ...options.currencies.map((currency) => currency.value), ...(query.currency ? [query.currency] : [])]),
   ];
@@ -193,20 +189,6 @@ export function OpportunityFilters({
                 ))}
               </select>
             </label>
-            {departmentChoices.length ? (
-              <label>
-                Department
-                <select name="department" defaultValue={query.department ?? ""}>
-                  <option value="">Any department</option>
-                  {departmentChoices.map((department) => (
-                    <option key={department.value} value={department.value}>
-                      {department.value}
-                      {department.count === null ? "" : ` (${department.count})`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
             <label>
               Salary
               <select name="salary" defaultValue={query.salary ?? ""}>

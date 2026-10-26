@@ -1,5 +1,7 @@
 import { connection } from "next/server";
 import { z } from "zod";
+import { PrismaUserEligibilityRepository } from "@ai-career/database";
+import { WorkEligibilityForm } from "@/components/eligibility/work-eligibility-form";
 import { ProfileEditor } from "@/components/profile/profile-editor";
 import { ProfileHeader } from "@/components/profile/profile-header";
 import { StartingProfileButton } from "@/components/profile/starting-profile-button";
@@ -15,6 +17,16 @@ const savedMessages: Record<string, string> = {
   existing: "No new version was created: this content matches an existing version, shown here.",
   "existing-active": "This content matches an existing version, which is now active.",
 };
+
+// The user's own work eligibility (not part of the evaluation profile).
+async function workEligibility() {
+  try {
+    const saved = await new PrismaUserEligibilityRepository().get();
+    return { authorizedRegions: saved?.authorizedRegions ?? [], citizenshipRegions: saved?.citizenshipRegions ?? [] };
+  } catch {
+    return { authorizedRegions: [], citizenshipRegions: [] };
+  }
+}
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -54,6 +66,7 @@ export default async function ProfilePage({
           No profile exists yet. Evaluations need a profile with your Customer Success preferences.
         </p>
         <StartingProfileButton document={alexandraNugentCustomerSuccessProfile} />
+        <WorkEligibilityForm initial={await workEligibility()} />
       </main>
     );
   }
@@ -103,6 +116,7 @@ export default async function ProfilePage({
         activeId={activeId}
         effectiveId={overview.active?.userProfileId ?? null}
       />
+      <WorkEligibilityForm initial={await workEligibility()} />
     </main>
   );
 }

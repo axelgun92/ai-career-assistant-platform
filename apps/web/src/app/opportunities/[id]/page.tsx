@@ -13,6 +13,9 @@ import { getListingHistory } from "@/server/retrieval-service";
 import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
+import { ListingVersionHint } from "@/components/evaluation/listing-version-hint";
+import { findListingVersionHint, PrismaUserEligibilityRepository } from "@ai-career/database";
+import { WorkEligibilityNote } from "@/components/eligibility/work-eligibility-note";
 import { getProfileService } from "@/server/profile-service";
 import { getBudgetService } from "@/server/budget-service";
 import { toDeferralView } from "@/components/budget/deferral-view";
@@ -22,15 +25,20 @@ import { getApplicationStore } from "@/server/application-service";
 import { getDuplicateStore } from "@/server/duplicate-service";
 import { DuplicateNotices } from "@/components/duplicate-notices";
 import {
+  applicationUrlBasisNotes,
   employmentTypeLabel,
+  formatSalary,
+  formatWorkArrangements,
   formatResidency,
-  formatSalaryRange,
+  formatWorkAuthorization,
   seniorityLabel,
   workArrangementLabel,
 } from "@/components/opportunity-facts";
 import {
   applicationCreationModes,
+  geographyName,
   reopenRefusal,
+  workAuthorizationRelevance,
   reopenTarget,
   trackingRefusalMessage,
   utcToday,
@@ -88,6 +96,13 @@ export default async function OpportunityPage({
       return null;
     },
   );
+
+  const listingHint = await findListingVersionHint(detail.opportunity.id).catch((error: unknown) => {
+    console.error("Listing version hint could not be loaded", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    return null;
+  });
 
   const profileHint = await getProfileService()
     .profileVersionHint(detail.opportunity.id)
@@ -148,35 +163,42 @@ export default async function OpportunityPage({
     ? trackingRefusalMessage(reopenRefused, trackingContext.opportunityStatus, "reopen")
     : null;
 
+  // A posting date dated from a stated age ("2 weeks ago") is approximate.
+  const postedAge = detail.fieldProvenance.find((row) => row.fieldName === "postingDate" && row.sourceField.endsWith("relative-posted-age"));
+  const postingDate = postedAge && detail.opportunity.postingDate
+    ? `About ${display(detail.opportunity.postingDate)} (stated as "${postedAge.sourceText}")`
+    : detail.opportunity.postingDate;
   const normalizedFields = [
     ["Lifecycle", formatLifecycle(detail.opportunity.status)],
     ["Domain", detail.opportunity.domain],
     ["Title", detail.opportunity.title],
     ["Company", detail.opportunity.companyName],
     ["Location", detail.opportunity.location],
-    ["Compensation", detail.opportunity.salaryText],
-    [
-      "Salary range",
-      formatSalaryRange(detail.opportunity.salaryMin, detail.opportunity.salaryMax, detail.opportunity.currency),
-    ],
-    ["Posting date", detail.opportunity.postingDate],
+    ["Salary", formatSalary(detail.opportunity)],
+    ["Posting date", postingDate],
     ["Closing date", detail.opportunity.closingDate],
-    ["Work arrangement", detail.opportunity.remoteStatus ? workArrangementLabel(detail.opportunity.remoteStatus) : null],
-    [
-      "Residency requirement",
-      detail.opportunity.residencyRequirement
-        ? formatResidency(detail.opportunity.residencyRequirement, detail.opportunity.residencyRegions)
-        : null,
-    ],
-    ["Seniority (as stated)", detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null],
-    ["Department", detail.opportunity.department],
+    ["Work arrangement", detail.opportunity.remoteStatus || detail.opportunity.workArrangements.length ? formatWorkArrangements(detail.opportunity) : null],
+    ["Work authorization", formatWorkAuthorization(detail.opportunity, geographyName)],
+    // Where candidates must live, a separate fact from work authorization:
+    // shown only when the posting states it.
+    ...(detail.opportunity.residencyRequirement
+      ? [["Location eligibility", formatResidency(detail.opportunity.residencyRequirement, detail.opportunity.residencyRegions)] as const]
+      : []),
+    // The label as the posting states it, even when it names no single level.
+    ["Seniority (as stated)", detail.opportunity.seniorityLabel ?? (detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null)],
     ["Employment type", detail.opportunity.employmentType ? employmentTypeLabel(detail.opportunity.employmentType) : null],
-    ["Time-zone requirements", detail.opportunity.timeZoneRequirements],
+    // A requirement or a stated preference, in the posting's own words.
+    ["Time zone", detail.opportunity.timeZoneRequirements],
   ] as const;
   const urlFields = [
     ["Source URL", detail.opportunity.canonicalUrl],
     ["Application URL", detail.opportunity.applicationUrl],
   ] as const;
+  const applicationUrlNote = applicationUrlBasisNotes[
+    detail.fieldProvenance.find((row) => row.fieldName === "applicationUrl")?.sourceField ?? ""
+  ] ?? null;
+  const eligibility = await new PrismaUserEligibilityRepository().get().catch(() => null);
+  const workEligibility = workAuthorizationRelevance(detail.opportunity, eligibility);
   const applicationUrl = safeExternalUrl(detail.opportunity.applicationUrl);
   const sourceUrl = safeExternalUrl(detail.opportunity.canonicalUrl);
 
@@ -241,6 +263,8 @@ export default async function OpportunityPage({
       ) : null}
 
       <ProfileVersionHint hint={profileHint} />
+      <ListingVersionHint hint={listingHint} />
+      <WorkEligibilityNote relevance={workEligibility} />
 
       <EvaluationExperience
         evaluable={lifecycle?.evaluable ?? true}
@@ -255,9 +279,9 @@ export default async function OpportunityPage({
           id: detail.opportunity.id,
           title: detail.opportunity.title ?? "Untitled opportunity",
           company: detail.opportunity.companyName ?? "Unknown company",
-          salary: detail.opportunity.salaryText ?? "Unknown",
+          salary: formatSalary(detail.opportunity) ?? "Unknown",
           location: detail.opportunity.location ?? "Unknown",
-          workArrangement: workArrangementLabel(detail.opportunity.remoteStatus),
+          workArrangement: formatWorkArrangements(detail.opportunity),
           timeZoneRequirements: detail.opportunity.timeZoneRequirements ?? "Unknown",
         }}
       />
@@ -285,6 +309,7 @@ export default async function OpportunityPage({
               <dt>{label}</dt>
               <dd>
                 <ExternalLink href={value} />
+                {label === "Application URL" && value && applicationUrlNote ? <span className="field-note"> ({applicationUrlNote})</span> : null}
               </dd>
             </div>
           ))}
@@ -316,6 +341,23 @@ export default async function OpportunityPage({
             </li>
           ))}
         </ul>
+        {detail.supersededProvenance?.length ? (
+          <>
+            <h3>Earlier provenance</h3>
+            <p>Evidence from earlier versions of the listing, replaced by a newer version. Kept for history.</p>
+            <ul className="provenance-list provenance-superseded">
+              {detail.supersededProvenance.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.fieldName}</strong>: {display(item.normalizedValue)}
+                  <br />
+                  <span>
+                    Source field: {item.sourceField}; method: {item.kind}; replaced {item.supersededAt.toISOString().slice(0, 10)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </section>
       </details>
     </main>

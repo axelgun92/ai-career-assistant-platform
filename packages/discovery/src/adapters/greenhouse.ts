@@ -25,6 +25,7 @@ const jobSchema = z
     requisition_id: z.string().nullish(),
     location: named.nullish(),
     absolute_url: z.string().nullish(),
+    application_deadline: z.string().nullish(),
     content: z.string().nullish(),
     first_published: z.string().nullish(),
     updated_at: z.string().nullish(),
@@ -78,7 +79,20 @@ export const greenhouseAdapter: SourceAdapter<GreenhouseConfig> = {
           postingDate: job.first_published ?? null,
           sourceUrl: job.absolute_url ?? null,
           applicationUrl: job.absolute_url ?? null,
-          material: { departments: names(job.departments), offices: names(job.offices) },
+          // The application deadline is material only when stated, so boards
+          // without one keep the hash they had.
+          material: {
+            departments: names(job.departments),
+            offices: names(job.offices),
+            ...(job.application_deadline ? { applicationDeadline: job.application_deadline } : {}),
+          },
+          // As stated, for the shared normalizer: a single department only.
+          // The posting page (absolute_url) hosts the application form.
+          sourceFacts: {
+            department: names(job.departments).length === 1 ? names(job.departments)[0]! : null,
+            closingDate: job.application_deadline ?? null,
+            applicationUrlBasis: job.absolute_url ? "SOURCE_POSTING_PAGE" : null,
+          },
           metadata: {
             board: config.board,
             firstPublished: job.first_published ?? null,

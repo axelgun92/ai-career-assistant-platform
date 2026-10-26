@@ -86,6 +86,10 @@ export interface ManualOpportunityDetail {
     collectedAt: Date | null;
     createdAt: Date;
   }>;
+  // Provenance that a newer source version (or a newer application link)
+  // replaced as its field's current evidence: kept for history, never shown
+  // as current. fieldProvenance above holds the current rows only.
+  supersededProvenance?: Array<ManualOpportunityDetail["fieldProvenance"][number] & { supersededAt: Date }>;
 }
 
 export interface ManualOpportunityRepository {

@@ -416,6 +416,10 @@ export const linkedinAdapter: SourceAdapter<LinkedInConfig> = {
               // Only an external apply address the page itself states.
               applicationUrl: job.applicationUrl,
               structured: { workplaceType: job.remote ? "REMOTE" : null },
+              sourceFacts: {
+                seniority: job.seniority?.trim() ? [job.seniority.trim()] : [],
+                applicationUrlBasis: job.applicationUrl ? "SOURCE_APPLY_URL" : null,
+              },
               material: { seniority: job.seniority, jobFunction: job.jobFunction, industries: job.industries },
               metadata: {
                 seniority: job.seniority,

@@ -1,3 +1,4 @@
+import { listingUrlKey } from "@ai-career/deduplication";
 import { z } from "zod";
 
 // Configuration values shared by adapters.
@@ -21,6 +22,15 @@ export function workplaceType(value: string | null | undefined): "REMOTE" | "HYB
   if (key === "hybrid") return "HYBRID";
   if (key === "onsite" || key === "inoffice") return "ONSITE";
   return null;
+}
+
+// A job board's "apply" field names a distinct application destination only
+// when it is not the board's own listing page (some boards repeat the
+// listing URL there): otherwise the link is the listing page.
+export function boardApplyBasis(applyUrl: string | null | undefined, listingUrl: string | null | undefined): "SOURCE_APPLY_URL" | "SOURCE_LISTING_PAGE" | null {
+  const apply = listingUrlKey(applyUrl);
+  if (apply && apply !== listingUrlKey(listingUrl)) return "SOURCE_APPLY_URL";
+  return applyUrl || listingUrl ? "SOURCE_LISTING_PAGE" : null;
 }
 
 export function isoDate(value: number | string | null | undefined, unit: "ms" | "s" = "ms"): string | null {

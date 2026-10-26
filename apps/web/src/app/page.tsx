@@ -5,6 +5,7 @@ import { platformMetadata } from "@ai-career/core";
 import {
   PrismaOpportunityDashboardRepository,
   PrismaUsageSummaryRepository,
+  PrismaUserEligibilityRepository,
   type DashboardFilterOptions,
   type DashboardSummary,
   type OpportunityListPage,
@@ -46,6 +47,8 @@ export default async function HomePage({
   await connection();
   const params = await searchParams;
   const query = parseOpportunityQuery(params as SearchParamsInput);
+  // The user's own work eligibility, for the "Check work eligibility" badge.
+  const eligibility = await new PrismaUserEligibilityRepository().get().catch(() => null);
 
   let result: OpportunityListPage | null = null;
   try {
@@ -144,7 +147,7 @@ export default async function HomePage({
                 {filtered ? <Link href={opportunityHref(clearFilters(query))}>Clear all filters</Link> : null}
               </div>
             ) : (
-              <OpportunityList opportunities={result.items} />
+              <OpportunityList opportunities={result.items} eligibility={eligibility} />
             )}
             <Pagination query={query} page={result.page} pageCount={result.pageCount} />
           </>

@@ -19,8 +19,9 @@ import { isoDate } from "./shared";
 // liveStartAt, locations, remote fields and compensation text. Pages are
 // ?page=N up to the verified pageCount; the order is not by date. No job
 // pages are requested: the role page already has the full descriptions.
-// Compensation stays source text (equity and currencies mixed, no stated
-// period). /role/<slug> is the one verified role page; no other is used.
+// Compensation is passed on as the source's compensation text: the shared
+// normalizer reads it with its usual rules, so mixed equity, other
+// currencies and ambiguous amounts stay Unknown. /role/<slug> is the one verified role page; no other is used.
 
 export const wellfoundRolePage = "https://wellfound.com/role/customer-success-specialist";
 
@@ -170,6 +171,13 @@ export const wellfoundAdapter: SourceAdapter<WellfoundConfig> = {
             sourceUrl: jobUrl,
             applicationUrl: jobUrl,
             structured: { workplaceType: workplace(remoteConfig) },
+            // The compensation text as stated; the shared normalizer reads it
+            // with its usual rules (equity, other currencies and ambiguous
+            // amounts stay Unknown).
+            // Candidates apply on the Wellfound job page itself.
+            // Where a remote role may be done from ("Hires remotely in United
+            // States"): the role's remote geography, not its offices.
+            sourceFacts: { compensationText: listing.compensation?.trim() || null, applicationUrlBasis: "SOURCE_POSTING_PAGE", remoteLocations: remoteLocations },
             material: {
               compensation: listing.compensation?.trim() || null,
               remote: listing.remote ?? null,

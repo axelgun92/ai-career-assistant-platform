@@ -17,7 +17,7 @@ import {
 // preferred, negated, conditional or conflicting. Those stay Unknown.
 
 export interface ResidencyStatement {
-  source: "location" | "rawText";
+  source: "location" | "rawText" | "basedRole";
   sentence: string;
   regions: string[];
 }
@@ -33,6 +33,9 @@ export interface ParsedResidency {
 export const residencySourceFields = {
   location: "location:explicit-eligible-geography",
   rawText: "rawText:explicit-residency-statement",
+  // A statement that the remote role itself is based in a place ("This is
+  // a U.S.-based, full-time remote role."): where the remote work is done.
+  basedRole: "rawText:explicit-remote-base-statement",
 } as const;
 
 const residenceVerb =
@@ -51,15 +54,60 @@ const worldwide =
 const qualifier =
   /\b(?:not|no|never|without|except|excluding|outside|preferred|preferably|prefer|ideally|ideal|bonus|plus|nice to have|may|might|can also|or similar)\b|n't\b/i;
 
+// A lead-in that ends in a list ("…reside in one of the following states:")
+// followed by one geography per line ("- Arizona", "• TX") reads as one
+// statement: "…states: Arizona, TX".
+const bullet = /^\s*(?:[-–—•*·▪◦]|\d{1,2}[.)])?\s*/;
+function joinListLines(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const joined: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (!/(?:[:：]|\b(?:following|below)(?:\s+\w+){0,2})\s*$/i.test(line.trim())) {
+      joined.push(line);
+      continue;
+    }
+    const items: string[] = [];
+    let next = index + 1;
+    while (next < lines.length) {
+      const item = lines[next]!.replace(bullet, "").replace(/[,;.]\s*$/, "").trim();
+      if (!item || !parseGeographyList(item)) break;
+      items.push(item);
+      next += 1;
+    }
+    if (items.length) {
+      joined.push(`${line.trim().replace(/[:：]$/, "")}: ${items.join(", ")}`);
+      index = next - 1;
+    } else {
+      joined.push(line);
+    }
+  }
+  return joined.join("\n");
+}
+
 function sentences(text: string): string[] {
   // Keep "U.S." / "U.K." / "D.C." abbreviations inside their sentence.
-  return text
+  return joinListLines(text)
     .split(/(?<=[.!?])(?<!\bU\.S\.)(?<!\bU\.K\.)(?<!\bU\.S\.A\.)(?<!\bD\.C\.)\s+|\r?\n/)
     .map((part) => part.trim())
     .filter(Boolean);
 }
 
 type SentenceResult = { regions: string[] } | "QUALIFIED" | null;
+
+// "This is a U.S.-based, full-time remote role.": a role statement naming
+// where the role is based, for a remote role (the statement says remote, or
+// the role's arrangement is remote). For an on-site role the same words name
+// an office, and are not read. Preferred, negated or conditional wording is
+// not read.
+const basedPlace = /(?:^|[\s,(])((?:[A-Z][\w.]*\s){0,2}[A-Z][\w.]*)-based\b/;
+const roleNoun = /\b(?:role|position|job|opportunity)\b/i;
+function readBasedRole(sentence: string, remote: boolean): string[] | null {
+  const match = basedPlace.exec(sentence);
+  if (!match || !roleNoun.test(sentence) || qualifier.test(sentence)) return null;
+  if (!remote && !/\bremote\b/i.test(sentence)) return null;
+  return parseGeographyList(match[1]!);
+}
 
 function readSentence(sentence: string): SentenceResult {
   const found: string[][] = [];
@@ -96,12 +144,27 @@ function readSentence(sentence: string): SentenceResult {
 // geography; "Boston, MA (Remote)" or "Berlin, Germany" are not read.
 function readLocation(location: string): string[] | null {
   if (!/\bremote\b/i.test(location)) return null;
-  const rest = location.replace(/\b(?:fully\s+)?remote\b/gi, " ").replace(/\b(?:in|within)\b/gi, " ");
+  // "Chicago Office or Remote, North America (US & Canada)": the remote
+  // option's geography is where the role may be done; the other options are
+  // offices.
+  const options = location.split(/\s*(?:;|\bor\b)\s*/i).filter(Boolean);
+  const remote = options.filter((option) => /\bremote\b/i.test(option));
+  if (remote.length !== 1) return null;
+  if (options.length > 1 && !options.every((option) => option === remote[0] || /\b(?:office|offices|hq|headquarters|on-?site|in[- ]office)\b/i.test(option))) return null;
+  const rest = remote[0]!.replace(/\b(?:fully\s+)?remote\b/gi, " ").replace(/\b(?:in|within)\b/gi, " ");
   if (/^[\s()[\],.;:–—/-]*(?:worldwide|anywhere|global(?:ly)?)[\s()[\],.;:–—-]*$/i.test(rest)) return ["WORLDWIDE"];
+  // A region named with the countries it means ("North America (US &
+  // Canada)") reads as those countries.
+  const named = /^(.*?)\(([^()]+)\)\s*[,.;]?\s*$/.exec(rest);
+  if (named) {
+    const inner = parseGeographyList(named[2]!);
+    const outer = named[1]!.replace(/^[\s,.;:–—/-]+|[\s,.;:–—/-]+$/g, "");
+    if (inner && (!outer || parseGeographyList(outer))) return inner;
+  }
   return parseGeographyList(rest);
 }
 
-export function parseResidency(input: { location: string | null; rawText: string | null }): ParsedResidency {
+export function parseResidency(input: { location: string | null; rawText: string | null; remote?: boolean }): ParsedResidency {
   const statements: ResidencyStatement[] = [];
   let qualified = false;
   if (input.location) {
@@ -112,6 +175,10 @@ export function parseResidency(input: { location: string | null; rawText: string
     const result = readSentence(sentence);
     if (result === "QUALIFIED") qualified = true;
     else if (result) statements.push({ source: "rawText", sentence, regions: result.regions });
+    else {
+      const based = readBasedRole(sentence, input.remote ?? false);
+      if (based) statements.push({ source: "basedRole", sentence, regions: based });
+    }
   }
   const unknown = (reason: ParsedResidency["unknownReason"]): ParsedResidency => ({
     requirement: null,
@@ -120,6 +187,12 @@ export function parseResidency(input: { location: string | null; rawText: string
     unknownReason: reason,
   });
   if (qualified) return unknown("QUALIFIED_STATEMENT");
+  // Where the role is based is the broadest reading: an explicit statement
+  // of where candidates may be (the eligible states, a "Remote - …"
+  // location) says more, and replaces it.
+  if (statements.some((statement) => statement.source !== "basedRole")) {
+    for (let index = statements.length - 1; index >= 0; index -= 1) if (statements[index]!.source === "basedRole") statements.splice(index, 1);
+  }
   if (!statements.length) return unknown(null);
   const requirements = new Set(statements.map((statement) => residencyRequirementFor(statement.regions)));
   if (requirements.size > 1) return unknown("CONFLICTING_STATEMENTS");

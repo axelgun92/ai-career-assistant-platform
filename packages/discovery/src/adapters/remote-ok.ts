@@ -3,6 +3,7 @@ import { z } from "zod";
 import { collectPages, mapKeptItems, parseItems, parseResponse } from "../collection";
 import type { SourceAdapter } from "../contract";
 import { getJson } from "../transport";
+import { boardApplyBasis } from "./shared";
 
 // Remote OK API (aggregator, official public feed). Verified October 17,
 // 2026: one JSON array whose first element is the API terms notice (no
@@ -62,6 +63,9 @@ export const remoteOkAdapter: SourceAdapter<RemoteOkConfig> = {
           postingDate: job.date ?? null,
           sourceUrl: job.url ?? null,
           applicationUrl: job.apply_url ?? job.url ?? null,
+          // A distinct apply address; Remote OK often repeats its own listing
+          // page there, which is not an application destination.
+          sourceFacts: { applicationUrlBasis: boardApplyBasis(job.apply_url, job.url) },
           material: { tags: job.tags ?? [], statedSalaryMin: job.salary_min || null, statedSalaryMax: job.salary_max || null },
           metadata: {
             tags: job.tags ?? [],

@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import {
   rawOpportunitySchema,
+  retrievedSourceFactsSchema,
   retrievedStructuredFieldsSchema,
   type RawOpportunity,
+  type RetrievedSourceFacts,
   type RetrievedStructuredFields,
 } from "@ai-career/core";
 import { listingUrlKey } from "@ai-career/deduplication";
@@ -104,6 +106,9 @@ export interface RetrievedListingInput {
   sourceUrl: string | null;
   applicationUrl: string | null;
   structured?: Partial<RetrievedStructuredFields>;
+  // Department, seniority and compensation text as the source states them,
+  // for the shared normalizer (each value must also be in `material`).
+  sourceFacts?: Partial<RetrievedSourceFacts>;
   material?: ListingContentFields["material"];
   // Source facts kept for display and later features (board, team, ...).
   metadata?: Record<string, unknown>;
@@ -119,6 +124,14 @@ export function buildRetrievedListing(
   context: { domain: string; discoveredAt: Date },
 ): RawOpportunity {
   const structured = retrievedStructuredFieldsSchema.parse(input.structured ?? {});
+  const sourceFacts = retrievedSourceFactsSchema.parse(input.sourceFacts ?? {});
+  const statesFacts =
+    sourceFacts.department !== null ||
+    sourceFacts.seniority.length > 0 ||
+    sourceFacts.compensationText !== null ||
+    sourceFacts.closingDate !== null ||
+    sourceFacts.applicationUrlBasis !== null ||
+    sourceFacts.remoteLocations.length > 0;
   const fields = {
     title: text(input.title),
     company: text(input.company),
@@ -130,11 +143,15 @@ export function buildRetrievedListing(
     sourceUrl: httpUrl(input.sourceUrl),
     applicationUrl: httpUrl(input.applicationUrl),
   };
+  // A job board's own listing page is not where one applies: it is kept in
+  // the content hash as before (so nothing reads as changed) but stored as
+  // no application URL.
+  const listingPageOnly = sourceFacts.applicationUrlBasis === "SOURCE_LISTING_PAGE";
   return rawOpportunitySchema.parse({
     source: adapter.key,
     sourceType: adapter.sourceType,
     sourceUrl: fields.sourceUrl,
-    applicationUrl: fields.applicationUrl,
+    applicationUrl: listingPageOnly ? null : fields.applicationUrl,
     domain: context.domain,
     externalId: text(input.externalId),
     requisitionId: fields.requisitionId,
@@ -147,7 +164,13 @@ export function buildRetrievedListing(
     postingDate: text(input.postingDate),
     // The source's display name and any attribution it requires travel
     // with the record, so provenance can show them as retrieved.
-    sourceMetadata: { ...(input.metadata ?? {}), structured, sourceName: adapter.name, attribution: adapter.attribution },
+    sourceMetadata: {
+      ...(input.metadata ?? {}),
+      structured,
+      ...(statesFacts ? { sourceFacts } : {}),
+      sourceName: adapter.name,
+      attribution: adapter.attribution,
+    },
     // Namespaced: the source item never appears as postingHistory.
     rawPayload: { source: input.sourceItem },
     discoveredAt: context.discoveredAt,

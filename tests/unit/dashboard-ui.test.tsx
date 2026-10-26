@@ -125,6 +125,9 @@ describe("opportunity rows", () => {
         opportunities={[
           item({
             salaryText: "$90,000",
+            salaryMin: 90000,
+            salaryMax: 90000,
+            currency: "USD",
             applicationUrl: "https://jobs.example.com/apply",
             latestEvaluation: { id: "e2", status: "FAILED", decision: null, createdAt: at, completedAt: null },
             currentRecommendation: { decision: "APPLY", evaluationId: "e1", isLatest: false },
@@ -140,7 +143,8 @@ describe("opportunity rows", () => {
     expect(visible).toContain("Evaluation failed");
     expect(visible).toContain("Evaluation deferred");
     expect(visible).toContain("Application page");
-    expect(visible).toContain("$90,000");
+    // The normalized salary, not the raw compensation text.
+    expect(visible).toContain("Salary 90,000 USD");
     expect(visible).toContain("Acme · Remote");
   });
 
@@ -162,12 +166,12 @@ describe("opportunity rows", () => {
     expect(visible.match(/Not tracked yet/g)).toHaveLength(1);
   });
 
-  it("never links unsafe application URLs and says when salary is not stated", () => {
+  it("never links unsafe application URLs and says when salary is Unknown", () => {
     const markup = renderToStaticMarkup(
       <OpportunityList opportunities={[item({ applicationUrl: "javascript:alert(1)" })]} />,
     );
     expect(markup).not.toContain("javascript:");
-    expect(text(markup)).toContain("Salary not stated");
+    expect(text(markup)).toContain("Salary Unknown");
     expect(text(markup)).toContain("Not evaluated");
   });
 });
@@ -252,15 +256,16 @@ describe("normalized facts on the dashboard (Task 7 completion)", () => {
     expect(chips.map((chip) => chip.label)).toEqual([
       "Work arrangement: Remote",
       "Seniority: Unknown (not stated)",
-      "Department: Support",
+      // Department is no longer a product filter (October 26, 2026): an old
+      // URL's department is ignored.
       "Salary currency: EUR",
       "Salary at least: 60,000 EUR",
     ]);
     expect(chips.find((chip) => chip.label.startsWith("Salary currency"))!.removeHref).toBe(
-      "/?arrangement=remote&seniority=unknown&department=Support",
+      "/?arrangement=remote&seniority=unknown",
     );
     expect(chips.find((chip) => chip.label.startsWith("Salary at least"))!.removeHref).toBe(
-      "/?arrangement=remote&seniority=unknown&department=Support&currency=EUR",
+      "/?arrangement=remote&seniority=unknown&currency=EUR",
     );
   });
 
@@ -298,8 +303,9 @@ describe("normalized facts on the dashboard (Task 7 completion)", () => {
       expect(markup).toContain(`<legend>${legend}</legend>`);
     }
     expect(markup).toContain('<input type="checkbox" name="arrangement" checked="" value="hybrid"/>');
-    expect(markup).toMatch(/<option value="Support" selected="">Support<\/option>/);
-    expect(markup).toMatch(/<option value="Customer Success">Customer Success \(2\)<\/option>/);
+    // No Department filter (October 26, 2026).
+    expect(markup).not.toContain('name="department"');
+    expect(markup).not.toContain("Customer Success (2)");
     expect(markup).toMatch(/<option value="GBP" selected="">GBP<\/option>/);
     expect(markup).toContain('<option value="USD">USD</option>');
     expect(markup).toContain('name="salaryMin" value="50000"');
@@ -327,13 +333,14 @@ describe("normalized facts on the dashboard (Task 7 completion)", () => {
   });
 
   it("the manual form offers the optional details, blank by default", () => {
-    const markup = renderToStaticMarkup(<ManualOpportunityFields fieldErrors={{ department: "Too long" }} />);
+    const markup = renderToStaticMarkup(<ManualOpportunityFields fieldErrors={{}} />);
     expect(markup).toContain("<legend>Additional details (optional)</legend>");
     for (const name of ["workArrangement", "seniority", "employmentType", "compensationCurrency"]) {
       expect(markup).toMatch(new RegExp(`<select name="${name}"[^>]*><option value="" selected="">Not stated</option>`));
     }
     expect(markup).toContain('<input type="date" name="closingDate"/>');
-    expect(markup).toContain('aria-describedby="department-error"');
+    // No Department input (October 26, 2026).
+    expect(markup).not.toContain('name="department"');
     expect(fieldErrorsFromIssues([{ path: "seniority", message: "Invalid option" }]).fieldErrors).toEqual({ seniority: "Invalid option" });
   });
 });

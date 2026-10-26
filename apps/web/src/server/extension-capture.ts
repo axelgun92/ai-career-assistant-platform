@@ -5,6 +5,7 @@ import {
   isLinkedInHost,
   linkedInJobIdFromUrl,
   RetrievedListingNormalizationError,
+  type ApplicationUrlBasis,
   type DiscoveryConfiguration,
   type ExtensionCapture,
   type RawOpportunity,
@@ -15,6 +16,12 @@ import {
 import type { ExtensionPairingRecord } from "@ai-career/database";
 import { listingUrlKey } from "@ai-career/deduplication";
 import { buildRetrievedListing, createTitleMatcher, linkedInJobUrl } from "@ai-career/discovery";
+import {
+  pageContextEvidence,
+  seniorityFromTitle,
+  structuredCompensationApplies,
+  workArrangementFromLocation,
+} from "@ai-career/normalization";
 import type { ZodError } from "zod";
 
 // Capture from the browser extension companion (feature 14B). One job page
@@ -135,6 +142,22 @@ const cleanOptional = (value: string | null) => {
 // The retrieved listing for one capture. Only the fields the extension read
 // are used; nothing is inferred, and an application URL is kept only when
 // the page stated one.
+// Where to apply, from the page's own evidence. When the page holds the
+// application form, or its structured data says it is applied to directly,
+// the application page is the captured page itself, by its canonical
+// address; the page never chooses that URL. An explicit apply link keeps its
+// destination (without tracking parameters). Nothing else sets one.
+function capturedApplication(
+  fields: ExtensionCapture["fields"],
+  capturedPageUrl: string,
+): { applicationUrl: string | null; applicationUrlBasis: ApplicationUrlBasis | null } {
+  if (fields.applicationUrlBasis === "PAGE_APPLICATION_FORM" || fields.applicationUrlBasis === "STRUCTURED_DIRECT_APPLY") {
+    return { applicationUrl: capturedPageUrl, applicationUrlBasis: fields.applicationUrlBasis };
+  }
+  const link = fields.applicationUrl ? cleanPageUrl(fields.applicationUrl) : null;
+  return link ? { applicationUrl: link, applicationUrlBasis: "PAGE_APPLY_LINK" } : { applicationUrl: null, applicationUrlBasis: null };
+}
+
 export function capturedListing(
   capture: ExtensionCapture,
   context: { pairingId: string; domain: string; receivedAt: Date },
@@ -162,8 +185,47 @@ export function capturedListing(
     workplaceType: fields.workplaceType,
     employmentType: cleanOptional(fields.employmentType),
     postedAt: cleanOptional(fields.postedAt),
-    applicationUrl: fields.applicationUrl ? cleanPageUrl(fields.applicationUrl) : null,
+    closingDate: cleanOptional(fields.closingDate),
+    ...capturedApplication(fields, identity.sourceUrl),
     siteJobId: fields.siteJobId,
+    remoteLocations: [...new Set(fields.remoteLocations.map(cleanCapturedText).filter(Boolean))],
+    seniority: cleanOptional(fields.seniority),
+  };
+  const linkedIn = identity.site.key === "linkedin";
+  const pageTitle = linkedIn || !capture.pageTitle ? null : cleanOptional(capture.pageTitle);
+  const pageText = linkedIn || !capture.pageText ? null : cleanOptional(capture.pageText);
+  const structured = {
+    salaryMin: validated.salaryMin,
+    salaryMax: validated.salaryMax,
+    salaryCurrency: validated.salaryCurrency,
+    salaryPeriod: validated.salaryPeriod,
+    workplaceType: validated.workplaceType,
+    employmentType: null,
+  };
+  // Change detection for the page context: the labelled evidence Core's
+  // shared reader takes from it (and the employer the page title names), for
+  // the facts the capture does not already supply at a higher precedence;
+  // never the raw page text, so layout and widget noise is not a change.
+  // Captures with no such evidence keep the content hash they always had.
+  const postedAt = validated.postedAt ? new Date(validated.postedAt) : null;
+  const evidence = pageContextEvidence(
+    { text: validated.description, title: validated.title, pageTitle, pageText, location: validated.location },
+    {
+      companyName: validated.company !== null || capture.editedFields.includes("company"),
+      location: validated.location !== null || capture.editedFields.includes("location"),
+      remoteStatus: validated.workplaceType !== null || workArrangementFromLocation(validated.location) !== null,
+      employmentType: validated.employmentType !== null,
+      compensation: validated.salaryText !== null || structuredCompensationApplies(structured),
+      postingDate: postedAt !== null && !Number.isNaN(postedAt.getTime()),
+      seniority: seniorityFromTitle(validated.title) !== null || validated.seniority !== null,
+    },
+  );
+  // The page's stated remote-hiring places and seniority label are material:
+  // a changed one is a new version. (Captures without them keep the content
+  // hash they always had.)
+  const statedMaterial = {
+    ...(validated.remoteLocations.length ? { remoteLocations: validated.remoteLocations } : {}),
+    ...(validated.seniority ? { seniority: validated.seniority } : {}),
   };
   const raw = buildRetrievedListing(
     {
@@ -185,6 +247,14 @@ export function capturedListing(
       postingDate: validated.postedAt,
       sourceUrl: identity.sourceUrl,
       applicationUrl: validated.applicationUrl,
+      // Stated in the page's structured data, for the shared normalizer; a
+      // closing date is also material, so a changed one is a new version.
+      sourceFacts: {
+        closingDate: validated.closingDate,
+        applicationUrlBasis: validated.applicationUrlBasis,
+        remoteLocations: validated.remoteLocations,
+        seniority: validated.seniority ? [validated.seniority] : [],
+      },
       structured: {
         salaryMin: validated.salaryMin,
         salaryMax: validated.salaryMax,
@@ -192,7 +262,22 @@ export function capturedListing(
         salaryPeriod: validated.salaryPeriod,
         workplaceType: validated.workplaceType,
       },
+      ...(evidence.length || validated.closingDate || Object.keys(statedMaterial).length
+        ? {
+            material: {
+              ...(evidence.length ? { pageContext: evidence } : {}),
+              ...(validated.closingDate ? { closingDate: validated.closingDate } : {}),
+              ...statedMaterial,
+            },
+          }
+        : {}),
       metadata: {
+        // Neutral context for Core's shared normalization: the page's title
+        // and the job's bounded page content (never LinkedIn's), and the
+        // fields the user corrected, whose values are user-authoritative.
+        pageTitle,
+        pageText,
+        userCorrectedFields: capture.editedFields,
         capture: {
           pairingId: context.pairingId,
           extractor: capture.extractor,

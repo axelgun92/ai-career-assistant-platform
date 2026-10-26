@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { rawOpportunitySchema, type RawOpportunity } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
+  buildRetrievedListing,
   createFixtureTransport,
   createTitleMatcher,
   defaultAdapterRegistry,
@@ -292,12 +293,28 @@ describe("We Work Remotely", () => {
     expect(transport.requested).toEqual([weWorkRemotelyFeedUrl]);
     expect(result.fetched).toBe(3);
     expect(result.listings.map((listing) => listing.title)).toEqual(["Client Success Manager - Enterprise Accounts", "Solutions Engineer - Customer Success"]);
-    // Attribution and the WWR link are kept.
+    // Attribution and the WWR link are kept. The feed names only WWR's own
+    // listing page, which is not an application destination: no application
+    // URL is stored (October 25, 2026), and the content hash still covers
+    // the link exactly as before, so no stored listing reads as changed.
+    const wwrUrl = "https://weworkremotely.com/remote-jobs/new-law-business-model-solutions-engineer-customer-success";
     expect(result.listings[1]).toMatchObject({
-      sourceUrl: "https://weworkremotely.com/remote-jobs/new-law-business-model-solutions-engineer-customer-success",
-      applicationUrl: "https://weworkremotely.com/remote-jobs/new-law-business-model-solutions-engineer-customer-success",
-      sourceMetadata: { sourceName: "We Work Remotely" },
+      sourceUrl: wwrUrl,
+      applicationUrl: null,
+      sourceMetadata: { sourceName: "We Work Remotely", sourceFacts: { applicationUrlBasis: "SOURCE_LISTING_PAGE" } },
     });
+    // The same listing built the old way (the link as application URL, no
+    // basis) has the same content hash.
+    const input = {
+      externalId: "wwr-1", title: "Solutions Engineer", company: "Acme", location: null, description: "Help customers succeed.",
+      sourceUrl: wwrUrl, applicationUrl: wwrUrl, sourceItem: {}, material: { skills: null, category: "Customer Support" },
+    };
+    const context = { domain: "customer-success", discoveredAt: new Date("2026-10-25T00:00:00Z") };
+    const now = buildRetrievedListing(adapter("we-work-remotely"), { ...input, sourceFacts: { applicationUrlBasis: "SOURCE_LISTING_PAGE" } }, context);
+    const old = buildRetrievedListing(adapter("we-work-remotely"), input, context);
+    expect(now.applicationUrl).toBeNull();
+    expect(old.applicationUrl).toBe(wwrUrl);
+    expect(now.retrieval!.contentHash).toBe(old.retrieval!.contentHash);
   });
 
   it("reports a non-RSS body as a contract mismatch", async () => {
@@ -579,3 +596,97 @@ describe("SmartRecruiters list paging", () => {
     expect(result.listings.map((listing) => listing.externalId)).toEqual(["744000156080369"]);
   });
 });
+
+// Feature 14B normalization correction, product-wide audit: facts a source
+// states in its own fields (department or team, seniority or experience
+// level) reach the shared normalizer through sourceMetadata.sourceFacts. The
+// adapters only copy them; the values were already material fields, so the
+// content hash of every stored listing is unchanged.
+describe("source facts reach the shared normalizer", () => {
+  const normalizer = createRetrievedOpportunityNormalizer();
+  const normalized = async (listing: RawOpportunity) => (await normalizer.normalize(listing)).opportunity;
+
+  it("Greenhouse: a single stated department", async () => {
+    const listings = (await collect("greenhouse", { keepAll: true })).listings;
+    const cs = byId(listings, "8877426002");
+    expect(cs.sourceMetadata).toMatchObject({ sourceFacts: { department: "Customer Success" } });
+    expect(await normalized(cs)).toMatchObject({ department: "Customer Success" });
+    const provenance = (await normalizer.normalize(cs)).provenance.find((row) => row.fieldName === "department");
+    expect(provenance).toMatchObject({ kind: "DIRECT", sourceField: "source.department", normalizedValue: "Customer Success" });
+    // Two departments state no single one.
+    const two = (await collect("greenhouse", { keepAll: true, edit: editJson((value) => { value.jobs[0].departments.push({ name: "Support" }); }) })).listings;
+    expect((await normalized(byId(two, "8877426002"))).department).toBeNull();
+  });
+
+  it("Lever and Ashby: the stated department, else the team", async () => {
+    const lever = byId((await collect("lever", { keepAll: true })).listings, "00c2c97b-8514-4617-9883-e53e486b6dcd");
+    expect(await normalized(lever)).toMatchObject({ department: "Engineering" });
+    const ashby = (await collect("ashby", { keepAll: true })).listings;
+    expect(await normalized(byId(ashby, "893cd08a-929c-4077-b39c-64bc34f347ea"))).toMatchObject({ department: "Customer Success" });
+  });
+
+  it("Himalayas and SmartRecruiters: a stated level in the shared vocabulary only", async () => {
+    const himalayas = (await collect("himalayas", { keepAll: true })).listings;
+    const levels = await Promise.all(himalayas.map(async (listing) => [listing.title, (await normalized(listing)).seniority] as const));
+    expect(levels).toContainEqual(["Virtual Entry Level Leadership", "ENTRY"]);
+    expect(levels).toContainEqual(["Senior Cybersecurity Engineer (Infrastructure)", "SENIOR"]);
+    expect(levels).toContainEqual(["AI Co-Founder / COO (100 % remote) (m/f/d)", "EXECUTIVE"]);
+    // "Associate" states no level the product reads, so the title's own
+    // level word ("Senior Account Manager") still counts.
+    const smartRecruiters = (await collect("smartrecruiters", { keepAll: true })).listings[0]!;
+    expect(smartRecruiters.sourceMetadata).toMatchObject({ sourceFacts: { seniority: ["Associate"] } });
+    const result = await normalizer.normalize(smartRecruiters);
+    expect(result.opportunity.seniority).toBe("SENIOR");
+    expect(result.provenance.filter((row) => row.fieldName === "seniority")).toEqual([expect.objectContaining({ sourceField: "title" })]);
+  });
+
+  it("adding source facts changed no listing's content hash", async () => {
+    for (const key of ["greenhouse", "lever", "ashby", "himalayas", "smartrecruiters"]) {
+      for (const listing of (await collect(key, { keepAll: true })).listings) {
+        const metadata = listing.sourceMetadata as Record<string, unknown>;
+        const { sourceFacts: _facts, ...without } = metadata;
+        const rebuilt = buildRetrievedListing(
+          adapter(key),
+          {
+            externalId: listing.externalId,
+            requisitionId: listing.requisitionId,
+            title: listing.title,
+            company: listing.company,
+            location: listing.location,
+            description: listing.description,
+            salaryText: listing.salaryText,
+            employmentType: listing.employmentType,
+            postingDate: listing.postingDate,
+            sourceUrl: listing.sourceUrl,
+            applicationUrl: listing.applicationUrl,
+            structured: metadata.structured as never,
+            sourceFacts: (metadata.sourceFacts ?? {}) as never,
+            sourceItem: {},
+            metadata: without,
+          },
+          { domain: "customer-success", discoveredAt: listing.discoveredAt },
+        );
+        const bare = buildRetrievedListing(adapter(key), { ...rebuiltInput(rebuilt), sourceFacts: undefined }, { domain: "customer-success", discoveredAt: listing.discoveredAt });
+        expect(rebuilt.retrieval!.contentHash, `${key}:${listing.externalId}`).toBe(bare.retrieval!.contentHash);
+      }
+    }
+  });
+});
+
+function rebuiltInput(listing: RawOpportunity) {
+  return {
+    externalId: listing.externalId,
+    requisitionId: listing.requisitionId,
+    title: listing.title,
+    company: listing.company,
+    location: listing.location,
+    description: listing.description,
+    salaryText: listing.salaryText,
+    employmentType: listing.employmentType,
+    postingDate: listing.postingDate,
+    sourceUrl: listing.sourceUrl,
+    applicationUrl: listing.applicationUrl,
+    structured: (listing.sourceMetadata as Record<string, unknown>).structured as never,
+    sourceItem: {},
+  };
+}

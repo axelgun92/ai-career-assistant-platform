@@ -45,6 +45,8 @@ const extraction = (overrides: Partial<PageExtraction> = {}): PageExtraction => 
     siteJobId: "REQ-1",
   },
   selection: { title: "Customer Success Manager", description: "Only the selected part of the description." },
+  pageTitle: "Customer Success Manager at Example",
+  pageText: "Customer Success Manager\nRemote Type: Hybrid\nOwn onboarding and renewals.",
   notes: [],
   problem: null,
   ...overrides,
@@ -57,8 +59,35 @@ describe("the capture envelope", () => {
     const built = buildCaptureEnvelope(extraction(), "page", context);
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(parseCapture(built.envelope)).toMatchObject({ extractor: "structured-data", fields: { title: "Customer Success Manager", siteJobId: "REQ-1" } });
-    expect(Object.keys(built.envelope).sort()).toEqual(["capturedAt", "editedFields", "extensionVersion", "extractor", "fields", "notes", "pageUrl", "schemaVersion"]);
+    expect(parseCapture(built.envelope)).toMatchObject({
+      extractor: "structured-data",
+      fields: { title: "Customer Success Manager", siteJobId: "REQ-1" },
+      pageTitle: "Customer Success Manager at Example",
+    });
+    expect(Object.keys(built.envelope).sort()).toEqual(["capturedAt", "editedFields", "extensionVersion", "extractor", "fields", "notes", "pageText", "pageTitle", "pageUrl", "schemaVersion"]);
+    expect(built.envelope.pageText).toBe("Customer Success Manager\nRemote Type: Hybrid\nOwn onboarding and renewals.");
+    // The page title is neutral context, sent as read; an envelope without
+    // one (an older extension) is still valid.
+    const withoutTitle = buildCaptureEnvelope(extraction({ pageTitle: null }), "page", context);
+    expect(withoutTitle.ok && withoutTitle.envelope.pageTitle).toBeNull();
+    const { pageTitle: _omitted, pageText: _context, ...older } = built.envelope;
+    expect(parseCapture(older)).toMatchObject({ pageTitle: null, pageText: null });
+  });
+
+  it("sends page context with every description, and leaves it out rather than exceed the size limit", () => {
+    const selection = buildCaptureEnvelope(extraction(), "selection", context);
+    expect(selection.ok && selection.envelope.pageText).toContain("Remote Type: Hybrid");
+    // Beside a main-content description too (October 26, 2026).
+    const main = buildCaptureEnvelope(extraction({ extractor: "main-content" }), "page", context);
+    expect(main.ok && main.envelope.pageText).toContain("Remote Type: Hybrid");
+    const large = buildCaptureEnvelope(
+      extraction({ posting: { ...extraction().posting!, description: "é".repeat(49_000) }, pageText: "Remote Type: Hybrid\n" + "ü".repeat(19_000) }),
+      "page",
+      context,
+    );
+    expect(large.ok).toBe(true);
+    expect(large.ok && large.envelope.pageText).toBeNull();
+    expect(large.ok && large.envelope.fields.description).toHaveLength(49_000);
   });
 
   it("sends the user's selection as the description when chosen, with no salary or apply link from elsewhere", () => {

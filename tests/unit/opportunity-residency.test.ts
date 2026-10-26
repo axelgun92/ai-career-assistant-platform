@@ -170,11 +170,15 @@ const normalize = (overrides: Partial<RawOpportunity>) => createManualOpportunit
 
 describe("normalizer: residency is independent of salary currency", () => {
   it("an internationally located role quoted in USD stays non-U.S.", async () => {
-    const { opportunity, provenance } = await normalize({ location: "Remote (Spain)", salaryText: "$70,000" });
+    const { opportunity, provenance } = await normalize({ location: "Remote (Spain)", salaryText: "USD 70,000" });
     expect(opportunity).toMatchObject({
       currency: "USD", salaryMin: 70000, residencyRequirement: "NON_US", residencyRegions: ["ES"], location: "Remote (Spain)",
     });
-    expect(provenance.find((row) => row.fieldName === "currency")).toMatchObject({ sourceField: bareDollarCurrencySourceField });
+    expect(provenance.find((row) => row.fieldName === "currency")).toMatchObject({ sourceField: "compensationText" });
+    // A bare "$" outside the U.S. is not read as US dollars.
+    const bare = await normalize({ location: "Remote (Spain)", salaryText: "$70,000" });
+    expect(bare.opportunity).toMatchObject({ currency: null, salaryMin: 70000, residencyRequirement: "NON_US" });
+    expect(bare.provenance.find((row) => row.sourceField === bareDollarCurrencySourceField)).toBeUndefined();
     expect(provenance.filter((row) => row.fieldName.startsWith("residency"))).toEqual([
       expect.objectContaining({
         fieldName: "residencyRequirement", kind: "DETERMINISTIC", sourceField: residencySourceFields.location,

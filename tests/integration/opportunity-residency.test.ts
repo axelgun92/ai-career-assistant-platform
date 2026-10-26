@@ -29,8 +29,9 @@ const service = createManualOpportunityService({
 const seeds: Array<[string, Record<string, string>]> = [
   // U.S.-residency-required, quoted in a non-USD currency.
   ["usRequiredEur", { rawText: "Customer Success Manager.\nApplicants must reside in the United States.", compensationText: "€60,000" }],
-  // Internationally located, quoted with a bare "$" (read as USD).
-  ["spainUsd", { location: "Remote (Spain)", rawText: "Customer Success Manager for our EMEA customers.", compensationText: "$70,000" }],
+  // Internationally located, quoted in US dollars. (A bare "$" here would
+  // leave the currency Unknown: it reads as USD only with U.S. evidence.)
+  ["spainUsd", { location: "Remote (Spain)", rawText: "Customer Success Manager for our EMEA customers.", compensationText: "US$70,000" }],
   // Generic Remote: Unknown.
   ["remote", { location: "Remote", rawText: "Fully remote team.", compensationText: "USD 80,000" }],
   // Ambiguous geography: Unknown.
@@ -138,7 +139,7 @@ describe("persisted residency facts", () => {
   it("leaves the raw SourceRecord exactly as captured", async () => {
     const [source] = await database.sourceRecord.findMany({ where: { opportunityId: ids.spainUsd! } });
     expect(source).toMatchObject({
-      rawLocation: "Remote (Spain)", rawSalaryText: "$70,000", rawDescription: "Customer Success Manager for our EMEA customers.",
+      rawLocation: "Remote (Spain)", rawSalaryText: "US$70,000", rawDescription: "Customer Success Manager for our EMEA customers.",
     });
     const [stated] = await database.sourceRecord.findMany({ where: { opportunityId: ids.stated! } });
     expect(stated!.rawDescription).toBe("Applicants must reside in the United States.");

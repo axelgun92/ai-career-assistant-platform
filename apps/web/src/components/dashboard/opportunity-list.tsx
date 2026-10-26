@@ -1,16 +1,19 @@
 import Link from "next/link";
+import { workAuthorizationRelevance, type UserWorkEligibility } from "@ai-career/core";
 import type { OpportunityListItem } from "@ai-career/database";
 import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
 import { evaluationStatusLabel, priorityBandLabel } from "./labels";
 import { sourceTypeLabel } from "../opportunity-provenance";
 import { ExternalLink, safeExternalUrl } from "../external-link";
 import { applicationStatusLabel } from "../application/labels";
-import { formatResidency, workArrangementLabel } from "../opportunity-facts";
+import { formatResidency, formatSalary, formatWorkArrangements } from "../opportunity-facts";
 
 type Optional =
   | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
   | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority"
-  | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged" | "noLongerListed";
+  | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged" | "noLongerListed"
+  | "workAuthorizationRequirement" | "workAuthorizationRegions" | "visaSponsorship" | "relocationSupport"
+  | "employerOfRecordRegions" | "compensationBasis" | "workArrangements";
 type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
 
 // The application tracker's state, kept to one badge plus the next follow-up.
@@ -67,7 +70,26 @@ function EvaluationBadges({ opportunity }: { opportunity: Row }) {
   );
 }
 
-export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
+// A job whose stated work-authorization facts, compared with the user's own
+// eligibility, need a look (never for a requirement the user already meets).
+function needsEligibilityCheck(opportunity: Row, eligibility: UserWorkEligibility | null | undefined): boolean {
+  if (!eligibility) return false;
+  const status = workAuthorizationRelevance(
+    {
+      workAuthorizationRequirement: (opportunity.workAuthorizationRequirement ?? null) as "RIGHT_TO_WORK" | "CITIZENSHIP" | null,
+      workAuthorizationRegions: opportunity.workAuthorizationRegions ?? [],
+      visaSponsorship: (opportunity.visaSponsorship ?? null) as "AVAILABLE" | "NOT_AVAILABLE" | null,
+      relocationSupport: (opportunity.relocationSupport ?? null) as "AVAILABLE" | "NOT_AVAILABLE" | null,
+      employerOfRecordRegions: opportunity.employerOfRecordRegions ?? [],
+      residencyRegions: opportunity.residencyRegions ?? [],
+      location: opportunity.location,
+    },
+    eligibility,
+  ).status;
+  return status === "REVIEW" || status === "UNKNOWN_CHECK";
+}
+
+export function OpportunityList({ opportunities, eligibility }: { opportunities: Row[]; eligibility?: UserWorkEligibility | null }) {
   if (opportunities.length === 0) {
     return (
       <p className="empty-state">
@@ -94,12 +116,12 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
             </div>
             <dl className="opportunity-row-facts">
               <div>
-                <dt>Compensation</dt>
-                <dd>{opportunity.salaryText?.trim() ? opportunity.salaryText : "Salary not stated"}</dd>
+                <dt>Salary</dt>
+                <dd>{formatSalary(opportunity) ?? "Unknown"}</dd>
               </div>
               <div>
                 <dt>Work arrangement</dt>
-                <dd>{workArrangementLabel(opportunity.remoteStatus)}</dd>
+                <dd>{formatWorkArrangements(opportunity)}</dd>
               </div>
               <div>
                 <dt>Residency</dt>
@@ -130,7 +152,17 @@ export function OpportunityList({ opportunities }: { opportunities: Row[] }) {
                 </span>
               ) : null}
               {opportunity.listingChanged ? (
-                <span className="status-label status-label-deferred">Listing changed</span>
+                <span
+                  className="status-label status-label-deferred"
+                  title="The listing changed. Current facts show its latest version; earlier versions are kept, and an existing evaluation may describe an earlier one. Reevaluating is optional."
+                >
+                  Listing changed
+                </span>
+              ) : null}
+              {needsEligibilityCheck(opportunity, eligibility) ? (
+                <span className="status-label status-label-deferred" title="This job's stated work-authorization facts, or their absence for a job outside your countries, are worth checking.">
+                  Check work eligibility
+                </span>
               ) : null}
               {opportunity.noLongerListed ? (
                 <span className="status-label status-label-muted">No longer listed</span>

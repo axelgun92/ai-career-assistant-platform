@@ -586,7 +586,7 @@ Run these against an isolated test database for the automated checks, and as ope
 6. The `Recommendation.evidenceReferences` default drift decision. `pnpm db:verify-migrations` confirms it is the only schema/migration difference.
 7. Task 9 additions in this handoff (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
 8. Profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`; handoff above) and its post-integration acceptance tests.
-9. Task 7: the evaluator subject withholds the newly normalized salary, position and residency fields (`fieldsWithheldFromEvaluator` in `loadSubject()`). Milestone 4 adopts them per the "Final Data Contract" in the Task 7 handoff below; migration `20261016090000_opportunity_residency_requirement` is part of the merge.
+9. Task 7: the evaluator subject withholds the newly normalized salary, position and residency fields (`fieldsWithheldFromEvaluator` in `loadSubject()`). Milestone 4 adopts them per the "Final Data Contract" in the Task 7 handoff below; migration `20261016090000_opportunity_residency_requirement` is part of the merge. *(October 25, 2026: `compensationBasis` is released with them, and the evaluator's temporary compensation-basis compatibility read is replaced by the native Core field; see "Milestone 4 compensation-basis correction → final-integration contract" at the end of this file. Migration `20261025090000_work_authorization_and_compensation_basis` is also part of the merge.)*
 10. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
 
 #### Before Scraper Work
@@ -624,6 +624,9 @@ Task 7 stores facts only. It makes no Pass / Review / Skip decision, no FX conve
 | Fact | Column | Values | Unknown |
 |---|---|---|---|
 | Salary bounds | `salaryMin`, `salaryMax` (Decimal) | Stated annual amounts, in the stated currency. Open-ended ranges set one bound. | null (also for hourly/monthly pay, OTE, ambiguous figures) |
+
+*(Superseded October 25, 2026 for OTE: a stated OTE range now keeps its bounds, with `compensationBasis` = OTE; see the shared-normalization convergence record at the end of this file. The table above is preserved as written.)*
+
 | Currency | `currency` | ISO 4217 code. Explicit code or symbol, a user selection, or a bare "$" read as USD. | null (conflicting or ambiguous) |
 | Original compensation text | `salaryText` (+ `SourceRecord.rawSalaryText`) | Verbatim | null |
 | Location | `location` (+ `SourceRecord.rawLocation`) | Verbatim free text | null |
@@ -727,7 +730,7 @@ Older handoffs above remain historical records. When a current-state statement b
 - `US_REQUIRED` means all supported stated residency geography is U.S. geography.
 - `NON_US` means residence outside the U.S. is explicitly allowed or required; mixed U.S. + non-U.S. eligibility is `NON_US`.
 - Open salary ranges preserve the stated bound. A single disclosed figure may populate both bounds.
-- Non-annual compensation, OTE, conflicting currencies, unsupported currency symbols, or other ambiguous compensation remains Unknown.
+- Non-annual compensation, OTE, conflicting currencies, unsupported currency symbols, or other ambiguous compensation remains Unknown. *(October 25, 2026: OTE no longer makes the bounds Unknown in Core; the salary policy must read `compensationBasis`.)*
 - Explicit structured residency fields take precedence over deterministic parsing.
 - Older opportunities are not backfilled and therefore retain Unknown for newly introduced facts.
 
@@ -1101,3 +1104,187 @@ Feature 14B adds the browser-extension companion. It is a source-collection boun
 4. **Schema:** migration `20261020090000_extension_pairing` (additive): the `ExtensionPairing` table (`tokenHash` unique, no foreign keys).
 
 Final Integration Checklist: items 1–2 are shared-contract additions to note in the Codex review list. Feature 14B changes nothing on the evaluator side.
+
+*(Annotation, October 23, 2026: Feature 14B, this record, was committed as `e6bacc6` (October 20, 2026). Alex's local acceptance then found the shared normalization gap recorded below; 14B stays open. The record above is preserved as written.)*
+
+### Feature 14B correction — shared Core job-text fallback: shared-boundary record (October 23, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-23\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed (every entry above is preserved as written)
+
+Approved by Alex on October 23, 2026. It restores the Core requirement that structured values come first and the posting's own text is the fallback for already-supported normalized facts. Core Platform TDD v1.15 §51 and Core AI Framework PRD v1.14 specify it. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic, `loadSubject()` or `fieldsWithheldFromEvaluator` changed; no migration; no backfill.**
+
+1. **Shared normalization** (`packages/normalization`; exported from `@ai-career/normalization`):
+   - **The reader:** `readJobTextFacts({ text, title, pageTitle })`, `parseUnambiguousDate` and `jobTextSourceFields`, with the provenance markers listed in `job-text-facts.ts`.
+   - **Who calls it:** `createManualOpportunityNormalizer` and `createRetrievedOpportunityNormalizer` call it the same way, only for facts still missing.
+   - **Precedence:**
+     1. the user's stated or corrected value;
+     2. the structured value;
+     3. a dedicated-field reading;
+     4. the page title (company only);
+     5. the job text;
+     6. Unknown.
+   - **Provenance:** facts read from the text are DETERMINISTIC with `rawText:*` markers; the page-title company is marked `pageContext:page-title-company`.
+   - **Residency:** keeps `parseResidency` unchanged.
+2. **Currency rule (product-wide):** `parseCompensation(text, selected, geography?)` reads a bare "$" as USD only when the location, the residency regions or the statement name only U.S. geography. Otherwise the currency is null with `currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE"`. The marker `compensationText:bare-dollar-as-usd` is unchanged. *(October 25, 2026: the location is read by `readLocationGeography`, where an explicit country in a full location settles an ambiguous region abbreviation, e.g. "Sunnyvale, CA, United States" is U.S. evidence.)*
+   - **For the Codex salary policy at final integration:** when Milestone 4 releases salary minimum and maximum, currency and residency to the evaluator (`267124f`, not merged), currency will be Unknown more often for bare-"$" postings outside clear U.S. geography. That includes city-only locations such as "NYC", because cities are not in the geography vocabulary. A hard filter must keep treating Unknown currency as Unknown, never as USD.
+3. **Evaluator subject (unchanged contract, richer data):**
+   - The Task 7 fields stay withheld. That now includes values read from the job text: `timeZoneRequirements`, `closingDate`, `remoteStatus`, `employmentType`, `department`, `seniority`, salary minimum and maximum, and currency.
+   - `companyName`, `location`, `salaryText` and `postingDate` were never withheld. When a source left them empty they may now carry values read from the same job text the evaluator already receives, and their provenance rows (with the markers) reach the subject.
+   - Review at final integration whether a text-derived `salaryText`, a compensation statement that may be OTE, is acceptable salary context for the salary policy.
+4. **Extension and server context:**
+   - `extensionCaptureSchema` gains an optional `pageTitle`. It is additive, `schemaVersion` stays 1, and an older envelope still validates.
+   - The envelope also gains an optional `pageText`: the job's bounded page content beside a structured description or a selection. It excludes navigation, header, footer, side panels, forms and recommendation or sharing widgets, is capped at 20,000 characters and is never sent from LinkedIn.
+   - The server stores `sourceMetadata.pageTitle` and `sourceMetadata.pageText` (neither for LinkedIn) and `sourceMetadata.userCorrectedFields`.
+   - Shared normalization reads page context only through labelled values, with `pageContext:*` markers, below structured values.
+   - The retrieved normalizer records corrected fields as DIRECT with `userCorrected:<field>`. Neither key enters the listing content hash.
+5. **Source facts and change detection:**
+   - `retrievedSourceFactsSchema` (Core) adds a neutral `sourceMetadata.sourceFacts` record: department, seniority labels, and a compensation text with no stated period. Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Himalayas, LinkedIn and Wellfound copy into it values they already hashed as material.
+   - The retrieved normalizer reads them: department DIRECT `source.department`; seniority `source.seniority`, which must agree with a title level, otherwise Unknown; compensation `source.compensation`, with amounts only with a stated annual period.
+   - Extension captures add `material.pageContext`, the canonical labelled page-context evidence from `pageContextEvidence`, to the content hash. No stored listing's hash changed.
+   - **Evaluator subject:** `department` and `seniority` stay withheld.
+6. **Unchanged on purpose:**
+   - the deduplication engine (`core-dedup-v2`), its thresholds and rules (re-run with the corrected inputs: a cross-site copy of one job is a PROBABLE_MATCH flag, the same title at a different company is NO_MATCH, and nothing auto-merges on similarity);
+   - the unknown-host site-ID rule;
+   - application-link precedence.
+
+**Known gaps recorded, not built (for planning and final integration):**
+- *(Decided and implemented October 25, 2026; see the convergence record below.)* **Work authorization and visa eligibility.** The normalized Opportunity has no field for it. Such language is deliberately never read as residency. A future contract decision should add a separate fact rather than overload residency.
+- *(Approved and implemented October 25, 2026.)* **Generic employer apply-link extraction from captured pages.** A possible future enhancement, kept separate because a wrong application URL could cause an incorrect automatic attachment.
+
+Final Integration Checklist: items 1–4 are shared-contract changes to note in the Codex review list, item 2 especially for the salary policy.
+
+### Feature 14B correction — current-version projection and the evaluated source version: shared-boundary record (October 23, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-23\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed
+
+Alex approved this on October 23, 2026. It corrects the Core TDD v1.15 §51 re-observation contract: a CHANGED observation of an opportunity's originating listing re-projects the opportunity's current facts, and every version is kept. **It crosses the evaluator boundary in the integration layer only.** No stage logic, prompt, model, routing, semantic schema or recommendation rule changed, and there are no provider calls.
+
+1. **Schema** (migration `20261023090000_superseded_provenance_and_evaluated_source`, additive and nullable): `FieldProvenance.supersededAt` and `Evaluation.sourceRecordId` (foreign key to `SourceRecord`, `ON DELETE SET NULL`, indexed). Applied only to the isolated test database.
+2. **Evaluation binding:**
+   - `createEvaluation` and `createEvaluationAndTask` set `Evaluation.sourceRecordId` to the current originating version (`originatingVersion` in `database/src/manual-opportunity-repository.ts`; for a manual opportunity, its source record).
+   - **Contract additions** (`packages/evaluation/src/contracts.ts`):
+     - `EvaluationSubject.subjectSourceRecordId?`;
+     - `CoreEvaluationContext.subjectSourceRecordId`;
+     - `loadSubject`'s optional `evaluationId` input;
+     - the `evaluatedSource(context)` helper: the bound record, else `rawSources[0]`.
+   - The executor and the Customer Success processor pass `evaluationId: snapshot.id`.
+3. **`PrismaEvaluationRepository.loadSubject`:**
+   - With an evaluation, the subject is the bound version as it stood: provenance rows with `createdAt <= binding` and not superseded by then. If the listing changed later, the bound record's `rawDescription` and the as-of title, company, location, salary text and posting date replace the newer projection.
+   - Without an evaluation, it uses the current version and the non-superseded rows.
+   - `rawSources` still lists every record, oldest first. `fieldsWithheldFromEvaluator` is unchanged.
+4. **Customer Success domain (selection only):** `extraction/explicit-facts.ts`, `extraction/extractor.ts` and `evaluation/opportunity-priority.ts` read `evaluatedSource(context)` instead of `rawSources[0]`. For a single-record opportunity the behavior is identical.
+5. **Attempts:** `recordSemanticOperation` stores the evaluation's bound `sourceRecordId`, falling back to the oldest record for evaluations made before the binding existed, and the bound record's source as `jobSource`.
+6. **No automatic work:** a change never evaluates, queues or reserves budget. Reevaluation stays user-requested and additive. `findListingVersionHint(opportunityId)` drives the opportunity-page hint.
+
+Final Integration Checklist: items 2–5 must be carried into the Codex evaluator branch's `loadSubject`, executor and Customer Success extractor when the branches are combined, or that branch will again evaluate the oldest record of a changed listing. The salary-policy release of withheld fields (`267124f`) should read the as-of provenance the subject now supplies.
+
+### Feature 14B correction — shared-normalization convergence: shared-boundary record (October 25, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-25\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed
+
+Approved by Alex on October 25, 2026. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
+
+1. **Compensation (contract change).**
+   - `parseCompensation` no longer returns null bounds for OTE (`TOTAL_COMPENSATION` is removed). It keeps the stated numbers in the stated currency and returns `basis` (BASE / OTE / null).
+   - The new normalized fact is `compensationBasis`, with provenance under the statement's marker.
+   - **For the Codex salary policy (`267124f`):** when `salaryMin`/`salaryMax` are released to the evaluator, it must read `compensationBasis` and must not treat an OTE range as qualifying base salary (CS PRD ¶241: OTE-only → Salary Unknown for the hard filter). The USD-equivalent conversion stays evaluator-only.
+   - `compensationBasis` is in `fieldsWithheldFromEvaluator` until then.
+   - *(Later on October 25, 2026: Codex implemented this on the evaluator worktree as `cs-hard-filters-v3`; see the next record.)*
+2. **Work authorization (new facts).**
+   - **Fields:** `workAuthorizationRequirement` (RIGHT_TO_WORK / CITIZENSHIP), `workAuthorizationRegions`, `visaSponsorship`, `relocationSupport` and `employerOfRecordRegions`.
+   - They are never derived from or into residency, which is unchanged. All are withheld from the evaluator.
+   - The user's own eligibility (`UserEligibility`: authorized and citizenship countries) is a separate table, outside the versioned profile, and never evaluator input.
+   - Any evaluator use of work authorization needs a coordinated decision; CS PRD ¶223 forbids inferring residency from it.
+3. **Department.** It may now carry an explicit team statement (`rawText:explicit-team-statement`). It stays withheld.
+4. **Application URL.**
+   - `sourceFacts.applicationUrlBasis` and the `applicationUrlProvenance` markers (Core).
+   - Job-board listing pages are no longer stored as application URLs.
+   - A changed originating listing updates the link only when it owned it.
+   - **Deduplication logic is unchanged.** Its inputs differ only where an extension capture now carries an explicit apply link; a posting-page application URL equals the canonical URL, which is already an input.
+5. **Schema:** migration `20261025090000_work_authorization_and_compensation_basis` (additive). Applied only to the isolated test database.
+
+Final Integration Checklist: item 1 is mandatory for the salary policy before salary bounds are released; items 2–4 are shared-contract additions.
+
+### Milestone 4 compensation-basis correction → final-integration contract (October 25, 2026)
+
+**Date:** 2026-10-25\
+**From:** Codex evaluator workstream (recorded by the Claude main-product workstream)\
+**To:** Final integration\
+**Status:** Evaluator side complete on the `codex/evaluator-live-diagnostic` worktree over `267124f`; not committed, not merged. Main-product docs synchronized; no main-product implementation changed.
+
+Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Unknown for confirmed base-salary eligibility.
+
+**Evaluator side (Codex):**
+- **Basis:** the evaluator consumes `salaryMin`, `salaryMax`, `currency`, `salaryText`, `compensationBasis`, `residencyRequirement` and `residencyRegions`.
+  - `BASE` and `null` are evaluated normally under the unchanged Customer Success bands.
+  - `OTE` keeps its bounds and makes salary eligibility Unknown unless separate confirmed base-salary evidence exists, with the OTE statement kept as evidence.
+- **Currency:** FX conversion stays evaluator-only, and nothing converted is written back. Core's bare-"$" rule is not reproduced.
+- **Residency:** residency selects the policy branch. Work authorization, sponsorship, relocation, citizenship and `UserEligibility` are never used.
+- **Identifiers:** `cs-hard-filters-v3` and `cs-salary-policy-v3-ecb-2026-10-14`. No semantic prompt, model or routing change.
+- **Compatibility boundary:** the evaluator reads the basis through a temporary compatibility path because that branch lacks the native Core field.
+
+**Integration contract (carry out at final integration):**
+1. Read the native shared-Core `compensationBasis` (`compensationBasisValues` in `packages/core/src/opportunity.ts`, on a nullable field), exactly `BASE` | `OTE` | `null`. Do not add a value such as `TOTAL_COMPENSATION`, or a second copy of the enum, unless the Core contract itself is revised first.
+2. Replace only the temporary evaluator compatibility read. Remove `compensationBasis` from `fieldsWithheldFromEvaluator` together with the five Task 7 fields that `267124f` releases, and update the withholding tests.
+3. Preserve the OTE numeric facts and the original source currency. FX stays evaluator-only.
+4. Keep residency separate from work authorization. The work-authorization fields stay in `fieldsWithheldFromEvaluator`, and `UserEligibility` is never sent to the evaluator.
+5. Do not recreate bare-"$" geography logic in the evaluator.
+6. Preserve the `cs-hard-filters-v3` and v3 salary-policy behavior.
+7. Keep semantic prompts, provider models and routing unchanged.
+8. Expect overlapping edits in `database/src/evaluation-repository.ts`, `packages/evaluation/src/contracts.ts` and `domains/customer-success/src/extraction/explicit-facts.ts`, which both branches change. Keep this branch's source-version binding (`evaluatedSource`), its withheld-field additions and the evaluator's basis evidence.
+
+**Resolved October 25, 2026 (Alex approved; Feature 14B v5): an OTE range that also mentions "base".** The record below is the finding as reported; the resolution follows it.
+- **The behavior:** Core's `parseCompensation` returns `basis: null` when a statement names both OTE/on-target and "base".
+  - Measured on this branch, "$120,000 - $150,000 OTE (base + commission)" and "OTE: $120,000 - $150,000; 60/40 base to variable" keep bounds 120000/150000 with a `null` basis.
+  - Under the evaluator's "`null` is evaluated normally" rule, such an OTE range would be treated as ordinary salary. With U.S. currency evidence that is a false Pass.
+  - Two separate ranges ("Base salary $80,000 - $100,000 plus commission; OTE $140,000") are already safe: the amounts are ambiguous, and the bounds stay Unknown.
+- **Recommended Core fix:** any OTE/on-target cue gives `OTE`; `BASE` only with a base cue and no OTE cue; otherwise `null`. It keeps the `BASE` | `OTE` | `null` values and needs no evaluator change. Its cost is a conservative miss: a base range that mentions OTE elsewhere becomes `OTE`, which is Unknown rather than a false Pass.
+- **Related, lower severity:** a structured source salary range takes a basis only from that source's own salary text when the text states the same range. OTE stated only in the job description leaves the structured range `null`.
+- **Status (as reported):** no implementation change until Alex decides; the fix would replace the v4 patch with a v5.
+- **Resolution (implemented in v5, shared Core only; no adapter or evaluator change):**
+  - **OTE precedence:** `parseCompensation` gives `OTE` whenever the statement uses OTE or on-target wording, `BASE` only for base wording without it, otherwise `null`. Both examples above now give 120000/150000 with `OTE`. Separate figures in one statement stay ambiguous, with the amounts Unknown.
+  - **Same-range OTE from the description** (`onTargetStatementFor` in `packages/normalization/src/job-text-facts.ts`, used by the retrieved and manual normalizers): when the amounts come from structured source fields, a source salary text or a user-stated salary text, and their basis is not already OTE, the basis becomes `OTE` only if a compensation statement in the posting's own description states that same range as OTE.
+    - Both bounds must be equal (an open end must match too), and the statement must state no other currency.
+    - It must name no other figure, since several figures parse as ambiguous.
+    - Page context never counts. OTE wording about any other figure leaves the basis as it was.
+    - Provenance is the description statement (`rawText:explicit-compensation-statement`); the bounds and currency keep their own provenance.
+  - **The values stay `BASE` | `OTE` | `null`.** The Codex evaluator contract is unchanged, and an OTE range now always reaches it as `OTE`.
+
+### Feature 14B cross-source correction: shared-boundary record (October 26, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-26\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and the cross-source live retest; not committed
+
+From the live acceptance of every supported source. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
+
+1. **Residency is populated in more cases.**
+   - **Where from:**
+     - a source's remote-hiring places (`sourceFacts.remoteLocations`, read as the location "Remote (<places>)");
+     - a posting's own statement that the remote role is based somewhere ("This is a U.S.-based, full-time remote role."; `rawText:explicit-remote-base-statement`, the weakest reading: explicit eligibility statements replace it). An ordinary job or office location by itself never creates eligibility;
+     - eligible states listed one per line;
+     - "continental U.S.";
+     - the remote option of an "Office or Remote, <geography>" location.
+   - **For the Codex salary policy:** these are explicit eligible-geography facts under the existing contract, and residency still selects the salary branch. Expect more `US_REQUIRED` / `NON_US` and fewer `null` values once residency is released to the evaluator. Work authorization is still never read as residency.
+2. **Regional pay tiers.** When a posting states several ranges each labelled with its own place or zone, `salaryMin`/`salaryMax` are null even when a source field states one tier. The salary text is the tiers, each with its label ("U.S.: USD 63,000 - 75,000 / Canada: CAD 88,000 - 110,000"). `currency` is kept only when the tiers share one, and `compensationBasis` is null. Ranges that do not each name their place are not tiers: they are conflicting evidence and stay Unknown. The salary policy sees Unknown bounds, not one tier.
+3. **New withheld fields `seniorityLabel` and `workArrangements`** (migration `20261026090000_cross_source_normalization`, additive; applied only to the isolated test database). Both join `fieldsWithheldFromEvaluator`, like `seniority` and `remoteStatus`. `workArrangements` lists every arrangement the posting states, in its order ("Office or Remote" → `ONSITE`, `REMOTE`); `remoteStatus` is the single stated arrangement, and null when several are offered.
+4. **Other new readings (all still withheld from the evaluator):**
+   - a time-zone preference (`rawText:explicit-time-zone-preference`);
+   - a source-stated posting age (`postingDate:relative-posted-age`, `pageContext:relative-posted-age`), approximate at day precision. `postingDate` is evaluator input, so `loadSubject` withholds an approximate date (null, with its provenance row left out) until its evaluator use is approved;
+   - a labelled requisition ID (`*:labelled-requisition-id`; it also feeds the existing requisition-ID dedup match, whose logic is unchanged);
+   - a fuller labelled location (`rawText:labelled-location`);
+   - page metadata items (`pageContext:stated-*`).
+5. **Department** is no longer a product field: it is not shown, filtered on or entered. It was already withheld from the evaluator and stays so; the column remains.
+6. **Extension envelope:** two optional fields, `remoteLocations` and `seniority` (`schemaVersion` stays 1). Page context is now sent with every non-LinkedIn description, one visible item per line.
+
+Final Integration Checklist: items 1–2 matter when the Milestone 4 fields are released to the evaluator; items 3–6 are shared-contract additions with no evaluator change.

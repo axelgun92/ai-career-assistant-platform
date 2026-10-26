@@ -75,6 +75,8 @@ export const weWorkRemotelyAdapter: SourceAdapter<WeWorkRemotelyConfig> = {
             postingDate: isoDate(rssField(item, "pubDate")),
             sourceUrl: rssField(item, "link"),
             applicationUrl: rssField(item, "link"),
+            // The feed links only to We Work Remotely's own listing page.
+            sourceFacts: { applicationUrlBasis: "SOURCE_LISTING_PAGE" },
             material: { skills: rssField(item, "skills"), category: rssField(item, "category") },
             metadata: {
               category: rssField(item, "category"),

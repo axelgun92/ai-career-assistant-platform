@@ -28,11 +28,22 @@ export interface OpportunityListItem {
   salaryMax: number | null;
   currency: string | null;
   remoteStatus: string | null;
+  // Every arrangement the posting offers, in its order (several when it
+  // offers options; remoteStatus is then null).
+  workArrangements: string[];
   seniority: string | null;
   // Explicit residency requirement (US_REQUIRED / NON_US / null = Unknown)
   // and the stated eligible geographies (empty when not stated).
   residencyRequirement: string | null;
   residencyRegions: string[];
+  // Explicit work-authorization facts (see Opportunity), for the user-
+  // relevance note; and what the stated compensation range is.
+  workAuthorizationRequirement: string | null;
+  workAuthorizationRegions: string[];
+  visaSponsorship: string | null;
+  relocationSupport: string | null;
+  employerOfRecordRegions: string[];
+  compensationBasis: string | null;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -260,7 +271,15 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   add(valuesOrMissing(Prisma.sql`cr."roleFamily"`, filters.roleFamilies, "UNKNOWN"));
   add(valuesOrMissing(Prisma.sql`cr."segment"`, filters.segments, "NOT_EVALUATED"));
   if (filters.sourceTypes?.length) add(Prisma.sql`o."sourceType"::text IN (${Prisma.join(filters.sourceTypes)})`);
-  add(valuesOrMissing(Prisma.sql`o."remoteStatus"`, filters.workArrangements, "UNKNOWN"));
+  // An arrangement matches a job that states it alone or offers it among
+  // several options; Unknown is a job that states none.
+  if (filters.workArrangements?.length) {
+    const present = filters.workArrangements.filter((value) => value !== "UNKNOWN");
+    add(anyOf([
+      ...(present.length ? [Prisma.sql`(o."remoteStatus" IN (${Prisma.join(present)}) OR o."workArrangements" && ARRAY[${Prisma.join(present)}]::text[])`] : []),
+      ...(filters.workArrangements.includes("UNKNOWN") ? [Prisma.sql`(o."remoteStatus" IS NULL AND cardinality(o."workArrangements") = 0)`] : []),
+    ]));
+  }
   add(valuesOrMissing(Prisma.sql`o."seniority"`, filters.seniorities, "UNKNOWN"));
   add(valuesOrMissing(Prisma.sql`o."residencyRequirement"`, filters.residencyRequirements, "UNKNOWN"));
   if (filters.department) add(Prisma.sql`o."department" = ${filters.department}`);
@@ -329,9 +348,16 @@ type Row = {
   salaryMax: number | null;
   currency: string | null;
   remoteStatus: string | null;
+  workArrangements: string[] | null;
   seniority: string | null;
   residencyRequirement: string | null;
   residencyRegions: string[] | null;
+  workAuthorizationRequirement: string | null;
+  workAuthorizationRegions: string[] | null;
+  visaSponsorship: string | null;
+  relocationSupport: string | null;
+  employerOfRecordRegions: string[] | null;
+  compensationBasis: string | null;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -408,9 +434,16 @@ function toItem(row: Row, today: string): OpportunityListItem {
     salaryMax: row.salaryMax,
     currency: row.currency,
     remoteStatus: row.remoteStatus,
+    workArrangements: row.workArrangements ?? [],
     seniority: row.seniority,
     residencyRequirement: row.residencyRequirement,
     residencyRegions: row.residencyRegions ?? [],
+    workAuthorizationRequirement: row.workAuthorizationRequirement,
+    workAuthorizationRegions: row.workAuthorizationRegions ?? [],
+    visaSponsorship: row.visaSponsorship,
+    relocationSupport: row.relocationSupport,
+    employerOfRecordRegions: row.employerOfRecordRegions ?? [],
+    compensationBasis: row.compensationBasis,
     postingDate: row.postingDate,
     createdAt: row.createdAt,
     discoveredAt: row.discoveredAt,
@@ -505,7 +538,9 @@ export class PrismaOpportunityListRepository {
             o."id", o."domain", o."status"::text AS "status", o."source", o."sourceType"::text AS "sourceType",
             o."title", c."name" AS "companyName", o."location", o."salaryText", o."postingDate",
             o."salaryMin"::float8 AS "salaryMin", o."salaryMax"::float8 AS "salaryMax", o."currency",
-            o."remoteStatus", o."seniority", o."residencyRequirement", o."residencyRegions",
+            o."remoteStatus", o."workArrangements", o."seniority", o."residencyRequirement", o."residencyRegions",
+            o."workAuthorizationRequirement", o."workAuthorizationRegions", o."visaSponsorship", o."relocationSupport",
+            o."employerOfRecordRegions", o."compensationBasis",
             o."createdAt", o."discoveredAt", o."updatedAt", o."applicationUrl",
             (od."opportunityId" IS NOT NULL) AS "deferred",
             le."id" AS "latestId", le."status" AS "latestStatus",

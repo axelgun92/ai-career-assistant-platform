@@ -162,7 +162,6 @@ export function activeFilterChips(
     ["title", "Title contains", query.title],
     ["location", "Location contains", query.location],
     ["salary", "Salary", query.salary === "stated" ? "Stated" : query.salary === "not-stated" ? "Not stated" : null],
-    ["department", "Department", query.department],
     // Removing the currency also removes the amounts it qualifies.
     ["currency", "Salary currency", query.currency],
     ["salaryMin", "Salary at least", query.salaryMin === null ? null : `${formatAmount(query.salaryMin)} ${query.currency ?? ""}`.trim()],

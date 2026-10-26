@@ -95,6 +95,11 @@ export const leverAdapter: SourceAdapter<LeverConfig> = {
           sourceUrl: posting.hostedUrl ?? null,
           applicationUrl: posting.applyUrl ?? posting.hostedUrl ?? null,
           structured: { workplaceType: workplaceType(posting.workplaceType) },
+          sourceFacts: {
+            department: posting.categories?.department?.trim() || posting.categories?.team?.trim() || null,
+            // A stated apply address; else the ATS posting page, which hosts the application.
+            applicationUrlBasis: posting.applyUrl ? "SOURCE_APPLY_URL" : posting.hostedUrl ? "SOURCE_POSTING_PAGE" : null,
+          },
           material: {
             team: posting.categories?.team ?? null,
             department: posting.categories?.department ?? null,

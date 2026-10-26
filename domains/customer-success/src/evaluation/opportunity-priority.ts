@@ -1,6 +1,7 @@
 import {
   StructuredOutputValidationError,
   defineEvaluationStage,
+  evaluatedSource,
   type CoreEvaluationContext,
 } from "@ai-career/evaluation";
 import {
@@ -60,7 +61,7 @@ function postingDateEvidence(
   );
   const source =
     context.rawSources.find((item) => item.id === provenance?.sourceRecordId) ??
-    context.rawSources[0];
+    evaluatedSource(context);
   return evidenceRecordDraftSchema.parse({
     referenceId: "opportunity-posting-date",
     criterionId: "opportunity-priority",

@@ -1,4 +1,5 @@
 import {
+  extensionCaptureMaxBytes,
   extensionCaptureSchema,
   extensionCaptureSchemaVersion,
   extensionEditableFieldValues,
@@ -66,8 +67,13 @@ export function buildCaptureEnvelope(
       workplaceType: null,
       employmentType: null,
       postedAt: null,
-      applicationUrl: null,
+      closingDate: null,
+      // Where to apply is the page's own evidence, whichever text is used.
+      applicationUrl: extraction.application?.url ?? null,
+      applicationUrlBasis: extraction.application?.basis ?? null,
       siteJobId: extraction.posting?.siteJobId ?? null,
+      remoteLocations: extraction.posting?.remoteLocations ?? [],
+      seniority: extraction.posting?.seniority ?? null,
     };
   } else {
     if (!extraction.posting || !extraction.extractor) return { ok: false, problems: ["No job posting was found on this page"] };
@@ -87,6 +93,9 @@ export function buildCaptureEnvelope(
       }
     }
   }
+  // Page context goes with every description: beside a main-content
+  // description it still adds the job's metadata items one per line.
+  const pageText = extraction.pageText ?? null;
   const envelope = {
     schemaVersion: extensionCaptureSchemaVersion,
     pageUrl: extraction.pageUrl,
@@ -94,9 +103,14 @@ export function buildCaptureEnvelope(
     capturedAt: context.capturedAt.toISOString(),
     extensionVersion: context.extensionVersion,
     fields: posting,
+    pageTitle: extraction.pageTitle,
+    pageText,
     notes: extraction.notes.slice(0, 5),
     editedFields,
   };
+  // The context is optional: it is left out rather than making the capture
+  // too large to send.
+  if (pageText && new TextEncoder().encode(JSON.stringify(envelope)).length > extensionCaptureMaxBytes) envelope.pageText = null;
   const parsed = extensionCaptureSchema.safeParse(envelope);
   if (!parsed.success) {
     return {

@@ -115,6 +115,8 @@ export const adzunaAdapter: SourceAdapter<AdzunaConfig> = {
             postingDate: item.created ?? null,
             sourceUrl: item.redirect_url ?? null,
             applicationUrl: item.redirect_url ?? null,
+            // Adzuna's redirect to the advert, not an application destination.
+            sourceFacts: { applicationUrlBasis: item.redirect_url ? "SOURCE_LISTING_PAGE" : null },
             employmentType: item.contract_time ?? null,
             structured: predicted
               ? {}

@@ -1632,3 +1632,22 @@ main {
   overflow-wrap: anywhere;
   background: #ffffff;
 }
+
+/* Work eligibility (the user's own; not part of the evaluation profile). */
+.work-eligibility {
+  margin-top: 2rem;
+  max-width: 40rem;
+}
+
+.work-eligibility form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.work-eligibility-note {
+  margin: 0.75rem 0;
+}
+
+.field-note {
+  color: #475569;
+}

@@ -1,6 +1,12 @@
 import {
+  applicationUrlBasisOf,
+  applicationUrlProvenance,
+  compensationBasisValues,
+  workArrangementValues,
+  offerAvailabilityValues,
   residencyRequirementValues,
   shouldReplaceApplicationLink,
+  workAuthorizationRequirementValues,
   type ResidencyRequirement,
 } from "@ai-career/core";
 import type {
@@ -103,6 +109,90 @@ export function residencyRequirement(value: string | null): ResidencyRequirement
   return (residencyRequirementValues as readonly string[]).includes(value ?? "") ? (value as ResidencyRequirement) : null;
 }
 
+const inVocabulary = <T extends string>(values: readonly T[], value: string | null): T | null =>
+  (values as readonly string[]).includes(value ?? "") ? (value as T) : null;
+
+// The stated work arrangements as stored, read back with values outside the
+// vocabulary left out.
+export function storedWorkArrangements(values: readonly string[]): Array<(typeof workArrangementValues)[number]> {
+  return values.filter((value): value is (typeof workArrangementValues)[number] => (workArrangementValues as readonly string[]).includes(value));
+}
+
+// The compensation basis and work-authorization facts as stored, read back
+// with values outside their vocabularies as Unknown.
+export function storedEligibilityFacts(record: {
+  compensationBasis: string | null;
+  workAuthorizationRequirement: string | null;
+  workAuthorizationRegions: string[];
+  visaSponsorship: string | null;
+  relocationSupport: string | null;
+  employerOfRecordRegions: string[];
+}) {
+  return {
+    compensationBasis: inVocabulary(compensationBasisValues, record.compensationBasis),
+    workAuthorizationRequirement: inVocabulary(workAuthorizationRequirementValues, record.workAuthorizationRequirement),
+    workAuthorizationRegions: record.workAuthorizationRegions,
+    visaSponsorship: inVocabulary(offerAvailabilityValues, record.visaSponsorship),
+    relocationSupport: inVocabulary(offerAvailabilityValues, record.relocationSupport),
+    employerOfRecordRegions: record.employerOfRecordRegions,
+  };
+}
+
+function provenanceView(provenance: OpportunityDetailRecord["fieldProvenance"][number]) {
+  return {
+    id: provenance.id,
+    sourceRecordId: provenance.sourceRecordId,
+    fieldName: provenance.fieldName,
+    sourceField: provenance.sourceField,
+    kind: provenance.kind,
+    normalizedValue: provenance.normalizedValue,
+    sourceReference: provenance.sourceReference,
+    sourceText: provenance.sourceText,
+    collectedAt: provenance.collectedAt,
+    createdAt: provenance.createdAt,
+  };
+}
+
+// The facts an opportunity's originating listing projects, by field
+// provenance name: re-projected from each newer version of that listing
+// (Core TDD §51, v1.15). Identity, links, lifecycle and first-seen facts are
+// not part of it.
+const projectedFields = [
+  "title", "company.name", "location", "remoteStatus", "workArrangements", "employmentType", "seniority", "seniorityLabel", "department",
+  "timeZoneRequirements", "residencyRequirement", "residencyRegions", "workAuthorizationRequirement",
+  "workAuthorizationRegions", "visaSponsorship", "relocationSupport", "employerOfRecordRegions", "salaryText",
+  "salaryMin", "salaryMax", "currency", "compensationBasis", "postingDate", "closingDate", "jobDescription",
+] as const;
+type ProjectedField = (typeof projectedFields)[number];
+
+// Fields the browser extension lets the user correct, by provenance name.
+const userCorrectableFields: Record<string, ProjectedField> = {
+  title: "title",
+  company: "company.name",
+  location: "location",
+  description: "jobDescription",
+};
+
+// The source record that created an opportunity, and the current version of
+// that listing: the latest record of the same source listing. A manual
+// opportunity's own record, or one without a listing ID, is its own current
+// version.
+export async function originatingVersion(transaction: Transaction, opportunityId: string) {
+  const origin = await transaction.sourceRecord.findFirst({
+    where: { opportunityId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, source: true, sourceType: true, externalId: true },
+  });
+  if (!origin) return null;
+  if (origin.sourceType === "MANUAL" || origin.externalId === null) return { origin, currentId: origin.id };
+  const current = await transaction.sourceRecord.findFirst({
+    where: { opportunityId, source: origin.source, externalId: origin.externalId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true },
+  });
+  return { origin, currentId: current?.id ?? origin.id };
+}
+
 function mapOpportunityDetail(
   record: OpportunityDetailRecord,
 ): ManualOpportunityDetail {
@@ -129,11 +219,14 @@ function mapOpportunityDetail(
       department: record.department,
       employmentType: record.employmentType,
       seniority: record.seniority,
+      seniorityLabel: record.seniorityLabel,
       location: record.location,
       remoteStatus: record.remoteStatus,
+      workArrangements: storedWorkArrangements(record.workArrangements),
       timeZoneRequirements: record.timeZoneRequirements,
       residencyRequirement: residencyRequirement(record.residencyRequirement),
       residencyRegions: record.residencyRegions,
+      ...storedEligibilityFacts(record),
       salaryMin: record.salaryMin?.toNumber() ?? null,
       salaryMax: record.salaryMax?.toNumber() ?? null,
       salaryText: record.salaryText,
@@ -186,18 +279,10 @@ function mapOpportunityDetail(
       createdAt: sourceRecord.createdAt,
       updatedAt: sourceRecord.updatedAt,
     })),
-    fieldProvenance: record.fieldProvenance.map((provenance) => ({
-      id: provenance.id,
-      sourceRecordId: provenance.sourceRecordId,
-      fieldName: provenance.fieldName,
-      sourceField: provenance.sourceField,
-      kind: provenance.kind,
-      normalizedValue: provenance.normalizedValue,
-      sourceReference: provenance.sourceReference,
-      sourceText: provenance.sourceText,
-      collectedAt: provenance.collectedAt,
-      createdAt: provenance.createdAt,
-    })),
+    fieldProvenance: record.fieldProvenance.filter((provenance) => provenance.supersededAt === null).map(provenanceView),
+    supersededProvenance: record.fieldProvenance
+      .filter((provenance) => provenance.supersededAt !== null)
+      .map((provenance) => ({ ...provenanceView(provenance), supersededAt: provenance.supersededAt! })),
   };
 }
 
@@ -274,9 +359,12 @@ export class PrismaManualOpportunityRepository
   // manual capture. A listing already stored from the same source (same
   // source listing ID) is a re-observation: unchanged content only moves
   // last-seen times; changed content adds a new source record linked to the
-  // previous one, and the opportunity, its canonical description and the
-  // earlier record are left as they are. Anything else goes through the
-  // deduplication path.
+  // previous one, and every earlier record stays as it was. When the changed
+  // listing is the one that created the opportunity, its new version also
+  // re-projects the opportunity's current facts (reprojectCurrentFacts); a
+  // changed copy from another source stays history only. Anything else goes
+  // through the deduplication path. (Until the Feature 14B closeout the
+  // opportunity was always left unchanged.)
   async ingestRetrievedListing(input: {
     rawOpportunity: RawOpportunity;
     opportunity: NormalizedOpportunity;
@@ -314,6 +402,20 @@ export class PrismaManualOpportunityRepository
               select: { id: true },
             });
             sourceRecordId = created.id;
+            // A newer version of the listing that created the opportunity
+            // re-projects its current facts; a changed copy from another
+            // source stays history only.
+            const origin = await originatingVersion(transaction, opportunityId);
+            if (origin && origin.origin.sourceType !== "MANUAL" && origin.origin.source === raw.source && origin.origin.externalId === raw.externalId) {
+              await this.reprojectCurrentFacts(transaction, {
+                opportunityId,
+                sourceRecordId: created.id,
+                rawOpportunity: raw,
+                opportunity: input.opportunity,
+                provenance: input.provenance,
+              });
+              await this.reprojectApplicationLink(transaction, { opportunityId, sourceRecordId: created.id, rawOpportunity: raw, originSource: origin.origin.source });
+            }
           }
           await transaction.$executeRaw`
             UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${raw.discoveredAt}::timestamptz)
@@ -505,19 +607,155 @@ export class PrismaManualOpportunityRepository
       where: { id: input.opportunityId },
       data: { applicationUrl: candidateUrl },
     });
+    await transaction.fieldProvenance.updateMany({
+      where: { opportunityId: input.opportunityId, fieldName: "applicationUrl", supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
     await transaction.fieldProvenance.create({
       data: {
         opportunityId: input.opportunityId,
         sourceRecordId: input.sourceRecordId,
         fieldName: "applicationUrl",
-        sourceField: "applicationUrl",
-        kind: "DIRECT",
+        ...applicationUrlProvenance(applicationUrlBasisOf(input.rawOpportunity.sourceMetadata)),
         normalizedValue: candidateUrl,
         sourceReference: `retrieval:${input.rawOpportunity.source}`,
         sourceText: candidateUrl,
         collectedAt: input.rawOpportunity.discoveredAt,
       },
     });
+  }
+
+  // The application link of a changed originating listing: its newest
+  // version's link (or its absence) becomes current only when the current
+  // link came from that listing, or there is none. A link the user entered,
+  // or one from a higher-precedence attached source, is kept.
+  private async reprojectApplicationLink(
+    transaction: Transaction,
+    input: { opportunityId: string; sourceRecordId: string; rawOpportunity: RawOpportunity; originSource: string },
+  ) {
+    const opportunity = await transaction.opportunity.findUnique({ where: { id: input.opportunityId }, select: { applicationUrl: true } });
+    if (!opportunity) return;
+    const next = input.rawOpportunity.applicationUrl;
+    if (next === opportunity.applicationUrl) return;
+    if (opportunity.applicationUrl) {
+      const current = await transaction.fieldProvenance.findFirst({
+        where: { opportunityId: input.opportunityId, fieldName: "applicationUrl", supersededAt: null },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { sourceRecord: { select: { source: true, sourceType: true } } },
+      });
+      if (!current?.sourceRecord || current.sourceRecord.sourceType === "MANUAL" || current.sourceRecord.source !== input.originSource) return;
+    }
+    await transaction.opportunity.update({ where: { id: input.opportunityId }, data: { applicationUrl: next } });
+    await transaction.fieldProvenance.updateMany({
+      where: { opportunityId: input.opportunityId, fieldName: "applicationUrl", supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
+    if (next) {
+      await transaction.fieldProvenance.create({
+        data: {
+          opportunityId: input.opportunityId,
+          sourceRecordId: input.sourceRecordId,
+          fieldName: "applicationUrl",
+          ...applicationUrlProvenance(applicationUrlBasisOf(input.rawOpportunity.sourceMetadata)),
+          normalizedValue: next,
+          sourceReference: `retrieval:${input.rawOpportunity.source}`,
+          sourceText: next,
+          collectedAt: input.rawOpportunity.discoveredAt,
+        },
+      });
+    }
+  }
+
+  // Current-version projection (Core TDD §51, v1.15): the newest version of
+  // the opportunity's originating listing, normalized by the shared
+  // normalizer, becomes the opportunity's current source-derived facts. For
+  // every projected field the current provenance is marked superseded (never
+  // deleted, so earlier evaluations' evidence keeps its references) and the
+  // new version's provenance becomes current; a fact the new version no
+  // longer supports becomes Unknown. A value the user corrected stays, with
+  // its provenance, unless this capture is itself the user's change to it.
+  // Lifecycle, links, identity and first-seen facts are untouched, and
+  // nothing is evaluated.
+  private async reprojectCurrentFacts(
+    transaction: Transaction,
+    input: {
+      opportunityId: string;
+      sourceRecordId: string;
+      rawOpportunity: RawOpportunity;
+      opportunity: NormalizedOpportunity;
+      provenance: FieldProvenanceInput[];
+    },
+  ) {
+    const current = await transaction.fieldProvenance.findMany({
+      where: { opportunityId: input.opportunityId, supersededAt: null },
+      select: { fieldName: true, sourceField: true },
+    });
+    const correctedNow = new Set(
+      (Array.isArray(input.rawOpportunity.sourceMetadata?.userCorrectedFields) ? input.rawOpportunity.sourceMetadata!.userCorrectedFields : [])
+        .map((field) => userCorrectableFields[String(field)])
+        .filter(Boolean),
+    );
+    const protectedFields = new Set(
+      current
+        .filter((row) => row.sourceField.startsWith("userCorrected:") && !correctedNow.has(row.fieldName as ProjectedField))
+        .map((row) => row.fieldName),
+    );
+    const fields = projectedFields.filter((field) => !protectedFields.has(field));
+    if (!fields.length) return;
+    const next = input.opportunity;
+    const values: Record<ProjectedField, () => Promise<Prisma.OpportunityUpdateInput>> = {
+      title: async () => ({ title: next.title }),
+      "company.name": async () => {
+        const companyId = await resolveCompanyId(transaction, next.companyName);
+        return { company: companyId ? { connect: { id: companyId } } : { disconnect: true } };
+      },
+      location: async () => ({ location: next.location }),
+      remoteStatus: async () => ({ remoteStatus: next.remoteStatus }),
+      workArrangements: async () => ({ workArrangements: next.workArrangements ?? [] }),
+      employmentType: async () => ({ employmentType: next.employmentType }),
+      seniority: async () => ({ seniority: next.seniority }),
+      seniorityLabel: async () => ({ seniorityLabel: next.seniorityLabel ?? null }),
+      department: async () => ({ department: next.department }),
+      timeZoneRequirements: async () => ({ timeZoneRequirements: next.timeZoneRequirements }),
+      residencyRequirement: async () => ({ residencyRequirement: next.residencyRequirement ?? null }),
+      residencyRegions: async () => ({ residencyRegions: next.residencyRegions ?? [] }),
+      workAuthorizationRequirement: async () => ({ workAuthorizationRequirement: next.workAuthorizationRequirement ?? null }),
+      workAuthorizationRegions: async () => ({ workAuthorizationRegions: next.workAuthorizationRegions ?? [] }),
+      visaSponsorship: async () => ({ visaSponsorship: next.visaSponsorship ?? null }),
+      relocationSupport: async () => ({ relocationSupport: next.relocationSupport ?? null }),
+      employerOfRecordRegions: async () => ({ employerOfRecordRegions: next.employerOfRecordRegions ?? [] }),
+      compensationBasis: async () => ({ compensationBasis: next.compensationBasis ?? null }),
+      salaryText: async () => ({ salaryText: next.salaryText }),
+      salaryMin: async () => ({ salaryMin: next.salaryMin }),
+      salaryMax: async () => ({ salaryMax: next.salaryMax }),
+      currency: async () => ({ currency: next.currency }),
+      postingDate: async () => ({ postingDate: next.postingDate }),
+      closingDate: async () => ({ closingDate: next.closingDate }),
+      jobDescription: async () => ({ jobDescription: next.jobDescription }),
+    };
+    let data: Prisma.OpportunityUpdateInput = {};
+    for (const field of fields) data = { ...data, ...(await values[field]()) };
+    await transaction.opportunity.update({ where: { id: input.opportunityId }, data });
+    await transaction.fieldProvenance.updateMany({
+      where: { opportunityId: input.opportunityId, fieldName: { in: [...fields] }, supersededAt: null },
+      data: { supersededAt: new Date() },
+    });
+    const rows = input.provenance.filter((row) => (fields as readonly string[]).includes(row.fieldName));
+    if (rows.length) {
+      await transaction.fieldProvenance.createMany({
+        data: rows.map((provenance) => ({
+          opportunityId: input.opportunityId,
+          sourceRecordId: input.sourceRecordId,
+          fieldName: provenance.fieldName,
+          sourceField: provenance.sourceField,
+          kind: provenance.kind,
+          normalizedValue: asInputJson(provenance.normalizedValue),
+          sourceReference: provenance.sourceReference,
+          sourceText: provenance.sourceText,
+          collectedAt: provenance.collectedAt,
+        })),
+      });
+    }
   }
 
   // Creates the opportunity in DISCOVERED, its field provenance and the
@@ -550,11 +788,19 @@ export class PrismaManualOpportunityRepository
         department: input.opportunity.department,
         employmentType: input.opportunity.employmentType,
         seniority: input.opportunity.seniority,
+        seniorityLabel: input.opportunity.seniorityLabel ?? null,
         location: input.opportunity.location,
         remoteStatus: input.opportunity.remoteStatus,
+        workArrangements: input.opportunity.workArrangements ?? [],
         timeZoneRequirements: input.opportunity.timeZoneRequirements,
         residencyRequirement: input.opportunity.residencyRequirement ?? null,
         residencyRegions: input.opportunity.residencyRegions ?? [],
+        workAuthorizationRequirement: input.opportunity.workAuthorizationRequirement ?? null,
+        workAuthorizationRegions: input.opportunity.workAuthorizationRegions ?? [],
+        visaSponsorship: input.opportunity.visaSponsorship ?? null,
+        relocationSupport: input.opportunity.relocationSupport ?? null,
+        employerOfRecordRegions: input.opportunity.employerOfRecordRegions ?? [],
+        compensationBasis: input.opportunity.compensationBasis ?? null,
         salaryMin: input.opportunity.salaryMin,
         salaryMax: input.opportunity.salaryMax,
         salaryText: input.opportunity.salaryText,

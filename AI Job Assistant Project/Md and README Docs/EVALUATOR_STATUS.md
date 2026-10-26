@@ -10,6 +10,7 @@
 
 - Routing is locked and the semantic contracts were repaired on `codex/evaluator-live-diagnostic`; neither is merged.
 - Final paid acceptance, current-contract cost measurement and the evaluator freeze are deferred to the final evaluator/product integration.
+- October 25, 2026: Codex completed the Milestone 4 compensation-basis correction (`cs-hard-filters-v3`, `cs-salary-policy-v3-ecb-2026-10-14`), uncommitted on the same branch; see §19, "Milestone 4 compensation-basis correction".
 
 ## Purpose
 
@@ -747,6 +748,33 @@ Related evaluator-branch commits:
 - Version identifiers: `cs-evaluation-v1.2-m9`, `customer-success-v1.2`, `cs-rules-v1.2`, `cs-hard-filters-v2`.
 - Focused offline verification passed. DB-backed integration, E2E and live acceptance are deferred to final integration.
 
+### Milestone 4 compensation-basis correction (October 25, 2026, Codex; uncommitted, not merged)
+
+Recorded from the Codex handoff of October 25, 2026. The work is on the `codex/evaluator-live-diagnostic` worktree over `267124f` and is neither committed nor merged. The `267124f` section above is preserved as written; its `cs-hard-filters-v2` and `cs-salary-policy-v2-ecb-2026-10-14` identifiers are superseded there by v3.
+
+Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Unknown for confirmed base-salary eligibility.
+
+- **Basis:** the evaluator consumes the Feature 14B `compensationBasis`, exactly `BASE` | `OTE` | `null`.
+  - `BASE` and `null` (an ordinary stated range, with no need for the word "base") are evaluated normally.
+  - `OTE` leaves the normalized bounds untouched, and salary eligibility is Unknown unless separate confirmed base-salary evidence exists.
+  - `compensationBasis` joins the deterministic salary evidence, so an OTE Unknown points to the OTE statement.
+- **Unchanged:**
+  - the thresholds and bands;
+  - the disclosed-minimum gate, the max-only rule and no silent annualization;
+  - Unknown for missing, ambiguous, conflicting or unsupported-currency salary.
+- **Currency and FX:** the evaluator reads the currency Core normalized and does not reproduce Core's bare-"$" geography rule. FX conversion stays evaluator-only, and no converted value is persisted.
+- **Residency and work authorization:** residency still selects the policy branch. Work-authorization facts, sponsorship, relocation, citizenship and `UserEligibility` are never used.
+- **Identifiers:** Hard Filters `cs-hard-filters-v3`; salary policy `cs-salary-policy-v3-ecb-2026-10-14`. No semantic prompt, provider model or routing change.
+- **Shape:** the evaluator branch lacks the native Core field, so the basis is read through a temporary evaluator-boundary compatibility path. At integration it is replaced by the native shared-Core field, with the v3 behavior preserved and no second copy of the Core enum.
+- **Verification (Codex):**
+  - focused Milestone 4 tests pass;
+  - changed-file ESLint, Prisma validation, workspace typecheck and `git diff --check` pass;
+  - eight broader unit failures reproduce identically on untouched `267124f`, so they are pre-existing.
+- **Main-product edge case, resolved October 25, 2026 (Feature 14B v5):**
+  - A single range stated as OTE that also mentions "base" ("$120,000 - $150,000 OTE (base + commission)") previously normalized with a `null` basis.
+  - Core now gives OTE wording precedence, and also takes `OTE` from the description's statement of the same source-stated range. That case therefore reaches the evaluator as `OTE`.
+  - No evaluator change is needed (`HANDOFFS.md`).
+
 ### Lessons recorded (see Semantic Evaluation Playbook v1.2, §13)
 
 - A newer or cheaper model is not adopted when it regresses an established classification or omits established evidence.
@@ -788,6 +816,7 @@ The evaluator-branch column is the current evaluator contract. It reaches the pr
 | Oct 12 | `f29530c` | `cs-jd-reconstruction-v6` and `cs-resume-match-v3`: requirement-relative experience levels; structured profile limitations as the only gap proof; `RESUME_MATCH_PREREQUISITE_OUTDATED` fail-closed gate |
 | Oct 13 | `067c5dc` | `cs-jd-reconstruction-v7` and `cs-resume-match-v4`: structured `requirementStatements`; deterministic reconciliation; requirement-relative INDUSTRY evidence; Unknown without portions |
 | Oct 15 | `267124f` | Milestone 4 salary policy consuming the Task 7 contract (§19) |
+| Oct 25 | uncommitted | Milestone 4 compensation-basis correction: `cs-hard-filters-v3`, `cs-salary-policy-v3-ecb-2026-10-14` (§19) |
 
 ### Current rules on the evaluator branch
 
@@ -835,7 +864,7 @@ The current evaluator-branch contracts (`cs-jd-reconstruction-v7`, `cs-resume-ma
 
 - One final paid acceptance rerun of the integrated evaluator. The evaluator-branch records name it as the next gate after their October 10 and 11 repairs.
 - Corpus replay of the raw responses for evaluations `8c77e46f` and `cdb1dc32`. These did not reach the October 11 session.
-- DB-backed integration and E2E acceptance of the Task 7 → Milestone 4 contract on the combined branches.
+- DB-backed integration and E2E acceptance of the Task 7 → Milestone 4 contract on the combined branches, including the October 25 compensation-basis correction read from the native Core field.
 - Current-contract cost measurement.
 - The evaluator baseline freeze.
 

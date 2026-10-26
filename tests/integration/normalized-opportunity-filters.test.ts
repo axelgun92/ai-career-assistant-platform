@@ -43,10 +43,12 @@ const manualSeeds: Array<[string, Record<string, string>]> = [
     title: "Director of Customer Success", location: "London", compensationText: "£95,000",
     workArrangement: "ONSITE", closingDate: "2026-11-30",
   }],
-  ["ote", { title: "Customer Success Manager", location: "Remote or hybrid", compensationText: "$120k OTE" }],
+  // A bare "$" reads as USD only with U.S. evidence (here a U.S. state, or
+  // an explicit US$); without it the currency is Unknown.
+  ["ote", { title: "Customer Success Manager", location: "Remote or hybrid", compensationText: "US$120k OTE" }],
   ["conflict", { title: "CSM", compensationText: "€60,000 USD" }],
-  ["upTo", { title: "Customer Success Manager", compensationText: "Up to $85,000", seniority: "MID", department: "Support" }],
-  ["from", { title: "Customer Success Manager", compensationText: "From $100,000" }],
+  ["upTo", { title: "Customer Success Manager", location: "Denver, CO", compensationText: "Up to $85,000", seniority: "MID", department: "Support" }],
+  ["from", { title: "Customer Success Manager", location: "Austin, TX", compensationText: "From $100,000" }],
 ];
 
 beforeAll(async () => {
@@ -153,7 +155,9 @@ describe("normalization persists explicit facts and preserves the source", () =>
     expect(hybridSource!.sourceMetadata).toMatchObject({ details: { department: "Customer Success" } });
 
     const ote = await database.opportunity.findUniqueOrThrow({ where: { id: ids.ote! } });
-    expect(ote).toMatchObject({ salaryMin: null, salaryMax: null, currency: "USD", remoteStatus: null, salaryText: "$120k OTE" });
+    // An OTE amount is kept as stated, with its basis (October 25, 2026).
+    expect(ote).toMatchObject({ currency: "USD", compensationBasis: "OTE", remoteStatus: null, salaryText: "US$120k OTE" });
+    expect([ote.salaryMin?.toNumber(), ote.salaryMax?.toNumber()]).toEqual([120000, 120000]);
     const conflict = await database.opportunity.findUniqueOrThrow({ where: { id: ids.conflict! } });
     expect(conflict.currency).toBeNull();
     expect(conflict.salaryMin?.toNumber()).toBe(60000);
@@ -166,7 +170,7 @@ describe("normalization persists explicit facts and preserves the source", () =>
     const subject = await new PrismaEvaluationRepository().loadSubject({ opportunityId: ids.director!, userProfileId: null });
     // Withheld as their pre-amendment empty value: null, or [] for a list.
     for (const field of fieldsWithheldFromEvaluator) {
-      expect(subject!.opportunity[field]).toEqual(field === "residencyRegions" ? [] : null);
+      expect(subject!.opportunity[field]).toEqual(["residencyRegions", "workAuthorizationRegions", "employerOfRecordRegions", "workArrangements"].includes(field) ? [] : null);
     }
     expect(subject!.opportunity.salaryText).toBe("£95,000");
     expect(subject!.opportunity.location).toBe("London");
@@ -180,20 +184,20 @@ describe("normalization persists explicit facts and preserves the source", () =>
 describe("salary range filters", () => {
   it("matches stated ranges that can reach the amount, in one currency, and reports what was left out", async () => {
     const atLeast = await list("view=all&salaryMin=95000&currency=USD");
-    expect(keysOf(atLeast)).toEqual(["from", "senior"]);
-    expect(atLeast.salaryExclusions).toEqual({ currency: "USD", withoutAmount: 2, unknownCurrency: 1, otherCurrency: 1 });
+    expect(keysOf(atLeast)).toEqual(["from", "ote", "senior"]);
+    expect(atLeast.salaryExclusions).toEqual({ currency: "USD", withoutAmount: 1, unknownCurrency: 1, otherCurrency: 1 });
 
     expect(keysOf(await list("view=all&salaryMax=80000&currency=USD"))).toEqual(["upTo", "hybrid"]);
     // Inclusive boundaries.
     expect(keysOf(await list("view=all&salaryMin=110000&salaryMax=110000&currency=USD"))).toEqual(["from", "senior"]);
-    expect(keysOf(await list("view=all&salaryMin=110001&currency=USD"))).toEqual(["from"]);
+    expect(keysOf(await list("view=all&salaryMin=110001&currency=USD"))).toEqual(["from", "ote"]);
     expect(keysOf(await list("view=all&salaryMin=90000&currency=GBP"))).toEqual(["director"]);
   });
 
   it("defaults an amount to USD, never compares across currencies, and filters by currency alone", async () => {
     const defaulted = await list("view=all&salaryMin=95000");
     expect(defaulted.salaryExclusions?.currency).toBe("USD");
-    expect(keysOf(defaulted)).toEqual(["from", "senior"]);
+    expect(keysOf(defaulted)).toEqual(["from", "ote", "senior"]);
     expect(keysOf(await list("view=all&currency=GBP"))).toEqual(["director"]);
     expect((await list("view=all&currency=GBP")).salaryExclusions).toBeNull();
     await expect(
@@ -217,12 +221,14 @@ describe("position filters", () => {
     expect(keysOf(await list("view=all&arrangement=unknown"))).toEqual(["from", "upTo", "conflict", "ote", "legacy"]);
   });
 
-  it("seniority and department, combined with AND across groups", async () => {
+  it("seniority, combined with AND across groups; an old department filter is ignored", async () => {
     expect(keysOf(await list("view=all&seniority=mid"))).toEqual(["upTo"]);
     expect(keysOf(await list("view=all&seniority=senior,director&arrangement=onsite"))).toEqual(["director"]);
     expect(keysOf(await list("view=all&seniority=unknown"))).toEqual(["from", "conflict", "ote", "hybrid", "legacy"]);
-    expect(keysOf(await list("view=all&department=Customer%20Success"))).toEqual(["hybrid"]);
-    expect(keysOf(await list("view=all&department=Support&salaryMax=80000&currency=USD"))).toEqual(["upTo"]);
+    // Department is no longer a product filter (October 26, 2026): a URL
+    // that still names one lists exactly what it would without it.
+    expect(keysOf(await list("view=all&department=Customer%20Success"))).toEqual(keysOf(await list("view=all")));
+    expect(keysOf(await list("view=all&department=Support&salaryMax=80000&currency=USD"))).toEqual(keysOf(await list("view=all&salaryMax=80000&currency=USD")));
   });
 
   it("older records with null facts stay listed and filterable", async () => {
@@ -242,21 +248,19 @@ describe("salary sorts", () => {
   it("highest first: grouped by currency, unknown currency next, no amount last, stable ties", async () => {
     expect(keysOf(await list("view=all&sort=salary-high"))).toEqual([
       "director", // GBP
-      "senior", "from", "upTo", "hybrid", // USD 110k, 100k, 85k, 80k
+      "ote", "senior", "from", "upTo", "hybrid", // USD 120k (OTE), 110k, 100k, 85k, 80k
       "conflict", // amount, unknown currency
-      "ote", "legacy", // no amount, newest first
+      "legacy", // no amount
     ]);
   });
 
   it("lowest first, and within one currency when a currency is selected", async () => {
     expect(keysOf(await list("view=all&sort=salary-low"))).toEqual([
       "director",
-      "hybrid", "upTo", "senior", "from", // USD 70k, 85k, 90k, 100k
+      "hybrid", "upTo", "senior", "from", "ote", // USD 70k, 85k, 90k, 100k, 120k (OTE)
       "conflict",
-      "ote", "legacy",
+      "legacy",
     ]);
-    // A currency alone also keeps a listing that states the currency but no
-    // amount (OTE); it sorts after every amount.
     expect(keysOf(await list("view=all&sort=salary-low&currency=USD"))).toEqual(["hybrid", "upTo", "senior", "from", "ote"]);
     const first = keysOf(await list("view=all&sort=salary-high"));
     expect(keysOf(await list("view=all&sort=salary-high"))).toEqual(first);

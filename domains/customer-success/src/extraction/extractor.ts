@@ -1,4 +1,4 @@
-import type { CoreEvaluationContext } from "@ai-career/evaluation";
+import { evaluatedSource, type CoreEvaluationContext } from "@ai-career/evaluation";
 import {
   customerSuccessJdReconstructionSchema,
   semanticReconstructionSchema,
@@ -158,7 +158,9 @@ export async function reconstructCustomerSuccessJob(
   if (!rawJobDescription) {
     throw new Error("Customer Success evaluation requires a job description");
   }
-  const source = context.rawSources[0];
+  // The source version this evaluation evaluates (never a position in the
+  // list of every stored version).
+  const source = evaluatedSource(context);
   const provenance = context.provenance.find(
     (item) => item.fieldName === "jobDescription",
   );

@@ -110,6 +110,20 @@ const longForms: Array<[string, string]> = [
   ["latin america", "LATAM"],
   ["asia-pacific", "APAC"],
   ["asia pacific", "APAC"],
+  // The continental (contiguous) United States is U.S. geography; the
+  // phrase names where in the U.S., not another place.
+  ["continental united states", "US"],
+  ["contiguous united states", "US"],
+  ["continental u.s.a.", "US"],
+  ["continental u.s.", "US"],
+  ["continental u.s", "US"],
+  ["continental usa", "US"],
+  ["continental us", "US"],
+  ["contiguous u.s.", "US"],
+  ["contiguous u.s", "US"],
+  ["contiguous us", "US"],
+  ["lower 48 states", "US"],
+  ["lower 48", "US"],
   ["north america", "NORTH_AMERICA"],
   ["the americas", "AMERICAS"],
   ["americas", "AMERICAS"],
@@ -261,4 +275,49 @@ export function parseGeographyList(text: string): string[] | null {
 export function residencyRequirementFor(codes: readonly string[]): ResidencyRequirement | null {
   if (!codes.length) return null;
   return codes.every(isUnitedStatesGeography) ? "US_REQUIRED" : "NON_US";
+}
+
+// Every geography a text names anywhere in it ("London, United Kingdom",
+// "range in US-California"). An ambiguous name (CA, Georgia, Washington)
+// marks the reading ambiguous; its codes are left out.
+export function scanGeography(text: string): { codes: string[]; ambiguous: boolean } {
+  const codes = new Set<string>();
+  let ambiguous = false;
+  for (let index = 0; index < text.length; index += 1) {
+    if (index > 0 && /[A-Za-z0-9]/.test(text[index - 1]!)) continue;
+    if (!/[A-Za-z]/.test(text[index]!)) continue;
+    const reading = readGeographyList(text.slice(index));
+    if (reading.ambiguous) ambiguous = true;
+    reading.codes.forEach((code) => codes.add(code));
+    if (reading.consumed > 0) index += reading.consumed - 1;
+  }
+  return { codes: [...codes], ambiguous };
+}
+
+// The geography a location field names. A location is read place by place
+// (parts separated by ";", "|" or "or"); within one place written as a
+// comma-separated hierarchy, a country named as its last or first part
+// ("Sunnyvale, CA, United States", "USA, CA, Pleasanton") settles what an
+// ambiguous region abbreviation in the same place means: it is a region of
+// that country, so the place reads as that country. Without such a country
+// ("Sunnyvale, CA", "US or CA") the ambiguity stands.
+export function readLocationGeography(location: string | null | undefined): { codes: string[]; ambiguous: boolean } {
+  const codes = new Set<string>();
+  let ambiguous = false;
+  const countryOf = (part: string | undefined) => {
+    const read = part ? parseGeographyList(part) : null;
+    return read && read.length === 1 && read[0]! in geographyCountryNames ? read[0]! : null;
+  };
+  for (const place of (location ?? "").split(/\s*(?:[;|\n]|\bor\b)\s*/i)) {
+    if (!place.trim()) continue;
+    const parts = place.split(",").map((part) => part.trim()).filter(Boolean);
+    const country = parts.length > 1 ? countryOf(parts.at(-1)) ?? countryOf(parts[0]) : null;
+    const reading = scanGeography(place);
+    reading.codes.forEach((code) => codes.add(code));
+    if (reading.ambiguous) {
+      if (country) codes.add(country);
+      else ambiguous = true;
+    }
+  }
+  return { codes: [...codes], ambiguous };
 }

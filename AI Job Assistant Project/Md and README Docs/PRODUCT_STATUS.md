@@ -31,7 +31,7 @@ Manual Opportunity
 → Lifecycle and application workflow
 ```
 
-Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, committed as `f10a02b`) back a failing source off, honour a source's request to wait, and show each source's health and freshness. Posting history (Feature 13, committed as `d1bf217`) records where and when each retrieved listing was seen, confirms removal only from sources that show their whole board, and shows a listing that returns as listed again. Browser-assisted retrieval of public, logged-out LinkedIn job pages (Feature 14A, accepted as `dd77d29`) is built and tested, but the LinkedIn source stays disabled because LinkedIn rate-limited its job pages in the local check; We Work Remotely now reads its all-jobs feed. The browser-extension companion (Feature 14B) is implemented and verified with automated tests and awaits Alex's review and local Chrome acceptance (not committed yet): it saves the job page you are viewing, when you ask, into the same application. The manual workflow is unchanged and remains the stable foundation.
+Automated discovery is implemented for the verified official API and feed sources (Feature 11A, committed as `fad2341`) and for the verified public/guest-endpoint and public-HTML sources (Feature 11B, committed as `2a1d8c2`). Sources added on `/sources` start disabled; once enabled, the retrieval worker collects listings whose title matches a Customer Success role family and feeds them, unevaluated, into the same normalization, deduplication and evaluation path. Source health and conservative retrieval (Feature 12, committed as `f10a02b`) back a failing source off, honour a source's request to wait, and show each source's health and freshness. Posting history (Feature 13, committed as `d1bf217`) records where and when each retrieved listing was seen, confirms removal only from sources that show their whole board, and shows a listing that returns as listed again. Browser-assisted retrieval of public, logged-out LinkedIn job pages (Feature 14A, accepted as `dd77d29`) is built and tested, but the LinkedIn source stays disabled because LinkedIn rate-limited its job pages in the local check; We Work Remotely now reads its all-jobs feed. The browser-extension companion (Feature 14B, committed as `e6bacc6`) saves the job page you are viewing, when you ask, into the same application. It stays open: its local acceptance found that facts stated only in a job's description stayed Unknown, and the approved shared-Core correction is implemented and verified (October 23, 2026) and awaits Alex's review (not committed). The manual workflow is unchanged and remains the stable foundation.
 
 ```text
 Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workable, Wellfound; LinkedIn once verified)
@@ -47,7 +47,7 @@ Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, W
 
 - the October 15 evaluator routing lock;
 - the October 10–13 evaluator semantic-contract repairs;
-- the Milestone 4 salary-policy alignment.
+- the Milestone 4 salary-policy alignment, with its October 25, 2026 compensation-basis correction (uncommitted on the evaluator worktree).
 
 Neither branch is merged into `main` yet; they are combined at the deliberate final integration pass.
 
@@ -102,13 +102,39 @@ Normalized/persisted facts now include, when explicitly supported by source data
 - original salary text;
 - work arrangement;
 - seniority;
-- department;
+- department (no longer a user-facing field since October 26, 2026);
 - employment type;
 - closing date;
 - residency requirement;
 - residency regions.
 
 Unknown stays Unknown. Raw text and provenance remain preserved. Salary amounts are stored as stated and are not FX-converted in persistence.
+
+**Job-text fallback (Feature 14B correction, October 23, 2026; awaiting review).**
+- **When the source states nothing:** when the source supplies no structured or stated value, these facts, and the company, location, posting date and time-zone requirement, are also read from explicit statements in the job description itself. Examples: "This is a full-time, NYC-Hybrid position.", "Salary: $100,000–$120,000", "Anticipated role close date: 11/30/2026", "Must overlap Eastern Time business hours."
+- **How:** one shared Core reader serves manual entry, automated retrieval and the browser extension alike. Facts a job source states in its own fields also reach it now: department, seniority or experience level, and Wellfound's compensation text. That covers Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Himalayas, LinkedIn and Wellfound.
+- **Changes on a saved job page:** if a labelled detail on the page changes, the next capture is recorded as a change; layout or navigation changes are not.
+- **Changed listings update the saved job (current-version projection, October 23, 2026; awaiting review).** When the listing a job was found from changes, the job shows the newest version's facts and description; a fact the newest version no longer states becomes Unknown.
+  - Every earlier version and its provenance are kept, as history.
+  - A copy of the job from another site never overwrites the facts.
+  - A manually entered job is never changed by retrieval.
+  - A value you corrected is kept until you change it.
+  - Nothing is evaluated automatically. An earlier evaluation is kept and is tied to the listing version it evaluated, and the job page says when the listing has changed since, so you can reevaluate if you choose.
+  - *(Before, a changed listing was kept as a linked version but the job's facts stayed as first seen.)*
+- **Precedence and provenance:** a value the user stated or corrected, or a source's structured value, always wins. Text-derived values are marked in provenance as read from the text.
+- **OTE:** OTE is never turned into base salary. *(Superseded October 25, 2026: a stated range keeps its numbers, marked as OTE or base salary when the posting says, in its original currency; the evaluator decides whether it counts as base salary.)*
+- **Work authorization (October 25, 2026; awaiting review):** explicit work-authorization, citizenship, sponsorship, relocation and employer-of-record statements are captured for every job, separate from where candidates must live. Under "Work eligibility" on the profile page you record where you may work; a requirement you already meet raises no warning, and jobs in other countries whose requirements or sponsorship need a look (or state nothing) are marked "Check work eligibility".
+- **Department and application link (October 25, 2026):** a stated team ("You'll join … Customer Success team") fills the department, and the application page is captured whenever the job shows one (an apply link, the page's own application form), with how it was found. *(October 26, 2026: Department is no longer shown, filtered on or entered; see below.)*
+- **Cross-source correction (October 26, 2026; awaiting review and the cross-source live retest).** This follows from the live acceptance captures of every supported source.
+  - **Remote roles:** a remote role's location is where the source says it may be done from ("Remote (United States)"), and that is its eligible geography. An optional office is never the role's location, and an ordinary job or office location never sets eligibility on its own. A posting's own fuller location statement ("Chicago Office or Remote, North America (US & Canada)") is kept over a narrower listing location it includes. Eligible states listed one per line are read, and "continental U.S." counts as the U.S.
+  - **Pay:** one pay range stays readable beside its own OTE or base-plus-variable detail. Pay stated in regional tiers or zones is kept as stated, with no single range and no tier applied everywhere.
+  - **Work arrangement:** several stated options are kept, in the posting's order ("Office or Remote" shows as "On-site / Remote"; "Remote or Hybrid" as "Remote / Hybrid"); the dashboard's arrangement filter finds the job under each option. Only ambiguous or conflicting statements stay Unknown.
+  - **Other facts:** a stated time-zone preference is kept as a preference. A stated seniority label is kept as written ("Mid-Senior level", "Junior and Mid level"). A posting's stated age ("2 weeks ago") is dated approximately and shown as such. A labelled requisition ID ("JR115971") is read.
+  - **Pages:** job-page details shown as separate items (salary, office days, seniority, employment type, posted age, "Visa Sponsorship: Not Available") are read. Lists of other jobs on the page (We Work Remotely's Related Jobs) are never part of the posting. A job's own application page outranks the posting page.
+  - **Product decisions:** the opportunity shows **Salary**: the normalized range, or Unknown when there is none (several regional tiers included); the stated compensation text stays in the data and its provenance, not as a separate Compensation row. **Department** is no longer shown, filtered on the dashboard or entered manually; the data stays only for compatibility, and the evaluator never used it.
+- **Bare "$":** read as US dollars only when the job is clearly in the U.S.; otherwise the currency stays Unknown. A location that names its country settles a state abbreviation that could mean two places ("Sunnyvale, CA, United States" is the U.S.; "Sunnyvale, CA" alone is not enough).
+
+*(Before this correction, these facts were read only from structured or stated fields and never from the job text, and a bare "$" was always read as US dollars.)*
 
 ### Customer Success evaluator
 
@@ -175,6 +201,23 @@ Milestone 4 now consumes the Task 7 salary/currency/residency contract at commit
 - Released to evaluator (on the Codex branch): salary minimum/maximum, currency, residency requirement, residency regions.
 - Still withheld pending later coordinated adoption: work arrangement, seniority, department, employment type, closing date.
 
+#### Compensation-basis correction (October 25, 2026, Codex; not merged)
+
+Codex completed the evaluator side of the Feature 14B compensation-basis contract on `codex/evaluator-live-diagnostic`, over `267124f`. It is uncommitted on the evaluator worktree and not merged; the list above is its earlier `267124f` state, preserved as written.
+
+Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Unknown for confirmed base-salary eligibility.
+
+- **Basis:** `compensationBasis` is exactly `BASE` | `OTE` | `null`. `BASE` and `null` (an ordinary stated range) are evaluated normally. `OTE` keeps its normalized bounds untouched, but salary eligibility is Unknown unless separate confirmed base-salary evidence exists; that Unknown still points to the OTE evidence.
+- **Thresholds:** unchanged (the bands above).
+- **Currency and FX:** the evaluator reads the currency Core normalized and does not repeat Core's bare-"$" geography rule. FX conversion stays evaluator-only, and nothing converted is written back.
+- **Residency and work authorization:** residency still selects the policy branch. Work-authorization facts, sponsorship, relocation, citizenship and `UserEligibility` are never evaluator input.
+- **Identifiers:** Hard Filters `cs-hard-filters-v3`; salary policy `cs-salary-policy-v3-ecb-2026-10-14`. Semantic prompts, provider models and routing are unchanged.
+- **Released to the evaluator there:** `compensationBasis`, in addition to the five fields above (`salaryText` is evaluator input on both branches). Until the native Core field exists on that branch, it reads the basis through a temporary compatibility boundary, which is replaced by the native Core field at integration. On `claude/gallant-pasteur-y1ou3i`, `compensationBasis` stays in `fieldsWithheldFromEvaluator` until then.
+- **Core side, resolved October 25, 2026 (Feature 14B v5):**
+  - OTE wording takes precedence over a "base" mention in the same statement: "$120,000 - $150,000 OTE (base + commission)" is `OTE`, not ordinary salary.
+  - A source-stated range is also `OTE` when the job description states that same range as OTE.
+  - See the integration contract in `HANDOFFS.md`.
+
 ### Evaluator semantic-contract repairs (evaluator branch, not merged)
 
 Between October 10 and 13, 2026, the evaluator branch repaired several semantic contracts.
@@ -195,7 +238,7 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
-Feature 14 has two parts and is not complete yet. **Feature 14B, the browser-extension companion, is implemented and verified (October 20, 2026)** and awaits Alex's review and local acceptance; it is not committed. **Feature 14A, browser-assisted retrieval and source corrections, is complete**: committed as `dd77d29` and accepted on October 20, 2026 (Feature 13: `d1bf217`). Features 15–18 follow 14B. Feature 14A:
+Feature 14 has two parts and is not complete yet. **Feature 14B, the browser-extension companion, is committed as `e6bacc6` (October 20, 2026) and stays open.** Alex's local acceptance passed for the local fixture, LinkedIn (Incognito, logged out), Welcome to the Jungle and revocation. On Greenhouse, Lever and an employer careers page, it showed that the shared normalizers left facts stated only in the job description Unknown (company, location, salary, closing date, work arrangement). The approved correction is implemented and verified (October 23, 2026) and awaits Alex's review, then a minimal retest; it is not committed. It is a shared Core job-text fallback with a safer bare-"$" rule, and no extension- or site-specific parsing. **Feature 14A, browser-assisted retrieval and source corrections, is complete**: committed as `dd77d29` and accepted on October 20, 2026 (Feature 13: `d1bf217`). Features 15–18 follow 14B. Feature 14A:
 
 - **LinkedIn (public, logged-out pages only):** a new source that reads LinkedIn's public job search and public job pages in a headless browser started fresh for each run, with no account, cookies, profile or stored state. It never signs in, applies, saves, follows or messages, and only opens and reads pages, one at a time and at least 5 seconds apart. Any refusal (HTTP 403, 429 or 999), sign-in wall, authwall, checkpoint, CAPTCHA or challenge ends the run, and the source waits through Feature 12's backoff; nothing is retried or worked around.
 - **Discovery and details separately:** each run reads up to 4 search pages (at most 100 results; both adjustable within hard caps of 8 and 200) and keeps the Customer Success titles. It then opens at most 20 job pages (hard cap 25). Matches whose page has not been read yet are remembered and read first in later runs, oldest first, even after they leave the search; stored jobs are re-read only when last checked over a week ago. LinkedIn never confirms that a listing is gone.
@@ -204,10 +247,12 @@ Feature 14 has two parts and is not complete yet. **Feature 14B, the browser-ext
 - **Wellfound** requests are now at least 12 seconds apart (was 2), still one at a time from the page's embedded data.
 - **Audited and unchanged:** Greenhouse, Lever, Ashby, SmartRecruiters, Himalayas, Remote OK, Working Nomads (its public `exposed_jobs` feed, not the site's internal search), Workday (tenant JSON) and Workable (anonymous JSON). Adzuna stays disabled until verified.
 - **Welcome to the Jungle / Otta:** now treated as a public-webpage source (it has no public jobs API) rather than ruled out by its terms, but still not enabled, because no tested public page shows usable job records. Its public search page shows no listings. From the Claude cloud environment a browser load was refused (HTTP 403), but a local browser check loaded its public company jobs page without any block; that page needs JavaScript and, once rendered, showed a job count but "We didn’t find any jobs for your search", with no job details.
-- **Feature 14B, the browser-extension companion (implemented, awaiting review and local acceptance):** a Chrome extension (`apps/extension`; `pnpm extension:build`, then load `apps/extension/dist` unpacked) that saves the job page you are viewing into your local AI Job Assistant, only when you ask it to.
+- **Feature 14B, the browser-extension companion (committed `e6bacc6`; normalization correction awaiting review):** a Chrome extension (`apps/extension`; `pnpm extension:build`, then load `apps/extension/dist` unpacked) that saves the job page you are viewing into your local AI Job Assistant, only when you ask it to.
   - **Before saving:** you see an editable preview and can correct the title, company, location or description; nothing is sent until you press Save.
   - **What it reads:** that one page's job posting: its structured job data; on LinkedIn, only the job-detail areas of a job page; the text you selected; or, except on LinkedIn, the page's main content. It never reads other tabs, history, cookies, or account, profile, messaging or feed content.
   - **Where saved jobs go:** into the same normalization, deduplication, provenance and lifecycle as every other source, shown as "Found via <site> (browser extension)". An unrecognised site is kept as the lowest-priority source and never replaces an employer or ATS link.
+  - **Normalization:** Core's shared normalization fills facts the page states only in its text (company, location, pay, work arrangement and so on), including labelled job details shown beside a structured description ("Remote Type: Hybrid"). The extension sends the page's title, and the job's own page content without navigation, footers or other jobs, as neutral context and interprets nothing itself. A field you corrected in the preview is recorded as user-corrected.
+  - **Duplicates:** the same job saved from another site is added to the existing opportunity only when they share a listing URL, or a listing or requisition ID at the same company. Otherwise a sufficiently similar copy is flagged as a possible duplicate, and other copies stay separate. Similar text alone never merges anything.
   - **Evaluation:** saving never evaluates. **Request evaluation** uses the existing evaluation path (budget, duplicate-spend protection, queue), and the popup shows the persisted state and recommendation, read-only.
   - **Pairing:** a browser is paired on the new **Extension** page with a credential shown once, stored only as a hash, and revocable.
   - **LinkedIn:** capture complements 14A; it does not change 14A's disabled LinkedIn adapter.
@@ -264,7 +309,7 @@ Feature 11A is implemented and verified on the isolated test database and awaiti
 - **`/sources`:** add, configure, enable or disable a source, Run now, view run history, remove (archived when it has history) or restore. Sources start disabled and run every 12 hours once enabled.
 - **Discovery:** only listings whose title contains a Customer Success core or adjacent role-family term are kept. The complete description and raw source data are preserved.
 - **Deduplication across sources:** exact duplicates are attached (engine `core-dedup-v2`, with source-scoped listing IDs) and possible duplicates are flagged. An employer-ATS application link replaces an aggregator's, and a link you entered is never replaced.
-- **Re-retrieval:** an unchanged listing only updates last-seen times. A changed listing is kept as a linked new version, shown as "Listing changed since first seen", while the original description stays.
+- **Re-retrieval:** an unchanged listing only updates last-seen times. A changed listing is kept as a linked new version, shown as "Listing changed since first seen", while the original description stays. *(Superseded October 23, 2026: a changed version of the originating listing now becomes the job's current facts and description, with every version kept; see "Job-text fallback" above.)*
 - **No automatic evaluation:** retrieved jobs arrive unevaluated, and evaluation stays your choice within the budget.
 - **Safety:** an identifying User-Agent, a 20 s timeout, a 10 MB response ceiling, at least 1 s between requests to a host, a stop on 429 or 403, and one retrieval worker at a time.
 
@@ -309,7 +354,7 @@ Task 8 and Task 9 are complete. In order:
 5. Done: Feature 12 (`f10a02b`, October 18, 2026), with Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10 and Customer Success TDD v1.8. *(Earlier step: "Now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting review.")*
 6. Done: Feature 13 (`d1bf217`, October 19, 2026), with Core AI Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11 and Customer Success TDD v1.9. *(Earlier step: "Now: Feature 13, posting history and listing removal, implemented and verified, awaiting review.")*
 7. Done: Feature 14A (`dd77d29`, accepted October 20, 2026), browser-assisted LinkedIn retrieval and source corrections, with Core AI Framework PRD v1.11, Customer Success PRD v1.10, Core Platform TDD v1.12 and Customer Success TDD v1.10; LinkedIn stays unverified and disabled. *(Earlier step: "Now: Feature 14, … implemented and verified, awaiting review.")* *(Corrected October 20, 2026: this step previously also called the browser extension deferred and optional, following an October 19 implementation instruction; see the correction note under "Main-product tasks".)*
-8. Now: Feature 14B, the browser-extension companion, implemented and verified (October 20, 2026), awaiting Alex's review and local Chrome acceptance on a dedicated acceptance database; then its commit and documentation closeout. Feature 14 is not complete until it is accepted. *(Earlier step: "Now: Feature 14B … (not started)", superseded October 20, 2026.)*
+8. Now: Feature 14B, the browser-extension companion (committed `e6bacc6`). Its local acceptance led to the shared-Core job-text fallback correction, implemented and verified October 23, 2026 with Core Platform TDD v1.15 and Core AI Framework PRD v1.14, and awaiting Alex's review. Then come the minimal human retest, acceptance and the commit. Feature 14 is not complete until 14B is accepted, and Feature 15 has not started. *(Earlier steps: "Now: Feature 14B … (not started)", superseded October 20, 2026; "Now: Feature 14B …, implemented and verified (October 20, 2026), awaiting Alex's review and local Chrome acceptance …", superseded October 23, 2026.)*
 9. Then, after 14B is accepted, build the rest of main-product features 15–18:
    - source intelligence;
    - job-market analytics;
@@ -336,8 +381,8 @@ The retrieval layer should feed the existing evaluator rather than redesign it.
 
 These happen only at the final evaluator/product integration, after features 1–18 are complete:
 
-- merging the evaluator branch: routing lock, October 10–13 contract repairs, Milestone 4 alignment;
-- removing the five released Task 7 fields from `fieldsWithheldFromEvaluator`;
+- merging the evaluator branch: routing lock, October 10–13 contract repairs, Milestone 4 alignment and its October 25 compensation-basis correction;
+- removing the five released Task 7 fields, plus `compensationBasis`, from `fieldsWithheldFromEvaluator`, and replacing the evaluator's temporary compensation-basis compatibility read with the native Core field;
 - the open Codex reviews listed in `HANDOFFS.md`;
 - the `Recommendation.evidenceReferences` drift decision;
 - full DB-backed, E2E and live acceptance of the integrated evaluator;

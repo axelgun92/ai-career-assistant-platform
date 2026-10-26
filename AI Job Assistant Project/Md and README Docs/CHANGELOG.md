@@ -8,9 +8,116 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 ## Unreleased
 
-Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026.
+Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026.
 
-### Feature 14B — browser-extension companion (October 20, 2026; implemented and verified, awaiting review and local acceptance; not committed)
+### Feature 14B cross-source correction (October 26, 2026; implemented and verified, awaiting review and the cross-source live retest; not committed)
+
+**Why.** Live acceptance captures across every supported source showed defects on every source except Greenhouse. The failures sat in collection, transport and shared normalization, and were corrected as one contract.
+
+- **Shared normalization:**
+  - Remote-hiring geography (`sourceFacts.remoteLocations`) becomes the role's location ("Remote (United States)") and eligible geography; an office is never a remote role's location.
+  - A posting's statement that the remote role is based somewhere counts as eligibility, below explicit statements; an ordinary job or office location never does. A posting's fuller labelled location replaces a narrower one it contains.
+  - One pay range agrees with its own OTE or breakdown detail. Regional tiers or zones, each labelled with its place, have no single range, even over a source field, and are kept with their labels.
+  - Time-zone preferences are kept, and a Pacific-to-Eastern span is geography. Source-stated posting ages are dated at day precision and marked.
+  - Stated seniority labels are kept (`Opportunity.seniorityLabel`) and several stated work arrangements are kept as options (`Opportunity.workArrangements`), in one additive migration. Labelled requisition IDs are read.
+  - "Office or Remote" keeps both options (On-site / Remote), and one to four office days a week reads as hybrid. Compound employment labels and eligible-state lists are read, and "continental U.S." is U.S. geography.
+- **Extension collection:**
+  - JobPosting microdata, and structured data without a description;
+  - the job's own container, never another job's `<article>`, with other-jobs lists excluded;
+  - page context one item per line with every description;
+  - the application page ranked above `directApply`;
+  - the LinkedIn criteria list and posted age;
+  - two optional envelope fields, `remoteLocations` and `seniority`.
+- **Adapters:** Wellfound and Himalayas map their remote geography into the shared fact. Adapter content hashes are unchanged.
+- **Product:** Salary (the normalized range, or Unknown) replaces the separate Compensation row; the arrangement filter matches each offered option. An approximate posting date is withheld from the evaluator subject. Department is removed from the opportunity, the dashboard filter and manual entry.
+- **Unchanged:** deduplication logic, and the evaluator's stages, prompts, models and routing (`seniorityLabel` is withheld from the evaluator).
+
+### Feature 14B correction — shared-normalization convergence (October 25, 2026; implemented and verified, awaiting review; not committed)
+
+**Why.** The Greenhouse Healthie acceptance capture left stated facts Unknown: an OTE salary range, the department, work authorization and the application URL.
+
+**Changed (domain-neutral, every ingestion path):**
+- **Compensation.** A stated range keeps its numbers whatever its basis, with a new `compensationBasis` (BASE / OTE), in the original currency; no conversion is stored. OTE is no longer a reason for Unknown bounds; the evaluator decides what qualifies as base salary. *(Supersedes "OTE is never stored as base salary; bounds Unknown".)* OTE wording takes precedence over a mention of base in the same statement, and a source-stated range (structured amounts or a salary field) is OTE when the job description states that same range as OTE (v5).
+- **Work authorization.** A new normalized fact for every job and country, separate from residency: the requirement and its countries, sponsorship, relocation, and employer-of-record countries. A separate relevance layer (`workAuthorizationRelevance`, with the user's `UserEligibility`, set on the profile page) decides what to surface: a requirement the user meets raises no warning, non-U.S. issues are shown for review, and an unstated non-U.S. job is flagged "worth checking".
+- **Department.** An explicit team statement counts ("join Healthie's Customer Success team"), without inference.
+- **Application URL.**
+  - It is captured with its basis on every path. The extension detects an on-page application form, JSON-LD `directApply` and explicit Apply links.
+  - Adapters declare their basis.
+  - A job board's own listing page is no longer stored as an application URL; the hash is unchanged.
+  - A changed originating listing updates the link only when it owned it.
+- **Closing date.** JSON-LD `validThrough` and Greenhouse `application_deadline`.
+- **UI.** Salary basis, a Work authorization row, Location eligibility only when stated, an application-URL basis note, and an eligibility note and "Check work eligibility" badge.
+- **Migration.** `20261025090000_work_authorization_and_compensation_basis` is additive. It was applied only to the isolated test database, with no backfill.
+
+**Adapter regression check (same day):**
+- Every implemented adapter's fixture was followed through normalization and persistence, with a content-hash snapshot: 36 listings, none changed.
+- Fixed: Remote OK and Himalayas listing pages repeated in their apply fields are no longer stored as application URLs.
+- Fixed: LinkedIn's "$90,000.00/yr - $110,000.00/yr" ranges keep their numbers.
+- Fixed (shared geography): an explicit country in a full location settles an ambiguous region abbreviation for bare-"$" currency. "Sunnyvale, CA, United States" → USD, derived; "Sunnyvale, CA" and "Toronto, ON, Canada" unchanged; explicit currencies always win.
+- Totals after the check: unit 62 files, 1,587 tests; integration 35 files, 306 tests.
+
+**Unchanged:** deduplication logic; the evaluator's prompts, models and routing; the new fields are withheld from evaluator input.
+
+**Verified:** typecheck, lint, unit (61 files, 1,554), integration (34 files, 293), the full E2E chain: 44/44 (5.2 min), including the extension project, both builds, `db:verify-migrations`, `git diff --check`.
+
+### Feature 14B correction — current-version projection of changed listings (October 23, 2026; implemented and verified, awaiting review; not committed)
+
+**Why.** The Feature 14 closeout found stale current facts: a CHANGED re-observation (Hybrid → Remote) was recorded, but the opportunity still showed Hybrid. Task 7 had anticipated re-normalizing changed listings and left it incomplete; Feature 11A then deliberately left the opportunity unchanged (Core TDD v1.8–v1.14). Alex approved correcting the contract in Core TDD v1.15 §51.
+
+**Changed:**
+- **Re-projection.** A CHANGED observation of the opportunity's originating listing (its first source record's source and listing ID) is re-normalized and becomes the opportunity's current facts, including the description. A fact the new version no longer supports becomes Unknown. Every version stays stored.
+- **Who may write facts.** Attached copies from other sources and manual opportunities are never re-projected; link precedence is unchanged. Values with `userCorrected:*` provenance stay unless the capture is the user's own edit of them.
+- **Superseded provenance.** New `FieldProvenance.supersededAt`. Replaced rows are marked, never deleted or rewritten. Current views show only non-superseded rows, and the opportunity page lists "Earlier provenance".
+- **Evaluated source version.** New `Evaluation.sourceRecordId`, bound when the user requests the evaluation.
+  - `loadSubject({ evaluationId })` reconstructs that version as it stood, and Customer Success stages read the bound record (`evaluatedSource`) instead of `rawSources[0]`.
+  - Semantic attempts record the bound record.
+  - No automatic evaluation, and no new lifecycle status.
+- **UI.** A version hint when the latest evaluation used an earlier listing version. The "Listing changed since first seen" notice and the dashboard badge tooltip are reworded: current facts show the latest version, earlier versions are kept, an evaluation may describe an earlier version, and reevaluating is optional.
+- **Migration.** `20261023090000_superseded_provenance_and_evaluated_source` is additive, nullable and carries rollback comments. It was applied only to the isolated test database, with no backfill.
+
+**Unchanged:** deduplication; content hashing and change detection; the evaluator's stages, models, prompts, routing, schemas and recommendation logic; `fieldsWithheldFromEvaluator`.
+
+**Verified:** typecheck, lint, unit (59 files, 1,519), integration (33 files, 288; new `listing-version-projection` suite of 12 covering the 26 approved cases), the full E2E chain: 44/44 (5.8 min), including the extension project, both builds, `db:verify-migrations`, `git diff --check`.
+
+### Feature 14B correction — shared Core job-text fallback (October 23, 2026; implemented and verified, awaiting review; not committed)
+
+**Why.** Alex's local acceptance of Feature 14B showed that the shared normalizers left already-supported facts Unknown when a page stated them only in its job description. That happened on a Greenhouse, a Lever and an employer careers page. This restores the Core requirement in shared Core. It is not an extension, adapter or site patch.
+
+**Changed:**
+- **New shared reader.** `readJobTextFacts` in `packages/normalization` is used by both the manual and retrieved normalizers, and so by every ingestion path. It fills only facts the source left missing, from explicit labelled lines and bounded job-specific statements. The facts are company, location, work arrangement, employment type, salary text with base amounts, posting and closing dates, time-zone requirement, and labelled seniority and department.
+- **Precedence:**
+  1. user-stated or corrected;
+  2. structured;
+  3. dedicated field;
+  4. page title (company only);
+  5. job text;
+  6. Unknown.
+
+  A fallback never overwrites, and conflicting statements stay Unknown.
+- **Provenance.** Text-derived facts are DETERMINISTIC with `rawText:*` markers; a company from the page title is marked `pageContext:page-title-company`. Fields corrected in the extension preview are DIRECT with `userCorrected:<field>`.
+- **Compensation.** A statement needs a compensation cue, and business metrics and perks are excluded. OTE is never stored as base salary; "plus commission" keeps the base range. The whole statement is kept as salary text. *(Superseded October 25, 2026: OTE bounds are kept, with basis OTE.)*
+- **Currency, product-wide.** A bare "$" is USD only with clear U.S. evidence (location, residency regions or the statement itself). Otherwise it is Unknown, and CAD or AUD are never inferred from a place. *(October 25, 2026: an explicit country in a full location settles an ambiguous region abbreviation, so "Sunnyvale, CA, United States" is U.S. evidence while "Sunnyvale, CA" stays ambiguous.)* *(Previously a bare "$" was always USD, a product decision of October 14, 2026, now superseded by Alex's October 23 decision.)*
+- **Time zone.** `timeZoneRequirements` is an existing normalized fact, so an explicit requirement in the job text is now read. It is never read from a place.
+- **Browser extension.** The extension sends the tab's title as neutral `pageTitle` context, never on LinkedIn, and the envelope change is additive. The server keeps `sourceMetadata.pageTitle` and `sourceMetadata.userCorrectedFields`.
+- **Bounded job-page context.** With a structured-data or selection capture, the extension also sends `pageText`: the job's main content or heading container, without navigation, header, footer, side panels, forms or recommendation, related-job, sharing and cookie widgets. It is capped and never sent on LinkedIn. Shared normalization reads it only through labelled values ("Remote Type: Hybrid", "Location: …"), with `pageContext:*` markers, below structured values; disagreement leaves the fact Unknown.
+- **Source facts, product-wide.** A department, seniority or experience level, or a compensation text that a retrieval source states in its own fields, was collected but never normalized (Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Himalayas, LinkedIn, Wellfound). It now reaches the shared normalizer through a neutral `sourceFacts` record, with no content-hash change. Wellfound's compensation text yields amounts only when it states an annual period.
+- **Page-context change detection.** The canonical labelled page-context evidence, not the page text, takes part in a capture's content hash. Noise is no change; a changed labelled fact is a CHANGED re-observation.
+- **Page-title company.** A part naming a place, arrangement, employment type or department is never the employer, and a dash-separated name must appear in the posting.
+
+**Unchanged:**
+- deduplication (engine, thresholds and rules; re-run with the corrected inputs and behaving as specified);
+- the unknown-host site-ID rule and link precedence;
+- the evaluator, `loadSubject()` and the withheld fields.
+
+There is no schema change and no backfill.
+
+**Tests.** New unit `job-text-fallback` (42) and integration `job-text-fallback` (6) suites. Tests encoding the superseded bare-"$" and "time zone never from text" rules were updated deliberately.
+
+**Specifications.** Core Platform TDD v1.15 and Core AI Framework PRD v1.14. The Customer Success PRD and TDD are unchanged.
+
+### Feature 14B — browser-extension companion (October 20, 2026; committed `e6bacc6`; still open after the local acceptance described above)
+
+*(Heading updated on October 23, 2026; it read "implemented and verified, awaiting review and local acceptance; not committed". The entry below is as written.)*
 
 Built to the approved Feature 14B plan (decisions D1–D4 and O1–O4) and the Feature 14B implementation prompt (decisions D1–D8).
 

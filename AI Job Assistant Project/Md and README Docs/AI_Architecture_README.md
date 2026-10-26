@@ -90,15 +90,39 @@ The normalized Opportunity contract now supports factual fields including:
 - currency;
 - original salary text;
 - location and work arrangement;
-- employment type, seniority, department, and closing date;
+- employment type, seniority (and its stated label), department (inert since October 26, 2026: not a user-facing field), and closing date;
 - `residencyRequirement` (`US_REQUIRED`, `NON_US`, or Unknown);
 - `residencyRegions` using supported country/subdivision/region codes.
 
 Normalization never persists FX-converted salary amounts and never derives residency from currency, company headquarters, citizenship, work authorization, time zone, or ordinary city text. Missing or ambiguous information remains Unknown. Field provenance remains attached to normalized facts.
 
+**Job-text fallback (Core Platform TDD v1.15 §51).** Structured and user-stated values come first. When a source supplies none for an already-supported fact, Core's shared normalization (`readJobTextFacts` in `packages/normalization`) reads it from explicit statements in the posting's own text. That reader is one and the same for manual entry, every retrieval adapter and the browser extension, and adapters and the extension never parse these facts themselves. A page-based collector may add bounded neutral page context (the browser extension's `pageTitle`, and `pageText`: the job's own page content beside a structured description). Page context is read only through labelled values, with `pageContext:*` markers.
+- **What it reads:** labelled lines and bounded job-specific constructions only.
+- **Conflicts:** conflicting statements stay Unknown.
+- **Provenance:** values are DETERMINISTIC with `rawText:*` markers, or `pageContext:page-title-company` for a company read from the page title.
+- **Never:** it never overwrites a value and never infers a time zone from a place. A stated compensation range keeps its numbers whatever its basis, with `compensationBasis` (BASE / OTE; OTE wording takes precedence over a mention of base, and the description's statement of the same range as OTE also counts), in its original currency; whether an OTE range counts as base salary is evaluator policy (October 25, 2026; it previously never flattened OTE into base salary by leaving the bounds Unknown). Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Unknown for confirmed base-salary eligibility.
+- **Bare "$":** USD only with clear U.S. evidence; otherwise the currency stays Unknown. An explicit country in a full location settles an ambiguous region abbreviation ("Sunnyvale, CA, United States"; `readLocationGeography`).
+
+**Cross-source correction (October 26, 2026; Core Platform TDD v1.15 §51).** One contract across every source; a source-specific reader only maps what a site exposes into these generic facts.
+- **Remote-hiring geography:** `sourceFacts.remoteLocations` comes from JobPosting `applicantLocationRequirements` (extension), Wellfound's accepted remote locations and Himalayas' location restrictions. It makes a remote role's location "Remote (<places>)" and its eligible geography. An office in a remote posting's data is never the location.
+- **Weaker readings:** a posting's statement that the remote role is based somewhere ("U.S.-based … remote role") reads as eligibility (`rawText:explicit-remote-base-statement`), and any explicit eligibility statement replaces it; an ordinary job or office location never sets eligibility. A posting's labelled location that contains the source's location and states more is the fuller statement of the same fact. One that names another place never replaces the source.
+- **Compensation:** one range with its own OTE or breakdown detail is that range. Regional tiers, each labelled with its place or zone, have no single range, even over a source field; they are kept as the salary text with their labels, with their shared currency if they have one. The Salary field shows Unknown for them.
+- **Other facts:** time-zone preferences are kept, and a Pacific-to-Eastern span is geography. A source's stated posting age is dated at day precision and marked. The stated seniority label is kept in `seniorityLabel`, withheld from the evaluator. A labelled requisition ID is read. Several stated arrangements ("Office or Remote", "Remote or Hybrid") are kept in `workArrangements`, in order, with `remoteStatus` null; one to four office days a week is hybrid. An approximate posting date is withheld from the evaluator subject.
+- **Page context:** the extension sends it one visible item per line with every non-LinkedIn description. Core reads labelled values and whole metadata items (a salary, an employment type, an arrangement or cadence, a seniority label, a country list, a posting age) from it.
+- **Extension collection:** JobPosting microdata, structured data without a description, the job's own container (never another job's `<article>`), other-jobs lists excluded, application page above `directApply`, and the LinkedIn criteria list and posted age.
+- **Unchanged:** adapter content hashes, deduplication logic and the evaluator.
+
+Work authorization is a normalized fact (October 25, 2026): the stated requirement and its countries, sponsorship, relocation and employer-of-record countries, for any country, never read as residency. What it means for the user is decided by a separate relevance layer (`workAuthorizationRelevance` in `packages/core/src/eligibility.ts`, with the user's `UserEligibility`), never by normalization and never as evaluator input. The application URL carries its basis in provenance on every path (`applicationUrlProvenance`), and the posting page counts as the application page only on explicit evidence.
+
 Customer Success salary thresholds, affordability policy, and recommendation consequences remain inside `domains/customer-success`; they are not Core rules. With Customer Success Milestone 4 (`267124f` on `codex/evaluator-live-diagnostic`), the evaluator consumes salary minimum/maximum, currency, residency requirement, and residency regions. Work arrangement, seniority, department, employment type, and closing date remain withheld from the evaluator until separately adopted through a coordinated contract change.
 
 **Branch state:** that release is not yet merged. On `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` in `loadSubject()` still withholds all ten Task 7 fields; the five released fields are removed from that list (and its tests updated) at final branch combination.
+
+**Compensation basis (October 25, 2026; Codex, uncommitted on `codex/evaluator-live-diagnostic`, not merged):** the evaluator side of the Feature 14B contract is complete there, as Hard Filters `cs-hard-filters-v3` and salary policy `cs-salary-policy-v3-ecb-2026-10-14`, with thresholds, prompts, models and routing unchanged.
+- **Basis:** it consumes `compensationBasis` (exactly `BASE` | `OTE` | `null`). `BASE` and `null` are evaluated normally; `OTE` keeps its normalized bounds but makes salary eligibility Unknown unless separate base-salary evidence exists.
+- **Currency:** it reads the currency Core normalized, keeps FX conversion internal and does not repeat Core's bare-"$" rule.
+- **Residency:** residency selects the policy branch. Work-authorization facts and `UserEligibility` never reach it.
+- **Integration:** it reads the basis through a temporary compatibility boundary, replaced by the native Core field at integration, when `compensationBasis` also leaves `fieldsWithheldFromEvaluator` here. Core's side is settled (Feature 14B v5): OTE wording takes precedence over a "base" mention in the same statement, and a source-stated range is `OTE` when the description states that same range as OTE (`onTargetStatementFor`), so an OTE range never reaches the evaluator as `null`.
 
 ## Current Evaluator Architecture
 
@@ -149,12 +173,12 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 - Customer Success nine-stage evaluator plus deterministic Final Recommendation;
 - Resume Match Optimization #2 and JD Reconstruction State2 accepted;
 - final routing policy locked (GPT-6 Luna routes on `codex/evaluator-live-diagnostic`; not yet merged);
-- Customer Success Milestone 4 aligned to Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged);
+- Customer Success Milestone 4 aligned to Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged), with the October 25 compensation-basis correction (`cs-hard-filters-v3`, `cs-salary-policy-v3-ecb-2026-10-14`) completed uncommitted on that branch's worktree;
 - evaluator semantic-contract repairs of October 10–13 (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) on `codex/evaluator-live-diagnostic` (not yet merged; the main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`).
 
 ### In progress
 
-- Feature 14B, the browser-extension companion, is implemented and verified (October 20, 2026) and awaits review and local acceptance; it is not committed (Feature 14 is not complete until it is accepted). It is a source-collection boundary only: captures enter retrieval ingestion with `BROWSER_EXTENSION` provenance, and evaluation is only ever the user's explicit request through the existing path.
+- Feature 14B, the browser-extension companion, is committed (`e6bacc6`, October 20, 2026) and stays open (Feature 14 is not complete until it is accepted). Its local acceptance led to the approved shared-Core job-text fallback correction, implemented and verified October 23, 2026, awaiting review and not committed. It is a source-collection boundary only: captures enter retrieval ingestion with `BROWSER_EXTENSION` provenance, and evaluation is only ever the user's explicit request through the existing path.
 - Feature 14A is complete (`dd77d29`, accepted October 20, 2026; LinkedIn stays unverified and disabled after its local adapter check met HTTP 429 on a job page): a reusable browser-assisted runner (a fresh logged-out Playwright/Chromium context per run, navigation only, sequential at least 5 seconds apart, page budgets, timeouts and a page-size limit, a stop with no further request on any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie, handed to Feature 12 backoff); the LinkedIn adapter for public, logged-out job search and job pages, with separate discovery and detail budgets and a pending queue of discovered matches kept in the `RetrievedListing` ledger (unverified: the Claude cloud check met HTTP 429 and an anti-bot interstitial and stopped as designed; a local logged-out browser check loaded normal public results, and the exact adapter's local check discovered 60 public jobs, then the first job page answered HTTP 429, so the source stays unverified and disabled); We Work Remotely on its all-jobs RSS feed; Wellfound at 12 seconds between requests; Welcome to the Jungle / Otta is reclassified as public logged-out webpage retrieval (no public jobs API) and stays an unverified candidate: its tested public surfaces expose no usable job records (the search page has no listings; the company jobs page, reachable logged out from a local browser though the Claude cloud browser got a CloudFront 403, renders only a job count and "no jobs found"). No migration. The browser-extension companion is Feature 14B, not part of 14A.
 - Feature 13 is complete (`d1bf217`, October 19, 2026): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
 - Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
@@ -165,7 +189,7 @@ The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on 
 
 ### Main-product work still required before final acceptance
 
-- feature 14B — browser extension companion (implemented, awaiting review and local acceptance; Feature 14 is not complete until it is accepted);
+- feature 14B — browser extension companion (committed `e6bacc6`; its shared-Core normalization correction awaits review; Feature 14 is not complete until it is accepted);
 - source intelligence;
 - job-market analytics;
 - personal job-search analytics;

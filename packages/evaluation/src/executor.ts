@@ -91,6 +91,7 @@ function buildContext<TDomainData>(input: {
     ruleVersion: input.snapshot.ruleVersion,
     promptVersion: input.snapshot.promptVersion,
     opportunity: input.subject.opportunity,
+    subjectSourceRecordId: input.subject.subjectSourceRecordId ?? null,
     rawSources: input.subject.rawSources,
     provenance: input.subject.provenance,
     userProfile: input.subject.userProfile,
@@ -279,6 +280,7 @@ export function createEvaluationExecutor(repository: EvaluationRepository) {
     const subject = await repository.loadSubject({
       opportunityId: snapshot.opportunityId,
       userProfileId: snapshot.userProfileId,
+      evaluationId: snapshot.id,
     });
     if (!subject) throw new Error("Evaluation subject no longer exists");
     if (!isNormalizedLifecycleState(subject.opportunity.status)) {
@@ -371,6 +373,7 @@ export function createEvaluationExecutor(repository: EvaluationRepository) {
       const subject = await repository.loadSubject({
         opportunityId: snapshot.opportunityId,
         userProfileId: snapshot.userProfileId,
+        evaluationId: snapshot.id,
       });
       if (!subject) throw new Error("Evaluation subject no longer exists");
       await repository.markEvaluationRunning(snapshot.id);

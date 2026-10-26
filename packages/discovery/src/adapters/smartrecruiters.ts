@@ -193,6 +193,12 @@ export const smartRecruitersAdapter: SourceAdapter<SmartRecruitersConfig> = {
         sourceUrl: detail.postingUrl ?? null,
         applicationUrl: detail.applyUrl ?? detail.postingUrl ?? null,
         structured: { workplaceType: workplace(detail) },
+        sourceFacts: {
+          department: detail.department?.label?.trim() || null,
+          seniority: detail.experienceLevel?.label?.trim() ? [detail.experienceLevel.label.trim()] : [],
+          // A stated apply address; else the ATS posting page, which hosts the application.
+          applicationUrlBasis: detail.applyUrl ? "SOURCE_APPLY_URL" : detail.postingUrl ? "SOURCE_POSTING_PAGE" : null,
+        },
         material: {
           experienceLevel: detail.experienceLevel?.label ?? null,
           function: detail.function?.label ?? null,

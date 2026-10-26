@@ -130,6 +130,11 @@ export const ashbyAdapter: SourceAdapter<AshbyConfig> = {
           postingDate: isoDate(job.publishedAt),
           sourceUrl: job.jobUrl ?? null,
           applicationUrl: job.applyUrl ?? job.jobUrl ?? null,
+          sourceFacts: {
+            department: job.department?.trim() || job.team?.trim() || null,
+            // A stated apply address; else the ATS posting page, which hosts the application.
+            applicationUrlBasis: job.applyUrl ? "SOURCE_APPLY_URL" : job.jobUrl ? "SOURCE_POSTING_PAGE" : null,
+          },
           structured: { ...ashbyStructuredSalary(job), workplaceType: workplaceType(job.workplaceType) },
           material: {
             department: job.department ?? null,

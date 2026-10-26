@@ -4,8 +4,10 @@ import { createManualOpportunityService } from "@ai-career/core";
 import { getDatabaseClient, PrismaEvaluationRepository, PrismaManualOpportunityRepository } from "@ai-career/database";
 import { createManualOpportunityNormalizer } from "@ai-career/normalization";
 
-// G5: the time-zone requirement is recorded only as the user states it, and
-// the evaluator's input stays exactly as before (it reads the job text).
+// G5 and the job-text fallback: a stated time-zone requirement wins; when
+// none is stated, only an explicit requirement in the job text is recorded
+// (DETERMINISTIC, with its marker), never one inferred from a place. The
+// evaluator's input stays exactly as before (it reads the job text).
 
 const database = getDatabaseClient();
 const service = createManualOpportunityService({
@@ -43,11 +45,21 @@ describe("stated time-zone requirements", () => {
     expect(subject!.provenance.map((row) => row.fieldName)).not.toContain("timeZoneRequirements");
   });
 
-  it("never reads it from the job text", async () => {
+  it("falls back to an explicit requirement in the job text, and never infers one from a place", async () => {
     const token = randomUUID().slice(0, 8);
     const detail = await service.submit({ rawText: `Role ${token}. Must overlap with EST and PST hours.`, company: `Zoneco ${token}` });
     ids.push(detail.opportunity.id);
-    expect(detail.opportunity.timeZoneRequirements).toBeNull();
-    expect(detail.fieldProvenance.map((row) => row.fieldName)).not.toContain("timeZoneRequirements");
+    expect(detail.opportunity.timeZoneRequirements).toBe("Must overlap with EST and PST hours.");
+    expect(detail.fieldProvenance).toContainEqual(expect.objectContaining({
+      fieldName: "timeZoneRequirements", kind: "DETERMINISTIC", sourceField: "rawText:explicit-time-zone-statement",
+      sourceText: "Must overlap with EST and PST hours.",
+    }));
+    const subject = await new PrismaEvaluationRepository().loadSubject({ opportunityId: detail.opportunity.id, userProfileId: null });
+    expect(subject!.opportunity.timeZoneRequirements).toBeNull();
+
+    const placed = await service.submit({ rawText: `Role ${token}-b. This position is based in New York.`, location: "New York, NY", company: `Zoneco ${token}` });
+    ids.push(placed.opportunity.id);
+    expect(placed.opportunity.timeZoneRequirements).toBeNull();
+    expect(placed.fieldProvenance.map((row) => row.fieldName)).not.toContain("timeZoneRequirements");
   });
 });

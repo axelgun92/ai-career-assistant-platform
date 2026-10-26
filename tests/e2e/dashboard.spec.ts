@@ -202,16 +202,19 @@ test("normalized details from manual entry drive work-arrangement and salary fil
   await page.getByLabel("Location (optional)").fill("Berlin, Germany");
   await page.getByLabel("Compensation text (optional)").fill("€60.000 - €70.000");
   await page.getByLabel("Work arrangement").selectOption("HYBRID");
-  await page.getByLabel("Department").fill("Customer Success");
+  // Department is no longer entered (October 26, 2026).
+  await expect(page.getByLabel("Department")).toHaveCount(0);
   await page.getByRole("button", { name: "Save opportunity" }).click();
   await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]{36}$/);
   opportunityIds.push(page.url().split("/").pop()!);
   await page.getByText("Normalized opportunity and source details").click();
   const normalized = page.locator("section", { has: page.getByRole("heading", { name: "Normalized Opportunity" }) });
-  await expect(normalized).toContainText(/Salary range\s*60,000–70,000 EUR/);
+  // Salary only: no separate Compensation row (October 26, 2026).
+  await expect(normalized).toContainText(/Salary\s*60,000–70,000 EUR/);
+  await expect(normalized).not.toContainText(/Compensation\s/);
   await expect(normalized).toContainText(/Work arrangement\s*Hybrid/);
   await expect(normalized).toContainText(/Seniority \(as stated\)\s*Senior/);
-  await expect(normalized).toContainText(/Department\s*Customer Success/);
+  await expect(normalized).not.toContainText("Department");
   await expect(normalized).toContainText(/Employment type\s*Unknown/);
 
   // Work arrangement filter.
