@@ -139,6 +139,16 @@ On each opportunity, check both the fields fixed in this batch and the fields th
 - work authorization, sponsorship and location eligibility;
 - the application URL and its basis, and the full description (no other jobs in it).
 
+**Original postings that report "Already saved. Nothing changed."** The opportunity keeps the values it was normalized with when it was first saved, so the page does not show whether the current code fixed it. Check it read-only instead:
+1. In the popup, press **Open in AI Job Assistant** and copy the opportunity page's address (`http://localhost:3000/opportunities/<id>`).
+2. In a terminal where `DATABASE_URL` is the acceptance database, run:
+   ```bash
+   pnpm acceptance:check-source-version --database ai_career_assistant_acceptance --opportunity "http://localhost:3000/opportunities/<id>"
+   ```
+3. Each fact is printed twice: **stored now** (what the app shows) and **current** (the same stored evidence through the current normalization, with its provenance markers). A `*` marks a fact that differs.
+
+The command writes nothing: PostgreSQL refuses writes for its session. It calls no evaluator, provider or network, and it refuses to read anything unless `--database` names the database `DATABASE_URL` points to.
+
 **7. Cleanup (optional).** Stop the servers, delete `database/.e2e-acceptance-helper.mjs`, then run `dropdb -h localhost -U postgres ai_career_assistant_acceptance`.
 
 ## Known limits

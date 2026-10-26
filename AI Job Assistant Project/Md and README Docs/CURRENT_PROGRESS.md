@@ -138,7 +138,33 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 ## Recently Completed (October 14–26, 2026)
 
-### Feature 14B cross-source correction (implemented and verified October 26, 2026; awaiting review and the cross-source live retest; not committed)
+### Feature 14B original-JD retest helper (implemented and verified October 26, 2026; acceptance tooling only)
+
+**Why.** The live retest reuses the existing acceptance database `ai_career_assistant_acceptance`. Its opportunities were normalized by pre-v7 code, and re-saving an unchanged page reports "Already saved. Nothing changed." without re-normalizing. So the app keeps showing the old values, even where v7 fixed them.
+
+**What it is.** `pnpm acceptance:check-source-version --database <name> --opportunity <opportunity page URL or ID>` (or `--source-record <id>`).
+- It reads one stored source version: by default the opportunity's most recently observed one, which is the version a "Nothing changed" recapture just observed.
+- It rebuilds the exact `RawOpportunity` ingestion persisted, runs it through the production normalizer for that kind of version (retrieved/extension, or manual) and prints each fact twice, as stored now and as the current code reads the same evidence, with v7's provenance markers. Differences are marked `*`.
+- **Read-only.** The session is opened with `default_transaction_read_only`, and the reads run in one `READ ONLY` transaction, so PostgreSQL itself refuses any write. It never updates the opportunity, source versions, provenance, history or evaluations.
+- **Isolated.** No evaluator stage, provider call or network access. It refuses to read anything unless `--database` names the database `DATABASE_URL` points to.
+
+**Files.**
+- `database/src/source-version-reader.ts`: read-only client, `READ ONLY` transaction, the stored-version read.
+- `apps/web/src/server/source-version-check.ts`: rebuild, production normalizer, comparison and report.
+- `apps/web/src/server/source-version-check-cli.ts`, plus the `package.json` script.
+
+**Tests.**
+- `tests/unit/source-version-check.test.ts` (7): the rebuilt input equals the original; the result equals the production normalizer's output for retrieved and manual versions; a relative posted age is dated from the observation; argument and database-name guards.
+- `tests/integration/source-version-check.test.ts` (6, test database):
+  - an extension capture and an automated Greenhouse version reproduce the stored facts and the exact stored provenance rows;
+  - a record made to look pre-v7 shows the OTE salary differences, after an UNCHANGED recapture;
+  - a whole-database fingerprint (every row of every table) is unchanged, with no network call and no evaluation;
+  - PostgreSQL refuses an update and a delete;
+  - the actual `pnpm` command prints the report, changes nothing, and refuses a mismatched database name.
+
+**Runbook:** `apps/extension/README.md`, cross-source live retest.
+
+### Feature 14B cross-source correction (implemented and verified October 26, 2026; committed `6536ef8` as checkpoint v7, October 26, 2026; awaiting the cross-source live retest)
 
 **Why.** Alex's live acceptance sweep captured a current Customer Success posting on every supported source. Greenhouse was the only source with no remaining defect. The failures were not independent source bugs: each belonged to collection, transport or shared normalization, so they were fixed at the lowest shared layer and verified across every source.
 

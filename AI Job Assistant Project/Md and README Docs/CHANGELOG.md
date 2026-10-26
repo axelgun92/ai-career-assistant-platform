@@ -10,7 +10,13 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026.
 
-### Feature 14B cross-source correction (October 26, 2026; implemented and verified, awaiting review and the cross-source live retest; not committed)
+### Feature 14B original-JD retest helper (October 26, 2026; acceptance tooling only)
+
+- `pnpm acceptance:check-source-version` re-normalizes one stored source version's exact evidence with the production normalizer, and prints it beside the opportunity's stored facts.
+- It is read-only by construction (read-only session and `READ ONLY` transaction), never calls the evaluator, a provider or the network, and refuses a database other than the one named.
+- It is for original postings that a recapture reports as unchanged during the cross-source live retest.
+
+### Feature 14B cross-source correction (October 26, 2026; committed `6536ef8` as checkpoint v7; awaiting the cross-source live retest)
 
 **Why.** Live acceptance captures across every supported source showed defects on every source except Greenhouse. The failures sat in collection, transport and shared normalization, and were corrected as one contract.
 

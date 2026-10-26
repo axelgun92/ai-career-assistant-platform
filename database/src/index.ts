@@ -23,3 +23,4 @@ export * from "./retrieval-worker-lock";
 export * from "./extension-pairing-repository";
 export * from "./extension-lookup-repository";
 export * from "./user-eligibility-repository";
+export * from "./source-version-reader";

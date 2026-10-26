@@ -33,7 +33,8 @@
     "db:verify-migrations": "tsx database/scripts/verify-migrations.ts",
     "db:backfill-dedup": "tsx database/scripts/backfill-deduplication.ts",
     "app:setup": "pnpm prisma:generate && pnpm db:migrate",
-    "app:doctor": "tsx apps/web/src/server/doctor-cli.ts"
+    "app:doctor": "tsx apps/web/src/server/doctor-cli.ts",
+    "acceptance:check-source-version": "tsx apps/web/src/server/source-version-check-cli.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
