@@ -44,28 +44,31 @@ const retrieved = (fields: Partial<Parameters<typeof buildRetrievedListing>[1]> 
 
 // ------------------------------------------------------------- currency
 
-describe("bare $ with unambiguous U.S. context is USD; explicit currency always wins", () => {
-  it("a U.S. work-authorization requirement is U.S. context (Healthie: NYC, OTE)", async () => {
+describe("a currency symbol is its currency, with no other context; a stated currency takes precedence (October 27, 2026)", () => {
+  it("Healthie: \"$105,000 - $155,000\" (OTE) in NYC is USD", async () => {
     const { opportunity, provenance } = await retrieved({
       location: "NYC",
-      description: "This is a full-time, NYC-Hybrid position.\nThe salary range is $105,000 - $155,000 per year (OTE) annually.\nU.S. work authorization is required.",
+      description: "This is a full-time, NYC-Hybrid position.\nThe salary range is $105,000 - $155,000 per year (OTE) annually.",
     });
-    expect(opportunity).toMatchObject({ salaryMin: 105000, salaryMax: 155000, currency: "USD", compensationBasis: "OTE", workAuthorizationRequirement: "RIGHT_TO_WORK" });
+    expect(opportunity).toMatchObject({ salaryMin: 105000, salaryMax: 155000, currency: "USD", compensationBasis: "OTE" });
     expect(markers(provenance, "currency")).toEqual(["compensationText:bare-dollar-as-usd"]);
   });
 
-  it("an explicit U.S. eligibility statement is U.S. context (Mongoose: Midwest territory)", async () => {
-    const { opportunity } = await retrieved({
-      location: "Remote",
-      description: "This role is open to candidates in the United States, covering our Midwest territory.\n$65,000 - $75,000 a year",
-    });
-    expect(opportunity).toMatchObject({ salaryMin: 65000, salaryMax: 75000, currency: "USD" });
+  it("Mongoose, PeopleGrove: a bare $ is USD with no location at all", async () => {
+    expect((await retrieved({ location: "Remote", description: "$65,000 - $75,000 a year" })).opportunity).toMatchObject({ salaryMin: 65000, salaryMax: 75000, currency: "USD" });
+    expect((await retrieved({ location: null, description: "Salary: $65k-$80k per year" })).opportunity).toMatchObject({ salaryMin: 65000, salaryMax: 80000, currency: "USD" });
   });
 
-  it("a city alone, another country's authorization, or no geography leaves a bare $ Unknown", async () => {
-    expect((await retrieved({ location: "NYC", description: "Salary: $105,000 - $155,000 per year." })).opportunity.currency).toBeNull();
-    expect((await retrieved({ location: null, description: "Salary: $105,000 - $155,000 per year.\nCanadian work authorization is required." })).opportunity.currency).toBeNull();
-    expect((await retrieved({ location: null, description: "Salary: CAD 105,000 - 155,000 per year.\nU.S. work authorization is required." })).opportunity.currency).toBe("CAD");
+  it("every recognized symbol, and a stated code or name over the symbol", async () => {
+    const currencyOf = async (description: string) => (await retrieved({ location: null, description })).opportunity.currency;
+    expect(await currencyOf("Salary: €70,000–€90,000 per year")).toBe("EUR");
+    expect(await currencyOf("Salary: £60,000–£75,000 per year")).toBe("GBP");
+    expect(await currencyOf("Salary: $100,000 CAD per year")).toBe("CAD");
+    expect(await currencyOf("Salary: $100,000 per year (Canadian dollars)")).toBe("CAD");
+    // A place never changes what a symbol means.
+    expect((await retrieved({ location: "Toronto, ON", description: "Salary: $100,000 per year" })).opportunity.currency).toBe("USD");
+    // Two different symbols with nothing stated stay Unknown.
+    expect(await currencyOf("Salary: €70,000 or $80,000 per year")).toBeNull();
   });
 });
 
@@ -260,8 +263,8 @@ describe("We Work Remotely: the sidebar's job items, and the posting's own facts
       companyName: "New Law Business Model", employmentType: "FULL_TIME", remoteStatus: "REMOTE", salaryMin: 85000, salaryMax: 95000,
       timeZoneRequirements: "Requires minimum (4) hours core schedule to overlap with Pacific Time (e.g., 9:00 AM – 1:00 PM PT)",
     });
-    // No U.S. geography is stated, so the bare $ stays Unknown.
-    expect(opportunity.currency).toBeNull();
+    // "$85,000 – $95,000 / annualized": the "$" is US dollars.
+    expect(opportunity.currency).toBe("USD");
     expect(opportunity.closingDate?.toISOString()).toBe("2026-11-18T00:00:00.000Z");
     expect(markers(provenance, "company.name")).toEqual(["pageContext:page-title-company"]);
   });

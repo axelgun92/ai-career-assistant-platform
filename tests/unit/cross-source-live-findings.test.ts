@@ -402,8 +402,9 @@ describe("negative cases: the corrections never spread", () => {
     expect(facts("You must be able to work Eastern Time business hours.").timeZoneRequirements?.value).toBe("You must be able to work Eastern Time business hours.");
   });
 
-  it("no USD for a bare $ without U.S. geography", () => {
-    expect(parseCompensation("$80K – $95K", null, { location: "Toronto, ON" })).toMatchObject({ minimum: 80000, maximum: 95000, currency: null });
+  it("a bare $ is USD without any geography; a stated code takes precedence (October 27, 2026)", () => {
+    expect(parseCompensation("$80K – $95K")).toMatchObject({ minimum: 80000, maximum: 95000, currency: "USD" });
+    expect(parseCompensation("$80K – $95K CAD")).toMatchObject({ minimum: 80000, maximum: 95000, currency: "CAD" });
   });
 
   it("a labelled location replaces a source location only when it contains it and says more", () => {

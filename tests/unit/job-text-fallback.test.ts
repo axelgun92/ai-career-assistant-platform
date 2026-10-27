@@ -160,16 +160,18 @@ describe("compensation from the job text (1–8)", () => {
     expect(stated.opportunity.currency).toBe("USD");
   });
 
-  it("7: a bare $ in Canada, Australia or another dollar country, or with no reliable location, stays Unknown", async () => {
+  it("7: a bare $ is US dollars wherever the job is; no place is needed (October 27, 2026)", async () => {
     for (const location of ["Toronto, ON", "Vancouver, Canada", "Sydney, Australia", "Singapore", "Remote", "Remote - Worldwide", null]) {
       const { opportunity } = await normalizeRetrieved({ description: "Salary: $90,000 - $110,000", location });
-      expect(opportunity, String(location)).toMatchObject({ salaryMin: 90000, salaryMax: 110000, currency: null });
+      expect(opportunity, String(location)).toMatchObject({ salaryMin: 90000, salaryMax: 110000, currency: "USD" });
     }
     // The same rule for salary text the source supplied, and for manual capture.
     const supplied = await normalizeRetrieved({ description: "Own renewals.", salaryText: "$90,000 - $110,000", location: "Toronto, ON" });
-    expect(supplied.opportunity.currency).toBeNull();
+    expect(supplied.opportunity.currency).toBe("USD");
     const manual = await normalizeManual({ description: "Own renewals.", salaryText: "$90,000 - $110,000", location: "Toronto, ON" });
-    expect(manual.opportunity.currency).toBeNull();
+    expect(manual.opportunity.currency).toBe("USD");
+    // A stated currency still takes precedence.
+    expect((await normalizeRetrieved({ description: "Salary: $90,000 - $110,000 CAD", location: "Toronto, ON" })).opportunity.currency).toBe("CAD");
   });
 
   it("8: an explicit currency code or symbol is read as stated, whatever the location", async () => {

@@ -60,8 +60,8 @@ describe("manual opportunity PostgreSQL persistence", () => {
     // The stated range is normalized; the original text is kept as written.
     expect(detail.opportunity.salaryMin).toBe(65000);
     expect(detail.opportunity.salaryMax).toBe(75000);
-    // A bare "$" with no location or other U.S. evidence: currency Unknown.
-    expect(detail.opportunity.currency).toBeNull();
+    // A bare "$" is US dollars with no other context (October 27, 2026).
+    expect(detail.opportunity.currency).toBe("USD");
     expect(detail.opportunity.salaryText).toBe("$65,000 - $75,000");
     expect(detail.sourceRecords[0]?.rawSalaryText).toBe("$65,000 - $75,000");
     expect(detail.sourceRecords).toHaveLength(1);

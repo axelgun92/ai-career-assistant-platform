@@ -157,7 +157,8 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   → now: 14B, the browser-extension companion: required main-product work, committed e6bacc6
     (October 20, 2026; apps/extension, /api/extension/*, /extension) and still open; its local
     acceptance led to the approved shared-Core job-text fallback correction (packages/normalization
-    job-text-facts.ts used by both shared normalizers; bare "$" is USD only with clear U.S. evidence;
+    job-text-facts.ts used by both shared normalizers; bare "$" is USD only with clear U.S. evidence,
+    superseded October 27, 2026: a recognized currency symbol is its currency, a stated code wins;
     deduplication unchanged; no migration or backfill), implemented and verified October 23, 2026
     with Core Platform TDD v1.15 and Core AI Framework PRD v1.14; followed by the convergence, v5 and
     cross-source corrections (checkpoint v7 committed 6536ef8; read-only retest helper 362fe01) and

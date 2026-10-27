@@ -1,33 +1,12 @@
-import {
-  compensationCurrencyCodes,
-  dollarCurrencyCodes,
-  type CompensationBasis,
-  isUnitedStatesGeography,
-  readLocationGeography,
-  scanGeography,
-  type CompensationCurrency,
-} from "@ai-career/core";
+import { compensationCurrencyCodes, type CompensationBasis, type CompensationCurrency } from "@ai-career/core";
 
 // Deterministic compensation parsing. Only explicit statements become
 // numbers or a currency; anything ambiguous stays null (Unknown). The
 // original text is always preserved separately (salaryText, SourceRecord).
 
-// Provenance marker for a currency derived from a bare "$" (not stated by
-// the source): read as USD only when the posting's geography is clearly the
-// United States, so it stays identifiable and can be revisited.
+// Provenance marker for a currency read from a bare "$" (USD), kept
+// distinct from a stated currency code so it stays identifiable.
 export const bareDollarCurrencySourceField = "compensationText:bare-dollar-as-usd";
-
-// Where the posting is, for reading a bare "$". Geography is only ever used
-// to decide that a bare "$" is US dollars; no other currency (CAD, AUD, ...)
-// is ever inferred from a place.
-export interface CompensationGeography {
-  location?: string | null;
-  // Eligible-residency regions already read for the posting.
-  residencyRegions?: readonly string[];
-  // The countries an explicit work-authorization requirement names ("U.S.
-  // work authorization is required"): where the role is employed.
-  workAuthorizationRegions?: readonly string[];
-}
 
 export interface ParsedCompensation {
   minimum: number | null;
@@ -47,7 +26,7 @@ export interface ParsedCompensation {
     | "INVERTED_RANGE"
     | null;
   // Why the currency is Unknown although one was indicated, if so.
-  currencyUnknownReason: "CONFLICTING_CURRENCIES" | "AMBIGUOUS_SYMBOL" | "BARE_DOLLAR_WITHOUT_US_EVIDENCE" | null;
+  currencyUnknownReason: "CONFLICTING_CURRENCIES" | null;
 }
 
 const codePattern = new RegExp(`(?<![A-Z])(${compensationCurrencyCodes.join("|")})(?![A-Z])`, "g");
@@ -58,11 +37,38 @@ const prefixedDollars: Array<[RegExp, CompensationCurrency]> = [
   [/\bNZ\$/g, "NZD"],
   [/\bS\$/g, "SGD"],
   [/\bMX\$/g, "MXN"],
+  [/\bR\$/g, "BRL"],
 ];
+// Currencies named in words ("Canadian dollars", "euros"): as explicit as a
+// code.
+const currencyNames: Array<[RegExp, CompensationCurrency]> = [
+  [/\b(?:U\.?S\.?|American)\s+dollars?\b/gi, "USD"],
+  [/\bCanadian\s+dollars?\b/gi, "CAD"],
+  [/\bAustralian\s+dollars?\b/gi, "AUD"],
+  [/\bNew\s+Zealand\s+dollars?\b/gi, "NZD"],
+  [/\bSingapore(?:an)?\s+dollars?\b/gi, "SGD"],
+  [/\beuros?\b/gi, "EUR"],
+  [/\b(?:British\s+)?pounds?\s+sterling\b|\bBritish\s+pounds?\b/gi, "GBP"],
+  [/\bSwiss\s+francs?\b/gi, "CHF"],
+  [/\bSwedish\s+kron(?:a|or)\b/gi, "SEK"],
+  [/\bNorwegian\s+kron(?:e|er)\b/gi, "NOK"],
+  [/\bDanish\s+kron(?:e|er)\b/gi, "DKK"],
+  [/\b(?:Polish\s+)?zlot(?:y|ys|ych)\b/gi, "PLN"],
+  [/\b(?:Indian\s+)?rupees?\b/gi, "INR"],
+  [/\bJapanese\s+yen\b/gi, "JPY"],
+  [/\bMexican\s+pesos?\b/gi, "MXN"],
+  [/\bBrazilian\s+rea(?:l|is)\b/gi, "BRL"],
+  [/\bSouth\s+African\s+rand\b/gi, "ZAR"],
+];
+// Currency symbols, each read as its currency: "$" is US dollars, "€"
+// euros, "£" pounds sterling, "₹" rupees, "¥" yen. A currency the text
+// states as a code or name ("$100,000 CAD") takes precedence over a symbol.
 const symbols: Array<[string, CompensationCurrency]> = [
+  ["$", "USD"],
   ["€", "EUR"],
   ["£", "GBP"],
   ["₹", "INR"],
+  ["¥", "JPY"],
 ];
 
 // Hourly, daily, weekly or monthly pay. There is no pay-period column, so
@@ -125,73 +131,40 @@ export function statedAmounts(text: string): number[] {
 function currencyMarkers(text: string) {
   const explicit = new Set<CompensationCurrency>();
   let remainder = text;
-  for (const [pattern, code] of prefixedDollars) {
+  for (const [pattern, code] of [...prefixedDollars, ...currencyNames]) {
     const replaced = remainder.replace(pattern, " ");
     if (replaced !== remainder) explicit.add(code);
     remainder = replaced;
   }
   for (const match of remainder.matchAll(codePattern)) explicit.add(match[1] as CompensationCurrency);
-  for (const [symbol, code] of symbols) if (remainder.includes(symbol)) explicit.add(code);
-  return {
-    explicit,
-    bareDollar: remainder.includes("$"),
-    ambiguousSymbol: remainder.includes("¥"),
-  };
+  const symbolic = new Set<CompensationCurrency>();
+  for (const [symbol, code] of symbols) if (remainder.includes(symbol)) symbolic.add(code);
+  return { explicit, symbolic };
 }
 
-// A bare "$" is US dollars only with clear U.S. evidence: the location, the
-// eligible residency regions, the countries a work-authorization
-// requirement names and the compensation statement name only U.S.
-// geography (the country, a state, DC or Puerto Rico), nothing ambiguous and
-// nothing else. A region abbreviation that could mean two places ("CA") is
-// settled by the country the same location names ("Sunnyvale, CA, United
-// States"); on its own ("Sunnyvale, CA") it stays ambiguous. Canada,
-// Australia, a global or unclear location, or none at all leave the
-// currency Unknown. An explicit currency always wins over this reading.
-function unitedStatesEvidence(text: string, geography: CompensationGeography): boolean {
-  const named = [scanGeography(text), readLocationGeography(geography.location)];
-  if (named.some((reading) => reading.ambiguous)) return false;
-  const codes = [
-    ...named.flatMap((reading) => reading.codes),
-    ...(geography.residencyRegions ?? []),
-    ...(geography.workAuthorizationRegions ?? []),
-  ];
-  return codes.length > 0 && codes.every(isUnitedStatesGeography);
-}
-
+// The currency: a code or name the text states (or the one the user
+// selected) first, then the currency symbol it uses. Two different stated
+// currencies, or two different symbols with nothing stated, conflict and
+// leave it Unknown. No place or other context is needed to read a symbol.
 function resolveCurrency(
   text: string,
   selected: CompensationCurrency | null,
-  geography: CompensationGeography,
 ): Pick<ParsedCompensation, "currency" | "currencyBasis" | "currencyUnknownReason"> {
-  const markers = currencyMarkers(text);
-  const unknown = (reason: ParsedCompensation["currencyUnknownReason"]) => ({
-    currency: null,
-    currencyBasis: null,
-    currencyUnknownReason: reason,
-  });
-  if (markers.explicit.size > 1) return unknown("CONFLICTING_CURRENCIES");
-  const isDollar = (code: CompensationCurrency) => (dollarCurrencyCodes as readonly string[]).includes(code);
-  if (markers.explicit.size === 1) {
-    const [stated] = [...markers.explicit] as [CompensationCurrency];
-    if (selected && selected !== stated) return unknown("CONFLICTING_CURRENCIES");
-    if (markers.bareDollar && !isDollar(stated)) return unknown("CONFLICTING_CURRENCIES");
+  const { explicit, symbolic } = currencyMarkers(text);
+  const unknown = () => ({ currency: null, currencyBasis: null, currencyUnknownReason: "CONFLICTING_CURRENCIES" as const });
+  if (explicit.size > 1) return unknown();
+  if (explicit.size === 1) {
+    const [stated] = [...explicit] as [CompensationCurrency];
+    if (selected && selected !== stated) return unknown();
     return { currency: stated, currencyBasis: "STATED_CODE_OR_SYMBOL", currencyUnknownReason: null };
   }
-  if (markers.bareDollar) {
-    if (selected) {
-      return isDollar(selected)
-        ? { currency: selected, currencyBasis: "SELECTED", currencyUnknownReason: null }
-        : unknown("CONFLICTING_CURRENCIES");
-    }
-    return unitedStatesEvidence(text, geography)
-      ? { currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD", currencyUnknownReason: null }
-      : unknown("BARE_DOLLAR_WITHOUT_US_EVIDENCE");
+  if (selected) return { currency: selected, currencyBasis: "SELECTED", currencyUnknownReason: null };
+  if (symbolic.size > 1) return unknown();
+  if (symbolic.size === 1) {
+    const [currency] = [...symbolic] as [CompensationCurrency];
+    return { currency, currencyBasis: currency === "USD" ? "BARE_DOLLAR_AS_USD" : "STATED_CODE_OR_SYMBOL", currencyUnknownReason: null };
   }
-  if (markers.ambiguousSymbol) return selected ? unknown("CONFLICTING_CURRENCIES") : unknown("AMBIGUOUS_SYMBOL");
-  return selected
-    ? { currency: selected, currencyBasis: "SELECTED", currencyUnknownReason: null }
-    : { currency: null, currencyBasis: null, currencyUnknownReason: null };
+  return { currency: null, currencyBasis: null, currencyUnknownReason: null };
 }
 
 const rangeSeparator = /^\s*(?:[A-Z]{3}|US\$|CA\$|C\$|AU\$|A\$|NZ\$|[$€£₹])?\s*(?:-|–|—|to|and)\s*(?:[A-Z]{3}|US\$|CA\$|C\$|AU\$|A\$|NZ\$|[$€£₹])?\s*$/i;
@@ -248,11 +221,7 @@ function resolveAmounts(text: string): Pick<ParsedCompensation, "minimum" | "max
   return none("AMBIGUOUS_AMOUNTS");
 }
 
-export function parseCompensation(
-  text: string | null,
-  selectedCurrency: CompensationCurrency | null = null,
-  geography: CompensationGeography = {},
-): ParsedCompensation {
+export function parseCompensation(text: string | null, selectedCurrency: CompensationCurrency | null = null): ParsedCompensation {
   if (text === null || !text.trim()) {
     return {
       minimum: null,
@@ -266,5 +235,5 @@ export function parseCompensation(
   }
   const amounts = resolveAmounts(text);
   const stated = amounts.minimum !== null || amounts.maximum !== null;
-  return { ...amounts, basis: stated ? resolveBasis(text) : null, ...resolveCurrency(text, selectedCurrency, geography) };
+  return { ...amounts, basis: stated ? resolveBasis(text) : null, ...resolveCurrency(text, selectedCurrency) };
 }

@@ -22,7 +22,6 @@ import {
 export {
   bareDollarCurrencySourceField,
   parseCompensation,
-  type CompensationGeography,
   type ParsedCompensation,
 } from "./compensation";
 export {
@@ -192,10 +191,9 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const textCompensation = tiers ?? facts.compensation;
       const salaryText = statedSalaryText ?? fallback("salaryText", textCompensation);
       const compensationField = statedSalaryText ? "compensationText" : textCompensation?.sourceField ?? "compensationText";
-      const geography = { location, residencyRegions, workAuthorizationRegions: workAuthorization?.value.regions ?? [] };
-      const compensation = parseCompensation(salaryText, details.compensationCurrency, geography);
+      const compensation = parseCompensation(salaryText, details.compensationCurrency);
       // The labelled tiers, each with its own amounts (no single range).
-      const compensationTiers = tiers ? tiers.tiers.map((tier) => compensationTier(tier, geography)) : [];
+      const compensationTiers = tiers ? tiers.tiers.map(compensationTier) : [];
       if (tiers && compensationTiers.length) fallbacks.push({ fieldName: "compensationTiers", fact: tiers, normalizedValue: compensationTiers });
       const bonus = fallback("bonus", facts.bonus);
       // The job text may call the same range on-target earnings (OTE takes

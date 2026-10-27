@@ -147,14 +147,15 @@ describe("compensation: stated bounds are kept, in their own currency, whatever 
     ["£55,000–£65,000", {}, 55000, 65000, "GBP", null],
     ["$70,000–$90,000 USD", {}, 70000, 90000, "USD", null],
     ["$88,000–$123,200 CAD", {}, 88000, 123200, "CAD", null],
-    // A bare "$" without unambiguous country context keeps the numbers;
-    // only the currency is Unknown.
-    ["$105,000 - $155,000 per year (OTE) annually", { location: "NYC" }, 105000, 155000, null, "OTE"],
+    // A bare "$" is US dollars with no other context (October 27, 2026;
+    // previously Unknown without unambiguous U.S. geography).
+    ["$105,000 - $155,000 per year (OTE) annually", { location: "NYC" }, 105000, 155000, "USD", "OTE"],
     // OTE wording takes precedence over a "base" mention in the same
     // statement (Feature 14B v5 correction, October 25, 2026).
     ["$100,000 - $120,000 base, OTE", unitedStates, 100000, 120000, "USD", "OTE"],
   ] as const)("%s", (text, geography, minimum, maximum, currency, basis) => {
-    expect(parseCompensation(text, null, geography)).toMatchObject({ minimum, maximum, currency, basis });
+    void geography; // (where the job is no longer matters to the currency)
+    expect(parseCompensation(text)).toMatchObject({ minimum, maximum, currency, basis });
   });
 
   it("never converts: the original currency and amounts are what is stored", async () => {
@@ -190,7 +191,6 @@ describe("compensation: stated bounds are kept, in their own currency, whatever 
 });
 
 describe("compensation basis: OTE takes precedence over base in the same statement", () => {
-  const unitedStates = { location: "Austin, TX" };
   it.each([
     ["$120,000–$150,000 OTE (base + commission)", 120000, 150000, "OTE"],
     ["OTE: $120,000–$150,000; 60/40 base to variable", 120000, 150000, "OTE"],
@@ -199,7 +199,7 @@ describe("compensation basis: OTE takes precedence over base in the same stateme
     ["Base salary $80,000–$100,000 plus commission", 80000, 100000, "BASE"],
     ["$80,000–$100,000", 80000, 100000, null],
   ] as const)("%s", (text, minimum, maximum, basis) => {
-    expect(parseCompensation(text, null, unitedStates)).toMatchObject({ minimum, maximum, basis, currency: "USD", amountsUnknownReason: null });
+    expect(parseCompensation(text)).toMatchObject({ minimum, maximum, basis, currency: "USD", amountsUnknownReason: null });
   });
 
   it("separate or conflicting figures keep the existing ambiguity: amounts and basis Unknown", () => {
@@ -208,7 +208,7 @@ describe("compensation basis: OTE takes precedence over base in the same stateme
       "Base $100,000 - $120,000, OTE $160,000 - $180,000",
       "$72k-$88k base + $10k bonus, OTE",
     ]) {
-      expect(parseCompensation(text, null, unitedStates), text).toMatchObject({ minimum: null, maximum: null, basis: null, amountsUnknownReason: "AMBIGUOUS_AMOUNTS" });
+      expect(parseCompensation(text), text).toMatchObject({ minimum: null, maximum: null, basis: null, amountsUnknownReason: "AMBIGUOUS_AMOUNTS" });
     }
   });
 });
@@ -297,30 +297,20 @@ describe("compensation basis: the job description may say a source-stated range 
   });
 });
 
-describe("bare \"$\": an explicit country settles an ambiguous region abbreviation", () => {
+describe("bare \"$\" is USD wherever the job is; an explicit country still settles a place for the relevance layer", () => {
   const range = "$185,000 - $205,000 per year";
-  const currencyIn = (location: string | null, text = range) => parseCompensation(text, null, { location });
-  it("1: an explicit United States reads CA as California", () => {
-    expect(currencyIn("Sunnyvale, CA, United States")).toMatchObject({ minimum: 185000, maximum: 205000, currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD" });
-    expect(currencyIn("San Francisco, CA, USA")).toMatchObject({ currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD" });
-    // Country first, as Workday writes it; several places, each settled.
-    expect(currencyIn("USA, CA, Pleasanton; USA, NY, New York City")).toMatchObject({ currency: "USD" });
-    expect(readLocationGeography("Sunnyvale, CA, United States")).toEqual({ codes: ["US"], ambiguous: false });
+  // (October 27, 2026: the currency no longer depends on the location.)
+  const currencyIn = (_location: string | null, text = range) => parseCompensation(text);
+  it("1: a bare $ is USD with any location, or none", () => {
+    for (const location of ["Sunnyvale, CA, United States", "Sunnyvale, CA", "Toronto, ON, Canada", "Remote", "Global", null]) {
+      expect(currencyIn(location), String(location)).toMatchObject({ minimum: 185000, maximum: 205000, currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD" });
+    }
   });
-  it("2: CA without a country stays conservative", () => {
-    expect(currencyIn("Sunnyvale, CA")).toMatchObject({ currency: null, currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE", minimum: 185000 });
-    expect(currencyIn("Remote - US or CA")).toMatchObject({ currency: null });
+  it("2: an explicit country still settles an ambiguous region abbreviation (where the job is)", () => {
+    expect(readLocationGeography("Sunnyvale, CA, United States")).toEqual({ codes: ["US"], ambiguous: false });
     expect(readLocationGeography("Sunnyvale, CA")).toMatchObject({ ambiguous: true });
   });
-  it("3: an explicit foreign country stays authoritative, and no currency is inferred from it", () => {
-    expect(currencyIn("Toronto, ON, Canada")).toMatchObject({ currency: null, minimum: 185000 });
-    expect(currencyIn("Vancouver, CA, Canada")).toMatchObject({ currency: null });
-    // A place whose parts disagree is not U.S. evidence.
-    expect(currencyIn("Toronto, ON, United States")).toMatchObject({ currency: null });
-    expect(currencyIn("Remote")).toMatchObject({ currency: null });
-    expect(currencyIn("Global")).toMatchObject({ currency: null });
-  });
-  it("4: an explicit currency stays authoritative", () => {
+  it("3: an explicit currency stays authoritative over the symbol", () => {
     expect(currencyIn("Sunnyvale, CA, United States", "CA$185,000 - CA$205,000 per year")).toMatchObject({ currency: "CAD", currencyBasis: "STATED_CODE_OR_SYMBOL" });
     expect(currencyIn("Toronto, ON, Canada", "$88,000 - $123,200 CAD")).toMatchObject({ currency: "CAD", minimum: 88000, maximum: 123200 });
     expect(currencyIn("Sunnyvale, CA, United States", "€58,000 – €68,000")).toMatchObject({ currency: "EUR" });

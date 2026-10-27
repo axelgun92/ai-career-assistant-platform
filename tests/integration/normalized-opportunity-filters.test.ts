@@ -46,7 +46,10 @@ const manualSeeds: Array<[string, Record<string, string>]> = [
   // A bare "$" reads as USD only with U.S. evidence (here a U.S. state, or
   // an explicit US$); without it the currency is Unknown.
   ["ote", { title: "Customer Success Manager", location: "Remote or hybrid", compensationText: "US$120k OTE" }],
-  ["conflict", { title: "CSM", compensationText: "€60,000 USD" }],
+  // Two different currency symbols and no stated code: the currency is
+  // Unknown. (A stated code would take precedence over a symbol, October 27,
+  // 2026: this fixture was "€60,000 USD", now read as USD.)
+  ["conflict", { title: "CSM", compensationText: "€60,000 – $70,000" }],
   ["upTo", { title: "Customer Success Manager", location: "Denver, CO", compensationText: "Up to $85,000", seniority: "MID", department: "Support" }],
   ["from", { title: "Customer Success Manager", location: "Austin, TX", compensationText: "From $100,000" }],
 ];

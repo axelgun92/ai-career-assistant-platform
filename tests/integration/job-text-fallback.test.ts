@@ -141,9 +141,9 @@ describe("facts read from the posting text persist with their markers", () => {
     const opportunity = await database.opportunity.findUniqueOrThrow({ where: { id: result.opportunityId }, include: { company: true } });
     expect(opportunity).toMatchObject({
       location: "NYC", remoteStatus: "HYBRID", employmentType: "FULL_TIME", salaryText: statement,
-      // A bare "$" with "NYC" alone: no recognized U.S. geography, so the
-      // currency stays Unknown (the amounts are still read).
-      currency: null,
+      // A bare "$" is US dollars with no other context (October 27, 2026;
+      // previously Unknown with "NYC" alone).
+      currency: "USD",
     });
     expect(opportunity.company?.name).toBe(`Fallbackco ${token}`);
     expect(opportunity.salaryMin?.toNumber()).toBe(120000);

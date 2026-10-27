@@ -62,7 +62,7 @@ describe("compensation parsing", () => {
   });
 
   it("keeps ambiguous amounts Unknown while preserving the currency", () => {
-    expect(parseCompensation("$30/hour", null, unitedStates)).toMatchObject({ minimum: null, maximum: null, currency: "USD" });
+    expect(parseCompensation("$30/hour")).toMatchObject({ minimum: null, maximum: null, currency: "USD" });
     expect(parseCompensation("$6,000 per month")).toMatchObject({ minimum: null, amountsUnknownReason: "NON_ANNUAL_PERIOD" });
     expect(parseCompensation("$30-$40")).toMatchObject({ minimum: null, maximum: null });
     // OTE is a qualifier of the stated range, not a reason to drop it
@@ -76,19 +76,22 @@ describe("compensation parsing", () => {
 
   it("states the currency basis: explicit, bare dollar read as USD, or selected", () => {
     expect(parseCompensation("USD 80,000").currencyBasis).toBe("STATED_CODE_OR_SYMBOL");
-    expect(parseCompensation("$80,000", null, unitedStates).currencyBasis).toBe("BARE_DOLLAR_AS_USD");
-    expect(parseCompensation("$80,000")).toMatchObject({ currencyBasis: null, currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE" });
+    expect(parseCompensation("$80,000")).toMatchObject({ currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD" });
     expect(parseCompensation("$80,000", "CAD")).toMatchObject({ currency: "CAD", currencyBasis: "SELECTED" });
     expect(parseCompensation("80,000", "EUR")).toMatchObject({ currency: "EUR", currencyBasis: "SELECTED" });
     expect(parseCompensation(null, "GBP")).toMatchObject({ currency: "GBP", minimum: null });
   });
 
-  it("never picks between conflicting currencies", () => {
-    expect(parseCompensation("€60,000 USD")).toMatchObject({ currency: null, currencyUnknownReason: "CONFLICTING_CURRENCIES", minimum: 60000 });
-    expect(parseCompensation("£80k", "EUR")).toMatchObject({ currency: null, currencyUnknownReason: "CONFLICTING_CURRENCIES" });
-    expect(parseCompensation("$80k", "EUR")).toMatchObject({ currency: null, currencyUnknownReason: "CONFLICTING_CURRENCIES" });
-    expect(parseCompensation("€60,000 and $70,000")).toMatchObject({ currency: null });
-    expect(parseCompensation("¥5,000,000")).toMatchObject({ currency: null, currencyUnknownReason: "AMBIGUOUS_SYMBOL" });
+  it("never picks between conflicting currencies; a stated currency overrides a symbol", () => {
+    // Two stated currencies, or two different symbols with none stated.
+    expect(parseCompensation("USD 60,000 or EUR 55,000")).toMatchObject({ currency: null, currencyUnknownReason: "CONFLICTING_CURRENCIES" });
+    expect(parseCompensation("€60,000 and $70,000")).toMatchObject({ currency: null, currencyUnknownReason: "CONFLICTING_CURRENCIES" });
+    expect(parseCompensation("CAD 80,000", "EUR")).toMatchObject({ currency: null, currencyUnknownReason: "CONFLICTING_CURRENCIES" });
+    // A stated code, or the currency the user selected, takes precedence
+    // over a symbol (October 27, 2026; previously Unknown).
+    expect(parseCompensation("€60,000 USD")).toMatchObject({ currency: "USD", minimum: 60000 });
+    expect(parseCompensation("£80k", "EUR")).toMatchObject({ currency: "EUR", currencyBasis: "SELECTED" });
+    expect(parseCompensation("¥5,000,000")).toMatchObject({ currency: "JPY" });
   });
 
   it("is deterministic across repeated calls (no shared regex state)", () => {
@@ -99,42 +102,29 @@ describe("compensation parsing", () => {
   });
 });
 
-describe("bare $ rule (read as USD only with clear U.S. evidence, recorded as derived)", () => {
-  it("normalizes $72,000–$88,000 to 72000–88000 USD for a U.S. posting", () => {
-    expect(parseCompensation("$72,000–$88,000", null, unitedStates)).toMatchObject({
+describe("currency symbols read as their currency; a stated currency takes precedence (October 27, 2026)", () => {
+  it("normalizes $72,000–$88,000 to 72000–88000 USD with no other context", () => {
+    expect(parseCompensation("$72,000–$88,000")).toMatchObject({
       minimum: 72000, maximum: 88000, currency: "USD", currencyBasis: "BARE_DOLLAR_AS_USD",
     });
   });
 
   it.each([
-    ["a U.S. state", { location: "Boston, MA" }],
-    ["the country", { location: "Remote - United States" }],
-    ["U.S. residency regions", { location: "Remote", residencyRegions: ["US"] }],
-    ["several U.S. states", { location: "TX, FL or OH" }],
-  ])("reads USD with %s", (_label, geography) => {
-    expect(parseCompensation("$72,000–$88,000", null, geography).currency).toBe("USD");
+    ["$85,000–$95,000", "USD"],
+    ["€70,000–€90,000", "EUR"],
+    ["£60,000–£75,000", "GBP"],
+    ["₹1,500,000", "INR"],
+    ["¥8,000,000", "JPY"],
+    ["R$120,000", "BRL"],
+  ])("reads %s as %s", (text, currency) => {
+    expect(parseCompensation(text).currency).toBe(currency);
   });
 
-  it("reads USD when the compensation statement itself names the U.S.", () => {
-    expect(parseCompensation("The U.S. base salary range for this role is $120,000 - $150,000.").currency).toBe("USD");
-  });
-
-  it.each([
-    ["no location", {}],
-    ["a bare Remote", { location: "Remote" }],
-    ["a city alone", { location: "Chicago" }],
-    ["Canada", { location: "Toronto, ON" }],
-    ["Australia", { location: "Sydney, Australia" }],
-    ["New Zealand", { location: "Auckland, New Zealand" }],
-    ["Singapore", { location: "Singapore" }],
-    ["a global role", { location: "Remote - Worldwide" }],
-    ["U.S. and Canada", { location: "Remote (US or Canada)" }],
-    ["an ambiguous CA", { location: "San Francisco, CA" }],
-    ["non-U.S. residency", { location: "Remote", residencyRegions: ["US", "CA"] }],
-  ])("leaves the currency Unknown with %s (never CAD/AUD from a place)", (_label, geography) => {
-    expect(parseCompensation("$72,000–$88,000", null, geography)).toMatchObject({
-      minimum: 72000, maximum: 88000, currency: null, currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE",
-    });
+  it("never needs a place: the same symbol is the same currency anywhere", () => {
+    // (Before October 27, 2026 a bare "$" needed U.S. geography.)
+    for (const text of ["$72,000–$88,000 in Toronto", "$72,000–$88,000 (Sydney, Australia)", "$72,000–$88,000, remote worldwide"]) {
+      expect(parseCompensation(text).currency, text).toBe("USD");
+    }
   });
 
   it.each([
@@ -143,23 +133,25 @@ describe("bare $ rule (read as USD only with clear U.S. evidence, recorded as de
     ["CA$72,000–CA$88,000", "CAD"],
     ["C$72,000", "CAD"],
     ["$72,000–$88,000 CAD", "CAD"],
+    ["$100,000 CAD", "CAD"],
     ["A$72,000–A$88,000", "AUD"],
     ["AU$72,000", "AUD"],
     ["$72,000–$88,000 AUD", "AUD"],
-    ["€72,000–€88,000", "EUR"],
-    ["£72,000–£88,000", "GBP"],
-  ])("explicit currency takes precedence: %s → %s", (text, currency) => {
+    ["$72,000 EUR", "EUR"],
+    ["$90,000 Canadian dollars", "CAD"],
+    ["€72,000 in US dollars", "USD"],
+  ])("a stated currency takes precedence over the symbol: %s → %s", (text, currency) => {
     expect(parseCompensation(text)).toMatchObject({ currency, currencyBasis: "STATED_CODE_OR_SYMBOL" });
   });
 
-  it("never overrides an explicitly stated non-USD currency", () => {
-    expect(parseCompensation("$72,000 EUR").currency).toBeNull(); // contradiction: Unknown, not USD
-    expect(parseCompensation("£72,000 ($90,000)").currency).toBeNull();
-    expect(parseCompensation("$72,000", "GBP").currency).toBeNull();
+  it("the user's selected currency takes precedence over a symbol, never over a different stated code", () => {
+    expect(parseCompensation("$72,000", "GBP")).toMatchObject({ currency: "GBP", currencyBasis: "SELECTED" });
     expect(parseCompensation("$72,000", "CAD")).toMatchObject({ currency: "CAD", currencyBasis: "SELECTED" });
+    expect(parseCompensation("USD 72,000", "CAD").currency).toBeNull();
+    expect(parseCompensation("£72,000 ($90,000)").currency).toBeNull();
   });
 
-  it("records the bare-$ currency as derived with its own marker; stated currencies are distinguishable", async () => {
+  it("records the bare-$ currency with its own marker; stated currencies are distinguishable", async () => {
     const normalizer = createManualOpportunityNormalizer();
     const currencyRow = async (salaryText: string, compensationCurrency: string | null = null, location: string | null = "Austin, TX") =>
       (await normalizer.normalize(raw({
@@ -176,7 +168,8 @@ describe("bare $ rule (read as USD only with clear U.S. evidence, recorded as de
     });
     expect(await currencyRow("CA$72,000")).toMatchObject({ sourceField: "compensationText", normalizedValue: "CAD" });
     expect(await currencyRow("$72,000", "CAD")).toMatchObject({ kind: "DIRECT", sourceField: "compensationCurrency", normalizedValue: "CAD" });
-    expect(await currencyRow("$72,000–$88,000", null, null)).toBeUndefined();
+    // No location needed.
+    expect(await currencyRow("$72,000–$88,000", null, null)).toMatchObject({ sourceField: bareDollarCurrencySourceField, normalizedValue: "USD" });
     expect(bareDollarCurrencySourceField).toBe("compensationText:bare-dollar-as-usd");
   });
 });

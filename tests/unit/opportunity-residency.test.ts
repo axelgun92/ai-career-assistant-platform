@@ -175,10 +175,11 @@ describe("normalizer: residency is independent of salary currency", () => {
       currency: "USD", salaryMin: 70000, residencyRequirement: "NON_US", residencyRegions: ["ES"], location: "Remote (Spain)",
     });
     expect(provenance.find((row) => row.fieldName === "currency")).toMatchObject({ sourceField: "compensationText" });
-    // A bare "$" outside the U.S. is not read as US dollars.
+    // A bare "$" is US dollars wherever the job is (October 27, 2026), and the
+    // currency never changes the residency.
     const bare = await normalize({ location: "Remote (Spain)", salaryText: "$70,000" });
-    expect(bare.opportunity).toMatchObject({ currency: null, salaryMin: 70000, residencyRequirement: "NON_US" });
-    expect(bare.provenance.find((row) => row.sourceField === bareDollarCurrencySourceField)).toBeUndefined();
+    expect(bare.opportunity).toMatchObject({ currency: "USD", salaryMin: 70000, residencyRequirement: "NON_US", residencyRegions: ["ES"] });
+    expect(bare.provenance.find((row) => row.sourceField === bareDollarCurrencySourceField)).toMatchObject({ normalizedValue: "USD" });
     expect(provenance.filter((row) => row.fieldName.startsWith("residency"))).toEqual([
       expect.objectContaining({
         fieldName: "residencyRequirement", kind: "DETERMINISTIC", sourceField: residencySourceFields.location,

@@ -83,15 +83,10 @@ const annualPeriod = /\b(?:per\s+(?:year|annum)|a\s+year|annual(?:ly)?|annuali[s
 // specific location the posting states is never replaced by it.
 const worldwidePlaceholder = /^(?:anywhere(?:\s+in\s+the\s+world)?|worldwide|world\s*wide|global(?:ly)?|earth|international|remote)$/i;
 
-// One pay tier: its label, amounts and currency. A tier naming its own
-// place ("U.S.: $63,000 - 75,000") reads a bare "$" from that place; a zone
-// or band ("Zone 2") from where the posting is.
-export function compensationTier(
-  tier: { label: string; statement: string },
-  geography: { location: string | null; residencyRegions: string[]; workAuthorizationRegions: string[] },
-): CompensationTier {
-  const ownPlace = scanGeography(tier.label).codes.length > 0;
-  const parsed = parseCompensation(tier.statement, null, ownPlace ? {} : geography);
+// One pay tier: its label, amounts and currency, as its own statement
+// states them.
+export function compensationTier(tier: { label: string; statement: string }): CompensationTier {
+  const parsed = parseCompensation(tier.statement);
   return { label: tier.label, minimum: parsed.minimum, maximum: parsed.maximum, currency: parsed.currency };
 }
 
@@ -326,7 +321,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       const periodUnstated = salaryField === "source.compensation" && !annualPeriod.test(salaryText ?? "");
       if (!structuredAmounts && salaryText && !periodUnstated) {
         const amountsField = salaryField ?? facts.compensation!.sourceField;
-        const parsed = parseCompensation(salaryText, null, { location, residencyRegions: residency.regions, workAuthorizationRegions: workAuthorization?.value.regions ?? [] });
+        const parsed = parseCompensation(salaryText);
         salaryMin = parsed.minimum;
         salaryMax = parsed.maximum;
         currency = parsed.currency;
@@ -371,8 +366,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         tieredSalaryText = tiers.value;
         record("salaryText", tiers.sourceField, "DETERMINISTIC", tiers.value, tiers.sourceText);
         if (currency) record("currency", tiers.sourceField, "DETERMINISTIC", currency, tiers.sourceText);
-        const geography = { location, residencyRegions: residency.regions, workAuthorizationRegions: workAuthorization?.value.regions ?? [] };
-        compensationTiers = tiers.tiers.map((tier) => compensationTier(tier, geography));
+        compensationTiers = tiers.tiers.map(compensationTier);
         record("compensationTiers", tiers.sourceField, "DETERMINISTIC", compensationTiers, tiers.sourceText);
       }
       // Variable pay the posting states on its own (never the salary range).
