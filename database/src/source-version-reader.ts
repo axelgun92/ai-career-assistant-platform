@@ -83,6 +83,8 @@ const storedFactsSelect = {
   salaryMax: true,
   salaryText: true,
   compensationBasis: true,
+  compensationTiers: true,
+  bonus: true,
   currency: true,
   compensationNotes: true,
   postingDate: true,

@@ -139,12 +139,14 @@ describe("each adapter: the facts its source states survive normalization", () =
     expect((await find("remote-ok", "1137529")).opportunity).toMatchObject({ location: "Remote", remoteStatus: "REMOTE" });
   });
 
-  it("We Work Remotely: an OTE range keeps its numbers (USD by \"USA Only\"); hourly pay is not salary; no application URL", async () => {
+  it("We Work Remotely: an OTE range keeps its numbers (USD by \"USA Only\"); hourly pay counts only by its stated annual equivalent; no application URL", async () => {
     const fixd = await find("we-work-remotely", "https://weworkremotely.com/remote-jobs/fixd-automotive-client-success-manager-enterprise-accounts");
     expect(fixd.opportunity).toMatchObject({ salaryMin: 80000, salaryMax: 100000, currency: "USD", compensationBasis: "OTE", employmentType: "FULL_TIME", applicationUrl: null });
     expect(markers(fixd, "compensationBasis")).toEqual(["rawText:explicit-compensation-statement"]);
     const hourly = await find("we-work-remotely", "https://weworkremotely.com/remote-jobs/new-law-business-model-solutions-engineer-customer-success");
-    expect(hourly.opportunity).toMatchObject({ salaryMin: null, salaryMax: null });
+    // "Pay Rate: $40.87–$45.67 ($85,000 – $95,000 / annualized)": the stated
+    // annual equivalent is the salary (October 27, 2026; previously Unknown).
+    expect(hourly.opportunity).toMatchObject({ salaryMin: 85000, salaryMax: 95000, employmentType: "FULL_TIME" });
     expect(hourly.opportunity.salaryText).toContain("$40.87");
   });
 

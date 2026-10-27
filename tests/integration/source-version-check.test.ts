@@ -164,7 +164,7 @@ describe("source-version check: the production normalization path", () => {
     const result = await renormalizeStoredSourceVersion(read.version);
     const differing = compareWithStoredFacts(read.opportunity, result).filter((row) => row.differs);
     expect(differing.map((row) => row.label)).toEqual(["Salary (as shown)", "Salary minimum", "Salary maximum", "Compensation basis"]);
-    expect(differing[0]).toMatchObject({ stored: "Unknown", current: "105,000–155,000 (currency unknown) (OTE)" });
+    expect(differing[0]).toMatchObject({ stored: "Unknown", current: "105,000–155,000 USD (OTE)" });
     const report = formatSourceVersionCheck({ database: databaseName, read, result });
     expect(report).toContain("* Salary (as shown)");
     expect(report).toContain("4 fact(s) marked * differ");

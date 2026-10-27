@@ -8,7 +8,7 @@ import {
   type OpportunityNormalizer,
   type RawOpportunity,
 } from "@ai-career/core";
-import type { StoredOpportunityFacts, StoredSourceVersion, StoredSourceVersionRead } from "@ai-career/database";
+import { storedCompensationTiers, type StoredOpportunityFacts, type StoredSourceVersion, type StoredSourceVersionRead } from "@ai-career/database";
 import { createManualOpportunityNormalizer, createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
 import {
   employmentTypeLabel,
@@ -113,6 +113,8 @@ type Facts = {
   salaryMax: number | null;
   salaryText: string | null;
   compensationBasis: string | null;
+  compensationTiers: Array<{ label: string; minimum: number | null; maximum: number | null; currency: string | null }>;
+  bonus: string | null;
   currency: string | null;
   compensationNotes: string | null;
   postingDate: Date | null;
@@ -132,6 +134,7 @@ function storedFacts(stored: StoredOpportunityFacts): Facts {
     companyName: stored.company?.name ?? null,
     salaryMin: decimal(stored.salaryMin),
     salaryMax: decimal(stored.salaryMax),
+    compensationTiers: storedCompensationTiers(stored.compensationTiers),
   };
 }
 
@@ -142,6 +145,7 @@ function normalizedFacts(opportunity: NormalizedOpportunity): Facts {
     workArrangements: opportunity.workArrangements ?? [],
     salaryMin: decimal(opportunity.salaryMin),
     salaryMax: decimal(opportunity.salaryMax),
+    compensationTiers: opportunity.compensationTiers ?? [],
   };
 }
 
@@ -162,13 +166,14 @@ const rows: Array<{ label: string; show: (facts: Facts) => string | null; proven
   { label: "Time zone", show: (f) => f.timeZoneRequirements, provenance: ["timeZoneRequirements"] },
   { label: "Location eligibility", show: (f) => (f.residencyRequirement ? formatResidency(f.residencyRequirement, f.residencyRegions) : null), provenance: ["residencyRequirement", "residencyRegions"] },
   { label: "Work authorization", show: (f) => formatWorkAuthorization(f, geographyName), provenance: ["workAuthorizationRequirement", "workAuthorizationRegions", "visaSponsorship", "relocationSupport", "employerOfRecordRegions"] },
-  { label: "Salary (as shown)", show: (f) => formatSalary(f), provenance: ["salaryMin", "salaryMax", "currency", "compensationBasis"] },
+  { label: "Salary (as shown)", show: (f) => formatSalary(f), provenance: ["salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers"] },
   { label: "Salary minimum", show: (f) => (f.salaryMin === null ? null : String(f.salaryMin)), provenance: ["salaryMin"] },
   { label: "Salary maximum", show: (f) => (f.salaryMax === null ? null : String(f.salaryMax)), provenance: ["salaryMax"] },
   { label: "Currency", show: (f) => f.currency, provenance: ["currency"] },
   { label: "Compensation basis", show: (f) => f.compensationBasis, provenance: ["compensationBasis"] },
   { label: "Compensation text", show: (f) => oneLine(f.salaryText), provenance: ["salaryText"] },
   { label: "Compensation notes", show: (f) => oneLine(f.compensationNotes), provenance: ["compensationNotes"] },
+  { label: "Bonus / variable pay", show: (f) => oneLine(f.bonus), provenance: ["bonus"] },
   { label: "Posting date", show: (f) => day(f.postingDate), provenance: ["postingDate"] },
   { label: "Closing date", show: (f) => day(f.closingDate), provenance: ["closingDate"] },
   { label: "Posting URL", show: (f) => f.canonicalUrl, provenance: ["canonicalUrl"] },

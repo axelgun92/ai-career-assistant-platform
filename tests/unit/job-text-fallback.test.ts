@@ -923,7 +923,7 @@ describe("the shared reader itself", () => {
     expect(readJobTextFacts(input)).toEqual(readJobTextFacts(input));
     expect(readJobTextFacts({ text: null, title: null })).toEqual({
       companyName: null, location: null, broaderLocation: null, remoteStatus: null, workArrangements: null, employmentType: null, compensation: null,
-      compensationTiers: null, postingDate: null, closingDate: null, timeZoneRequirements: null, seniority: null,
+      compensationTiers: null, bonus: null, postingDate: null, closingDate: null, timeZoneRequirements: null, seniority: null,
       seniorityLabel: null, department: null, requisitionId: null,
       workAuthorization: null, visaSponsorship: null, relocationSupport: null, employerOfRecord: null,
     });

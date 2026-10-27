@@ -1,6 +1,7 @@
 import { createRetrievalIngestionService, extensionCaptureMaxBytes, extensionCaptureSchemaVersion } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
+  findListingVersionHint,
   PrismaExtensionLookupRepository,
   PrismaExtensionPairingRepository,
   PrismaManualOpportunityRepository,
@@ -179,7 +180,12 @@ export type ExtensionApiHandlers = ReturnType<typeof createExtensionApiHandlers>
 
 // The persisted evaluation state through the existing latest-evaluation
 // read; null when the opportunity has no evaluation.
-export function evaluationSummaryReader(service: Pick<EvaluationService, "getLatestEvaluation">) {
+export function evaluationSummaryReader(
+  service: Pick<EvaluationService, "getLatestEvaluation">,
+  // Whether the latest completed evaluation evaluated an earlier version of
+  // the listing (the opportunity page's listing-version hint).
+  evaluatedEarlierVersion: (opportunityId: string) => Promise<boolean> = async () => false,
+) {
   return async (opportunityId: string): Promise<EvaluationSummary | null> => {
     try {
       const latest = await service.getLatestEvaluation(opportunityId);
@@ -190,6 +196,7 @@ export function evaluationSummaryReader(service: Pick<EvaluationService, "getLat
         recommendation: latest.recommendation
           ? { decision: latest.recommendation.decision, explanation: latest.recommendation.explanation ?? null }
           : null,
+        ...(latest.status === "COMPLETED" && (await evaluatedEarlierVersion(opportunityId)) ? { evaluatedEarlierVersion: true } : {}),
       };
     } catch (error) {
       if (error instanceof EvaluationApiError && error.code === "EVALUATION_NOT_FOUND") return null;
@@ -209,7 +216,8 @@ export function getExtensionApi(): ExtensionApiHandlers {
         normalizer: createRetrievedOpportunityNormalizer(),
       }),
       lookup: new PrismaExtensionLookupRepository(),
-      latestEvaluation: (opportunityId) => evaluationSummaryReader(getEvaluationService())(opportunityId),
+      latestEvaluation: (opportunityId) =>
+        evaluationSummaryReader(getEvaluationService(), async (id) => (await findListingVersionHint(id)) !== null)(opportunityId),
       discovery: customerSuccessDiscoveryConfiguration,
     }),
     evaluation: { request: handleProductionEvaluationPost, status: handleProductionEvaluationGet },

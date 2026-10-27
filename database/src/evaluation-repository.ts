@@ -1,4 +1,4 @@
-import { originatingVersion, residencyRequirement, storedEligibilityFacts, storedWorkArrangements } from "./manual-opportunity-repository";
+import { originatingVersion, residencyRequirement, storedCompensationTiers, storedEligibilityFacts, storedWorkArrangements } from "./manual-opportunity-repository";
 import type { NormalizedOpportunity } from "@ai-career/core";
 import {
   evaluationSnapshotSchema,
@@ -54,6 +54,11 @@ export const fieldsWithheldFromEvaluator = [
   "seniorityLabel",
   // Every arrangement the posting offers (withheld like remoteStatus).
   "workArrangements",
+  // Added with the final cross-source batch (October 27, 2026): labelled
+  // regional pay tiers (withheld like salaryMin/salaryMax), and variable pay
+  // stated on its own, newly read (it was always null before).
+  "compensationTiers",
+  "bonus",
 ] as const;
 
 // What the evaluator received for each withheld field before it existed.
@@ -77,6 +82,8 @@ const withheldValues = {
   employerOfRecordRegions: [],
   seniorityLabel: null,
   workArrangements: [],
+  compensationTiers: [],
+  bonus: null,
 } satisfies Pick<NormalizedOpportunity, (typeof fieldsWithheldFromEvaluator)[number]>;
 
 const withheldFromEvaluator = new Set<string>(fieldsWithheldFromEvaluator);
@@ -126,6 +133,7 @@ function mapOpportunityFields(
     salaryMin: record.salaryMin?.toNumber() ?? null,
     salaryMax: record.salaryMax?.toNumber() ?? null,
     salaryText: record.salaryText,
+    compensationTiers: storedCompensationTiers(record.compensationTiers),
     bonus: record.bonus,
     equity: record.equity,
     currency: record.currency,

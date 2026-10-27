@@ -112,7 +112,7 @@ describe("Healthie through both paths, persisted", () => {
     for (const [id, url] of [[automated.opportunityId, `https://job-boards.greenhouse.io/healthie${token}/jobs/4425790009`], [captured.opportunityId, pageUrl]] as const) {
       const stored = await database.opportunity.findUniqueOrThrow({ where: { id } });
       expect(stored).toMatchObject({
-        remoteStatus: "HYBRID", employmentType: "FULL_TIME", department: "Customer Success", compensationBasis: "OTE", currency: null,
+        remoteStatus: "HYBRID", employmentType: "FULL_TIME", department: "Customer Success", compensationBasis: "OTE", currency: "USD",
         workAuthorizationRequirement: "RIGHT_TO_WORK", workAuthorizationRegions: ["US"], visaSponsorship: null, residencyRequirement: null,
         seniority: null, timeZoneRequirements: null, closingDate: null, applicationUrl: url,
         salaryText: "The salary range is $105,000 - $155,000 per year (OTE) annually.",
@@ -123,13 +123,13 @@ describe("Healthie through both paths, persisted", () => {
 
       const detail = (await repository.findOpportunityDetail(id))!;
       expect(formatCompensationRange(detail.opportunity.salaryMin, detail.opportunity.salaryMax, detail.opportunity.currency, detail.opportunity.compensationBasis))
-        .toBe("105,000–155,000 (currency unknown) (OTE)");
+        .toBe("105,000–155,000 USD (OTE)");
       expect(formatWorkAuthorization(detail.opportunity, geographyName)).toBe("United States authorization required · Sponsorship: Unknown");
       expect(workAuthorizationRelevance(detail.opportunity, { authorizedRegions: ["US"], citizenshipRegions: ["US"] }).status).toBe("SATISFIED");
 
       const subject = (await new PrismaEvaluationRepository().loadSubject({ opportunityId: id, userProfileId: null }))!;
       for (const field of fieldsWithheldFromEvaluator) {
-        expect(subject.opportunity[field]).toEqual(["residencyRegions", "workAuthorizationRegions", "employerOfRecordRegions", "workArrangements"].includes(field) ? [] : null);
+        expect(subject.opportunity[field]).toEqual(["residencyRegions", "workAuthorizationRegions", "employerOfRecordRegions", "workArrangements", "compensationTiers"].includes(field) ? [] : null);
       }
       expect(subject.provenance.map((row) => row.fieldName)).not.toContain("workAuthorizationRequirement");
     }

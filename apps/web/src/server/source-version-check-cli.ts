@@ -1,7 +1,8 @@
 import "dotenv/config";
+import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createReadOnlyDatabaseClient, readStoredSourceVersion, type SourceVersionSelector } from "@ai-career/database";
-import { formatSourceVersionCheck, renormalizeStoredSourceVersion } from "./source-version-check";
+import { formatSourceVersionCheck, renormalizeStoredSourceVersion, storedRawOpportunity } from "./source-version-check";
 
 // pnpm acceptance:check-source-version — Feature 14B original-JD retest
 // (acceptance and debugging only). Reads one stored source version, runs its
@@ -13,22 +14,28 @@ import { formatSourceVersionCheck, renormalizeStoredSourceVersion } from "./sour
 //   pnpm acceptance:check-source-version --database ai_career_assistant_acceptance \
 //     --opportunity http://localhost:3000/opportunities/<id>
 //   (or --opportunity <id>, or --source-record <source version id>)
+//   --evidence <file> also saves the stored evidence (the version's
+//   description, page context, page title and fields, exactly as stored) to
+//   a local JSON file, for offline replay of a case that still fails.
 
 const usage = [
   "Usage: pnpm acceptance:check-source-version --database <database name> --opportunity <opportunity page URL or ID>",
   "       pnpm acceptance:check-source-version --database <database name> --source-record <source version ID>",
   "--database must name the database DATABASE_URL points to (a safety check).",
+  "--evidence <file> also saves the stored evidence to a local JSON file (nothing is written to the database).",
 ].join("\n");
 
 const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-export type CheckArguments = { ok: true; connectionString: string; database: string; selector: SourceVersionSelector } | { ok: false; problem: string };
+export type CheckArguments =
+  | { ok: true; connectionString: string; database: string; selector: SourceVersionSelector; evidenceFile: string | null }
+  | { ok: false; problem: string };
 
 export function parseCheckArguments(argv: string[], environment: Record<string, string | undefined>): CheckArguments {
   const values = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 1) {
     const name = argv[index]!;
-    if (!["--database", "--opportunity", "--source-record"].includes(name)) return { ok: false, problem: `Unknown option ${name}` };
+    if (!["--database", "--opportunity", "--source-record", "--evidence"].includes(name)) return { ok: false, problem: `Unknown option ${name}` };
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) return { ok: false, problem: `${name} needs a value` };
     values.set(name, value);
@@ -60,6 +67,7 @@ export function parseCheckArguments(argv: string[], environment: Record<string, 
     connectionString,
     database: `${database} on ${host}`,
     selector: opportunity ? { opportunityId: id } : { sourceRecordId: id },
+    evidenceFile: values.get("--evidence") ?? null,
   };
 }
 
@@ -80,6 +88,10 @@ async function main() {
     }
     const result = await renormalizeStoredSourceVersion(read.version);
     console.info(formatSourceVersionCheck({ database: parsed.database, read, result }));
+    if (parsed.evidenceFile) {
+      writeFileSync(parsed.evidenceFile, `${JSON.stringify({ sourceRecordId: read.version.id, rawOpportunity: storedRawOpportunity(read.version) }, null, 2)}\n`);
+      console.info(`\nStored evidence saved to ${parsed.evidenceFile} (a local file; the database was not changed).`);
+    }
   } finally {
     await client.$disconnect().catch(() => undefined);
   }

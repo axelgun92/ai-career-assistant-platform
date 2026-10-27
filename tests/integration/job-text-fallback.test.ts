@@ -163,7 +163,7 @@ describe("facts read from the posting text persist with their markers", () => {
 
     // The evaluator subject still withholds the Task 7 facts.
     const subject = await new PrismaEvaluationRepository().loadSubject({ opportunityId: result.opportunityId, userProfileId: null });
-    for (const field of fieldsWithheldFromEvaluator) expect(subject!.opportunity[field]).toEqual(["residencyRegions", "workAuthorizationRegions", "employerOfRecordRegions", "workArrangements"].includes(field) ? [] : null);
+    for (const field of fieldsWithheldFromEvaluator) expect(subject!.opportunity[field]).toEqual(["residencyRegions", "workAuthorizationRegions", "employerOfRecordRegions", "workArrangements", "compensationTiers"].includes(field) ? [] : null);
   });
 
   it("a structured-data capture reads labelled page metadata outside its description, below the structured values", async () => {

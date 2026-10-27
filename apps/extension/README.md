@@ -149,6 +149,13 @@ On each opportunity, check both the fields fixed in this batch and the fields th
 
 The command writes nothing: PostgreSQL refuses writes for its session. It calls no evaluator, provider or network, and it refuses to read anything unless `--database` names the database `DATABASE_URL` points to.
 
+Add `--evidence ~/case.json` to also save that version's stored evidence (its description, page context, page title and fields, exactly as stored) to a local file, to send when a case still fails; the database is not changed.
+
+**Final cross-source batch: targeted live verification (October 27, 2026).** Apply the new migration to the acceptance database first (`pnpm db:status`, then `pnpm db:migrate`; it adds one column, `Opportunity.compensationTiers`, and changes no rows), then `pnpm extension:build` and reload the extension.
+1. **Replay without recapturing** (the normalization fixes), with the command above, on the stored originals: Healthie (USD), Mongoose (USD), PeopleGrove (location, Remote, USD), Samsara and SMB Team (salary; SMB Team's bonus apart), AlphaSense (80,000–95,000 USD), New Law Business Model (company, Full-time, Remote, 85,000–95,000), Serrala, Dropbox and ServiceTitan (the labelled ranges as the Salary), Hostaway (EST or CST).
+2. **Recapture** (the collection fixes), one posting each: Lever (Bluesight or Wing: Full-time and Remote), SmartRecruiters (QAD: salary, Remote, application URL), Remote OK (INNERGY: the full description; Renaissance: location IL, no worldwide eligibility), Workday (Thomson Reuters: the job title, requisition ID, posted and end dates), We Work Remotely (Dropbox or New Law Business Model), Greenhouse (SafeBreach: "United States (East Coast)", Remote).
+3. **Welcome to the Jungle (AlphaSense):** note the posting date the page itself shows; if it is not 2025-10-03, send the case with `--evidence`.
+
 **7. Cleanup (optional).** Stop the servers, delete `database/.e2e-acceptance-helper.mjs`, then run `dropdb -h localhost -U postgres ai_career_assistant_acceptance`.
 
 ## Known limits

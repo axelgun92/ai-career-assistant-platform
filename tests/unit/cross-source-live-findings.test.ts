@@ -251,9 +251,10 @@ describe("Workday (ServiceTitan): the labelled requisition ID, and geographic sa
     expect(opportunity.atsRequisitionId).toBe("JR115971");
     expect(markers(provenance, "atsRequisitionId")).toEqual(["pageContext:labelled-requisition-id"]);
     expect(opportunity).toMatchObject({ salaryMin: null, salaryMax: null, currency: "USD", location: "Glendale, CA, United States" });
-    // Each tier keeps the zone it is for.
+    // Each tier keeps the zone it is for; the Salary field shows them side by
+    // side, never merged (October 27, 2026; previously Unknown).
     expect(opportunity.salaryText).toBe("Zone 1: $92,600 - $139,000 USD / Zone 2: $86,600 - $129,800 USD");
-    expect(formatSalary(opportunity)).toBeNull();
+    expect(formatSalary(opportunity)).toBe("Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD");
   });
 });
 
@@ -348,9 +349,10 @@ describe("LinkedIn (Serrala): the public job page's own facts, and regional pay 
     // 5. Dated from the stated age, marked as such.
     expect(opportunity.postingDate?.toISOString()).toBe(daysBefore(14));
     expect(markers(provenance, "postingDate")).toEqual(["postingDate:relative-posted-age"]);
-    // Each tier keeps its region; the Salary field itself is Unknown.
+    // Each tier keeps its region and currency; the Salary field shows them
+    // side by side, never merged (October 27, 2026; previously Unknown).
     expect(opportunity.salaryText).toBe("U.S.: USD 63,000 - 75,000 / Canada: CAD 88,000 - 110,000");
-    expect(formatSalary(opportunity)).toBeNull();
+    expect(formatSalary(opportunity)).toBe("United States: 63,000–75,000 USD · Canada: 88,000–110,000 CAD");
     expect(formatWorkArrangements(opportunity)).toBe("On-site / Remote");
     expect(markers(provenance, "location")).toEqual(["rawText:labelled-location"]);
   });

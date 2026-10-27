@@ -1,4 +1,5 @@
 import {
+  geographyName,
   parseGeographyList,
   readGeographyList,
   readLocationGeography,
@@ -10,7 +11,7 @@ import {
   type WorkAuthorizationRequirement,
 } from "@ai-career/core";
 import { parseCompensation, statedAmounts } from "./compensation";
-import { standardizeEmploymentType } from "./position";
+import { standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
 // Deterministic fallback reading of the job posting's own text (Core TDD
 // §51, job-text fallback). Every source path supplies the description, and
@@ -55,7 +56,11 @@ export interface JobTextFacts {
   // range is the role's, so no bounds are taken (from the text or from a
   // source field). The value is the tiers' statements, kept as salary text;
   // `currency` is their one currency, if they share one.
-  compensationTiers: (TextFact<string> & { currency: string | null }) | null;
+  compensationTiers: (TextFact<string> & { currency: string | null; tiers: Array<{ label: string; statement: string }> }) | null;
+  // A bonus, commission or other variable pay the posting states on its own
+  // ("Bonus potential up to $10,000"): additional pay, never the salary
+  // range, kept as stated.
+  bonus: TextFact<string> | null;
   postingDate: TextFact<Date> | null;
   closingDate: TextFact<Date> | null;
   timeZoneRequirements: TextFact<string> | null;
@@ -182,23 +187,38 @@ const trimEnd = (value: string) => value.replace(/(?<![A-Z]\.[A-Z])[.;,:!]+$/, "
 interface Labelled {
   value: string;
   sourceText: string;
+  // A short qualifier written after the label ("Locations (Remote): …").
+  qualifier: string | null;
+  // Written without a colon ("Job type Full-Time"): page metadata only, and
+  // each reader checks the value is one of its own (a date, a place, …).
+  bare: boolean;
 }
 
-// Values written after one of `labels`: "Label: value" (also inside a row of
-// facts), or a line holding only the label followed by a line holding the
-// value.
-function labelledValues(lines: string[], labels: readonly string[], options: { colonOptional?: boolean } = {}): Labelled[] {
+// Values written after one of `labels`: "Label: value" or "Label (qualifier):
+// value" (also inside a row of facts), or a line holding only the label
+// followed by a line holding the value. With `bareLabel` (page metadata
+// only), also a short line holding the label and its value with no colon
+// ("Job type Full-Time", "Region United States"), as a page writes a label
+// and its value in one item.
+function labelledValues(lines: string[], labels: readonly string[], options: { colonOptional?: boolean; bareLabel?: boolean } = {}): Labelled[] {
   const alternatives = [...labels].sort((a, b) => b.length - a.length).map(escape).join("|");
-  const inline = new RegExp(`^(?:${alternatives})\\s*${options.colonOptional ? "[:：]?" : "[:：]"}\\s*(\\S.*)$`, "i");
-  const alone = new RegExp(`^(?:${alternatives})\\s*[:：]?$`, "i");
+  const qualified = "(?:\\s*\\(([^()]{1,30})\\))?";
+  const inline = new RegExp(`^(?:${alternatives})${qualified}\\s*${options.colonOptional ? "[:：]?" : "[:：]"}\\s*(\\S.*)$`, "i");
+  const alone = new RegExp(`^(?:${alternatives})${qualified}\\s*[:：]?$`, "i");
+  const bare = new RegExp(`^(?:${alternatives})\\s+([^:：\\s].*)$`, "i");
   const found: Labelled[] = [];
   lines.forEach((line, index) => {
     for (const segment of segments(line)) {
       const match = inline.exec(segment);
-      if (match) found.push({ value: match[1]!.trim(), sourceText: segment });
+      if (match) found.push({ value: match[2]!.trim(), sourceText: segment, qualifier: match[1]?.trim() ?? null, bare: false });
+      else if (options.bareLabel && segment.length <= 80) {
+        const loose = bare.exec(segment);
+        if (loose) found.push({ value: loose[1]!.trim(), sourceText: segment, qualifier: null, bare: true });
+      }
     }
     const next = lines[index + 1];
-    if (alone.test(line) && next) found.push({ value: next, sourceText: `${line}\n${next}` });
+    const label = alone.exec(line);
+    if (label && next) found.push({ value: next, sourceText: `${line}\n${next}`, qualifier: label[1]?.trim() ?? null, bare: false });
   });
   return found;
 }
@@ -289,6 +309,11 @@ const labelledArrangementValues: Record<string, WorkArrangement> = {
   "in office": "ONSITE",
   "in-person": "ONSITE",
   "in person": "ONSITE",
+};
+// Values only a labelled arrangement field uses ("Work Persona: Flexible or
+// Remote"): a flexible persona is a mix of office and remote days.
+const labelledOnlyArrangementValues: Record<string, WorkArrangement> = {
+  flexible: "HYBRID",
 };
 const employmentTokens = new Set(["full-time", "part-time", "contract", "temporary", "internship"]);
 const fillerTokens = new Set(["a", "an", "fully", "100%", "completely", "and", "&", "or"]);
@@ -414,8 +439,31 @@ interface TextSource {
 
 const marker = (source: TextSource, kind: string) => `${source.prefix}:${kind}`;
 
+// Page metadata items, one per line, as a layout writes them: separator
+// punctuation it puts between items ("Customer Success /", "Full Time /",
+// "· Remote") is not part of an item, and a salary it splits across two
+// elements ("$80" / "-95k") is one item.
+const leadingSeparator = /^(?:[/|•·–—-]\s+)+/;
+const trailingSeparator = /(?:\s+[/|•·–—-])+$/;
+const loneAmount = /^(?:[$€£₹]|US\$|C\$|CA\$|A\$|AU\$|\b[A-Z]{3}\s?)\s?\d[\d,.]*\s?[kK]?$/;
+const rangeContinuation = /^(?:[-–—]|to\b)\s*(?:[$€£₹]|[A-Z]{3}\s?)?\s*\d/;
+function pageLines(text: string): string[] {
+  const lines: string[] = [];
+  for (const raw of textLines(text)) {
+    const line = raw.replace(leadingSeparator, "").replace(trailingSeparator, "").trim();
+    if (!line) continue;
+    const previous = lines.at(-1);
+    if (previous && loneAmount.test(previous) && rangeContinuation.test(line)) {
+      lines[lines.length - 1] = `${previous}${/^[-–—]/.test(line) ? "" : " "}${line}`;
+    } else {
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+
 function textSource(text: string | null | undefined, prefix: TextSource["prefix"]): TextSource {
-  const lines = textLines(text ?? "");
+  const lines = prefix === "pageContext" ? pageLines(text ?? "") : textLines(text ?? "");
   return { prefix, lines, sentences: allSentences(lines), labelledOnly: prefix === "pageContext" };
 }
 
@@ -478,7 +526,8 @@ function namesSomethingElse(name: string, knownPlaces: string[], text: string): 
   const quoted = escape(name);
   const wholeWord = new RegExp(`(?<![\\w])${quoted}(?![\\w])`, "i");
   if (knownPlaces.some((place) => place && wholeWord.test(place))) return true;
-  return new RegExp(`\\b(?:based|located|offices?)\\s+(?:in\\s+)?${quoted}\\b|\\bLocations?\\s*[:：]\\s*${quoted}\\b|\\b${quoted}\\s+(?:office|offices|HQ|headquarters|area|metro)\\b`, "i").test(text);
+  // (Within one line: a name above a "Headquarters:" label is not a place.)
+  return new RegExp(`\\b(?:based|located|offices?)\\s+(?:in\\s+)?${quoted}\\b|\\bLocations?\\s*[:：]\\s*${quoted}\\b|\\b${quoted}[^\\S\\n]+(?:office|offices|HQ|headquarters|area|metro)\\b`, "i").test(text);
 }
 
 // "Job Application for <title> at <Company>", "<Company> - <title>",
@@ -488,6 +537,31 @@ function namesSomethingElse(name: string, knownPlaces: string[], text: string): 
 // never the employer, and a dash-separated name must also appear in the
 // posting itself.
 function companyFromPageTitle(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
+  return pageTitleCompany(pageTitle, title, knownPlaces, text) ?? companyAroundTitle(pageTitle, title, knownPlaces, text);
+}
+
+// "<Company>: <title>" or "<title> at <Company>", with at most a platform
+// after it ("| We Work Remotely"), read around the title as written (which
+// may itself contain a dash: "Solutions Engineer - Customer Success").
+function companyAroundTitle(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
+  const cleaned = collapse(pageTitle.replace(/^\(\d+\)\s*/, "").replace(/^Job Application for\s+/i, ""));
+  const at = cleaned.toLowerCase().indexOf(title.toLowerCase());
+  if (at < 0) return null;
+  const before = cleaned.slice(0, at);
+  const after = cleaned.slice(at + title.length);
+  const onlyPlatform = (rest: string) => {
+    const remainder = rest.replace(/^\s*(?:[|–—·-]\s*)?/, "").trim();
+    return !remainder || isPlatformName(remainder);
+  };
+  const lead = /^(.{2,80}?)\s*:\s*$/.exec(before);
+  const trail = !before.trim() ? /^\s+at\s+(.{2,80}?)(?=$|\s+[|–—·-]\s+)(.*)$/i.exec(after) : null;
+  const raw = lead && onlyPlatform(after) ? lead[1]! : trail && onlyPlatform(trail[2]!) ? trail[1]! : null;
+  const name = raw ? plausibleCompany(raw) : null;
+  if (!name || namesSomethingElse(name, knownPlaces, text)) return null;
+  return new RegExp(`(?<![\\w])${escape(name)}(?![\\w])`).test(text) ? name : null;
+}
+
+function pageTitleCompany(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
   const cleaned = collapse(pageTitle.replace(/^\(\d+\)\s*/, "").replace(/^Job Application for\s+/i, ""));
   const parts = cleaned
     .split(/\s+[|–—-]\s+|\s+·\s+/)
@@ -516,12 +590,34 @@ function companyFromPageTitle(pageTitle: string, title: string, knownPlaces: str
 }
 
 const locationLabels = ["location", "locations", "job location", "office location", "work location"];
+// Labels that name where the job is only when what follows is a place
+// ("Region: United States", "Countries: Canada"; never "Region: Enterprise").
+const geographyLabels = ["region", "regions", "country", "countries"];
+
+// A place list without a trailing "only" ("USA Only", "US only").
+const withoutOnly = (value: string) => value.replace(/\s*[-–(]?\s*only\)?$/i, "").trim();
+const namesGeography = (value: string) => parseGeographyList(withoutOnly(trimEnd(collapse(value)))) !== null;
+
+// "Remote", "Hybrid", "On-site": a labelled location that names only how
+// the role is worked states the arrangement, not a place.
+const arrangementOnly = (value: string) => labelledArrangementValues[trimEnd(collapse(value)).toLowerCase()] !== undefined;
+// A labelled location that starts with an arrangement ("Remote - US",
+// "Remote with up to 25% travel", "Hybrid (Boston)").
+const startsWithArrangement = (value: string) => /^(?:fully\s+|100%\s+)?(?:remote|hybrid|on[- ]?site|in[- ]office)(?![-\w])/i.test(collapse(value));
 
 function collectLocation(source: TextSource): { candidates: Array<TextFact<string>>; conflict: boolean } {
   const candidates: Array<TextFact<string>> = [];
-  for (const { value, sourceText } of labelledValues(source.lines, locationLabels)) {
+  for (const { value, sourceText, bare } of labelledValues(source.lines, locationLabels, { bareLabel: source.labelledOnly })) {
     const location = plausibleLocation(value);
-    if (location) candidates.push({ value: location, sourceField: marker(source, "labelled-location"), sourceText });
+    // An arrangement is not a place; an arrangement with a place keeps the
+    // place ("Remote - US"), with anything else it names none.
+    if (!location || arrangementOnly(location) || ((bare || startsWithArrangement(location)) && !scanGeography(location).codes.length)) continue;
+    if (bare && !namesGeography(location)) continue;
+    candidates.push({ value: location, sourceField: marker(source, "labelled-location"), sourceText });
+  }
+  for (const { value, sourceText } of labelledValues(source.lines, geographyLabels, { bareLabel: source.labelledOnly })) {
+    const location = trimEnd(collapse(value));
+    if (location.length <= 60 && namesGeography(location)) candidates.push({ value: location, sourceField: marker(source, "labelled-location"), sourceText });
   }
   if (source.labelledOnly) {
     // A page metadata item that is only a country or region list ("USA",
@@ -568,7 +664,8 @@ function modifierSentence(sentence: string): ModifierReading | null {
     const reading = readModifiers(normalizedModifiers(roleIs[1]!));
     return reading.onlyKnown ? reading : null;
   }
-  const bare = /^(.{1,60}?)\s+(?:position|role|job|opportunity)$/i.exec(text);
+  // "Fully remote role.", and a list item such as "100% Remote Work".
+  const bare = /^(.{1,60}?)\s+(?:position|role|job|opportunity|work)$/i.exec(text);
   if (bare && !negation.test(bare[1]!)) {
     const reading = readModifiers(normalizedModifiers(bare[1]!));
     return reading.onlyKnown ? reading : null;
@@ -604,13 +701,14 @@ function officeDaysArrangement(text: string): WorkArrangement | null {
 // ("Chicago Office or Remote, North America" → on-site, remote). Each option
 // must name an arrangement (an office is on-site); otherwise, or with fewer
 // than two, there are no options.
-function offeredArrangements(value: string, { places = false } = {}): WorkArrangement[] | null {
+function offeredArrangements(value: string, { places = false, labelled = false } = {}): WorkArrangement[] | null {
   if (/\b(?:not|no|non)[- ](?:remote|hybrid)\b/i.test(value)) return null;
   const options = value.split(/\s*(?:\bor\b|\/)\s*/i).map((option) => option.trim()).filter(Boolean);
   if (options.length < 2) return null;
   const read = options.map((option) => {
     const key = trimEnd(collapse(option)).toLowerCase();
     if (labelledArrangementValues[key]) return labelledArrangementValues[key]!;
+    if (labelled && labelledOnlyArrangementValues[key]) return labelledOnlyArrangementValues[key]!;
     if (!places) return null;
     if (/\bremote\b/i.test(option)) return "REMOTE" as const;
     if (/\bhybrid\b/i.test(option)) return "HYBRID" as const;
@@ -622,21 +720,58 @@ function offeredArrangements(value: string, { places = false } = {}): WorkArrang
   return distinct.length > 1 ? distinct : null;
 }
 
+// "Full-Time, Non-Exempt (W2) 40 Hours / Week": an employment type followed
+// only by its classification (exempt status, W-2 or 1099, salaried or
+// hourly, permanence, weekly hours).
+const employmentDetails =
+  /\(\s*(?:W-?2|1099)\s*\)|\b(?:non[- ]?exempt|exempt|W-?2|1099|salaried|hourly|permanent|regular|benefits?[- ]eligible)\b|\b\d{1,2}\s*(?:hours?|hrs?)\s*(?:\/|per|a)\s*(?:week|wk)\b|[,;/()–—-]/gi;
+function employmentLine(line: string): EmploymentType | null {
+  const match = /^(full[- ]?time|part[- ]?time|contract(?:or)?|temporary|internship)\s*[,;–—-]\s*(\S.*)$/i.exec(line);
+  if (!match || line.length > 80 || match[2]!.replace(employmentDetails, "").trim()) return null;
+  return standardizeEmploymentType(match[1]!);
+}
+
+// Statements that the role's work is remote first and foremost: "remote
+// work is the primary experience" (as a Virtual First policy states it).
+const remotePrimary = /\b(?:remote(?:\s+work)?|working\s+remotely)\s+is\s+(?:the|our)\s+primary\b/i;
+// A statement that opens with the role's work being fully remote ("100%
+// Remote Work at a Profitable, Growing Company", "Fully remote work").
+const fullyRemoteLead = /^(?:100\s?%|fully|completely|entirely)\s+remote\s+(?:work|role|position|job|team|company)\b/i;
+
+const arrangementLabels = [
+  "remote type", "workplace type", "work arrangement", "location type", "job location type", "work location type", "work model",
+  "working model", "work type", "workplace", "work persona", "work setting", "work style", "remote status",
+];
+
 function collectArrangementAndEmployment(source: TextSource): PositionCandidates {
   const result: PositionCandidates = { arrangements: [], arrangementOptions: [], employments: [], arrangementConflict: false, employmentConflict: false };
-  for (const { value, sourceText } of labelledValues(source.lines, ["remote type", "workplace type", "work arrangement", "location type", "work model", "work type", "workplace"])) {
-    const arrangement = labelledArrangementValues[trimEnd(collapse(value)).toLowerCase()];
+  for (const { value, sourceText } of labelledValues(source.lines, arrangementLabels, { bareLabel: source.labelledOnly })) {
+    const key = trimEnd(collapse(value)).toLowerCase();
+    const arrangement = labelledArrangementValues[key] ?? labelledOnlyArrangementValues[key];
     if (arrangement) result.arrangements.push({ value: arrangement, sourceField: marker(source, "labelled-work-arrangement"), sourceText });
-    const options = arrangement ? null : offeredArrangements(value);
+    const options = arrangement ? null : offeredArrangements(value, { labelled: true });
     if (options) result.arrangementOptions.push({ value: options, sourceField: marker(source, "labelled-work-arrangement"), sourceText });
   }
-  for (const { value, sourceText } of labelledValues(source.lines, locationLabels)) {
+  for (const { value, sourceText, qualifier, bare } of labelledValues(source.lines, locationLabels, { bareLabel: source.labelledOnly })) {
     const options = offeredArrangements(value, { places: true });
     if (options) result.arrangementOptions.push({ value: options, sourceField: marker(source, "labelled-work-arrangement"), sourceText });
+    // "Location: Remote", "Location: Remote - US", "Locations (Remote): …".
+    const stated = options ? null : bare ? labelledArrangementValues[trimEnd(collapse(value)).toLowerCase()] ?? null
+      : arrangementOnly(value) ? labelledArrangementValues[trimEnd(collapse(value)).toLowerCase()]!
+      : startsWithArrangement(value) && !/\bremote[- ](?:friendly|first)\b/i.test(value) ? workArrangementFromLocation(value) : null;
+    const fromQualifier = qualifier ? labelledArrangementValues[trimEnd(collapse(qualifier)).toLowerCase()] ?? null : null;
+    for (const arrangement of new Set([stated, fromQualifier])) {
+      if (arrangement) result.arrangements.push({ value: arrangement, sourceField: marker(source, "labelled-work-arrangement"), sourceText });
+    }
   }
-  for (const { value, sourceText } of labelledValues(source.lines, ["employment type", "job type", "position type", "employment"])) {
-    const employment = standardizeEmploymentType(trimEnd(collapse(value)));
+  for (const { value, sourceText } of labelledValues(source.lines, ["employment type", "job type", "position type", "employment", "commitment"], { bareLabel: source.labelledOnly })) {
+    const stated = trimEnd(collapse(value));
+    const employment = standardizeEmploymentType(stated) ?? employmentLine(stated);
     if (employment) result.employments.push({ value: employment, sourceField: marker(source, "labelled-employment-type"), sourceText });
+  }
+  for (const line of source.lines) {
+    const employment = employmentLine(line);
+    if (employment) result.employments.push({ value: employment, sourceField: marker(source, source.labelledOnly ? "stated-employment-type" : "explicit-employment-type-statement"), sourceText: line });
   }
   if (source.labelledOnly) {
     // Page metadata items that are only an arrangement, an office cadence or
@@ -656,6 +791,9 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
   for (const sentence of source.sentences) {
     const cadence = sentence.length <= 200 ? officeDaysArrangement(sentence) : null;
     if (cadence) result.arrangements.push({ value: cadence, sourceField: marker(source, "explicit-office-days-statement"), sourceText: sentence });
+    if (sentence.length <= 200 && (remotePrimary.test(sentence) || fullyRemoteLead.test(sentence)) && !negation.test(sentence)) {
+      result.arrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
+    }
     const reading = modifierSentence(sentence);
     if (!reading) continue;
     // "a remote or hybrid role" states no single arrangement.
@@ -670,7 +808,17 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
 
 // A compensation cue, required in the statement itself (or its heading).
 const compensationCue =
-  /\b(?:salary|salaries|base|pay|pays|compensation|wages?|OTE|on[- ]target(?: earnings)?|per (?:year|annum)|a year|annual(?:ly)?|hiring range)\b|\/\s*(?:yr|year)\b/i;
+  /\b(?:salary|salaries|base|pay|pays|compensation|wages?|OTE|on[- ]target(?: earnings)?|per (?:year|annum)|a year|annual(?:ly)?|annuali[sz]ed|hiring range)\b|\/\s*(?:yr|year)\b/i;
+// Variable pay a statement leads with ("Bonus potential up to $10,000",
+// "Commission: $20,000"): additional pay, not the salary range.
+const variablePay = /\b(?:bonus(?:es)?|commissions?|incentives?|variable(?:\s+(?:pay|compensation|component))?|equity|stock|RSUs?|profit[- ]sharing|spiffs?)\b/i;
+const basePay = /\b(?:salary|salaries|base|wages?|OTE|on[- ]target|pay\s+range|hiring\s+range|compensation\s+range)\b/i;
+function variablePayOnly(text: string): boolean {
+  const variable = variablePay.exec(text);
+  if (!variable || basePay.test(text)) return false;
+  const amount = salaryAmount.exec(text);
+  return !amount || variable.index < amount.index;
+}
 // Business metrics, and benefits or perks that are not the role's pay.
 const notCompensation =
   /\b(?:ARR|MRR|revenue|book of business|portfolios?|quotas?|funding|funded|raised|investors?|series [A-F]|valuation|valued at|budgets?|spend(?:ing)?|contract values?|deal sizes?|ACV|TCV|GMV|AUM|assets under management|run[- ]rate|(?:customer|user|client|install(?:ed)?|knowledge)\s+base|stipends?|allowances?|reimburse(?:d|ment|ments)?|relocation|home office|equipment|tuition|learning|education|wellness|referral)\b/i;
@@ -686,12 +834,25 @@ const compensationLabels = [
 ];
 
 function collectCompensation(source: TextSource): Array<TextFact<string>> {
+  return collectPayStatements(source).filter((candidate) => !variablePayOnly(candidate.value));
+}
+
+// Variable pay stated on its own, as stated.
+function collectBonus(source: TextSource): Array<TextFact<string>> {
+  return collectPayStatements(source)
+    .filter((candidate) => variablePayOnly(candidate.value))
+    .map((candidate) => ({ ...candidate, sourceField: marker(source, "explicit-variable-pay-statement") }));
+}
+
+function collectPayStatements(source: TextSource): Array<TextFact<string>> {
   const candidates: Array<TextFact<string>> = [];
   const usable = (text: string) => text.length <= maxStatementLength && salaryAmount.test(text) && !notCompensation.test(text);
   const field = marker(source, "explicit-compensation-statement");
   if (source.labelledOnly) {
-    for (const { sourceText } of labelledValues(source.lines, compensationLabels)) {
-      if (!sourceText.includes("\n") && usable(sourceText)) candidates.push({ value: sourceText, sourceField: field, sourceText });
+    for (const { sourceText, bare } of labelledValues(source.lines, [...compensationLabels, "bonus", "commission"], { bareLabel: true })) {
+      if (!sourceText.includes("\n") && usable(sourceText) && (!bare || wholeSalary.test(sourceText.replace(/^\D+?(?=[$€£₹]|\b[A-Z]{3}\b|\d)/, "")))) {
+        candidates.push({ value: sourceText, sourceField: field, sourceText });
+      }
     }
   } else {
     for (const sentence of source.sentences) {
@@ -713,7 +874,11 @@ function collectCompensation(source: TextSource): Array<TextFact<string>> {
   // "$65k–$80k/year", "$100,000 or more USD").
   if (source.labelledOnly) {
     for (const line of source.lines) {
-      if (line.length <= 60 && usable(line) && wholeSalary.test(line)) candidates.push({ value: line, sourceField: marker(source, "stated-salary"), sourceText: line });
+      // A line starting with a range separator ("-95k") is the end of a
+      // range, never a salary by itself.
+      if (line.length <= 60 && usable(line) && wholeSalary.test(line) && !/^\s*(?:[-–—~]|to\b)/i.test(line)) {
+        candidates.push({ value: line, sourceField: marker(source, "stated-salary"), sourceText: line });
+      }
     }
   }
   return candidates;
@@ -739,10 +904,10 @@ function compensationTiers(candidates: Array<TextFact<string>>): JobTextFacts["c
   const ranges = candidates
     .map((candidate) => ({ candidate, parsed: parseCompensation(candidate.value) }))
     .filter(({ parsed }) => parsed.amountsUnknownReason === null && parsed.minimum !== null && parsed.maximum !== null && parsed.minimum < parsed.maximum);
-  const distinct = new Map<string, (typeof ranges)[number]>();
-  for (const range of ranges) distinct.set(`${range.parsed.minimum}|${range.parsed.maximum}|${range.parsed.currency ?? ""}`, range);
-  if (distinct.size < 2) return null;
-  const tiers = [...distinct.values()];
+  // One range stated twice (also once rounded) is one range.
+  const tiers: typeof ranges = [];
+  for (const range of ranges) if (!tiers.some((tier) => sameRange(tier.parsed, range.parsed) && tier.parsed.currency === range.parsed.currency)) tiers.push(range);
+  if (tiers.length < 2) return null;
   const currencies = new Set(tiers.map(({ parsed }) => parsed.currency));
   // Every tier must say which place or zone it is for: ranges that do not
   // are not tiers (they are conflicting evidence, and stay Unknown).
@@ -753,7 +918,31 @@ function compensationTiers(candidates: Array<TextFact<string>>): JobTextFacts["c
     sourceField: tiers[0]!.candidate.sourceField.replace(/:[^:]+$/, ":compensation-tiers"),
     sourceText: tiers.map(({ candidate }) => candidate.sourceText).join("\n"),
     currency: currencies.size === 1 ? [...currencies][0] ?? null : null,
+    tiers: tiers.map(({ candidate }, index) => {
+      const statement = tierStatement(candidate);
+      return { label: tierName(statement) ?? `Range ${index + 1}`, statement };
+    }),
   };
+}
+
+// The place, zone or band a tier statement is for, as it names it: a zone,
+// band or location label as written, without pay words ("Zone 2 salary
+// range:" → "Zone 2", "Additional US Location(s) Base Pay Range:" →
+// "Additional US Location(s)"), otherwise the places it names ("U.S.:" →
+// "United States", "If performed in Colorado, the pay range is" →
+// "Colorado").
+const tierFiller =
+  /\b(?:the|a|an|this|that|our|for|is|are|will be|be|at|role|roles|position|job|candidates?|based|located|salary|salaries|base|pay|range|ranges|annual|annually|compensation|hiring|OTE|on[- ]target|earnings|per|year|wage|wages)\b/gi;
+function tierName(statement: string): string | null {
+  const first = statement.search(/[$€£₹]|\b(?:USD|CAD|AUD|NZD|EUR|GBP|CHF|SEK|NOK|DKK|PLN|INR|SGD|JPY|MXN|BRL|ZAR)\b|\d{2,3}(?:[,.]\d{3}|\s?[kK]\b)/);
+  if (first <= 0) return null;
+  const prefix = statement.slice(0, first);
+  if (!tierLabel.test(prefix)) {
+    const places = scanGeography(prefix);
+    if (!places.ambiguous && places.codes.length) return places.codes.map(geographyName).join(", ");
+  }
+  const name = collapse(prefix.replace(tierFiller, " ").replace(/\(\s*\)/g, " ")).replace(/^[\s:：,;–—-]+|[\s:：,;–—-]+$/g, "");
+  return name && name.length <= 80 ? name : null;
 }
 
 // The compensation statements, read together. They agree when they say the
@@ -763,17 +952,32 @@ function compensationTiers(candidates: Array<TextFact<string>>): JobTextFacts["c
 // range, or a breakdown none of whose amounts goes beyond it. Anything else
 // (two ranges, a non-annual amount, another currency, an amount beyond the
 // range) leaves compensation Unknown.
+// Two statements of one range, one rounded to thousands ("$88K–$118K per
+// year" and "$88,089.75—$118,440 USD"): each bound within 1,000 of the
+// other's, in the same (or an unstated) currency.
+type ParsedRange = ReturnType<typeof parseCompensation>;
+function sameRange(a: ParsedRange, b: ParsedRange): boolean {
+  if (a.minimum === null || a.maximum === null || b.minimum === null || b.maximum === null) return false;
+  if (a.currency !== null && b.currency !== null && a.currency !== b.currency) return false;
+  return Math.abs(a.minimum - b.minimum) < 1000 && Math.abs(a.maximum - b.maximum) < 1000;
+}
+// Of statements of one range, the one stating it most precisely (amounts
+// not rounded to thousands), else the first.
+const precision = (parsed: ParsedRange) => [parsed.minimum, parsed.maximum].filter((value) => value !== null && value % 1000 !== 0).length;
+
 function agreedCompensation(candidates: Array<TextFact<string>>): TextFact<string> | null {
   const same = agreed(candidates, compensationReading);
   if (same || candidates.length < 2) return same;
   const readings = candidates.map((candidate) => ({ candidate, parsed: parseCompensation(candidate.value) }));
   const ranges = readings.filter(({ parsed }) => parsed.amountsUnknownReason === null && parsed.minimum !== null && parsed.maximum !== null && parsed.minimum < parsed.maximum);
-  if (new Set(ranges.map(({ candidate }) => compensationReading(candidate.value))).size !== 1) return null;
-  const range = ranges[0]!;
+  if (!ranges.length) return null;
+  const range = ranges.reduce((best, next) => (precision(next.parsed) > precision(best.parsed) ? next : best));
+  if (!ranges.every(({ parsed }) => sameRange(parsed, range.parsed))) return null;
   const minimum = range.parsed.minimum!;
   const maximum = range.parsed.maximum!;
   const consistent = readings.every(({ candidate, parsed }) => {
     if (compensationReading(candidate.value) === compensationReading(range.candidate.value)) return true;
+    if (ranges.some((other) => other.candidate === candidate)) return true;
     if (parsed.currency !== null && range.parsed.currency !== null && parsed.currency !== range.parsed.currency) return false;
     if (parsed.currencyUnknownReason === "CONFLICTING_CURRENCIES") return false;
     if (parsed.amountsUnknownReason === "AMBIGUOUS_AMOUNTS") {
@@ -820,7 +1024,13 @@ const postingDateLabels = ["posted on", "date posted", "posting date"];
 const closingDateLabels = [
   "anticipated role close date", "anticipated close date", "closing date", "close date", "application closing date",
   "application deadline", "applications close", "applications close on", "deadline to apply", "apply by", "apply before", "deadline",
+  "end date", "posting end date", "job posting end date", "expiration date", "expiry date", "expires", "expires on", "apply until",
+  "accepting applications until", "open until",
 ];
+// "This job posting will close 12/31/2026", "Applications will close on
+// November 30, 2026": the posting's own closing, in a sentence.
+const closingStatement =
+  /\b(?:(?:this|the)\s+)?(?:job\s+)?(?:posting|position|role|requisition|listing|vacancy|opening)\s+(?:will\s+)?(?:close|closes|expire|expires)\s+(?:on\s+)?|\bapplications?\s+(?:will\s+)?(?:close|closes)\s+(?:on\s+)?/i;
 
 // A posting's stated age in its own metadata ("Posted 2 weeks ago", "3 days
 // ago", "today"), as a date: the observation time minus that age, at day
@@ -856,10 +1066,14 @@ function collectDate(source: TextSource, labels: readonly string[], kind: string
   for (const sentence of source.sentences) {
     const match = statement.exec(sentence);
     if (match) consider(sentence.slice(match[0].length), sentence);
+    const closing = kind === "explicit-closing-date-statement" ? closingStatement.exec(sentence) : null;
+    if (closing) consider(sentence.slice(closing.index + closing[0].length), sentence);
   }
-  // A line holding only the label, followed by the date.
-  for (const { value, sourceText } of labelledValues(source.lines, labels)) {
-    if (sourceText.includes("\n")) consider(value, sourceText);
+  // A line holding only the label, followed by the date; in page metadata,
+  // also the label and the date in one item with no colon ("Apply before
+  // Nov 5, 2026").
+  for (const { value, sourceText, bare } of labelledValues(source.lines, labels, { bareLabel: source.labelledOnly })) {
+    if (sourceText.includes("\n") || bare) consider(value, sourceText);
   }
   return candidates;
 }
@@ -892,8 +1106,12 @@ const zoneFamilies: Array<[string, RegExp]> = [
 ];
 // The statement must require it: "must", "required", "need to", ...; a
 // description of the team ("we overlap with Eastern hours") is not one.
-const timeZoneRequirement = /\b(?:must|required|requires?|need(?:s)? to|expected to|able to work|available (?:during|for|to work|in))\b/i;
-const timeZoneContext = /\b(?:hours|overlap(?:ping)?|time ?zones?|business day|working day|workday)\b|\d\s?(?:am|pm|a\.m\.|p\.m\.)/i;
+// "A minimum of four hours of overlap with Pacific Time" requires it too.
+const timeZoneRequirement = /\b(?:must|required|requires?|need(?:s)? to|expected to|able to work|available (?:during|for|to work|in))\b|\b(?:minimum|at least)\b[^.]{0,40}\boverlap/i;
+// A zone written as its abbreviation ("EST or CST", "PST/MST") or after a
+// time ("9–5 ET") names a time zone by itself; a zone name ("Eastern")
+// needs time-of-day context.
+const timeZoneContext = /\b(?:hours|overlap(?:ping)?|time ?zones?|business day|working day|workday)\b|\d\s?(?:am|pm|a\.m\.|p\.m\.)|\b[ECMP][SD]T\b|\d\s?[ECMP]T\b/i;
 const timeZoneQualifier = /\b(?:prefer(?:red|ably)?|ideally|ideal|nice to have|bonus|plus|flexible|optional|not required|any time ?zone|all time ?zones|regardless of)\b/i;
 // A preference is kept as a preference (it says which zones are wanted);
 // "flexible", "optional", "any time zone" state none.
@@ -940,8 +1158,11 @@ function collectTimeZone(source: TextSource): Array<TextFact<string>> {
     }
   }
   if (source.labelledOnly) return candidates.filter((candidate) => !continentalSpan(candidate.value, zoneFamiliesOf(candidate.value)));
-  for (const sentence of source.sentences) {
-    if (sentence.length > 200 || /^[^:]{1,40}[:：]/.test(sentence) || !timeZoneContext.test(sentence)) continue;
+  for (const statement of source.sentences) {
+    // A labelled line ("Work Schedule & Compliance: Requires a minimum …")
+    // is read after its label.
+    const sentence = statement.replace(/^[^:：\d]{1,40}[:：]\s+/, "");
+    if (!sentence || sentence.length > 200 || !timeZoneContext.test(sentence)) continue;
     const families = zoneFamiliesOf(sentence);
     if (!families.length || continentalSpan(sentence, families)) continue;
     if (timeZoneRequirement.test(sentence) && !timeZoneQualifier.test(sentence)) {
@@ -1240,18 +1461,25 @@ const countriesIn = (codes: readonly string[]) => new Set(codes.map((code) => co
 
 // A labelled location in the posting's own text that contains the source's
 // location and names more ("Canada" inside "Chicago Office or Remote, North
-// America (US & Canada)"). Only a labelled line counts, never prose, and only
-// when it includes every place the source names: it never replaces a source
-// location it disagrees with.
+// America (US & Canada)"), or states the same place more precisely
+// ("United States (East Coast)" for "United States"). Only a labelled line
+// counts, never prose, and only when it includes every place the source
+// names: it never replaces a source location it disagrees with.
 function broaderLabelledLocation(sourceLocation: string | null | undefined, candidates: Array<TextFact<string>>): TextFact<string> | null {
   const source = readLocationGeography(sourceLocation);
   if (!sourceLocation || source.ambiguous || !source.codes.length) return null;
   const sourceCountries = countriesIn(source.codes);
+  const sourceText = collapse(sourceLocation).toLowerCase();
   const broader = candidates.filter((candidate) => {
     if (!candidate.sourceField.endsWith(":labelled-location")) return false;
     const stated = scanGeography(candidate.value);
     const statedCountries = countriesIn(stated.codes);
-    return statedCountries.size > sourceCountries.size && [...sourceCountries].every((code) => statedCountries.has(code));
+    if (![...sourceCountries].every((code) => statedCountries.has(code))) return false;
+    // More places, or the same place stated more precisely: the source's
+    // own wording with a qualifier ("United States (East Coast)" for
+    // "United States").
+    const refines = collapse(candidate.value).toLowerCase().includes(sourceText) && candidate.value.length > sourceLocation.length;
+    return statedCountries.size > sourceCountries.size || refines;
   });
   return agreed(broader);
 }
@@ -1267,17 +1495,14 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
   const pageTitle = input.pageTitle ? collapse(input.pageTitle) : null;
 
   const locations = sources.map(collectLocation);
-  // Two statements of the same geography ("U.S." and "USA") agree.
-  const locationKey = (value: string) => parseGeographyList(value)?.sort().join(",") ?? value.toLowerCase();
+  // Two statements of the same geography ("U.S." and "USA", "USA Only")
+  // agree.
+  const locationKey = (value: string) => parseGeographyList(withoutOnly(value))?.sort().join(",") ?? value.toLowerCase();
   const location = locations.some((reading) => reading.conflict) ? null : agreed(locations.flatMap((reading) => reading.candidates), locationKey);
 
   const positions = sources.map(collectArrangementAndEmployment);
+  // ("Location: Remote" states the arrangement, read with the others.)
   const arrangements = positions.flatMap((reading) => reading.arrangements);
-  // "Location: Remote" states the arrangement too.
-  if (location && location.sourceField.endsWith(":labelled-location")) {
-    const arrangement = labelledArrangementValues[location.value.toLowerCase()];
-    if (arrangement) arrangements.push({ value: arrangement, sourceField: location.sourceField, sourceText: location.sourceText });
-  }
   // Several arrangements offered as options are kept as stated. Statements
   // agree when they offer the same options; a single arrangement stated
   // elsewhere agrees when it is one of them. Anything else conflicts.
@@ -1305,6 +1530,11 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
       const date = line.length <= 40 ? relativePostedDate(line, input.observedAt) : null;
       if (date) postedAges.push({ value: date, sourceField: pageContextSourceFields.relativePostedAge, sourceText: line });
     }
+    // "Posted on: 11 days ago", "Date posted 3 days ago".
+    for (const { value, sourceText } of labelledValues(page.lines, [...postingDateLabels, "posted"], { bareLabel: true })) {
+      const date = value.length <= 40 ? relativePostedDate(value, input.observedAt) : null;
+      if (date) postedAges.push({ value: date, sourceField: pageContextSourceFields.relativePostedAge, sourceText });
+    }
   }
   return {
     companyName: agreed(companies),
@@ -1315,6 +1545,7 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
     employmentType,
     compensation: tiers ? null : agreedCompensation(compensationCandidates),
     compensationTiers: tiers,
+    bonus: agreed(sources.flatMap(collectBonus)),
     postingDate: agreed(
       [...sources.flatMap((source) => collectDate(source, postingDateLabels, "explicit-posting-date-statement")), ...postedAges],
       (date) => date.toISOString(),

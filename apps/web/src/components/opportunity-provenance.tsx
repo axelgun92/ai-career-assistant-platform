@@ -151,7 +151,10 @@ export function OpportunityProvenance({
                 <div><dt>Source URL</dt><dd><ExternalLink href={record.sourceUrl} /></dd></div>
                 <div><dt>Application URL</dt><dd><ExternalLink href={record.applicationUrl} /></dd></div>
                 <div><dt>Source job ID</dt><dd>{text(record.externalId)}</dd></div>
-                <div><dt>Requisition ID</dt><dd>{text(record.requisitionId)}</dd></div>
+                {/* The source's own requisition field, when it has one; the opportunity's
+                    requisition ID (also read from the page or the posting) is shown with
+                    the normalized facts. */}
+                {record.requisitionId ? <div><dt>Requisition ID</dt><dd>{record.requisitionId}</dd></div> : null}
                 <div><dt>Discovered</dt><dd>{timestamp(record.discoveredAt)}</dd></div>
                 <div><dt>Last observed</dt><dd>{timestamp(record.lastObservedAt)}</dd></div>
                 <div><dt>Normalized</dt><dd>{timestamp(record.normalizedAt)}</dd></div>

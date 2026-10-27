@@ -1,9 +1,13 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 25, 2026
+**Last updated:** October 27, 2026
 
 ## Current Objective
+
+**Feature 14B final cross-source batch (October 27, 2026).** Alex's final human cross-source retest of the committed checkpoint (v7 `6536ef8`, with the read-only retest helper `362fe01`) found remaining defects on ten sources. They were audited along the whole path (extension collection → capture envelope and source facts → shared normalization → provenance and persistence → the opportunity's display) and fixed as shared contracts, not per posting; see "Feature 14B final cross-source batch" under Recently Completed. The batch is implemented, verified and committed on `claude/gallant-pasteur-y1ou3i`. **Feature 14B stays unaccepted** until the small targeted live verification listed there passes. Feature 15 has not started.
+
+*(The objective below, from October 23–26, 2026, is kept as written; its review and the cross-source live retest it called for are done.)*
 
 **Feature 14B correction — the shared Core job-text fallback** is implemented and verified with automated tests on `claude/gallant-pasteur-y1ou3i`, and awaits Alex's review. It is **not committed or pushed**. Feature 14B was committed as `e6bacc6` (October 20, 2026). Alex's local acceptance then showed that the shared Core normalizers left already-supported facts Unknown when a source stated them only in the job text, and Alex approved correcting this in shared Core. See "Feature 14B correction" under Recently Completed. The same review then corrected the Core TDD §51 re-observation contract: a changed version of the listing an opportunity was found from now becomes its current facts, with every version kept and evaluations bound to the version they evaluated (see "current-version projection" under Recently Completed). That is implemented and verified too, and also **not committed or pushed**. The final acceptance capture (Greenhouse Healthie) then led to the shared-normalization convergence correction of October 25, 2026 (see "shared-normalization convergence" under Recently Completed): stated compensation keeps its numbers and basis, work authorization is a normalized fact interpreted for the user by a separate relevance layer, explicit team statements populate the department, and the application URL is captured with its basis on every path. Also **not committed or pushed**.
 
@@ -136,7 +140,56 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–26, 2026)
+## Recently Completed (October 14–27, 2026)
+
+### Feature 14B final cross-source batch (implemented and verified October 27, 2026; committed; awaiting the targeted live verification)
+
+**Why.** Alex's final human retest captured, on every supported source, the original posting from the earlier round and one more current Customer Success posting. Ashby, Workable and Wellfound passed (regression protection). Greenhouse, Lever, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads, Workday, LinkedIn and Welcome to the Jungle each still had defects. Adzuna stays out of scope (no direct Adzuna-hosted capture).
+
+**Root causes, by shared subsystem.**
+- **Page-context reading (shared normalizer).** Page metadata items were read only as `Label: value`, while pages write a label and its value in one item without a colon ("Job type Full-Time", "Region United States", "Apply before Nov 18, 2026"); items carried layout separators ("Full Time /", "Remote /"); and a salary split across two elements ("$80" / "-95k") was read as "-95k" alone. Now colon-less labels are read in page metadata only, each value checked as its kind (a place, a date, an employment type, an amount); separators are dropped; split ranges are rejoined; and a range's dangling end is never a salary. (Lever, We Work Remotely, Welcome to the Jungle.)
+- **Labelled location vs arrangement (shared normalizer).** "Location: Remote" was read as a place and then conflicted with the real place ("USA"), losing both. An arrangement-only location now states the arrangement, not a place; "Remote - US" keeps the place and states Remote; "Remote with up to 25% Regional Travel" states Remote; a label's qualifier counts ("Locations (Remote): …"); and a labelled location that states the source's place more precisely ("United States (East Coast)" for "United States") replaces it. (Working Nomads, SmartRecruiters, Greenhouse.)
+- **Explicit statements the reader did not know.** Added, all explicit and bounded: "Fully remote work" / "100% Remote Work at …"; "remote work is the primary experience" (Virtual First); a labelled "Work Persona: Flexible or Remote" (Flexible counts as hybrid only as a labelled arrangement value); "Full-Time, Non-Exempt (W2) 40 Hours / Week"; a time zone written as an abbreviation ("EST or CST", "9–5 ET") or a required "minimum … overlap with Pacific Time", also on a labelled line; closing dates labelled "End Date" or stated as "This job posting will close 12/31/2026"; a labelled posted age ("posted on: Posted 11 Days Ago", page metadata only).
+- **Compensation agreement (shared normalizer).** A rounded restatement of the same range ("$88K–$118K" and "$88,089.75—$118,440") conflicted; now they agree and the precise one is kept. A bonus stated on its own ("Bonus potential up to $10,000") conflicted with the range; variable pay that a statement leads with is now never the salary and is kept as the existing `bonus` fact. Hourly pay with its stated annual equivalent ("$40.87–$45.67 ($85,000 – $95,000 / annualized)") now gives the annual range; hourly pay alone still does not.
+- **Bare "$" evidence.** An explicit work-authorization requirement for the U.S. now counts as U.S. context (Healthie), as do the existing location, eligibility and statement geography. A city alone still does not; an explicit currency always wins.
+- **Regional tiers (new normalized fact, display).** Labelled ranges for several zones or places were kept only as salary text, so Salary showed Unknown. They are now a normalized fact, `Opportunity.compensationTiers` ([{ label, minimum, maximum, currency }], additive migration `20261027090000_compensation_tiers`), shown as the Salary side by side and never merged ("Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD"; "United States: 63,000–75,000 USD · Canada: 88,000–110,000 CAD"). `salaryMin`/`salaryMax` stay null. (We Work Remotely, Workday, LinkedIn.)
+- **Extension collection.**
+  - **Job title:** pages whose only h1 is the careers site's name ("ServiceTitan Careers", "Careers at Thomson Reuters") took that as the job title. The reader now finds the posting's own heading: a Workday-style posting header, the first h1 that is not a site title, else the first such h2. Pages titled with an h2 (Lever, Workday) now also get page context.
+  - **Page context** keeps the job's own header and footer inside its container (side panels, navigation and other-job cards stay out).
+  - **Microdata pay:** `baseSalary` microdata is read like JSON-LD (SmartRecruiters).
+  - **Apply link:** "I’m interested" with a typographic apostrophe matched no apply phrase, and the same application page linked twice with different parameters was ambiguous; both are fixed. Apply links in the job's own header or footer count.
+  - **Shortened structured description:** when a page's job data holds a teaser (Remote OK: it ends "Apply now and work remotely at …"), the page's own rendering of the same description is read instead.
+  - **Default worldwide place:** a remote-hiring place of "Anywhere" no longer replaces a location the page states ("Location: IL"), so no worldwide eligibility is derived from it.
+- **Persistence and display.** The opportunity's requisition ID (read from the page or text) was stored but shown nowhere; the source panel showed the source's own empty requisition field as Unknown. The opportunity's facts now show "Requisition ID"; a source panel shows a requisition only when that source states one.
+- **"Use my selected text instead" (Remote OK).** Traced end to end: the selected text becomes a new source version, the opportunity's description, the evaluator's subject and the reconstruction stage's input. What misled was the popup: it showed the earlier version's evaluation as current. It now says when the evaluation shown is of an earlier version and offers a new evaluation.
+
+**Intentionally unchanged.** Company Unknown on Unite Us (the posting does not state the employer plainly); Workable employment type and time zone (preferences only, nothing required); Wellfound work authorization ("Requirement not stated", sponsorship not available); LinkedIn and Welcome to the Jungle application URLs (no concrete destination on those pages); currency on New Law Business Model (no U.S. geography stated); Welcome to the Jungle's posting date (the page's own JSON-LD `datePosted`, mapped as stated; see the live verification plan).
+
+**Evaluator boundary.** No evaluator prompt, schema, model, routing, stage or policy change. The new `compensationTiers` and the newly read `bonus` are withheld from the evaluator subject (`fieldsWithheldFromEvaluator`). Existing visible fields (title, location, salary text, description, application URL, requisition ID) carry corrected values where this batch fixes them.
+
+**Tests.**
+- New `tests/unit/cross-source-final-batch.test.ts` (36): one case per failure class through the real extension reader, envelope, capture mapping and normalizer (the New Law Business Model case uses the posting's real text from the committed We Work Remotely fixture), with negative cases: no time zone from geography, no seniority from years, no work authorization from sponsorship, colon-less labels only in page metadata, Flexible only as a labelled value, variable pay never the salary, genuinely different ranges still conflict, hourly pay alone is not a salary, two different application pages stay ambiguous, a full structured description is kept.
+- New `tests/integration/cross-source-final-batch.test.ts` (3, test database): tiers and bonus persisted, listed, displayed, re-projected by a changed version and withheld from the evaluator; a page-labelled requisition ID persisted; "Use my selected text instead" through to the evaluator's reconstruction input, with the popup's earlier-version note.
+- New E2E case in `tests/e2e/dashboard.spec.ts`: regional tiers as the Salary on the opportunity and the dashboard, and the Requisition ID row.
+- Updated deliberately: the We Work Remotely annualized fixture listing; tiers shown in the Salary; Healthie in USD; the reader's fact list (`bonus`); the source panel's requisition row; the adapter time-zone contract (the one fixture listing that states one).
+
+**Cross-source regression.** All 13 adapter fixtures (36 listings) were snapshotted before and after. All 36 content hashes are unchanged. Two listings changed, both intended: New Law Business Model (We Work Remotely; the annualized range, Remote, the Pacific overlap) and one Workday listing (its three labelled pay ranges now structured as tiers). The v7 cross-source suite passes unchanged except the deliberate tier display.
+
+**Replay helper.** `pnpm acceptance:check-source-version` now also compares tiers and bonus, and `--evidence <file>` saves a stored version's exact evidence to a local file, so any case that still fails can be replayed offline.
+
+**Verified (October 27, 2026; isolated test database only; no live third-party requests; no provider calls):**
+- typecheck and lint;
+- unit tests: 65 files, 1,677 tests;
+- integration: 37 files, 317 tests;
+- the full E2E chain: 45/45 (5.2 min), including the extension project;
+- `pnpm extension:build` and the production web build;
+- `db:verify-migrations` (24 migrations; the new one applied to `ai_career_assistant_test` only);
+- `git diff --check`.
+
+**Targeted live verification (Codex/local), the smallest set covering every changed path:**
+1. Without recapturing, replay the stored originals with `pnpm acceptance:check-source-version` (normalization-only fixes): Healthie (USD), Mongoose (USD), PeopleGrove (location, Remote, USD), Samsara and SMB Team (salary, bonus), AlphaSense (80,000–95,000 USD), New Law Business Model (company, full-time, Remote, 85,000–95,000), Serrala, Dropbox and ServiceTitan (tiers as Salary), Hostaway (EST or CST).
+2. Recapture after reloading the rebuilt extension (collection fixes): one Lever posting (Bluesight or Wing: Full-time and Remote), one SmartRecruiters posting (QAD: salary, Remote, application URL), one Remote OK posting (INNERGY: the full description; Renaissance: location IL, no worldwide eligibility), one Workday posting (Thomson Reuters: title, requisition ID, posted and end dates), one We Work Remotely posting (Dropbox or New Law Business Model, through the page sidebar), one Greenhouse posting (SafeBreach: United States (East Coast), Remote).
+3. Welcome to the Jungle (AlphaSense): note the date the page itself shows as posted. If it differs from 2025-10-03, send it with `--evidence`; the JSON-LD `datePosted` is kept until then.
 
 ### Feature 14B original-JD retest helper (implemented and verified October 26, 2026; acceptance tooling only)
 

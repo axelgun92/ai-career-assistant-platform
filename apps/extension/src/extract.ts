@@ -120,10 +120,11 @@ export function extractJobPosting(): PageExtraction {
   // `lines`: every visible item on its own line (page context, where a label
   // and its value are often separate inline elements: "Visa Sponsorship"
   // "Not Available").
-  const textOf = (element: Element, extraRemoved = "", lines = false): string => {
+  const textOf = (element: Element, extraRemoved = "", lines = false, prune?: (copy: Element) => void): string => {
     const copy = element.cloneNode(true) as Element;
     copy.querySelectorAll(extraRemoved ? `${removedInCopies}, ${extraRemoved}` : removedInCopies).forEach((node) => node.remove());
     withoutOtherJobs(copy);
+    prune?.(copy);
     copy.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
     copy.querySelectorAll(lines ? "*" : "p, div, li, h1, h2, h3, h4, h5, h6, tr, section, article, ul, ol, dl, dt, dd, blockquote, pre").forEach((node) => {
       node.append("\n");
@@ -184,6 +185,33 @@ export function extractJobPosting(): PageExtraction {
   // here: Core decides what, if anything, it states.
   const documentTitle = linkedIn ? null : line(document.title.replace(/^\(\d+\)\s*/, ""), limits.title);
 
+  // A careers site's own title ("ServiceTitan Careers", "Careers at Thomson
+  // Reuters", "Remote Customer Success Jobs") and a section heading ("Job
+  // Description", "About the role") never title the posting.
+  const siteTitle = (value: string) =>
+    /^(?:careers?(?:\s+(?:at|with)\s+.+)?|.+\s+careers?(?:\s+(?:site|page|portal|home))?|(?:jobs?|openings|opportunities)\s+(?:at|with)\s+.+|.+\s+jobs(?:\s+board)?|work(?:ing)?\s+(?:at|with)\s+.+|join\s+(?:us|our\s+team)|job\s+board)$/i.test(value);
+  const sectionHeading =
+    /^(?:job\s+(?:details|description|summary|overview|information)|about\s+(?:the\s+)?(?:job|role|position|company|us|team)|description|overview|summary|responsibilities|requirements|qualifications|benefits|apply(?:\s+now)?|share(?:\s+this\s+job)?|(?:similar|related|recommended|other)\s+jobs)$/i;
+  // The posting's own title heading: a Workday-style job posting header, the
+  // page's first h1 that is not the site's own title, or, on pages that
+  // title the posting with an h2 (Lever, Workday, Remote OK), the first such
+  // h2. Null when the page has none.
+  const jobHeading = (() => {
+    let found: Element | null | undefined;
+    return (): Element | null => {
+      if (found !== undefined) return found;
+      const usable = (element: Element) => {
+        const text = line(element.textContent, limits.title);
+        return text !== null && !siteTitle(text) && !sectionHeading.test(text);
+      };
+      for (const selector of ['[data-automation-id="jobPostingHeader"]', "main h1", "[role=main] h1", "article h1", "h1", "main h2", "[role=main] h2", "article h2", "h2"]) {
+        const element = [...document.querySelectorAll(selector)].find(usable);
+        if (element) return (found = element);
+      }
+      return (found = null);
+    };
+  })();
+
   // 1. schema.org JobPosting (JSON-LD). Only the posting's own fields are
   //    read from it.
   let directApply = false;
@@ -207,7 +235,9 @@ export function extractJobPosting(): PageExtraction {
     // A posting with its own description is preferred over one without.
     let partial: ExtractedPosting | null = null;
     for (const posting of postings) {
-      const title = line(posting.title, limits.title);
+      const stated = line(posting.title, limits.title);
+      const heading = jobHeading();
+      const title = stated && siteTitle(stated) && heading ? line(heading.textContent, limits.title) : stated;
       // Structured data without a description still states the posting's
       // own fields; the description is then read from the page's main
       // content (below).
@@ -304,6 +334,24 @@ export function extractJobPosting(): PageExtraction {
       .map((element) => value(property(element, "name")) ?? value(element))
       .filter((name): name is string => Boolean(name));
     result.remoteLocations = [...new Set(requirements)].slice(0, 10);
+    // The posting's stated pay (baseSalary: a MonetaryAmount with a
+    // QuantitativeValue), read as in JSON-LD.
+    const salary = property(scope, "baseSalary");
+    if (salary) {
+      const number = (element: Element | null) => {
+        const raw = value(element);
+        const parsed = raw === null ? NaN : Number(raw.replace(/[,\s]/g, ""));
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+      };
+      const quantity = property(salary, "value");
+      const single = quantity && !property(quantity, "minValue") && !property(quantity, "maxValue") ? number(quantity) : null;
+      result.salaryMin = (quantity ? number(property(quantity, "minValue")) : null) ?? single;
+      result.salaryMax = (quantity ? number(property(quantity, "maxValue")) : null) ?? single;
+      const currency = value(property(salary, "currency"));
+      result.salaryCurrency = currency && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : null;
+      const unit = (value(quantity ? property(quantity, "unitText") : null) ?? value(property(salary, "unitText")) ?? "").toUpperCase();
+      result.salaryPeriod = unit === "YEAR" || unit === "MONTH" || unit === "WEEK" || unit === "DAY" || unit === "HOUR" ? unit : null;
+    }
     return result;
   };
 
@@ -395,7 +443,8 @@ export function extractJobPosting(): PageExtraction {
     return text.length >= 20 ? text.slice(0, limits.description) : null;
   })();
   const pageTitle = (): string | null => {
-    const fromHeading = linkedIn ? firstText(linkedInTitleSelectors, limits.title) : firstText(["main h1", "[role=main] h1", "article h1", "h1"], limits.title);
+    const heading = linkedIn ? null : jobHeading();
+    const fromHeading = linkedIn ? firstText(linkedInTitleSelectors, limits.title) : heading ? line(heading.textContent, limits.title) : null;
     if (fromHeading) return fromHeading;
     // A document title without a notification count; on LinkedIn ("Title |
     // Company | LinkedIn") only its first part.
@@ -417,7 +466,7 @@ export function extractJobPosting(): PageExtraction {
   const mainRoot = (): Element | null => {
     const main = document.querySelector("main") ?? document.querySelector("[role=main]");
     if (main) return main;
-    const heading = document.querySelector("h1");
+    const heading = jobHeading();
     const articles = [...document.querySelectorAll("article")];
     const own = heading ? articles.find((article) => article.contains(heading)) : articles.length === 1 ? articles[0] : undefined;
     if (own) return own;
@@ -442,15 +491,27 @@ export function extractJobPosting(): PageExtraction {
   };
 
   // Page context: the job's bounded content (its container, as above),
-  //    without navigation, header, footer, side panels, forms, lists of other
-  //    jobs, and recommendation, related-job, sharing, newsletter and cookie
-  //    widgets; one visible item per line, plain text only; not on LinkedIn.
-  //    Core reads only labelled values and whole job-metadata items from it.
+  //    including the job's own header and footer inside it (where pages put
+  //    the job's metadata items), without navigation, side panels, the
+  //    site's banner and footer, forms, lists and cards of other jobs, and
+  //    recommendation, related-job, sharing, newsletter and cookie widgets;
+  //    one visible item per line, plain text only; not on LinkedIn. Core
+  //    reads only labelled values and whole job-metadata items from it.
+  const siteChrome = "aside, [role=complementary], [role=banner], [role=contentinfo]";
+  // Another job's card inside the container: a short <article> with a link
+  // that does not carry this job's title.
+  const withoutOtherJobCards = (copy: Element) => {
+    const title = line(jobHeading()?.textContent, limits.title)?.toLowerCase() ?? null;
+    for (const article of [...copy.querySelectorAll("article")]) {
+      const text = (article.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (text.length < 600 && article.querySelector("a[href]") && (!title || !text.toLowerCase().includes(title))) article.remove();
+    }
+  };
   const pageContext = (): string | null => {
     if (linkedIn) return null;
     const root = mainRoot();
     if (!root) return null;
-    const text = textOf(root, `${sideParts}, ${widgets}`, true);
+    const text = textOf(root, `${siteChrome}, ${widgets}`, true, withoutOtherJobCards);
     if (!text) return null;
     if (text.length > limits.pageText) notes.push("Page context shortened to 20,000 characters");
     return text.slice(0, limits.pageText);
@@ -482,34 +543,86 @@ export function extractJobPosting(): PageExtraction {
       return (resume || person) && submit;
     });
   const applyLink = (): string | null => {
-    const excluded = `nav, header, footer, aside, [role=navigation], [role=banner], [role=contentinfo], [role=complementary], ${widgets}`;
+    // Navigation, side panels and other-job widgets never; the site's own
+    // header and footer never, but the job's own header and footer inside
+    // its container do hold its apply button.
+    const excluded = `nav, aside, [role=navigation], [role=complementary], ${widgets}`;
+    const chrome = "header, footer, [role=banner], [role=contentinfo]";
+    const root = mainRoot();
     const here = new URL(pageUrl);
-    const targets = new Set<string>();
+    // One destination per address: the same application page with other
+    // query parameters (a button above and below the posting) is one.
+    const targets = new Map<string, string>();
     for (const anchor of document.querySelectorAll("a[href]")) {
       if (anchor.closest(excluded)) continue;
+      const around = anchor.closest(chrome);
+      if (around && !(root && root.contains(around) && around !== root)) continue;
       const target = httpUrl((anchor as HTMLAnchorElement).href);
       if (!target) continue;
       const url = new URL(target);
       // A link within this page (#apply) leads to no other destination.
       if (url.origin === here.origin && url.pathname === here.pathname && url.search === here.search) continue;
-      const phrase = controlText(anchor).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+      const phrase = controlText(anchor).replace(/[‘’ʼ]/g, "'").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
       const stated = /^(?:apply|apply now|apply here|apply for (?:this )?(?:job|position|role)|apply to (?:this )?(?:job|position|role)|apply on (?:the )?(?:company|employer)(?:'s)? (?:site|website)|apply on (?:their )?website|submit (?:an |your )?application|i'm interested|i am interested)$/i.test(phrase);
       const trimmed = (path: string) => path.replace(/\/+$/, "");
       const ownApplicationPage = url.origin === here.origin && /^\/(?:apply|application)$/i.test(trimmed(url.pathname).slice(trimmed(here.pathname).length)) &&
         trimmed(url.pathname).startsWith(trimmed(here.pathname));
       if (!stated && !ownApplicationPage) continue;
       url.hash = "";
-      targets.add(url.href);
+      if (!targets.has(`${url.origin}${url.pathname}`)) targets.set(`${url.origin}${url.pathname}`, url.href);
     }
-    return targets.size === 1 ? [...targets][0]! : null;
+    return targets.size === 1 ? [...targets.values()][0]! : null;
   };
+  // A structured description that is a shortened copy of the one the page
+  // shows (a teaser that stops early, as some boards publish): the page's
+  // own rendering of the same description, when an element on the page
+  // starts with the same text and, read as usual, is much longer and holds
+  // the structured text's opening lines in order.
+  const fullerRendered = (structuredText: string): string | null => {
+    if (linkedIn || !document.body) return null;
+    const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+    const described = flat(structuredText);
+    if (described.length < 120) return null;
+    const lines = structuredText.split("\n").map(flat).filter((item) => item.length >= 25);
+    const opening = described.slice(0, 80);
+    const probes = lines.slice(0, 3).map((item) => item.slice(0, 25));
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const nodeText = flat(node.textContent ?? "");
+      if (!probes.some((probe) => nodeText.includes(probe))) continue;
+      for (let element = node.parentElement; element && element !== document.body; element = element.parentElement) {
+        if (element.closest("script, style, template, noscript, nav")) break;
+        const text = flat(element.textContent ?? "");
+        if (text.length < described.length * 1.3) continue;
+        const at = text.indexOf(opening);
+        if (at < 0 || at > 20) break;
+        const fuller = capDescription(textOf(element, `${sideParts}, ${widgets}`));
+        if (!fuller) break;
+        const cleaned = flat(fuller);
+        let from = 0;
+        const inOrder = lines.slice(0, Math.max(1, Math.floor(lines.length / 2))).every((item) => {
+          const found = cleaned.indexOf(item.slice(0, 60), from);
+          if (found < 0) return false;
+          from = found;
+          return true;
+        });
+        return cleaned.length >= described.length * 1.3 && inOrder ? fuller : null;
+      }
+    }
+    return null;
+  };
+
   const fromMain = mainContent();
   // Structured data whose own description is missing takes the page's main
   // content as its description (its other fields are still the posting's).
   const fromStructured = ((): ExtractedPosting | null => {
     const posting = structured() ?? microdata();
     if (!posting) return null;
-    if (posting.description) return posting;
+    if (posting.description) {
+      const fuller = fullerRendered(posting.description);
+      if (fuller) notes.push("The page shows a longer description than its job data; the page's description was read");
+      return fuller ? { ...posting, description: fuller } : posting;
+    }
     if (linkedIn || !fromMain?.description) return null;
     return { ...posting, description: fromMain.description };
   })();

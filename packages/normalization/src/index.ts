@@ -12,6 +12,7 @@ import {
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
 import { onTargetStatementFor, readJobTextFacts, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
+import { compensationTier } from "./retrieved";
 import {
   seniorityFromTitle,
   standardizeEmploymentType,
@@ -191,7 +192,12 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const textCompensation = tiers ?? facts.compensation;
       const salaryText = statedSalaryText ?? fallback("salaryText", textCompensation);
       const compensationField = statedSalaryText ? "compensationText" : textCompensation?.sourceField ?? "compensationText";
-      const compensation = parseCompensation(salaryText, details.compensationCurrency, { location, residencyRegions });
+      const geography = { location, residencyRegions, workAuthorizationRegions: workAuthorization?.value.regions ?? [] };
+      const compensation = parseCompensation(salaryText, details.compensationCurrency, geography);
+      // The labelled tiers, each with its own amounts (no single range).
+      const compensationTiers = tiers ? tiers.tiers.map((tier) => compensationTier(tier, geography)) : [];
+      if (tiers && compensationTiers.length) fallbacks.push({ fieldName: "compensationTiers", fact: tiers, normalizedValue: compensationTiers });
+      const bonus = fallback("bonus", facts.bonus);
       // The job text may call the same range on-target earnings (OTE takes
       // precedence over a basis the salary text left open or gave as base).
       const onTarget = compensation.basis === "OTE" ? null : onTargetStatementFor(rawOpportunity.description, compensation);
@@ -234,7 +240,8 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         salaryMax: compensation.maximum,
         salaryText,
         compensationBasis,
-        bonus: null,
+        compensationTiers,
+        bonus,
         equity: null,
         currency: compensation.currency,
         compensationNotes: null,

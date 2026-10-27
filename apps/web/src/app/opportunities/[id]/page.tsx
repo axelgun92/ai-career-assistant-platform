@@ -194,6 +194,9 @@ export default async function OpportunityPage({
     ["Source URL", detail.opportunity.canonicalUrl],
     ["Application URL", detail.opportunity.applicationUrl],
   ] as const;
+  // The requisition ID the listing states (a source field, or a labelled
+  // "Job Requisition ID" on the page or in the posting).
+  const requisitionId = detail.opportunity.atsRequisitionId;
   const applicationUrlNote = applicationUrlBasisNotes[
     detail.fieldProvenance.find((row) => row.fieldName === "applicationUrl")?.sourceField ?? ""
   ] ?? null;
@@ -313,6 +316,10 @@ export default async function OpportunityPage({
               </dd>
             </div>
           ))}
+          <div>
+            <dt>Requisition ID</dt>
+            <dd>{display(requisitionId)}</dd>
+          </div>
         </dl>
       </section>
 

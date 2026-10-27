@@ -9,6 +9,7 @@ import {
 } from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { storedCompensationTiers } from "./manual-opportunity-repository";
 
 export const opportunityListDefaultLimit = 100;
 export const opportunityListMaximumLimit = 200;
@@ -44,6 +45,9 @@ export interface OpportunityListItem {
   relocationSupport: string | null;
   employerOfRecordRegions: string[];
   compensationBasis: string | null;
+  // Labelled regional pay ranges (shown as the salary when there are no
+  // single bounds).
+  compensationTiers: Array<{ label: string; minimum: number | null; maximum: number | null; currency: string | null }>;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -358,6 +362,7 @@ type Row = {
   relocationSupport: string | null;
   employerOfRecordRegions: string[] | null;
   compensationBasis: string | null;
+  compensationTiers: unknown;
   postingDate: Date | null;
   createdAt: Date;
   discoveredAt: Date;
@@ -444,6 +449,7 @@ function toItem(row: Row, today: string): OpportunityListItem {
     relocationSupport: row.relocationSupport,
     employerOfRecordRegions: row.employerOfRecordRegions ?? [],
     compensationBasis: row.compensationBasis,
+    compensationTiers: storedCompensationTiers(row.compensationTiers),
     postingDate: row.postingDate,
     createdAt: row.createdAt,
     discoveredAt: row.discoveredAt,
@@ -540,7 +546,7 @@ export class PrismaOpportunityListRepository {
             o."salaryMin"::float8 AS "salaryMin", o."salaryMax"::float8 AS "salaryMax", o."currency",
             o."remoteStatus", o."workArrangements", o."seniority", o."residencyRequirement", o."residencyRegions",
             o."workAuthorizationRequirement", o."workAuthorizationRegions", o."visaSponsorship", o."relocationSupport",
-            o."employerOfRecordRegions", o."compensationBasis",
+            o."employerOfRecordRegions", o."compensationBasis", o."compensationTiers",
             o."createdAt", o."discoveredAt", o."updatedAt", o."applicationUrl",
             (od."opportunityId" IS NOT NULL) AS "deferred",
             le."id" AS "latestId", le."status" AS "latestStatus",

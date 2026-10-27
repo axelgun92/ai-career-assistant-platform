@@ -38,6 +38,10 @@ export interface EvaluationSummary {
   status: string;
   queueState: string;
   recommendation: { decision: string; explanation: string | null } | null;
+  // The latest completed evaluation is of an earlier version of the posting
+  // than the one saved now (for example after "Use my selected text
+  // instead"): requesting evaluation evaluates the current version.
+  evaluatedEarlierVersion?: boolean;
 }
 
 export interface CaptureResponse {

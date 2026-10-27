@@ -40,7 +40,7 @@ const activeStates = new Set(["QUEUED", "QUEUED_LONG", "RUNNING", "RUNNING_STALE
 
 // The persisted state as the server reports it (capture, lookup or the
 // evaluation status read).
-type EvaluationState = { queueState: string; recommendation: { decision: string } | null };
+type EvaluationState = { queueState: string; recommendation: { decision: string } | null; evaluatedEarlierVersion?: boolean };
 
 export const evaluationActive = (evaluation: Pick<EvaluationState, "queueState"> | null) =>
   evaluation !== null && activeStates.has(evaluation.queueState);
@@ -57,10 +57,14 @@ export function evaluationLine(evaluation: EvaluationState | null): string {
       return "Evaluation running.";
     case "FAILED":
       return "The last evaluation failed.";
-    default:
-      return evaluation.recommendation
+    default: {
+      const completed = evaluation.recommendation
         ? `Evaluation completed. Recommendation: ${formatLabel(evaluation.recommendation.decision)}.`
         : "Evaluation completed.";
+      return evaluation.evaluatedEarlierVersion
+        ? `${completed} It evaluated an earlier version of this posting; request evaluation to evaluate the version saved now.`
+        : completed;
+    }
   }
 }
 

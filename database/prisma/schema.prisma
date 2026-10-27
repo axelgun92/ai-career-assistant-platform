@@ -157,6 +157,10 @@ model Opportunity {
   // What the stated range is: BASE or OTE; null when the posting does not
   // say. The bounds are the stated numbers either way.
   compensationBasis String?
+  // Labelled pay ranges a posting states for several places, zones or bands
+  // ([{ label, minimum, maximum, currency }]); salaryMin/salaryMax are then
+  // null. Empty when not stated.
+  compensationTiers Json     @default("[]")
   bonus             String?
   equity            String?
   currency          String?

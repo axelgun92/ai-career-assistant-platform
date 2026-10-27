@@ -129,7 +129,9 @@ describe("provenance presentation", () => {
     expect(html).toContain('href="https://jobs.example.com/apply/1"');
     expect(html).toContain('href="https://www.linkedin.com/jobs/view/1"');
     expect(html).toMatch(/Source job ID<\/dt><dd>REQ-42/);
-    expect(html).toMatch(/Requisition ID<\/dt><dd>Unknown/);
+    // A source with no requisition field shows none (the opportunity's own
+    // requisition ID is shown with its normalized facts).
+    expect(html).not.toContain("Requisition ID");
     expect(html).toMatch(/Source last updated<\/dt><dd>Unknown/);
     expect(html).toContain("2026-10-06 12:00 UTC");
   });

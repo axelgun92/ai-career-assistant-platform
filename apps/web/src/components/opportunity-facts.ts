@@ -87,17 +87,28 @@ export function formatCompensationRange(
 }
 
 // The opportunity's salary, as shown everywhere in the product: the range
-// (with its basis and currency) when it is known, otherwise null (Unknown).
-// The raw compensation text (including regional tiers) is kept as a fact and
-// in provenance, but is not shown in place of a salary.
+// (with its basis and currency) when it is known; otherwise the labelled
+// regional ranges, each with its own label and currency, side by side and
+// never merged ("Zone 2: 120,000–160,000 USD · Zone 3: 108,000–144,000
+// USD"); otherwise null (Unknown). The raw compensation text is kept as a
+// fact and in provenance, but is not shown in place of a salary.
 export function formatSalary(facts: {
   salaryMin?: number | null;
   salaryMax?: number | null;
   currency?: string | null;
   compensationBasis?: string | null;
   salaryText?: string | null;
+  compensationTiers?: ReadonlyArray<{ label: string; minimum: number | null; maximum: number | null; currency: string | null }> | null;
 }): string | null {
-  return formatCompensationRange(facts.salaryMin, facts.salaryMax, facts.currency, facts.compensationBasis);
+  const range = formatCompensationRange(facts.salaryMin, facts.salaryMax, facts.currency, facts.compensationBasis);
+  if (range) return range;
+  const tiers = (facts.compensationTiers ?? [])
+    .map((tier) => {
+      const amount = formatSalaryRange(tier.minimum, tier.maximum, tier.currency);
+      return amount ? `${tier.label}: ${amount}` : null;
+    })
+    .filter((tier): tier is string => tier !== null);
+  return tiers.length ? tiers.join(" · ") : null;
 }
 
 // The work arrangement as stated: one arrangement, or every option the

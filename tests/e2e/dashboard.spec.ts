@@ -257,3 +257,32 @@ test("normalized details from manual entry drive work-arrangement and salary fil
   await expect(rows(page).nth(1)).toContainText("Remote Customer Success Manager"); // USD
   await expect(page.getByText(/sorted within each currency/)).toBeVisible();
 });
+
+test("labelled regional pay ranges show side by side as the Salary, and a labelled requisition ID is shown", async ({ page }) => {
+  const token = `T${Date.now()}`;
+  // Pasted job text that states two zones' ranges and a requisition ID
+  // (October 27, 2026: the ranges are kept with their labels, never merged).
+  await page.goto("/opportunities/new");
+  await page.getByLabel("Raw opportunity or job-description text").fill(
+    [
+      `Customer Success Manager ${token}. Own a portfolio of enterprise contractors.`,
+      "Job Requisition ID: JR115657",
+      "Pay range by geography:",
+      "Zone 1: $92,600 - $139,000 USD",
+      "Zone 2: $86,600 - $129,800 USD",
+    ].join("\n"),
+  );
+  await page.getByLabel("Title (optional)").fill(`Zoned Customer Success Manager ${token}`);
+  await page.getByLabel("Company (optional)").fill(`Zoneco ${token}`);
+  await page.getByRole("button", { name: "Save opportunity" }).click();
+  await expect(page).toHaveURL(/\/opportunities\/[0-9a-f-]{36}$/);
+  opportunityIds.push(page.url().split("/").pop()!);
+  await page.getByText("Normalized opportunity and source details").click();
+  const normalized = page.locator("section", { has: page.getByRole("heading", { name: "Normalized Opportunity" }) });
+  await expect(normalized).toContainText(/Salary\s*Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD/);
+  await expect(normalized).toContainText(/Requisition ID\s*JR115657/);
+
+  await page.goto(`/?q=${token}`);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText(/Salary\s*Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD/);
+});

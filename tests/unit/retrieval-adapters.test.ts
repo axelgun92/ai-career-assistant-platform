@@ -109,7 +109,11 @@ describe("verified adapters: common contract", () => {
       expect(JSON.stringify(listing.rawPayload)).not.toContain("postingHistory");
       expect(listing.retrieval?.contentHash).toMatch(/^[0-9a-f]{64}$/);
       const { opportunity } = await normalizer.normalize(listing);
-      expect(opportunity.timeZoneRequirements).toBeNull();
+      // Only a stated requirement is a time zone: the one fixture listing that
+      // states one (New Law Business Model's required Pacific Time overlap).
+      expect(opportunity.timeZoneRequirements).toBe(
+        listing.externalId?.includes("new-law-business-model") ? "Requires minimum (4) hours core schedule to overlap with Pacific Time (e.g., 9:00 AM – 1:00 PM PT)" : null,
+      );
       expect(opportunity.status).toBe("DISCOVERED");
     }
   });

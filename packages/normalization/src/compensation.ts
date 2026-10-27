@@ -24,6 +24,9 @@ export interface CompensationGeography {
   location?: string | null;
   // Eligible-residency regions already read for the posting.
   residencyRegions?: readonly string[];
+  // The countries an explicit work-authorization requirement names ("U.S.
+  // work authorization is required"): where the role is employed.
+  workAuthorizationRegions?: readonly string[];
 }
 
 export interface ParsedCompensation {
@@ -137,7 +140,8 @@ function currencyMarkers(text: string) {
 }
 
 // A bare "$" is US dollars only with clear U.S. evidence: the location, the
-// eligible residency regions and the compensation statement name only U.S.
+// eligible residency regions, the countries a work-authorization
+// requirement names and the compensation statement name only U.S.
 // geography (the country, a state, DC or Puerto Rico), nothing ambiguous and
 // nothing else. A region abbreviation that could mean two places ("CA") is
 // settled by the country the same location names ("Sunnyvale, CA, United
@@ -147,7 +151,11 @@ function currencyMarkers(text: string) {
 function unitedStatesEvidence(text: string, geography: CompensationGeography): boolean {
   const named = [scanGeography(text), readLocationGeography(geography.location)];
   if (named.some((reading) => reading.ambiguous)) return false;
-  const codes = [...named.flatMap((reading) => reading.codes), ...(geography.residencyRegions ?? [])];
+  const codes = [
+    ...named.flatMap((reading) => reading.codes),
+    ...(geography.residencyRegions ?? []),
+    ...(geography.workAuthorizationRegions ?? []),
+  ];
   return codes.length > 0 && codes.every(isUnitedStatesGeography);
 }
 
@@ -192,13 +200,33 @@ const lowerBoundCue = /\b(?:from|starting(?: at)?|at least|min(?:imum)?|no less 
 // "$100,000 or more", "$90k and up": an open upper end.
 const openUpperEnd = /^\s*(?:[A-Z]{3}\s*)?(?:\+|or more\b|or above\b|and up\b|and above\b)/i;
 
+// An annual equivalent the statement itself gives for non-annual pay
+// ("Hourly Base Wage: $40.87–$45.67 ($85,000–$95,000 / annualized)").
+const annualEquivalent = /\bannuali[sz]ed\b|\bannual(?:ly)?\b|\byearly\b|\bper\s+(?:year|annum)\b|\ba\s+year\b|\/\s*(?:yr|year)\b/i;
+
+// The one part of a statement that states pay as annual when the rest
+// states it per hour, day, week or month: a parenthetical or a clause
+// (between commas, semicolons or "or") with an annual unit and no other.
+function annualPart(text: string): string | null {
+  const parts = text
+    .split(/[()]/)
+    .flatMap((part) => part.split(/;|,(?!\d{3})|\s+or\s+/i))
+    .map((part) => part.trim())
+    .filter((part) => annualEquivalent.test(part) && !nonAnnualPeriod.test(part) && amountTokens(part).tokens.length > 0);
+  return parts.length === 1 ? parts[0]! : null;
+}
+
 function resolveAmounts(text: string): Pick<ParsedCompensation, "minimum" | "maximum" | "amountsUnknownReason"> {
   const none = (reason: ParsedCompensation["amountsUnknownReason"]) => ({ minimum: null, maximum: null, amountsUnknownReason: reason });
   const { text: expanded, tokens } = amountTokens(text);
   if (tokens.length === 0) return none(null);
   // Larger than any plausible salary (and the stored column).
   if (tokens.some((token) => token.value >= 1_000_000_000)) return none("AMBIGUOUS_AMOUNTS");
-  if (nonAnnualPeriod.test(text)) return none("NON_ANNUAL_PERIOD");
+  if (nonAnnualPeriod.test(text)) {
+    // Non-annual pay with its explicit annual equivalent: the annual amounts.
+    const annual = annualPart(text);
+    return annual ? resolveAmounts(annual) : none("NON_ANNUAL_PERIOD");
+  }
   if (tokens.length === 1) {
     const [token] = tokens as [AmountToken];
     const before = expanded.slice(0, token.start);

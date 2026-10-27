@@ -1259,6 +1259,22 @@ Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Un
     - Provenance is the description statement (`rawText:explicit-compensation-statement`); the bounds and currency keep their own provenance.
   - **The values stay `BASE` | `OTE` | `null`.** The Codex evaluator contract is unchanged, and an OTE range now always reaches it as `OTE`.
 
+### Feature 14B final cross-source batch: shared-boundary record (October 27, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-27\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and committed on `claude/gallant-pasteur-y1ou3i`; awaiting the targeted live verification (Codex/local)
+
+From Alex's final human cross-source retest. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
+
+1. **Two new normalized facts, withheld from the evaluator** (`fieldsWithheldFromEvaluator`, delivered as `[]` / `null`):
+   - `compensationTiers`: labelled pay ranges for several places, zones or bands ([{ label, minimum, maximum, currency }]); `salaryMin`/`salaryMax` stay null when there are tiers. Additive migration `20261027090000_compensation_tiers`.
+   - `bonus`: variable pay stated on its own ("Bonus potential up to $10,000"), previously always null. It is never part of the salary range.
+   At integration, decide how a tiered salary meets the salary policy (for example, the tier for the user's location) and whether variable pay counts.
+2. **Existing evaluator-visible fields carry corrected values** where this batch fixes them: the title (a posting heading instead of a careers site's own name), the location (a more precise labelled place; no default "Anywhere" over a stated one), `salaryText` (the agreed range's statement, or the tiers), the description (the page's full description instead of a shortened structured copy; the user's selected text after "Use my selected text instead"), the application URL and the requisition ID. The approximate posting date stays withheld.
+3. **Unchanged:** deduplication, the evaluator's input contract, version binding and the no-automatic-reevaluation rule. The extension popup now says when the latest evaluation is of an earlier listing version (the existing listing-version hint); requesting evaluation stays the user's choice.
+
 ### Feature 14B cross-source correction: shared-boundary record (October 26, 2026; Claude main-product workstream)
 
 **Date:** 2026-10-26\

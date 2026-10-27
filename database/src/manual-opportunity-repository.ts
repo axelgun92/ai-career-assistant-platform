@@ -2,6 +2,7 @@ import {
   applicationUrlBasisOf,
   applicationUrlProvenance,
   compensationBasisValues,
+  compensationTierSchema,
   workArrangementValues,
   offerAvailabilityValues,
   residencyRequirementValues,
@@ -118,6 +119,13 @@ export function storedWorkArrangements(values: readonly string[]): Array<(typeof
   return values.filter((value): value is (typeof workArrangementValues)[number] => (workArrangementValues as readonly string[]).includes(value));
 }
 
+// The labelled pay tiers as stored, read back; anything not in their shape
+// reads as none.
+export function storedCompensationTiers(value: unknown) {
+  const parsed = compensationTierSchema.array().safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
 // The compensation basis and work-authorization facts as stored, read back
 // with values outside their vocabularies as Unknown.
 export function storedEligibilityFacts(record: {
@@ -161,7 +169,7 @@ const projectedFields = [
   "title", "company.name", "location", "remoteStatus", "workArrangements", "employmentType", "seniority", "seniorityLabel", "department",
   "timeZoneRequirements", "residencyRequirement", "residencyRegions", "workAuthorizationRequirement",
   "workAuthorizationRegions", "visaSponsorship", "relocationSupport", "employerOfRecordRegions", "salaryText",
-  "salaryMin", "salaryMax", "currency", "compensationBasis", "postingDate", "closingDate", "jobDescription",
+  "salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers", "bonus", "postingDate", "closingDate", "jobDescription",
 ] as const;
 type ProjectedField = (typeof projectedFields)[number];
 
@@ -230,6 +238,7 @@ function mapOpportunityDetail(
       salaryMin: record.salaryMin?.toNumber() ?? null,
       salaryMax: record.salaryMax?.toNumber() ?? null,
       salaryText: record.salaryText,
+      compensationTiers: storedCompensationTiers(record.compensationTiers),
       bonus: record.bonus,
       equity: record.equity,
       currency: record.currency,
@@ -725,6 +734,8 @@ export class PrismaManualOpportunityRepository
       relocationSupport: async () => ({ relocationSupport: next.relocationSupport ?? null }),
       employerOfRecordRegions: async () => ({ employerOfRecordRegions: next.employerOfRecordRegions ?? [] }),
       compensationBasis: async () => ({ compensationBasis: next.compensationBasis ?? null }),
+      compensationTiers: async () => ({ compensationTiers: asInputJson(next.compensationTiers ?? []) }),
+      bonus: async () => ({ bonus: next.bonus }),
       salaryText: async () => ({ salaryText: next.salaryText }),
       salaryMin: async () => ({ salaryMin: next.salaryMin }),
       salaryMax: async () => ({ salaryMax: next.salaryMax }),
@@ -801,6 +812,7 @@ export class PrismaManualOpportunityRepository
         relocationSupport: input.opportunity.relocationSupport ?? null,
         employerOfRecordRegions: input.opportunity.employerOfRecordRegions ?? [],
         compensationBasis: input.opportunity.compensationBasis ?? null,
+        compensationTiers: asInputJson(input.opportunity.compensationTiers ?? []),
         salaryMin: input.opportunity.salaryMin,
         salaryMax: input.opportunity.salaryMax,
         salaryText: input.opportunity.salaryText,

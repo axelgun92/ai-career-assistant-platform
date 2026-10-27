@@ -90,8 +90,10 @@ describe("Healthie: the automated adapter and the browser extension converge", (
       salaryText: "The salary range is $105,000 - $155,000 per year (OTE) annually.",
       salaryMin: 105000,
       salaryMax: 155000,
-      // A bare "$" with only a city: not unambiguous country context.
-      currency: null,
+      // A bare "$" with the posting's explicit U.S. work-authorization
+      // requirement: unambiguous U.S. context (October 27, 2026; a city
+      // alone is still not).
+      currency: "USD",
       compensationBasis: "OTE",
       department: "Customer Success",
       // Legitimately Unknown: never stated.

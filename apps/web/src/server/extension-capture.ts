@@ -307,6 +307,9 @@ export interface EvaluationSummary {
   status: string;
   queueState: unknown;
   recommendation: { decision: string; explanation: string | null } | null;
+  // The latest completed evaluation evaluated an earlier version of the
+  // posting than its current one (nothing is reevaluated automatically).
+  evaluatedEarlierVersion?: boolean;
 }
 
 export interface CaptureResult {

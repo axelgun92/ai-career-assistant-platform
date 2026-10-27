@@ -4,7 +4,9 @@ import {
   normalizedOpportunitySchema,
   retrievedSourceFactsSchema,
   retrievedStructuredFieldsSchema,
+  scanGeography,
   type CompensationCurrency,
+  type CompensationTier,
   type FieldProvenanceInput,
   type NormalizedOpportunity,
   type OpportunityNormalizer,
@@ -74,7 +76,24 @@ function userCorrectedFields(rawOpportunity: RawOpportunity): Set<string> {
   return new Set(Array.isArray(value) ? value.filter((field): field is string => typeof field === "string") : []);
 }
 
-const annualPeriod = /\b(?:per\s+(?:year|annum)|a\s+year|annual(?:ly)?|yearly|p\.a\.?)(?![a-z])|\/\s*(?:yr|year)\b/i;
+const annualPeriod = /\b(?:per\s+(?:year|annum)|a\s+year|annual(?:ly)?|annuali[sz]ed|yearly|p\.a\.?)(?![a-z])|\/\s*(?:yr|year)\b/i;
+
+// "Anywhere", "Worldwide": a remote-hiring place a page may state by
+// default. It is used only when nothing else says where the role is; a
+// specific location the posting states is never replaced by it.
+const worldwidePlaceholder = /^(?:anywhere(?:\s+in\s+the\s+world)?|worldwide|world\s*wide|global(?:ly)?|earth|international|remote)$/i;
+
+// One pay tier: its label, amounts and currency. A tier naming its own
+// place ("U.S.: $63,000 - 75,000") reads a bare "$" from that place; a zone
+// or band ("Zone 2") from where the posting is.
+export function compensationTier(
+  tier: { label: string; statement: string },
+  geography: { location: string | null; residencyRegions: string[]; workAuthorizationRegions: string[] },
+): CompensationTier {
+  const ownPlace = scanGeography(tier.label).codes.length > 0;
+  const parsed = parseCompensation(tier.statement, null, ownPlace ? {} : geography);
+  return { label: tier.label, minimum: parsed.minimum, maximum: parsed.maximum, currency: parsed.currency };
+}
 
 function knownCurrency(value: string | null): CompensationCurrency | null {
   const code = value?.trim().toUpperCase() ?? "";
@@ -133,7 +152,12 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       // A remote role's remote-hiring geography, as the source states it,
       // is the role's location ("Remote (United States)"); an office the
       // source also names is not. A location the user corrected stays theirs.
-      const remoteLocations = corrected.has("location") ? [] : sourceFacts.remoteLocations;
+      // A worldwide placeholder ("Anywhere") counts only when no specific
+      // location is stated by the source or the posting.
+      const statedRemoteLocations = corrected.has("location") ? [] : sourceFacts.remoteLocations;
+      const placeholderOnly = statedRemoteLocations.length > 0 && statedRemoteLocations.every((place) => worldwidePlaceholder.test(place.trim()));
+      const specificLocation = (text(rawOpportunity.location) && scanGeography(rawOpportunity.location!).codes.length > 0) || facts.location !== null;
+      const remoteLocations = placeholderOnly && specificLocation ? [] : statedRemoteLocations;
       const remoteLocation = remoteLocations.length ? `Remote (${remoteLocations.join(", ")})` : null;
       // The posting's own labelled location may state the source's location
       // together with more places (a fuller, not a different, statement).
@@ -302,7 +326,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       const periodUnstated = salaryField === "source.compensation" && !annualPeriod.test(salaryText ?? "");
       if (!structuredAmounts && salaryText && !periodUnstated) {
         const amountsField = salaryField ?? facts.compensation!.sourceField;
-        const parsed = parseCompensation(salaryText, null, { location, residencyRegions: residency.regions });
+        const parsed = parseCompensation(salaryText, null, { location, residencyRegions: residency.regions, workAuthorizationRegions: workAuthorization?.value.regions ?? [] });
         salaryMin = parsed.minimum;
         salaryMax = parsed.maximum;
         currency = parsed.currency;
@@ -334,6 +358,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       // whatever one source field states; the tiers are the salary text, and
       // their currency is kept only when they share one.
       let tieredSalaryText: string | null = null;
+      let compensationTiers: CompensationTier[] = [];
       const tiers = facts.compensationTiers;
       if (tiers) {
         for (let index = provenance.length - 1; index >= 0; index -= 1) {
@@ -346,7 +371,12 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         tieredSalaryText = tiers.value;
         record("salaryText", tiers.sourceField, "DETERMINISTIC", tiers.value, tiers.sourceText);
         if (currency) record("currency", tiers.sourceField, "DETERMINISTIC", currency, tiers.sourceText);
+        const geography = { location, residencyRegions: residency.regions, workAuthorizationRegions: workAuthorization?.value.regions ?? [] };
+        compensationTiers = tiers.tiers.map((tier) => compensationTier(tier, geography));
+        record("compensationTiers", tiers.sourceField, "DETERMINISTIC", compensationTiers, tiers.sourceText);
       }
+      // Variable pay the posting states on its own (never the salary range).
+      const bonus = fallback("bonus", facts.bonus);
 
       const opportunity: NormalizedOpportunity = normalizedOpportunitySchema.parse({
         domain,
@@ -385,7 +415,8 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         salaryMax,
         salaryText: tieredSalaryText ?? salaryText,
         compensationBasis,
-        bonus: null,
+        compensationTiers,
+        bonus,
         equity: null,
         currency,
         compensationNotes: null,

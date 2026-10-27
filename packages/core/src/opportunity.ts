@@ -96,6 +96,17 @@ const nullableUrl = z.url().nullable();
 const nullableDate = z.coerce.date().nullable();
 const nullableAmount = z.number().nonnegative().nullable();
 
+// One pay range a posting states for a named place, zone or band ("Zone 2",
+// "U.S.", "Canada"), kept with its label: when several are stated, no single
+// range is the role's, so the ranges are kept side by side and never merged.
+export const compensationTierSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  minimum: nullableAmount,
+  maximum: nullableAmount,
+  currency: nullableText,
+});
+export type CompensationTier = z.infer<typeof compensationTierSchema>;
+
 export const normalizedOpportunitySchema = z.object({
   domain: nullableText,
 
@@ -151,6 +162,9 @@ export const normalizedOpportunitySchema = z.object({
   salaryText: nullableText,
   // What the stated range is (base or OTE); the bounds are kept either way.
   compensationBasis: z.enum(compensationBasisValues).nullable().default(null),
+  // Labelled regional pay ranges, when the posting states several (then
+  // salaryMin/salaryMax are null). Optional on input; Unknown is [].
+  compensationTiers: z.array(compensationTierSchema).max(10).optional().default([]),
   bonus: nullableText,
   equity: nullableText,
   currency: nullableText,
