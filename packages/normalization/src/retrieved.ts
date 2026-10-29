@@ -284,7 +284,12 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       // (a remote role's location that is only geography counts as one).
       // (A remote role's stated hiring places count even when the posting's
       // fuller labelled location is shown.)
-      const residency = parseResidency({ location: remoteLocation ?? location, rawText: rawOpportunity.description, remote: remoteStatus === "REMOTE" || sourceArrangement === "REMOTE" });
+      const residency = parseResidency({
+        location: remoteLocation ?? location,
+        rawText: rawOpportunity.description,
+        remote: remoteStatus === "REMOTE" || sourceArrangement === "REMOTE",
+        pageStatements: facts.pageRegionStatements,
+      });
       if (residency.requirement !== null) {
         for (const statement of residency.statements) {
           const sourceField = residencySourceFields[statement.source];

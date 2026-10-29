@@ -88,6 +88,9 @@ export interface JobTextFacts {
   visaSponsorship: TextFact<OfferAvailability> | null;
   relocationSupport: TextFact<OfferAvailability> | null;
   employerOfRecord: TextFact<string[]> | null;
+  // The page metadata's labelled regions and countries, as "Label: value"
+  // statements ("Region: Anywhere in the World"), for the residency reader.
+  pageRegionStatements: string[];
 }
 
 // Provenance markers. Facts read from the posting text are DETERMINISTIC,
@@ -156,10 +159,14 @@ export const pageContextSourceFields = {
 
 const collapse = (value: string) => value.replace(/\s+/g, " ").trim();
 
+// An icon a posting or page puts before an item or a label ("📍 Locations
+// (Remote): …", "🇺🇸 United States of America"): not part of it.
+const leadingIcon = /^[\p{Extended_Pictographic}\p{Regional_Indicator}\u{FE0F}\u{200D}\u{20E3}\s]+(?=\p{L}|\p{N}|[$€£₹(])/u;
+
 function textLines(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .map(collapse)
+    .map((line) => collapse(line).replace(leadingIcon, ""))
     .filter(Boolean);
 }
 
@@ -213,7 +220,8 @@ function labelledValues(lines: string[], labels: readonly string[], options: { c
   const bare = new RegExp(`^(?:${alternatives})\\s+([^:：\\s].*)$`, "i");
   const found: Labelled[] = [];
   lines.forEach((line, index) => {
-    for (const segment of segments(line)) {
+    for (const part of segments(line)) {
+      const segment = part.replace(leadingIcon, "");
       const match = inline.exec(segment);
       if (match) found.push({ value: match[2]!.trim(), sourceText: segment, qualifier: match[1]?.trim() ?? null, bare: false });
       else if (options.bareLabel && segment.length <= 80) {
@@ -221,9 +229,12 @@ function labelledValues(lines: string[], labels: readonly string[], options: { c
         if (loose) found.push({ value: loose[1]!.trim(), sourceText: segment, qualifier: null, bare: true });
       }
     }
-    const next = lines[index + 1];
+    // (A short note in parentheses between the label and its value, "Country"
+    // / "(This job is GeoLocked)" / "United States of America", is skipped.)
+    const note = lines[index + 1] && /^\([^()]{1,60}\)$/.test(lines[index + 1]!) ? lines[index + 1]! : null;
+    const next = note ? lines[index + 2] : lines[index + 1];
     const label = alone.exec(line);
-    if (label && next) found.push({ value: next, sourceText: `${line}\n${next}`, qualifier: label[1]?.trim() ?? null, bare: false });
+    if (label && next) found.push({ value: next, sourceText: `${line}\n${note ? `${note}\n` : ""}${next}`, qualifier: label[1]?.trim() ?? null, bare: false });
   });
   return found;
 }
@@ -472,7 +483,7 @@ const rangeContinuation = /^(?:[-–—]|to\b)\s*(?:[$€£₹]|[A-Z]{3}\s?)?\s*
 function pageLines(text: string): string[] {
   const lines: string[] = [];
   for (const raw of textLines(text)) {
-    const line = raw.replace(leadingSeparator, "").replace(trailingSeparator, "").trim();
+    const line = raw.replace(leadingIcon, "").replace(leadingSeparator, "").replace(trailingSeparator, "").trim();
     if (!line) continue;
     const previous = lines.at(-1);
     if (previous && loneAmount.test(previous) && rangeContinuation.test(line)) {
@@ -566,8 +577,19 @@ function companyFromPageTitle(pageTitle: string, title: string, knownPlaces: str
 // "<title> | <Company>", with at most a platform after it ("| We Work
 // Remotely"), read around the title as written (which may itself contain a
 // dash: "Solutions Engineer - Customer Success").
-function companyAroundTitle(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
+// A page title without a notification count, "Job Application for", or a
+// work arrangement written before the job title ("Remote Scaled Customer
+// Success Manager at Dropbox", as We Work Remotely titles its pages).
+function cleanedPageTitle(pageTitle: string, title: string): string {
   const cleaned = collapse(pageTitle.replace(/^\(\d+\)\s*/, "").replace(/^Job Application for\s+/i, ""));
+  const arrangement = /^(?:fully\s+)?(?:remote|hybrid|on[- ]?site)\s+/i.exec(cleaned);
+  return arrangement && cleaned.slice(arrangement[0].length).toLowerCase().startsWith(title.toLowerCase()) && !title.toLowerCase().startsWith(arrangement[0].trim().toLowerCase())
+    ? cleaned.slice(arrangement[0].length)
+    : cleaned;
+}
+
+function companyAroundTitle(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
+  const cleaned = cleanedPageTitle(pageTitle, title);
   const at = cleaned.toLowerCase().indexOf(title.toLowerCase());
   if (at < 0) return null;
   const before = cleaned.slice(0, at);
@@ -585,7 +607,7 @@ function companyAroundTitle(pageTitle: string, title: string, knownPlaces: strin
 }
 
 function pageTitleCompany(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
-  const cleaned = collapse(pageTitle.replace(/^\(\d+\)\s*/, "").replace(/^Job Application for\s+/i, ""));
+  const cleaned = cleanedPageTitle(pageTitle, title);
   const parts = cleaned
     .split(/\s+[|–—-]\s+|\s+·\s+/)
     .map((part) => part.trim())
@@ -914,6 +936,19 @@ function collectPayStatements(source: TextSource): Array<TextFact<string>> {
       candidates.push({ value: statement, sourceField: field, sourceText: `${line}\n${next}` });
     }
   });
+  // A line that opens with a numbered tier's label and states its amounts
+  // ("Zone 2 (All other U.S. locations): $71,800 - $107,800 USD"), with no
+  // pay word of its own: that tier's pay statement.
+  if (!source.labelledOnly) {
+    for (const statement of new Set([...source.lines, ...source.sentences])) {
+      numberedTier.lastIndex = 0;
+      const label = numberedTier.exec(statement);
+      numberedTier.lastIndex = 0;
+      if (label?.index === 0 && !compensationCue.test(statement) && statement.length <= 160 && usable(statement)) {
+        candidates.push({ value: statement, sourceField: field, sourceText: statement });
+      }
+    }
+  }
   // A tier's own label on one line and its amounts alone on the next ("US
   // Zone 2" / "$142,700—$193,100 USD"): one statement of that tier's pay.
   source.lines.forEach((line, index) => {
@@ -945,7 +980,11 @@ const tierLabel = /\b(?:zones?|tiers?|bands?|regions?|areas?|markets?|metros?|lo
 const namesItsTier = (text: string) => tierLabel.test(text) || scanGeography(text).codes.length > 0;
 // A zone, tier or band named with its number or letter ("Zone 1", "US Zone
 // 2", "Tier B"), with the places it covers when they follow in parentheses.
-const numberedTier = /\b(?:(?:US|U\.S\.)\s+)?(?:zone|tier|band|region|area|market|location|geo(?:graphic)?\s+(?:zone|tier))\s*(?:\d{1,2}|[A-Z])\b(?:\s*\([^()]{1,80}\))?/gi;
+// (A parenthetical holding the tier's amounts is not part of its label.)
+// (A letter names a tier only as a capital after a space, "Tier B": the "s"
+// of "locations" never does.)
+const numberedTier =
+  /\b(?:(?:US|U\.S\.)\s+)?(?:[Zz]one|ZONE|[Tt]ier|TIER|[Bb]and|BAND|[Rr]egion|REGION|[Aa]rea|AREA|[Mm]arket|MARKET|[Ll]ocation|LOCATION|[Gg]eo(?:graphic)?\s+(?:[Zz]one|[Tt]ier))(?:\s*\d{1,2}|\s+[A-Z])\b(?:\s*\((?![^()]*[$€£₹\d]\d)[^()]{1,80}\))?/g;
 // A line holding only a tier's label ("US Zone 2", "Zone 1:", "Canada").
 function tierHeading(line: string): boolean {
   const label = trimEnd(line.replace(/[:：]\s*$/, ""));
@@ -1013,14 +1052,27 @@ function compensationTiers(statements: Array<TextFact<string>>): JobTextFacts["c
   // Every tier must say which place or zone it is for: ranges that do not
   // are not tiers (they are conflicting evidence, and stay Unknown).
   if (!tiers.every(({ candidate }) => candidate.label || namesItsTier(tierStatement(candidate)))) return null;
-  const text = tiers.map(({ candidate }) => (candidate.label ? candidate.value : tierStatement(candidate))).join(" / ");
+  // Each tier is stored as a statement of its own range: the amount line
+  // that names its tier, else the whole statement. A tier whose statement
+  // states no range of its own is no tier, and then there are none.
+  const statementOf = (candidate: (typeof tiers)[number]["candidate"]) => {
+    if (candidate.label) return candidate.value;
+    const own = tierStatement(candidate);
+    const parsed = parseCompensation(own);
+    return parsed.minimum !== null && parsed.maximum !== null && parsed.amountsUnknownReason === null ? own : candidate.value;
+  };
+  if (!tiers.every(({ candidate }) => {
+    const parsed = parseCompensation(statementOf(candidate));
+    return parsed.minimum !== null && parsed.maximum !== null && parsed.amountsUnknownReason === null;
+  })) return null;
+  const text = tiers.map(({ candidate }) => statementOf(candidate)).join(" / ");
   return {
     value: text,
     sourceField: tiers[0]!.candidate.sourceField.replace(/:[^:]+$/, ":compensation-tiers"),
     sourceText: [...new Set(tiers.map(({ candidate }) => candidate.sourceText))].join("\n"),
     currency: currencies.size === 1 ? [...currencies][0] ?? null : null,
     tiers: tiers.map(({ candidate }, index) => {
-      const statement = candidate.label ? candidate.value : tierStatement(candidate);
+      const statement = statementOf(candidate);
       return { label: (candidate.label && tierName(statement)) || candidate.label || tierName(statement) || `Range ${index + 1}`, statement };
     }),
   };
@@ -1042,7 +1094,7 @@ function tierName(statement: string): string | null {
     const places = scanGeography(prefix);
     if (!places.ambiguous && places.codes.length) return places.codes.map(geographyName).join(", ");
   }
-  const name = collapse(prefix.replace(tierFiller, " ").replace(/\(\s*\)/g, " ")).replace(/^[\s:：,;–—-]+|[\s:：,;–—-]+$/g, "");
+  const name = collapse(prefix.replace(tierFiller, " ").replace(/\(\s*\)/g, " ")).replace(/^[\s:：,;–—-]+|[\s:：,;(–—-]+$/g, "");
   return name && name.length <= 80 ? name : null;
 }
 
@@ -1090,6 +1142,27 @@ function agreedCompensation(candidates: Array<TextFact<string>>): TextFact<strin
     return values.length > 0 && values.every((value) => value >= minimum && value <= maximum);
   });
   return consistent ? range.candidate : null;
+}
+
+// The posting's own range when page metadata states only a coarser range
+// that contains it (a board's salary bucket, "$75,000 - $99,999 USD", beside
+// the posting's "$85,000 – $95,000 / annualized"): the posting is the more
+// precise statement of the same pay. A page range that does not contain it,
+// or another currency, still conflicts.
+function postingRangeWithinPage(candidates: Array<TextFact<string>>): TextFact<string> | null {
+  const posting = candidates.filter((candidate) => candidate.sourceField.startsWith("rawText:"));
+  const page = candidates.filter((candidate) => candidate.sourceField.startsWith("pageContext:"));
+  const stated = posting.length && page.length ? agreedCompensation(posting) : null;
+  if (!stated) return null;
+  const range = parseCompensation(stated.value);
+  if (range.minimum === null || range.maximum === null || range.amountsUnknownReason !== null) return null;
+  const contained = page.every(({ value }) => {
+    const coarse = parseCompensation(value);
+    if (coarse.amountsUnknownReason !== null || coarse.minimum === null) return false;
+    if (coarse.currency !== null && range.currency !== null && coarse.currency !== range.currency) return false;
+    return coarse.minimum <= range.minimum! && (coarse.maximum === null || coarse.maximum >= range.maximum!);
+  });
+  return contained ? stated : null;
 }
 
 // A compensation statement in the posting's own text that states exactly the
@@ -1591,6 +1664,29 @@ function broaderLabelledLocation(sourceLocation: string | null | undefined, cand
   return agreed(broader);
 }
 
+// Statements of one place at different precision ("United States" in a page
+// header, "United States (East Coast)" in the posting's labelled location):
+// the most specific one, when every other statement is the same place stated
+// more broadly (its words contained in it, naming no other country). Places
+// that are not one inside the other still conflict.
+function mostSpecificLocation(candidates: Array<TextFact<string>>, key: (value: string) => string): TextFact<string> | null {
+  // (The first statement of each place: the posting's own before page context.)
+  const distinct = [...candidates.reduce((seen, candidate) => (seen.has(key(candidate.value)) ? seen : seen.set(key(candidate.value), candidate)), new Map<string, TextFact<string>>()).values()];
+  if (distinct.length < 2) return null;
+  const words = (value: string) => collapse(value).toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const countries = (value: string) => countriesIn(scanGeography(value).codes);
+  const specific = distinct.filter((candidate) =>
+    distinct.every((other) => {
+      if (other === candidate) return true;
+      const inner = words(other.value);
+      const outerCountries = countries(candidate.value);
+      return inner.length > 0 && ` ${words(candidate.value)} `.includes(` ${inner} `) && [...countries(other.value)].every((code) => outerCountries.has(code)) &&
+        [...outerCountries].every((code) => countries(other.value).has(code));
+    }),
+  );
+  return specific.length === 1 ? specific[0]! : null;
+}
+
 // Facts read from the posting text and the bounded page context. Both are
 // fallback evidence below the source's structured values: a candidate from
 // either one counts, and two that disagree leave the fact Unknown.
@@ -1605,7 +1701,10 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
   // Two statements of the same geography ("U.S." and "USA", "USA Only")
   // agree.
   const locationKey = (value: string) => parseGeographyList(withoutOnly(value))?.sort().join(",") ?? value.toLowerCase();
-  const location = locations.some((reading) => reading.conflict) ? null : agreed(locations.flatMap((reading) => reading.candidates), locationKey);
+  const locationCandidates = locations.flatMap((reading) => reading.candidates);
+  const location = locations.some((reading) => reading.conflict)
+    ? null
+    : agreed(locationCandidates, locationKey) ?? mostSpecificLocation(locationCandidates, locationKey);
 
   const positions = sources.map(collectArrangementAndEmployment);
   // ("Location: Remote" states the arrangement, read with the others.)
@@ -1651,7 +1750,7 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
     broaderRemoteLocation: input.remoteLocations?.length ? broaderLabelledLocation(input.remoteLocations.join(", "), locations.flatMap((reading) => reading.candidates)) : null,
     remoteStatus,
     employmentType,
-    compensation: tiers ? null : agreedCompensation(compensationCandidates),
+    compensation: tiers ? null : agreedCompensation(compensationCandidates) ?? postingRangeWithinPage(compensationCandidates),
     compensationTiers: tiers,
     bonus: agreed(sources.flatMap(collectBonus)),
     postingDate: agreed(
@@ -1674,6 +1773,10 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
     visaSponsorship: agreed(sources.flatMap(collectSponsorship)),
     relocationSupport: agreed(sources.flatMap(collectRelocation)),
     employerOfRecord: agreed(sources.flatMap(collectEmployerOfRecord), (value) => value.join(",")),
+    pageRegionStatements: [...new Set(labelledValues(page.lines, geographyLabels, { bareLabel: true }).map(({ sourceText, value }) => {
+      const label = sourceText.split("\n")[0]!.replace(/[:：]\s*$/, "");
+      return sourceText.includes("\n") ? `${label}: ${value}` : sourceText;
+    }))],
   };
 }
 

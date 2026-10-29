@@ -17,7 +17,7 @@ import {
 // preferred, negated, conditional or conflicting. Those stay Unknown.
 
 export interface ResidencyStatement {
-  source: "location" | "rawText" | "basedRole";
+  source: "location" | "rawText" | "basedRole" | "pageContext";
   sentence: string;
   regions: string[];
 }
@@ -36,6 +36,9 @@ export const residencySourceFields = {
   // A statement that the remote role itself is based in a place ("This is
   // a U.S.-based, full-time remote role."): where the remote work is done.
   basedRole: "rawText:explicit-remote-base-statement",
+  // A page's own labelled region or country ("Region: Anywhere in the
+  // World"), read like a posting statement.
+  pageContext: "pageContext:explicit-residency-statement",
 } as const;
 
 const residenceVerb =
@@ -164,7 +167,7 @@ function readLocation(location: string): string[] | null {
   return parseGeographyList(rest);
 }
 
-export function parseResidency(input: { location: string | null; rawText: string | null; remote?: boolean }): ParsedResidency {
+export function parseResidency(input: { location: string | null; rawText: string | null; remote?: boolean; pageStatements?: readonly string[] }): ParsedResidency {
   const statements: ResidencyStatement[] = [];
   let qualified = false;
   if (input.location) {
@@ -179,6 +182,11 @@ export function parseResidency(input: { location: string | null; rawText: string
       const based = readBasedRole(sentence, input.remote ?? false);
       if (based) statements.push({ source: "basedRole", sentence, regions: based });
     }
+  }
+  for (const sentence of input.pageStatements ?? []) {
+    const result = readSentence(sentence);
+    if (result === "QUALIFIED") qualified = true;
+    else if (result) statements.push({ source: "pageContext", sentence, regions: result.regions });
   }
   const unknown = (reason: ParsedResidency["unknownReason"]): ParsedResidency => ({
     requirement: null,

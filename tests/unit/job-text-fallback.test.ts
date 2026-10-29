@@ -927,7 +927,7 @@ describe("the shared reader itself", () => {
       companyName: null, location: null, broaderLocation: null, broaderRemoteLocation: null, remoteStatus: null, workArrangements: null, employmentType: null, compensation: null,
       compensationTiers: null, bonus: null, postingDate: null, closingDate: null, timeZoneRequirements: null, seniority: null,
       seniorityLabel: null, department: null, requisitionId: null,
-      workAuthorization: null, visaSponsorship: null, relocationSupport: null, employerOfRecord: null,
+      workAuthorization: null, visaSponsorship: null, relocationSupport: null, employerOfRecord: null, pageRegionStatements: [],
     });
   });
 

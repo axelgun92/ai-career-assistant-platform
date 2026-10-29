@@ -5,6 +5,10 @@
 
 ## Current Objective
 
+**Feature 14B live acceptance passed (October 29, 2026).** The live round of the October 29 batch (`76ce118`) still failed on seven cases (SafeBreach location, SmartRecruiters and Remote OK application URLs, We Work Remotely default capture and the New Law Business Model company, ServiceTitan's default-capture PST/MST hours and its zone tiers). This second round was worked from the real environment, not from fixtures: Alex's computer was connected through Remote Control, his stored extension captures were exported read-only from `ai_career_assistant_acceptance`, and the live pages were rendered and read in Playwright's own Chromium on his machine. Every fix was traced on that real evidence and then verified by Alex through the installed Chrome extension into the live acceptance app: **all eight blocker cases pass** (see "Feature 14B live acceptance, round 2" under Recently Completed). Committed on `claude/gallant-pasteur-y1ou3i`. The remaining known edge cases (Lever Bluesight's employment type, Jobs for Humanity's monthly pay, Remote OK Renaissance's short description, NLBM's "Region: Anywhere" not shown as a location) are explicitly non-blocking. Feature 15 has not started.
+
+*(The objective below, from October 29, 2026, is kept as written; its live round found the defects fixed by round 2.)*
+
 **Feature 14B live acceptance batch (October 29, 2026).** Alex's latest full live round of the committed batch (`51f3279` with the currency correction `451b652`) confirmed Working Nomads, Ashby, Workable, Wellfound, Greenhouse Healthie, Lever Mongoose and Wing, Workday Thomson Reuters, LinkedIn Serrala's tiers and Welcome to the Jungle AlphaSense's salary, and found the remaining defects listed in the batch-fix handoff. They were fixed as one end-to-end contract (page evidence → extension collection → page context and structured fields → capture mapping and source facts → shared normalization → provenance and persistence → display); see "Feature 14B live acceptance batch" under Recently Completed. The batch is implemented, verified and committed on `claude/gallant-pasteur-y1ou3i`. **Feature 14B stays unaccepted** until the corrected build passes the targeted live verification listed under the batch; a few cases need Alex's stored evidence before they can be closed (listed there). Feature 15 has not started.
 
 *(The objective below, from October 27, 2026, is kept as written; its live round is done.)*
@@ -145,6 +149,93 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
 ## Recently Completed (October 14–29, 2026)
+
+### Feature 14B live acceptance, round 2 (verified in the real environment October 29, 2026; committed; live acceptance passed)
+
+**Why and how.** The live round of `76ce118` showed that several earlier fixes had passed against synthetic pages while failing in Alex's real browser. Round 2 therefore used only real evidence:
+- **Connection:** Alex's WSL repository was connected through Remote Control. A read-only helper session on his computer verified the repository (branch, `76ce118`, clean tree), `~/safebreach-case.json`, the running app on `localhost:3000` and its database (`ai_career_assistant_acceptance`, 24 migrations). It also verified Playwright's own Chromium. His Chrome tabs and installed extension stayed out of reach, so the final check was his own captures.
+- **Stored captures:** 30 real extension captures were exported read-only (plain JSON, checksum-verified) and replayed exactly through the production normalizer.
+- **Live pages:** the pages were rendered in Playwright's Chromium on his machine (Greenhouse, SmartRecruiters, Workday) and in this session (Remote OK, We Work Remotely). The page reader then ran inside each rendered page, first the committed version and then the candidate.
+- **Final check:** Alex captured each case through the installed extension into the live acceptance app.
+
+**Root causes (from the real evidence) and fixes.**
+- **SafeBreach location.**
+  - *Cause:* the real posting writes `📍 Locations (Remote): United States (East Coast)`. The leading 📍 icon kept the label from being read at all, so the page header's bare "United States" won. The earlier synthetic test had no icon.
+  - *Fix:* leading icons are ignored when items and labels are read (posting text and page context). When page context and the posting state one place at different precision ("United States" and "United States (East Coast)", one contained in the other, same countries), the more specific statement is kept; places that are not one inside the other still conflict.
+  - No East Coast residency and no Eastern time zone are inferred.
+- **SmartRecruiters Application URL.**
+  - *Cause:* the live "I'm interested" buttons are ordinary links to `jobs.smartrecruiters.com/oneclick-ui/company/<Company>/publication/<id>`, and pressing one leads there. Each page also carries **hidden** "Apply with Smartr" duplicates (`www.smartr.me/oneclick-ui/…`), which the reader counted as a second destination, giving up as ambiguous.
+  - *Fix:* controls the page does not show (computed `display:none`/`visibility:hidden`, `[hidden]`, `aria-hidden`) are not counted.
+  - A round-1 guess (a `?oga=true` application entry from the public API) was disproved by the live click and is not used.
+- **Remote OK Application URL.**
+  - *Cause:* after its scripts run, the page lists about 50 other jobs, each with a hidden expanded copy carrying its own `<h1>` and Apply buttons, so the job's own Apply was ambiguous.
+  - *Fix:* an Apply control inside another job's container doesn't count. Such a container sits below the job's own heading and holds another heading of the job title's level, or a heading linking to another posting. Hidden controls don't count either.
+  - Also: apply links in the job's own side panel, or in a sticky header that repeats the job, count; buttons that carry their address in an attribute are read.
+- **We Work Remotely default capture.**
+  - *Cause:* WWR pages have no `<main>` or job `<article>`, so the reader took the title's nearest ancestor with 500+ characters, which is the header. The posting body sits in a sibling section. The stored default captures were 950 (Dropbox) and 544 (NLBM) characters; highlighting only helped because the selection replaced the description.
+  - *Fix:* the job container now widens past the header, to the nearest ancestor that at least doubles the job's content, stopping before any container that holds another job. Navigation, side panels, site header/footer and other-job lists are not counted.
+  - Also:
+    - a "Related Jobs" heading carrying a nested link is recognized as other jobs;
+    - a metadata sidebar stays out of the description but in page context;
+    - a parenthetical note between a label and its value ("Country" / "(This job is GeoLocked)") is skipped;
+    - page-context Region/Country values are read for residency, with their own `pageContext:explicit-residency-statement` marker;
+    - a posting's own range wins over a page's coarser salary bucket that contains it ("$75,000 - $99,999" vs "$85,000 – $95,000 / annualized").
+- **New Law Business Model company.**
+  - *Cause:* WWR titles its pages "Remote <title> at <Company>". The leading "Remote" kept every page-title form from matching (the earlier fix assumed "<title> | <Company> | <platform>").
+  - *Fix:* an arrangement word written before the job title is ignored for the page-title company.
+- **ServiceTitan default capture (PST/MST hours).**
+  - *Cause:* the default capture uses the page's JSON-LD description, which has **no line breaks**, so "Able to work PST/MST hours" sat inside an over-long run-on sentence. The highlighted capture keeps the page's 137 lines and reads it. The parser needed no change.
+  - *Fix:* the page's own line-structured rendering is preferred when it is about as long as the structured copy with many more lines. The comparison ignores whitespace (adjacent elements often join without a space) and also probes with the first sentence, because the page renders "Ready to be a Titan?" and "As a CSM…" as separate elements while JSON-LD runs them together.
+  - The rendered description leaves out the employer's closing boilerplate and privacy-notice link (accepted by Alex as non-blocking).
+- **ServiceTitan zone tiers.**
+  - *Cause:* the real text, "Zone 1: $76,900 USD - $115,300 USD Applicable for: CA, CT, DC, MD, MA, NJ, NY, VA, and WA Zone 2: …", was rejected.
+  - *Fix:* a statement naming several numbered zones, tiers or bands, each with exactly one range (label first or amount first), is split into labelled tiers. Also:
+    - a tier label on one line with its amounts on the next ("US Zone 2" / "$142,700—$193,100 USD") is one tier;
+    - tier lines without a pay word are read;
+    - "locations" is never read as a tier label;
+    - every stored tier statement must parse, so a tier can no longer be stored without its amounts.
+  - Ranges without tier labels, and base with OTE, stay ambiguous.
+
+**Real installed-extension acceptance (Alex, October 29, 2026; candidate patch `cb900138…090e` applied, extension rebuilt and reloaded, app on `ai_career_assistant_acceptance`):**
+
+| Case | Result |
+|---|---|
+| SafeBreach | "United States (East Coast)", Remote, Time zone Unknown |
+| SmartRecruiters QAD and ServiceNow | Application URL is the `oneclick-ui/…/publication/<id>` page |
+| Remote OK INNERGY and Renaissance | Application URL is `https://remoteok.com/l/<id>` |
+| WWR Dropbox (default capture) | Company, U.S. location, "US Zone 2 · US Zone 3" tiers, Remote, Full-time |
+| WWR NLBM (default capture) | Company, 85,000–95,000 USD, Worldwide eligibility, Pacific Time overlap |
+| ServiceTitan (default capture) | "Zone 1 · Zone 2" tiers, "Able to work PST/MST hours", requisition JR115657 |
+
+All PASS.
+
+**Known edge cases, explicitly non-blocking.**
+- Lever Bluesight's employment type.
+- Jobs for Humanity's monthly pay (pay-period rule).
+- Remote OK Renaissance's short description: the live page itself shows only that text.
+- NLBM's "Region: Anywhere" is not shown as a location (eligibility, arrangement and time zone already carry it).
+
+**Evaluator boundary.** No evaluator prompt, schema, model, routing, stage or policy change; no new fields; no migration.
+
+**Tests.**
+- New `tests/unit/live-round-2-real-captures.test.ts` (10 tests):
+  - the real stored captures replayed exactly: SafeBreach; ServiceTitan default and highlighted; WWR Dropbox and NLBM default and highlighted; SmartRecruiters and Remote OK without a stored link;
+  - the real rendered pages through the reader, envelope, capture mapping and normalizer: Remote OK with other jobs' hidden copies, the WWR Dropbox and NLBM pages.
+- New fixtures:
+  - `tests/fixtures/real-captures/feature-14b-live-round-2.json`: the stored captures, pairing IDs removed;
+  - `tests/fixtures/pages/remote-ok-innergy.html`, `we-work-remotely-dropbox.html`, `we-work-remotely-nlbm.html`: rendered DOM with scripts, styles and tracking tokens removed.
+- Updated: the reader's fact list (`pageRegionStatements`).
+
+**Verified (October 29, 2026):**
+- typecheck and lint;
+- unit: 67 files / 1,707 tests;
+- integration: 38 files / 320 tests;
+- E2E: 46/46. The first run had one 30-second timeout on a cold dev server, in the application-tracker test, code this diff does not touch; the full rerun passed;
+- extension and web builds; `git diff --check`;
+- adapter regression snapshot: all 36 fixture listings unchanged (facts and content hashes).
+
+**Databases.** Automated tests used only the isolated `ai_career_assistant_test` database. The acceptance work used only `ai_career_assistant_acceptance`: read-only SELECTs by the helper session, plus Alex's own captures through the app. The normal application database (`ai_career_assistant`, named in the local `.env`) was not touched.
+
 
 ### Feature 14B live acceptance batch (implemented and verified October 29, 2026; committed; awaiting the targeted live verification)
 

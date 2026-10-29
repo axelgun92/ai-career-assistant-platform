@@ -98,9 +98,16 @@ export function extractJobPosting(): PageExtraction {
   // job's title, everything after the heading in it).
   const otherJobsHeading =
     /^(?:(?:related|similar|recommended|recent|latest|more|other)(?:\s+(?:open|remote))?\s+(?:jobs|roles|positions|openings|listings)(?:\s+(?:at|from|like|for you)\b.*)?|you may also like|people also viewed)$/i;
+  // A heading's own words, without a link it carries ("Related Jobs" with a
+  // "Remote Customer Support jobs →" link beside it).
+  const headingText = (heading: Element): string => {
+    const copy = heading.cloneNode(true) as Element;
+    copy.querySelectorAll("a").forEach((link) => link.remove());
+    return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+  };
   const withoutOtherJobs = (copy: Element) => {
     for (const heading of [...copy.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]")]) {
-      const text = (heading.textContent ?? "").replace(/\s+/g, " ").trim();
+      const text = headingText(heading);
       // (A copy is not in the document: containment, not isConnected.)
       if (!copy.contains(heading) || text.length > 60 || !otherJobsHeading.test(text)) continue;
       const container = heading.parentElement;
@@ -502,26 +509,61 @@ export function extractJobPosting(): PageExtraction {
   // The job's own container: <main> (or role=main); otherwise the <article>
   // that holds the job's title (a page's first <article> may be another
   // job's card); otherwise the nearest container of the title that holds
-  // substantial text, never the whole body.
+  // substantial text, widened while the posting continues beside it (a
+  // header with the title and the posting body in a sibling section, as We
+  // Work Remotely lays it out), never the whole body and never so far that
+  // it holds another job.
+  let foundRoot: Element | null | undefined;
   const mainRoot = (): Element | null => {
+    if (foundRoot !== undefined) return foundRoot;
     const main = document.querySelector("main") ?? document.querySelector("[role=main]");
-    if (main) return main;
+    if (main) return (foundRoot = main);
     const heading = jobHeading();
     const articles = [...document.querySelectorAll("article")];
     const own = heading ? articles.find((article) => article.contains(heading)) : articles.length === 1 ? articles[0] : undefined;
-    if (own) return own;
+    if (own) return (foundRoot = own);
     let element = heading?.parentElement ?? null;
-    while (element && element !== document.body) {
-      if ((element.textContent ?? "").trim().length >= 500) return element;
-      element = element.parentElement;
+    while (element && element !== document.body && (element.textContent ?? "").trim().length < 500) element = element.parentElement;
+    if (!heading || !element || element === document.body) return (foundRoot = null);
+    // (Up to the first container holding another job, the nearest one that
+    // at least doubles the job's content each time.)
+    let size = jobScope(element).text.length;
+    for (let parent = element.parentElement; parent && parent !== document.body && parent !== document.documentElement; parent = parent.parentElement) {
+      const scope = jobScope(parent);
+      if (scope.anotherJob(heading)) break;
+      if (scope.text.length >= size * 2) {
+        element = parent;
+        size = scope.text.length;
+      }
     }
-    return null;
+    return (foundRoot = element);
   };
+  // A container's text as the job's content (without navigation, side
+  // panels, lists of other jobs or hidden parts), and whether it also holds
+  // another job: a second heading like the job's own, or a heading that
+  // links to another posting.
+  function jobScope(element: Element) {
+    const copy = element.cloneNode(true) as Element;
+    copy.querySelectorAll(`${removedInCopies}, header, footer, aside, [role=banner], [role=contentinfo], [role=complementary], [hidden]`).forEach((node) => node.remove());
+    withoutOtherJobs(copy);
+    const here = new URL(pageUrl);
+    return {
+      text: (copy.textContent ?? "").replace(/\s+/g, " ").trim(),
+      anotherJob: (heading: Element) =>
+        copy.querySelectorAll(heading.tagName).length > 1 ||
+        [...copy.querySelectorAll("h1, h2, h3, h4")].some((title) => {
+          const link = title.closest("a[href]") ?? title.querySelector("a[href]");
+          const target = link ? httpUrl((link as HTMLAnchorElement).href) : null;
+          return target !== null && new URL(target).pathname !== here.pathname;
+        }),
+    };
+  }
   const mainContent = (): ExtractedPosting | null => {
     if (linkedIn) return null;
     const root = mainRoot();
     if (!root) return null;
-    const description = capDescription(textOf(root, `${sideParts}, ${widgets}`) || null);
+    // (A sidebar of the job's metadata is page context, not the description.)
+    const description = capDescription(textOf(root, `${sideParts}, [class*="sidebar" i], ${widgets}`) || null);
     if (!description || description.length < 100) return null;
     const result = empty();
     result.title = pageTitle();
@@ -605,7 +647,9 @@ export function extractJobPosting(): PageExtraction {
     });
   // Another job's card: a container, below the one holding this job's own
   // heading, with a heading that links to (or sits in a link to) another
-  // address (a row or card of another posting, as boards list them).
+  // address (a row or card of another posting, as boards list them), or
+  // with another heading of the job title's own level (another posting's
+  // expanded copy, as Remote OK keeps one for every job in its list).
   const inOtherJobCard = (element: Element): boolean => {
     const heading = jobHeading();
     // (Without this job's own heading, no card can be told apart.)
@@ -613,6 +657,7 @@ export function extractJobPosting(): PageExtraction {
     const here = new URL(pageUrl);
     for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
       if (node.contains(heading)) return false;
+      if (node.querySelector(heading.tagName)) return true;
       const linked = [...node.querySelectorAll("h1, h2, h3, h4, [role=heading]")].some((title) => {
         const link = title.closest("a[href]") ?? title.querySelector("a[href]");
         const target = link ? httpUrl((link as HTMLAnchorElement).href) : null;
@@ -638,23 +683,41 @@ export function extractJobPosting(): PageExtraction {
     // One destination per address: the same application page with other
     // query parameters (a button above and below the posting) is one.
     const targets = new Map<string, string>();
-    // Links, and buttons that carry their destination in an attribute.
-    const controls = document.querySelectorAll(
-      'a[href], button[data-href], button[data-url], button[data-apply-url], button[formaction], [role=button][data-href], [role=button][data-url], [role=button][data-apply-url], form[action] button, form[action] input[type="submit" i]',
-    );
+    // Links, buttons (some carry their destination in an attribute) and
+    // custom elements (a component's apply button).
+    const controls = [
+      ...document.querySelectorAll('a[href], button, [role=button], input[type="submit" i], input[type="button" i]'),
+      ...[...document.body.querySelectorAll("*")].filter((element) => element.localName.includes("-") && (element.textContent ?? "").length < 80),
+    ];
+    // A control's words: its text, a custom element's own (shadow) text,
+    // else its accessible label.
+    const words = (control: Element) =>
+      controlText(control) || (control.shadowRoot?.textContent ?? "").replace(/\s+/g, " ").trim() || (control.getAttribute("aria-label") ?? "").trim();
+    // A control the page does not show (another job's collapsed copy, a
+    // hidden template) is not one the user can press.
+    const shown = (control: Element) => {
+      if (control.closest("[hidden], [aria-hidden=true]")) return false;
+      for (let node: Element | null = control; node && node !== document.body; node = node.parentElement) {
+        const style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+      }
+      return true;
+    };
     for (const control of controls) {
-      if (control.closest(excluded) || inOtherJobCard(control)) continue;
+      if (control.closest(excluded) || inOtherJobCard(control) || !shown(control)) continue;
       const panel = control.closest("aside, [role=complementary]");
-      if (panel && [...panel.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]")].some((title) => otherJobsHeading.test((title.textContent ?? "").replace(/\s+/g, " ").trim()))) continue;
+      if (panel && [...panel.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]")].some((title) => otherJobsHeading.test(headingText(title)))) continue;
       const around = control.closest(chrome);
       if (around && !(root && root.contains(around) && around !== root) && !(title && (around.textContent ?? "").toLowerCase().includes(title))) continue;
       const form = control.closest("form[action]");
+      const phrase = words(control).replace(/[‘’ʼ]/g, "'").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").replace(/\s+/g, " ");
+      const stated = applyPhrase.test(phrase);
       const address = control instanceof HTMLAnchorElement
-        ? control.href
-        : control.getAttribute("data-apply-url") ?? control.getAttribute("data-href") ?? control.getAttribute("data-url") ?? control.getAttribute("formaction") ?? (form ? (form as HTMLFormElement).action : null);
+        ? control.getAttribute("href")
+        : control.getAttribute("data-apply-url") ?? control.getAttribute("data-href") ?? control.getAttribute("data-url") ?? control.getAttribute("href") ?? control.getAttribute("formaction") ?? (form ? form.getAttribute("action") : null);
       let target: string | null = null;
       try {
-        target = address ? httpUrl(new URL(address, pageUrl).href) : null;
+        target = address && !/^\s*(?:#|javascript:)/i.test(address) ? httpUrl(new URL(address, pageUrl).href) : null;
       } catch {
         target = null;
       }
@@ -662,8 +725,6 @@ export function extractJobPosting(): PageExtraction {
       const url = new URL(target);
       // A link within this page (#apply) leads to no other destination.
       if (url.origin === here.origin && url.pathname === here.pathname && url.search === here.search) continue;
-      const phrase = controlText(control).replace(/[‘’ʼ]/g, "'").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").replace(/\s+/g, " ");
-      const stated = applyPhrase.test(phrase);
       const trimmed = (path: string) => path.replace(/\/+$/, "");
       const ownApplicationPage = url.origin === here.origin && /^\/(?:apply|application)$/i.test(trimmed(url.pathname).slice(trimmed(here.pathname).length)) &&
         trimmed(url.pathname).startsWith(trimmed(here.pathname));
@@ -674,39 +735,52 @@ export function extractJobPosting(): PageExtraction {
     return targets.size === 1 ? [...targets.values()][0]! : null;
   };
   // A structured description that is a shortened copy of the one the page
-  // shows (a teaser that stops early, as some boards publish): the page's
-  // own rendering of the same description, when an element on the page
-  // starts with the same text and, read as usual, is much longer and holds
-  // the structured text's opening lines in order.
+  // shows (a teaser that stops early, as some boards publish), or the same
+  // text with its paragraphs and list items run together (as a job page's
+  // JSON-LD may carry it): the page's own rendering of the same
+  // description, when an element on the page starts with the same text and,
+  // read as usual, is much longer, or about as long with many more lines,
+  // and holds the structured text's opening lines in order.
   const fullerRendered = (structuredText: string): string | null => {
     if (linkedIn || !document.body) return null;
     const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+    // Compared without whitespace: a page's adjacent elements often join with
+    // none between them ("About RenaissanceWhen you join…").
+    const squash = (value: string) => value.replace(/\s+/g, "");
     const described = flat(structuredText);
     if (described.length < 120) return null;
     const lines = structuredText.split("\n").map(flat).filter((item) => item.length >= 25);
-    const opening = described.slice(0, 80);
-    const probes = lines.slice(0, 3).map((item) => item.slice(0, 25));
+    const opening = squash(described.slice(0, 80));
+    // Where the page's text starts: the opening of the first lines, or of the
+    // first sentence (the page may render it as its own element while the
+    // structured copy runs it into the next).
+    const firstSentence = /^.{12,}?[.?!](?=\s|$)/.exec(described)?.[0] ?? "";
+    const probes = [...lines.slice(0, 3).map((item) => item.slice(0, 25)), firstSentence.slice(0, 25)].filter((probe) => probe.length >= 12);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const nodeText = flat(node.textContent ?? "");
       if (!probes.some((probe) => nodeText.includes(probe))) continue;
       for (let element = node.parentElement; element && element !== document.body; element = element.parentElement) {
         if (element.closest("script, style, template, noscript, nav")) break;
-        const text = flat(element.textContent ?? "");
-        if (text.length < described.length * 1.3) continue;
+        const text = squash(element.textContent ?? "");
+        if (text.length < squash(described).length * 0.9) continue;
         const at = text.indexOf(opening);
         if (at < 0 || at > 20) break;
         const fuller = capDescription(textOf(element, `${sideParts}, ${widgets}`));
         if (!fuller) break;
-        const cleaned = flat(fuller);
+        const cleaned = squash(fuller);
         let from = 0;
         const inOrder = lines.slice(0, Math.max(1, Math.floor(lines.length / 2))).every((item) => {
-          const found = cleaned.indexOf(item.slice(0, 60), from);
+          const found = cleaned.indexOf(squash(item.slice(0, 60)), from);
           if (found < 0) return false;
           from = found;
           return true;
         });
-        return cleaned.length >= described.length * 1.3 && inOrder ? fuller : null;
+        const longer = cleaned.length >= squash(described).length * 1.3;
+        const structuredLines = structuredText.split("\n").filter((item) => item.trim()).length;
+        const restructured = cleaned.length >= squash(described).length * 0.9 && fuller.split("\n").filter((item) => item.trim()).length >= structuredLines * 2 + 3;
+        if (!longer && !restructured) continue;
+        return inOrder ? fuller : null;
       }
     }
     return null;

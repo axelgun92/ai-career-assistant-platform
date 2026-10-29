@@ -182,6 +182,12 @@ copy(JSON.stringify({
 }, null, 1));
 ```
 
+**Live acceptance, round 2: result (October 29, 2026).** The live round above still failed on seven cases; round 2 traced each one on real evidence and Alex verified the fixes through this installed extension into the live acceptance app. All eight blocker cases pass: Greenhouse SafeBreach, SmartRecruiters QAD and ServiceNow, Remote OK INNERGY and Renaissance, We Work Remotely Dropbox and New Law Business Model (default capture, no highlighting needed), and Workday ServiceTitan (default capture). The real evidence was Alex's stored captures, exported read-only from the acceptance database, and the live pages rendered in Playwright's own Chromium with the page reader run inside them. See CURRENT_PROGRESS.md, "Feature 14B live acceptance, round 2".
+
+How to gather real evidence when a capture is wrong (the method round 2 used):
+- **Stored capture:** `pnpm acceptance:check-source-version --database <acceptance database> --opportunity <URL> --evidence ~/case.json` saves the exact capture the extension sent. Compare a default capture with a highlighted ("Use my selected text instead") one when the result depends on it.
+- **Rendered page:** run the DevTools snippet above on the job page, so the apply controls (including hidden ones), the side panels and the JSON-LD are visible.
+
 **7. Cleanup (optional).** Stop the servers, delete `database/.e2e-acceptance-helper.mjs`, then run `dropdb -h localhost -U postgres ai_career_assistant_acceptance`.
 
 ## Known limits

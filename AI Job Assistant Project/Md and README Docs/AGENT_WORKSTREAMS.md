@@ -125,7 +125,7 @@ If both agents need the same area, one agent should finish and hand off before t
 - automated retrieval/scraping;
 - source health and conservative retrieval;
 - posting-history/ghost-job intelligence;
-- the browser extension companion *(feature 14B, committed `e6bacc6`, with its shared-Core normalization correction implemented and verified October 23, 2026, its cross-source correction of October 26, 2026 (committed as checkpoint v7 `6536ef8`), its final cross-source batch of October 27, 2026 (committed) and its live acceptance batch of October 29, 2026 (committed; awaiting the targeted live verification); feature 14A, browser-assisted retrieval for public, logged-out LinkedIn pages and source corrections, is complete)*;
+- the browser extension companion *(feature 14B, committed `e6bacc6`, with its shared-Core normalization correction implemented and verified October 23, 2026, its cross-source correction of October 26, 2026 (committed as checkpoint v7 `6536ef8`), its final cross-source batch of October 27, 2026 (committed) its live acceptance batch of October 29, 2026 (committed) and its live acceptance round 2 of October 29, 2026 (committed; live acceptance passed); feature 14A, browser-assisted retrieval for public, logged-out LinkedIn pages and source corrections, is complete)*;
 - source intelligence;
 - job-market analytics;
 - personal job-search analytics;
