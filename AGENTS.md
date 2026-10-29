@@ -162,8 +162,9 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
     deduplication unchanged; no migration or backfill), implemented and verified October 23, 2026
     with Core Platform TDD v1.15 and Core AI Framework PRD v1.14; followed by the convergence, v5 and
     cross-source corrections (checkpoint v7 committed 6536ef8; read-only retest helper 362fe01) and
-    the final cross-source batch of October 27, 2026 (committed; see CURRENT_PROGRESS.md): 14B is
-    accepted only after the batch's small targeted live verification passes
+    the final cross-source batch of October 27, 2026 and the live acceptance batch of October 29,
+    2026 (both committed; see CURRENT_PROGRESS.md): 14B is accepted only after the live acceptance
+    batch's targeted live verification passes
     (earlier: "awaiting Alex's review, a minimal human retest and acceptance; not committed")
     (an October 19 implementation instruction incorrectly treated 14B as deferred, optional and not
     required; no approved roadmap or product-scope revision removed it; corrected October 20 in Core

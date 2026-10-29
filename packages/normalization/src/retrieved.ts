@@ -14,7 +14,7 @@ import {
   type RetrievedStructuredFields,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
-import { onTargetStatementFor, readJobTextFacts, relativePostedDate, standardizeSeniorityLabel, type TextFact } from "./job-text-facts";
+import { onTargetStatementFor, readJobTextFacts, relativePostedDate, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
 import { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
@@ -130,6 +130,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         pageTitle: metadataText(rawOpportunity, "pageTitle"),
         pageText: metadataText(rawOpportunity, "pageText"),
         location: text(rawOpportunity.location),
+        remoteLocations: corrected.has("location") ? [] : sourceFacts.remoteLocations,
         company: text(rawOpportunity.company),
       });
       // A fact read from the text, recorded with its marker; used only when
@@ -155,9 +156,11 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       const remoteLocations = placeholderOnly && specificLocation ? [] : statedRemoteLocations;
       const remoteLocation = remoteLocations.length ? `Remote (${remoteLocations.join(", ")})` : null;
       // The posting's own labelled location may state the source's location
-      // together with more places (a fuller, not a different, statement).
-      const broaderLocation = remoteLocation || corrected.has("location") ? null : facts.broaderLocation;
-      const sourceLocation = remoteLocation ?? (broaderLocation ? null : text(rawOpportunity.location));
+      // (or its remote-hiring places) together with more places, or more
+      // precisely ("United States (East Coast)"): a fuller, not a different,
+      // statement, used instead.
+      const broaderLocation = corrected.has("location") ? null : remoteLocation ? facts.broaderRemoteLocation : facts.broaderLocation;
+      const sourceLocation = broaderLocation ? null : remoteLocation ?? text(rawOpportunity.location);
       const domain = text(rawOpportunity.domain);
 
       // The description is kept exactly as the source produced it (text
@@ -172,7 +175,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       if (sourceCompany) record("company.name", companyField, sourceCompany === rawOpportunity.company ? "DIRECT" : "DETERMINISTIC", sourceCompany, rawOpportunity.company);
       // A field the user cleared stays Unknown: the fallback never refills it.
       const companyName = sourceCompany ?? (corrected.has("company") ? null : fallback("company.name", facts.companyName));
-      if (remoteLocation) {
+      if (remoteLocation && sourceLocation) {
         record("location", "source.remoteLocations", "DETERMINISTIC", remoteLocation, remoteLocations.join("; "));
       } else if (sourceLocation) {
         record("location", corrected.has("location") ? "userCorrected:location" : "location", sourceLocation === rawOpportunity.location ? "DIRECT" : "DETERMINISTIC", sourceLocation, rawOpportunity.location);
@@ -203,14 +206,23 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       const closingDate = sourceClosingDate ?? fallback("closingDate", facts.closingDate, (date) => date.toISOString());
 
       // Work arrangement: the source's own workplace field, else an explicit
-      // word in the source's location, else the job text.
-      const locationArrangement = workArrangementFromLocation(sourceLocation);
-      if (structured.workplaceType) {
+      // word in the source's location (as the source stated it, also when a
+      // fuller labelled location is shown), else the job text. When the
+      // posting offers several arrangements as options and the source's own
+      // value is one of them ("Work Style – WFH or come to the office" on a
+      // remote listing), the options are kept as stated.
+      const statedLocation = remoteLocation ?? text(rawOpportunity.location);
+      const locationArrangement = workArrangementFromLocation(statedLocation);
+      const sourceArrangement = structured.workplaceType ?? locationArrangement;
+      const optionsInclude = facts.workArrangements !== null && sourceArrangement !== null && facts.workArrangements.value.includes(sourceArrangement);
+      if (optionsInclude) {
+        // (Recorded with the options below.)
+      } else if (structured.workplaceType) {
         record("remoteStatus", "source.workplaceType", "DIRECT", structured.workplaceType, structured.workplaceType);
-      } else if (locationArrangement && sourceLocation) {
-        record("remoteStatus", remoteLocation ? "source.remoteLocations" : "location", "DETERMINISTIC", locationArrangement, sourceLocation);
+      } else if (locationArrangement && statedLocation) {
+        record("remoteStatus", remoteLocation ? "source.remoteLocations" : "location", "DETERMINISTIC", locationArrangement, statedLocation);
       }
-      const remoteStatus = structured.workplaceType ?? locationArrangement ?? fallback("remoteStatus", facts.remoteStatus);
+      const remoteStatus = optionsInclude ? null : sourceArrangement ?? fallback("remoteStatus", facts.remoteStatus);
       // Several arrangements the posting offers as options, kept as stated
       // when the source names no single one.
       const offeredArrangements = remoteStatus ? null : fallback("workArrangements", facts.workArrangements);
@@ -270,7 +282,9 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
 
       // Residency: explicit statements in the location or description only
       // (a remote role's location that is only geography counts as one).
-      const residency = parseResidency({ location, rawText: rawOpportunity.description, remote: remoteStatus === "REMOTE" });
+      // (A remote role's stated hiring places count even when the posting's
+      // fuller labelled location is shown.)
+      const residency = parseResidency({ location: remoteLocation ?? location, rawText: rawOpportunity.description, remote: remoteStatus === "REMOTE" || sourceArrangement === "REMOTE" });
       if (residency.requirement !== null) {
         for (const statement of residency.statements) {
           const sourceField = residencySourceFields[statement.source];
@@ -354,7 +368,8 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       // their currency is kept only when they share one.
       let tieredSalaryText: string | null = null;
       let compensationTiers: CompensationTier[] = [];
-      const tiers = facts.compensationTiers;
+      // (Also a source salary text that itself names each tier's range.)
+      const tiers = facts.compensationTiers ?? (statedSalaryText && !structuredAmounts ? statedCompensationTiers(statedSalaryText, salaryField!) : null);
       if (tiers) {
         for (let index = provenance.length - 1; index >= 0; index -= 1) {
           if (["salaryMin", "salaryMax", "currency", "compensationBasis", "salaryText"].includes(provenance[index]!.fieldName)) provenance.splice(index, 1);

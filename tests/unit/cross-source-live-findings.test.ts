@@ -378,7 +378,9 @@ describe("Welcome to the Jungle (AlphaSense): the page header's salary, office d
       seniority: null, seniorityLabel: "Junior and Mid level",
       location: "New York, NY, US; Chicago, IL, US", employmentType: "FULL_TIME",
     });
-    expect(opportunity.closingDate?.toISOString()).toBe("2026-12-10T00:00:00.000Z");
+    // (Welcome to the Jungle's validThrough is a rolling listing expiry that
+    // moved between two live captures, October 29, 2026: no closing date.)
+    expect(opportunity.closingDate).toBeNull();
   });
 });
 

@@ -924,7 +924,7 @@ describe("the shared reader itself", () => {
     const input = { text: postingText, title: "Customer Success Manager", pageTitle: "Customer Success Manager at Northwind" };
     expect(readJobTextFacts(input)).toEqual(readJobTextFacts(input));
     expect(readJobTextFacts({ text: null, title: null })).toEqual({
-      companyName: null, location: null, broaderLocation: null, remoteStatus: null, workArrangements: null, employmentType: null, compensation: null,
+      companyName: null, location: null, broaderLocation: null, broaderRemoteLocation: null, remoteStatus: null, workArrangements: null, employmentType: null, compensation: null,
       compensationTiers: null, bonus: null, postingDate: null, closingDate: null, timeZoneRequirements: null, seniority: null,
       seniorityLabel: null, department: null, requisitionId: null,
       workAuthorization: null, visaSponsorship: null, relocationSupport: null, employerOfRecord: null,

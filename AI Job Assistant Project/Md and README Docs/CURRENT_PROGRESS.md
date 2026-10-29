@@ -1,9 +1,13 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 27, 2026
+**Last updated:** October 29, 2026
 
 ## Current Objective
+
+**Feature 14B live acceptance batch (October 29, 2026).** Alex's latest full live round of the committed batch (`51f3279` with the currency correction `451b652`) confirmed Working Nomads, Ashby, Workable, Wellfound, Greenhouse Healthie, Lever Mongoose and Wing, Workday Thomson Reuters, LinkedIn Serrala's tiers and Welcome to the Jungle AlphaSense's salary, and found the remaining defects listed in the batch-fix handoff. They were fixed as one end-to-end contract (page evidence → extension collection → page context and structured fields → capture mapping and source facts → shared normalization → provenance and persistence → display); see "Feature 14B live acceptance batch" under Recently Completed. The batch is implemented, verified and committed on `claude/gallant-pasteur-y1ou3i`. **Feature 14B stays unaccepted** until the corrected build passes the targeted live verification listed under the batch; a few cases need Alex's stored evidence before they can be closed (listed there). Feature 15 has not started.
+
+*(The objective below, from October 27, 2026, is kept as written; its live round is done.)*
 
 **Feature 14B final cross-source batch (October 27, 2026).** Alex's final human cross-source retest of the committed checkpoint (v7 `6536ef8`, with the read-only retest helper `362fe01`) found remaining defects on ten sources. They were audited along the whole path (extension collection → capture envelope and source facts → shared normalization → provenance and persistence → the opportunity's display) and fixed as shared contracts, not per posting; see "Feature 14B final cross-source batch" under Recently Completed. The batch is implemented, verified and committed on `claude/gallant-pasteur-y1ou3i`. The same day, Alex corrected the currency rule: a recognized currency symbol is read directly as its currency, and a stated code or name takes precedence (see "Feature 14B currency symbol correction"; also committed). **Feature 14B stays unaccepted** until the corrected build passes the small targeted live verification listed under the batch. Feature 15 has not started.
 
@@ -140,7 +144,54 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–27, 2026)
+## Recently Completed (October 14–29, 2026)
+
+### Feature 14B live acceptance batch (implemented and verified October 29, 2026; committed; awaiting the targeted live verification)
+
+**Why.** The latest full live round (handoff "Feature 14B Live Acceptance Batch-Fix", October 29, 2026). Protected passing sources: Working Nomads, Ashby, Workable, Wellfound, Greenhouse Healthie, Lever Mongoose and Wing, Workday Thomson Reuters, LinkedIn Serrala's tiers, Welcome to the Jungle AlphaSense's "$80-95k". Adzuna stays out of scope.
+
+**Root causes and fixes, by shared subsystem.**
+- **Extension page context (the job's own sidebar).** Page context left out every side panel, so sidebars that state a job's metadata (We Work Remotely's "About the job", Himalayas' salary, job type and level) never reached Core: Dropbox's location, SMB Team's salary and job type, and the corroboration a page-title company needs. Page context now adds the job's own metadata panel: a side panel (aside, complementary or sidebar) outside the job's content, or excluded inside it, that names at least two job-metadata labels and lists no other jobs. A stray single label ("Location: Asideville") or a "Similar jobs" panel is still never read. *(`apps/extension/src/extract.ts`)*
+- **Extension apply links.** Three gaps left a visible apply button without an Application URL:
+  - other postings' rows on the same page (Remote OK) made the job's own Apply ambiguous; an Apply inside another job's card (a container below the job's own heading with a heading linking to another posting) no longer counts;
+  - the job's own side panel and a sticky header that repeats the job's title were excluded (SmartRecruiters' "I'm interested" in the sidebar, sticky header and bottom); they count now, while navigation, other-job widgets and a site header that does not repeat the job still never do;
+  - buttons that carry their destination in an attribute (`data-href`, `data-url`, `data-apply-url`, `formaction`, an enclosing form's action) are read, and apply phrases may end "… for this job/position/role".
+  - Two different destinations in the job's own content stay ambiguous.
+- **LinkedIn.** A LinkedIn page that also has JSON-LD was read only through the structured path, so the top card's posted age ("12 hours ago") and the employer's Apply link were never read (Serrala). The top card's facts now fill what the structured data leaves out. The posted age is also read from the signed-in view's description row ("Canada · 12 hours ago · …"), and the Apply link from the top card's apply anchor (directly off LinkedIn, or LinkedIn's external-apply redirect, whose `url` parameter names the destination). Easy Apply stays on LinkedIn and gives no URL.
+- **Shared normalizer: pay.**
+  - **Tiers inside one statement** (ServiceTitan: "Zone 1 (CA, CT, DC, MD, MA, NJ, NY, VA, WA): $76,900 - $115,300 USD Zone 2 (All other U.S. locations): $71,800 - $107,800 USD") parsed as one ambiguous statement, so Salary was Unknown. A statement naming several numbered zones, tiers or bands, each with exactly one range (label first or amount first), is now split into labelled tiers; the same applies to a source's own salary text. Ranges without tier labels, and base with OTE, stay ambiguous.
+  - **Tier label and amount on separate lines** (Dropbox: "US Zone 2" / "$142,700—$193,100 USD"): a line holding only a tier label followed by a line holding only amounts is that tier's statement. "This role is not available in Zone 1" is no tier.
+  - **Salary with a trailing variable-pay clause** (SMB Team: "The salary for this role is $85,000 - $90,000 with bonus potential up to $10,000.") was ambiguous; the salary is now the range before the clause, and the clause ("bonus potential up to $10,000") is the `bonus` fact. A tail that goes on to state other earnings ("plus commission; OTE $140,000") keeps the statement ambiguous. *(`compensation.ts`, `job-text-facts.ts`)*
+- **Shared normalizer: arrangement and employment.**
+  - A label may be separated from its value by a spaced dash ("WORK STYLE – WFH or come to the office. The choice is yours!"); only a labelled value's first sentence is read.
+  - Labelled arrangement values now include working from home (Remote) and working from or coming to the office (On-site), as labelled values only, never prose.
+  - When the posting offers several arrangements and the source's own single value is one of them (Himalayas' structured remote with SMB Team's "WFH or come to the office"), the options are kept ("Remote / On-site"); a different single value from the source still wins.
+  - A page header item joining categories with dashes or slashes ("Full Time - Remote - In-person meeting attendance required", Lever Bluesight) states the one part that is an employment type; two employment types state none.
+- **Shared normalizer: location and company.**
+  - A labelled location that refines the source's place now also refines a place written with its arrangement ("Remote, United States") and a remote role's stated hiring places; the arrangement and the residency stated by the source are kept (SafeBreach: "United States (East Coast)", Remote, no time zone).
+  - Page items "Only US" and "Anywhere in the US" name the U.S.; "Anywhere in the World" names no place.
+  - The page-title company is also read from "<title> | <Company> | <platform>" and "<Company> - <title>" titles (New Law Business Model), still only when the name appears in the posting and names no place, arrangement or team.
+- **Capture mapping (Welcome to the Jungle and Otta).** The structured `validThrough` moved from 2026-11-10 to 2026-11-12 between two captures: a rolling listing expiry, not an application deadline. It is no longer the closing date there (a deadline the posting itself states still is). `datePosted` (2025-10-03T02:01:34Z) is kept as stated: it is the page's own deterministic field and was identical in both captures. *(`apps/web/src/server/extension-capture.ts`)*
+
+**Investigated, intentionally unchanged.**
+- **Workday ServiceTitan location** "US CA Remote, United States of America": the posting's structured `jobLocation` (its primary location, as Workday publishes it); the header's "US Remote" is the page's own summary. Both are the source's statements; nothing was changed.
+- **Jobs for Humanity "$1,500–$3,000 per month":** non-annual pay is never stored as salary amounts (there is no pay-period field) and is never annualized silently. Salary stays Unknown; the text stays in the data. A product decision: keep, or add a pay-period fact.
+- **ServiceTitan time zone** ("Able to work PST/MST hours", read in the earlier capture as `rawText:explicit-time-zone-statement`): the statement is read on every synthetic layout tried; the live regression needs the stored evidence (`--evidence`) to find what in the current capture conflicts with it.
+
+**Evaluator boundary.** No evaluator prompt, schema, model, routing, stage or policy change. No new fields; `compensationTiers` and `bonus` stay withheld from the evaluator subject. No migration.
+
+**Tests.**
+- New `tests/unit/live-acceptance-batch.test.ts` (28): each defect through the real extension reader, envelope, capture mapping and normalizer (SafeBreach both location paths; Bluesight's header; SmartRecruiters' sidebar, sticky-header, bottom and attribute buttons; Remote OK rows; Dropbox and New Law Business Model sidebars; SMB Team and Jobs for Humanity; ServiceTitan's one-statement zones, amount-first zones and source salary text; LinkedIn public and signed-in views; Welcome to the Jungle's dates), with negatives: a site header that does not repeat the job, two destinations in the job's content, other jobs' panels and stray labels, two employment types, prose about home or the office, ranges without tier labels, base with OTE, Easy Apply, a hyphenated word that is not a label separator, a worldwide region.
+- New `tests/integration/live-acceptance-batch.test.ts` (3, test database): SMB Team's salary, job type, both work styles and bonus persisted (bonus withheld from the evaluator); Dropbox's tiers and region persisted and displayed; Remote OK's apply link stored on the source version and the opportunity; no rolling closing date from Welcome to the Jungle.
+- New E2E case in `tests/e2e/extension.spec.ts`: in Chromium, the job's own sidebar in page context, the job's own Apply among other jobs' rows, and LinkedIn's top card beside its structured data.
+- Updated deliberately: the October 26 Welcome to the Jungle case (its `validThrough` is no closing date); the reader's fact list (`broaderRemoteLocation`).
+
+**Cross-source regression.** All 13 adapter fixtures (36 listings) were snapshotted against the previous baseline: no listing changed (facts and content hashes identical). The October 26 and 27 cross-source suites pass unchanged apart from the Welcome to the Jungle closing date. Extension captures whose page context gains the job's sidebar may record one changed version on recapture (accepted rule D6).
+
+**Verified (October 29, 2026; isolated test database only; no live third-party requests; no provider calls):** typecheck and lint; unit 66 files / 1,697 tests; integration 38 files / 320 tests (the browser-driver file with the local Chromium path); E2E 46/46; extension and web builds; `git diff --check`. No persistence change, so no migration verification was needed.
+
+**Targeted live verification (Alex).** `pnpm extension:build`, reload the extension, then recapture one posting each: Greenhouse SafeBreach (location "United States (East Coast)", Remote, no time zone); Lever Bluesight (Full-time, Remote); SmartRecruiters QAD and ServiceNow (Application URL); Remote OK INNERGY and Renaissance (Application URL); We Work Remotely Dropbox (location, the Zone 2 and Zone 3 tiers) and New Law Business Model (company); Himalayas SMB Team (salary 85,000–90,000 USD, bonus apart, Full-time, Remote / On-site); Workday ServiceTitan (the two zone tiers); LinkedIn Serrala (posted date, Application URL); Welcome to the Jungle AlphaSense (no closing date). Any case that still fails: run `pnpm acceptance:check-source-version --database <acceptance database> --opportunity <URL> --evidence ~/case.json` and send the file; for a missing Application URL, also send the apply button's markup (the console snippet in the extension README).
+
 
 ### Feature 14B currency symbol correction (implemented and verified October 27, 2026; committed; awaiting the targeted live verification)
 

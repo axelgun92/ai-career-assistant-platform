@@ -49,6 +49,12 @@ const within = (domain: string) => (host: string) => host === domain || host.end
 // links outrank job boards, which outrank aggregators); every other host is
 // an aggregator, the lowest precedence, so a capture from an unrecognized
 // site never replaces a stronger link.
+// Sites whose structured validThrough is a rolling listing expiry that moves
+// forward on every visit (Welcome to the Jungle and Otta: 2026-11-10 one day,
+// 2026-11-12 two days later), not an application deadline: it states no
+// closing date. A deadline the posting itself states is still read.
+const rollingValidThroughSites = new Set(["welcome-to-the-jungle", "otta"]);
+
 const knownSites: readonly KnownSite[] = [
   { key: "greenhouse", name: "Greenhouse", category: "ATS", matches: exactly("boards.greenhouse.io", "job-boards.greenhouse.io") },
   { key: "lever", name: "Lever", category: "ATS", matches: exactly("jobs.lever.co") },
@@ -185,7 +191,7 @@ export function capturedListing(
     workplaceType: fields.workplaceType,
     employmentType: cleanOptional(fields.employmentType),
     postedAt: cleanOptional(fields.postedAt),
-    closingDate: cleanOptional(fields.closingDate),
+    closingDate: rollingValidThroughSites.has(identity.site.key) ? null : cleanOptional(fields.closingDate),
     ...capturedApplication(fields, identity.sourceUrl),
     siteJobId: fields.siteJobId,
     remoteLocations: [...new Set(fields.remoteLocations.map(cleanCapturedText).filter(Boolean))],

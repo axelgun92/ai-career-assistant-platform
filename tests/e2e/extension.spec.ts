@@ -434,6 +434,45 @@ test("the page reader in Chromium: LinkedIn job details only, no whole-page fall
   await page.close();
 });
 
+test("the page reader in Chromium: a job's own sidebar and Apply link among other jobs, and LinkedIn's top card beside its structured data", async () => {
+  // Playwright answers these addresses itself; nothing is requested from
+  // the sites.
+  const destination = "https://careers.serrala.example/jobs/scaled-csm";
+  const answered: Record<string, string> = {
+    "https://weworkremotely.com/remote-jobs/dropbox-csm": `<!doctype html><html><head><title>Customer Success Manager | Dropbox | We Work Remotely</title></head><body>
+      <div class="lis-container"><div class="lis-container__header"><h1>Customer Success Manager</h1></div><div class="lis-container__job">
+      <div class="lis-container__job__content"><p>${"Own onboarding and adoption for strategic customers. ".repeat(12)}</p><p>US Zone 2</p><p>$142,700—$193,100 USD</p></div>
+      <aside class="lis-container__job__sidebar"><h4>About the job</h4><ul><li>Job type <span>Full-Time</span></li><li>Region <span>USA Only</span></li></ul></aside></div></div></body></html>`,
+    "https://remoteok.com/remote-jobs/innergy-1100002": `<!doctype html><html><head><title>Remote Customer Success Jobs</title></head><body><h1>Remote Customer Success Jobs</h1><table>
+      <tr class="job"><td><h2>Customer Success Manager</h2><h3>INNERGY</h3><p>${"Guide woodworking shops through adoption. ".repeat(14)}</p></td><td><a class="button" href="/l/1100002">Apply</a></td></tr>
+      <tr class="job"><td><a href="/remote-jobs/other-1100003"><h2>Customer Success Manager</h2></a></td><td><a class="button" href="/l/1100003">Apply</a></td></tr></table></body></html>`,
+    "https://www.linkedin.com/jobs/view/4300000002/": jsonLdPage({
+      title: "Scaled Customer Success Manager, NA", company: "Serrala", descriptionHtml: "<p>Grow a scaled book of customers.</p>",
+      bodyHtml: `<main><section class="top-card-layout"><h1 class="top-card-layout__title">Scaled Customer Success Manager, NA</h1><span class="posted-time-ago__text">12 hours ago</span>
+        <a class="apply-button" href="https://www.linkedin.com/jobs/view/externalApply/4300000002?url=${encodeURIComponent(destination)}">Apply</a></section>
+        <div class="show-more-less-html__markup"><p>Grow a scaled book of customers.</p></div></main>`,
+    }),
+  };
+  const page = await context.newPage();
+  await page.route(/^https:\/\/(?:weworkremotely\.com|remoteok\.com|www\.linkedin\.com)\//, (route) => {
+    const body = answered[route.request().url()];
+    return body ? route.fulfill({ status: 200, contentType: "text/html", body }) : route.abort();
+  });
+  const read = async (url: string) => {
+    await page.goto(url);
+    return (await page.evaluate(`(${extractJobPosting.toString()})()`)) as PageExtraction;
+  };
+
+  const wwr = await read("https://weworkremotely.com/remote-jobs/dropbox-csm");
+  expect(wwr.pageText).toContain("Job type");
+  expect(wwr.pageText).toContain("USA Only");
+  const remoteOk = await read("https://remoteok.com/remote-jobs/innergy-1100002");
+  expect(remoteOk.application).toEqual({ url: "https://remoteok.com/l/1100002", basis: "PAGE_APPLY_LINK" });
+  const linkedIn = await read("https://www.linkedin.com/jobs/view/4300000002/");
+  expect(linkedIn).toMatchObject({ extractor: "structured-data", posting: { postedAt: "12 hours ago", applicationUrl: destination, applicationUrlBasis: "PAGE_APPLY_LINK" } });
+  await page.close();
+});
+
 test("revoking the pairing stops the extension at once", async () => {
   const app = await context.newPage();
   await app.goto(`${appUrl}/extension`);

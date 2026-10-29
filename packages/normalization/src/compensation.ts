@@ -189,7 +189,23 @@ function annualPart(text: string): string | null {
   return parts.length === 1 ? parts[0]! : null;
 }
 
+// A clause stating variable pay after the salary ("$85,000 - $90,000 with
+// bonus potential up to $10,000", "… plus a bonus of up to 10%"): the
+// salary is what comes before it.
+export const variablePayClause =
+  /\s*(?:[,;(]\s*)?\b(?:with|plus|and|\+)\s+(?:an?\s+|the\s+)?(?:annual\s+|quarterly\s+|performance\s+|potential\s+)?(?:bonus(?:es)?|commissions?|incentives?|variable|equity|stock|RSUs?)\b[^]*$|\s*\+\s*(?:bonus|commission|equity)\b[^]*$/i;
+
 function resolveAmounts(text: string): Pick<ParsedCompensation, "minimum" | "maximum" | "amountsUnknownReason"> {
+  const resolved = resolveStatedAmounts(text);
+  if (resolved.amountsUnknownReason !== "AMBIGUOUS_AMOUNTS") return resolved;
+  const clause = variablePayClause.exec(text);
+  // (A clause that goes on to state other earnings, "plus commission; OTE
+  // $140,000", is not only variable pay: the statement stays ambiguous.)
+  const salary = clause && !/\b(?:OTE|on[- ]target|total|base|salary|earnings)\b/i.test(clause[0]) ? text.slice(0, clause.index) : null;
+  return salary && amountTokens(salary).tokens.length ? resolveStatedAmounts(salary) : resolved;
+}
+
+function resolveStatedAmounts(text: string): Pick<ParsedCompensation, "minimum" | "maximum" | "amountsUnknownReason"> {
   const none = (reason: ParsedCompensation["amountsUnknownReason"]) => ({ minimum: null, maximum: null, amountsUnknownReason: reason });
   const { text: expanded, tokens } = amountTokens(text);
   if (tokens.length === 0) return none(null);
@@ -198,7 +214,7 @@ function resolveAmounts(text: string): Pick<ParsedCompensation, "minimum" | "max
   if (nonAnnualPeriod.test(text)) {
     // Non-annual pay with its explicit annual equivalent: the annual amounts.
     const annual = annualPart(text);
-    return annual ? resolveAmounts(annual) : none("NON_ANNUAL_PERIOD");
+    return annual ? resolveStatedAmounts(annual) : none("NON_ANNUAL_PERIOD");
   }
   if (tokens.length === 1) {
     const [token] = tokens as [AmountToken];

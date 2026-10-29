@@ -10,7 +10,7 @@ import {
   type WorkArrangement,
   type WorkAuthorizationRequirement,
 } from "@ai-career/core";
-import { parseCompensation, statedAmounts } from "./compensation";
+import { parseCompensation, statedAmounts, variablePayClause } from "./compensation";
 import { standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
 // Deterministic fallback reading of the job posting's own text (Core TDD
@@ -77,6 +77,9 @@ export interface JobTextFacts {
   // North America (US & Canada)" beside a source location of "Canada"): the
   // fuller statement of the same fact.
   broaderLocation: TextFact<string> | null;
+  // The same, for the source's remote-hiring places ("United States (East
+  // Coast)" for a remote role open in "United States").
+  broaderRemoteLocation: TextFact<string> | null;
   // Explicit work-authorization facts, for any country (never residency):
   // a required right to work or citizenship and the countries named; visa
   // sponsorship and relocation support offered or not; the countries an
@@ -194,16 +197,18 @@ interface Labelled {
   bare: boolean;
 }
 
-// Values written after one of `labels`: "Label: value" or "Label (qualifier):
-// value" (also inside a row of facts), or a line holding only the label
-// followed by a line holding the value. With `bareLabel` (page metadata
+// Values written after one of `labels`: "Label: value", "Label – value" or
+// "Label (qualifier): value" (also inside a row of facts), or a line holding
+// only the label followed by a line holding the value. With `bareLabel` (page metadata
 // only), also a short line holding the label and its value with no colon
 // ("Job type Full-Time", "Region United States"), as a page writes a label
 // and its value in one item.
 function labelledValues(lines: string[], labels: readonly string[], options: { colonOptional?: boolean; bareLabel?: boolean } = {}): Labelled[] {
   const alternatives = [...labels].sort((a, b) => b.length - a.length).map(escape).join("|");
   const qualified = "(?:\\s*\\(([^()]{1,30})\\))?";
-  const inline = new RegExp(`^(?:${alternatives})${qualified}\\s*${options.colonOptional ? "[:：]?" : "[:：]"}\\s*(\\S.*)$`, "i");
+  // (A spaced dash also separates a label from its value: "WORK STYLE – WFH".)
+  const separator = `(?:\\s*[:：]|\\s+[–—-](?=\\s))${options.colonOptional ? "?" : ""}`;
+  const inline = new RegExp(`^(?:${alternatives})${qualified}${separator}\\s*(\\S.*)$`, "i");
   const alone = new RegExp(`^(?:${alternatives})${qualified}\\s*[:：]?$`, "i");
   const bare = new RegExp(`^(?:${alternatives})\\s+([^:：\\s].*)$`, "i");
   const found: Labelled[] = [];
@@ -311,10 +316,27 @@ const labelledArrangementValues: Record<string, WorkArrangement> = {
   "in person": "ONSITE",
 };
 // Values only a labelled arrangement field uses ("Work Persona: Flexible or
-// Remote"): a flexible persona is a mix of office and remote days.
+// Remote", "Work Style – WFH or come to the office"): a flexible persona is
+// a mix of office and remote days; working from home is remote, and working
+// from the office is on-site.
 const labelledOnlyArrangementValues: Record<string, WorkArrangement> = {
   flexible: "HYBRID",
+  wfh: "REMOTE",
+  "work from home": "REMOTE",
+  "working from home": "REMOTE",
+  "from home": "REMOTE",
+  "office": "ONSITE",
+  "the office": "ONSITE",
+  "in the office": "ONSITE",
+  "from the office": "ONSITE",
+  "work from the office": "ONSITE",
+  "work in the office": "ONSITE",
+  "come to the office": "ONSITE",
+  "come into the office": "ONSITE",
 };
+// A labelled value's first sentence ("WFH or come to the office. The choice
+// is yours!" → "WFH or come to the office").
+const firstSentence = (value: string) => trimEnd(collapse(value).split(/(?<=[.!?])\s+/)[0]!);
 const employmentTokens = new Set(["full-time", "part-time", "contract", "temporary", "internship"]);
 const fillerTokens = new Set(["a", "an", "fully", "100%", "completely", "and", "&", "or"]);
 const roleNouns = /^(?:position|role|job|opportunity)$/i;
@@ -540,9 +562,10 @@ function companyFromPageTitle(pageTitle: string, title: string, knownPlaces: str
   return pageTitleCompany(pageTitle, title, knownPlaces, text) ?? companyAroundTitle(pageTitle, title, knownPlaces, text);
 }
 
-// "<Company>: <title>" or "<title> at <Company>", with at most a platform
-// after it ("| We Work Remotely"), read around the title as written (which
-// may itself contain a dash: "Solutions Engineer - Customer Success").
+// "<Company>: <title>", "<Company> - <title>", "<title> at <Company>" or
+// "<title> | <Company>", with at most a platform after it ("| We Work
+// Remotely"), read around the title as written (which may itself contain a
+// dash: "Solutions Engineer - Customer Success").
 function companyAroundTitle(pageTitle: string, title: string, knownPlaces: string[], text: string): string | null {
   const cleaned = collapse(pageTitle.replace(/^\(\d+\)\s*/, "").replace(/^Job Application for\s+/i, ""));
   const at = cleaned.toLowerCase().indexOf(title.toLowerCase());
@@ -553,8 +576,8 @@ function companyAroundTitle(pageTitle: string, title: string, knownPlaces: strin
     const remainder = rest.replace(/^\s*(?:[|–—·-]\s*)?/, "").trim();
     return !remainder || isPlatformName(remainder);
   };
-  const lead = /^(.{2,80}?)\s*:\s*$/.exec(before);
-  const trail = !before.trim() ? /^\s+at\s+(.{2,80}?)(?=$|\s+[|–—·-]\s+)(.*)$/i.exec(after) : null;
+  const lead = /^(.{2,80}?)(?:\s*:|\s+[|–—·-])\s*$/.exec(before);
+  const trail = !before.trim() ? /^\s+(?:at|[|–—·-])\s+(.{2,80}?)(?=$|\s+[|–—·-]\s+)(.*)$/i.exec(after) : null;
   const raw = lead && onlyPlatform(after) ? lead[1]! : trail && onlyPlatform(trail[2]!) ? trail[1]! : null;
   const name = raw ? plausibleCompany(raw) : null;
   if (!name || namesSomethingElse(name, knownPlaces, text)) return null;
@@ -594,8 +617,11 @@ const locationLabels = ["location", "locations", "job location", "office locatio
 // ("Region: United States", "Countries: Canada"; never "Region: Enterprise").
 const geographyLabels = ["region", "regions", "country", "countries"];
 
-// A place list without a trailing "only" ("USA Only", "US only").
-const withoutOnly = (value: string) => value.replace(/\s*[-–(]?\s*only\)?$/i, "").trim();
+// A place list without the words that only restrict it: a trailing or
+// leading "only" ("USA Only", "Only US") and "anywhere in" ("Anywhere in the
+// US").
+const withoutOnly = (value: string) =>
+  value.replace(/\s*[-–(]?\s*only\)?$/i, "").replace(/^(?:only\s+(?:in\s+)?|anywhere\s+(?:in|within)\s+)(?:the\s+)?/i, "").trim();
 const namesGeography = (value: string) => parseGeographyList(withoutOnly(trimEnd(collapse(value)))) !== null;
 
 // "Remote", "Hybrid", "On-site": a labelled location that names only how
@@ -623,7 +649,7 @@ function collectLocation(source: TextSource): { candidates: Array<TextFact<strin
     // A page metadata item that is only a country or region list ("USA",
     // "United States", "US or Canada"); cities are not in the vocabulary.
     for (const line of source.lines) {
-      if (line.length <= 60 && parseGeographyList(line)) candidates.push({ value: trimEnd(line), sourceField: marker(source, "stated-location"), sourceText: line });
+      if (line.length <= 60 && namesGeography(line)) candidates.push({ value: trimEnd(line), sourceField: marker(source, "stated-location"), sourceText: line });
     }
     return { candidates, conflict: false };
   }
@@ -746,10 +772,10 @@ const arrangementLabels = [
 function collectArrangementAndEmployment(source: TextSource): PositionCandidates {
   const result: PositionCandidates = { arrangements: [], arrangementOptions: [], employments: [], arrangementConflict: false, employmentConflict: false };
   for (const { value, sourceText } of labelledValues(source.lines, arrangementLabels, { bareLabel: source.labelledOnly })) {
-    const key = trimEnd(collapse(value)).toLowerCase();
+    const key = firstSentence(value).toLowerCase();
     const arrangement = labelledArrangementValues[key] ?? labelledOnlyArrangementValues[key];
     if (arrangement) result.arrangements.push({ value: arrangement, sourceField: marker(source, "labelled-work-arrangement"), sourceText });
-    const options = arrangement ? null : offeredArrangements(value, { labelled: true });
+    const options = arrangement ? null : offeredArrangements(firstSentence(value), { labelled: true });
     if (options) result.arrangementOptions.push({ value: options, sourceField: marker(source, "labelled-work-arrangement"), sourceText });
   }
   for (const { value, sourceText, qualifier, bare } of labelledValues(source.lines, locationLabels, { bareLabel: source.labelledOnly })) {
@@ -785,6 +811,15 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
       if (options) result.arrangementOptions.push({ value: options, sourceField: marker(source, "stated-work-arrangement"), sourceText: line });
       const employment = /^[A-Za-z][A-Za-z /,&-]{2,40}$/.test(line) ? standardizeEmploymentType(trimEnd(line)) : null;
       if (employment) result.employments.push({ value: employment, sourceField: marker(source, "stated-employment-type"), sourceText: line });
+    }
+    // A header item joining a few categories with dashes or slashes ("Full
+    // Time - Remote - In-person meeting attendance required"): the one part
+    // that is an employment type. Two such parts state none.
+    for (const line of source.lines) {
+      const parts = line.length <= 100 ? line.split(/\s+[-–—/|]\s+/).map((part) => trimEnd(part)) : [];
+      if (parts.length < 2 || parts.length > 5) continue;
+      const stated = new Set(parts.flatMap((part) => (/^[A-Za-z][A-Za-z -]{2,20}$/.test(part) ? [standardizeEmploymentType(part)].filter((type) => type !== null) : [])));
+      if (stated.size === 1) result.employments.push({ value: [...stated][0]!, sourceField: marker(source, "stated-employment-type"), sourceText: line });
     }
     return result;
   }
@@ -837,11 +872,20 @@ function collectCompensation(source: TextSource): Array<TextFact<string>> {
   return collectPayStatements(source).filter((candidate) => !variablePayOnly(candidate.value));
 }
 
-// Variable pay stated on its own, as stated.
+// Variable pay stated on its own, as stated; otherwise a variable-pay
+// clause with its own amount after the salary ("$85,000 - $90,000 with bonus
+// potential up to $10,000" → "bonus potential up to $10,000").
 function collectBonus(source: TextSource): Array<TextFact<string>> {
-  return collectPayStatements(source)
-    .filter((candidate) => variablePayOnly(candidate.value))
-    .map((candidate) => ({ ...candidate, sourceField: marker(source, "explicit-variable-pay-statement") }));
+  const statements = collectPayStatements(source);
+  const alone = statements.filter((candidate) => variablePayOnly(candidate.value));
+  if (alone.length) return alone.map((candidate) => ({ ...candidate, sourceField: marker(source, "explicit-variable-pay-statement") }));
+  return statements.flatMap((candidate) => {
+    const clause = variablePayClause.exec(candidate.value);
+    const stated = clause ? trimEnd(clause[0].replace(/^[\s,;(]*(?:with|plus|and|\+)?\s*/i, "").replace(/\)$/, "")) : "";
+    return stated && salaryAmount.test(stated) && salaryAmount.test(candidate.value.slice(0, clause!.index))
+      ? [{ value: stated, sourceField: marker(source, "explicit-variable-pay-statement"), sourceText: candidate.sourceText }]
+      : [];
+  });
 }
 
 function collectPayStatements(source: TextSource): Array<TextFact<string>> {
@@ -870,6 +914,13 @@ function collectPayStatements(source: TextSource): Array<TextFact<string>> {
       candidates.push({ value: statement, sourceField: field, sourceText: `${line}\n${next}` });
     }
   });
+  // A tier's own label on one line and its amounts alone on the next ("US
+  // Zone 2" / "$142,700—$193,100 USD"): one statement of that tier's pay.
+  source.lines.forEach((line, index) => {
+    const next = source.lines[index + 1];
+    if (!next || !tierHeading(line) || next.length > 80 || !usable(next) || !wholeSalary.test(next)) return;
+    candidates.push({ value: `${trimEnd(line)}: ${next}`, sourceField: field, sourceText: `${line}\n${next}` });
+  });
   // Page metadata: a line that is nothing but a salary ("$80K – $95K",
   // "$65k–$80k/year", "$100,000 or more USD").
   if (source.labelledOnly) {
@@ -892,6 +943,51 @@ const wholeSalary =
 // Ranges stated for different places or zones, each with its own label.
 const tierLabel = /\b(?:zones?|tiers?|bands?|regions?|areas?|markets?|metros?|locations?|geograph(?:y|ies|ic))\b/i;
 const namesItsTier = (text: string) => tierLabel.test(text) || scanGeography(text).codes.length > 0;
+// A zone, tier or band named with its number or letter ("Zone 1", "US Zone
+// 2", "Tier B"), with the places it covers when they follow in parentheses.
+const numberedTier = /\b(?:(?:US|U\.S\.)\s+)?(?:zone|tier|band|region|area|market|location|geo(?:graphic)?\s+(?:zone|tier))\s*(?:\d{1,2}|[A-Z])\b(?:\s*\([^()]{1,80}\))?/gi;
+// A line holding only a tier's label ("US Zone 2", "Zone 1:", "Canada").
+function tierHeading(line: string): boolean {
+  const label = trimEnd(line.replace(/[:：]\s*$/, ""));
+  if (!label || label.length > 40 || salaryAmount.test(label)) return false;
+  numberedTier.lastIndex = 0;
+  const numbered = numberedTier.exec(label);
+  numberedTier.lastIndex = 0;
+  return (numbered !== null && numbered[0].length === label.length) || parseGeographyList(label) !== null;
+}
+
+// Several tiers stated in one statement ("Zone 1 (CA, NY, …): $76,900 -
+// $115,300 USD Zone 2 (All other U.S. locations): $71,800 - $107,800 USD",
+// or "$X - $Y in Zone 1 and $Z - $W in Zone 2"): each label with the one
+// range next to it, in the same order. Null unless every label has exactly
+// one range and every range parses on its own.
+const amountPattern =
+  /(?:[$€£₹]|\b(?:USD|CAD|AUD|NZD|EUR|GBP|CHF|SEK|NOK|DKK|PLN|INR|SGD|JPY|MXN|BRL|ZAR)\s?)\s?\d{1,3}(?:[,.]\d{3})+(?:\.\d+)?|(?:[$€£₹]\s?)\d{2,3}(?:\.\d+)?\s?[kK]\b/g;
+function tiersInStatement(text: string): Array<{ label: string; statement: string }> | null {
+  numberedTier.lastIndex = 0;
+  const labels = [...text.matchAll(numberedTier)].map((match) => ({ start: match.index, end: match.index + match[0].length, label: collapse(match[0]) }));
+  // A range starts with an amount that does not end one ("$X - $Y").
+  const starts = [...text.matchAll(amountPattern)]
+    .filter((match) => !/(?:[-–—~]|\bto)\s*$/i.test(text.slice(0, match.index)))
+    .map((match) => match.index);
+  if (labels.length < 2 || labels.length !== starts.length) return null;
+  const count = labels.length;
+  const labelFirst = labels.every((label, index) => label.end <= starts[index]! && (index === count - 1 || starts[index]! < labels[index + 1]!.start));
+  const amountFirst = !labelFirst && labels.every((label, index) => starts[index]! < label.start && (index === count - 1 || label.end <= starts[index + 1]!));
+  if (!labelFirst && !amountFirst) return null;
+  const tiers = labels.map((label, index) => {
+    const from = labelFirst ? label.start : starts[index]!;
+    const to = index === count - 1 ? text.length : labelFirst ? labels[index + 1]!.start : starts[index + 1]!;
+    const statement = trimEnd(text.slice(from, to).trim().replace(/(?:[,;/]|\s(?:and|or))+$/i, ""));
+    return { label: label.label, statement };
+  });
+  return tiers.every(({ statement }) => {
+    const parsed = parseCompensation(statement);
+    return parsed.amountsUnknownReason === null && parsed.minimum !== null && parsed.maximum !== null && parsed.minimum < parsed.maximum;
+  })
+    ? tiers
+    : null;
+}
 // A tier as stated, with its own label: the amount line under a shared
 // heading when that line names its place ("U.S.: USD 63,000 - 75,000"),
 // otherwise the whole statement.
@@ -900,7 +996,12 @@ function tierStatement(candidate: TextFact<string>): string {
   return candidate.sourceText.includes("\n") && namesItsTier(line) ? line : candidate.value;
 }
 
-function compensationTiers(candidates: Array<TextFact<string>>): JobTextFacts["compensationTiers"] {
+function compensationTiers(statements: Array<TextFact<string>>): JobTextFacts["compensationTiers"] {
+  // A statement naming several tiers counts as each of them, labelled.
+  const candidates = statements.flatMap((candidate): Array<TextFact<string> & { label?: string }> => {
+    const split = parseCompensation(candidate.value).amountsUnknownReason === "AMBIGUOUS_AMOUNTS" ? tiersInStatement(candidate.value) : null;
+    return split ? split.map((tier) => ({ ...candidate, value: tier.statement, label: tier.label })) : [candidate];
+  });
   const ranges = candidates
     .map((candidate) => ({ candidate, parsed: parseCompensation(candidate.value) }))
     .filter(({ parsed }) => parsed.amountsUnknownReason === null && parsed.minimum !== null && parsed.maximum !== null && parsed.minimum < parsed.maximum);
@@ -911,16 +1012,16 @@ function compensationTiers(candidates: Array<TextFact<string>>): JobTextFacts["c
   const currencies = new Set(tiers.map(({ parsed }) => parsed.currency));
   // Every tier must say which place or zone it is for: ranges that do not
   // are not tiers (they are conflicting evidence, and stay Unknown).
-  if (!tiers.every(({ candidate }) => namesItsTier(tierStatement(candidate)))) return null;
-  const text = tiers.map(({ candidate }) => tierStatement(candidate)).join(" / ");
+  if (!tiers.every(({ candidate }) => candidate.label || namesItsTier(tierStatement(candidate)))) return null;
+  const text = tiers.map(({ candidate }) => (candidate.label ? candidate.value : tierStatement(candidate))).join(" / ");
   return {
     value: text,
     sourceField: tiers[0]!.candidate.sourceField.replace(/:[^:]+$/, ":compensation-tiers"),
-    sourceText: tiers.map(({ candidate }) => candidate.sourceText).join("\n"),
+    sourceText: [...new Set(tiers.map(({ candidate }) => candidate.sourceText))].join("\n"),
     currency: currencies.size === 1 ? [...currencies][0] ?? null : null,
     tiers: tiers.map(({ candidate }, index) => {
-      const statement = tierStatement(candidate);
-      return { label: tierName(statement) ?? `Range ${index + 1}`, statement };
+      const statement = candidate.label ? candidate.value : tierStatement(candidate);
+      return { label: (candidate.label && tierName(statement)) || candidate.label || tierName(statement) || `Range ${index + 1}`, statement };
     }),
   };
 }
@@ -1449,8 +1550,10 @@ export interface JobTextInput {
   // description (labelled job metadata such as "Remote Type: Hybrid").
   pageTitle?: string | null;
   pageText?: string | null;
-  // The location the source stated, if any (never read as an employer).
+  // The location the source stated, if any (never read as an employer), and
+  // the places a remote role may be done from, as the source states them.
   location?: string | null;
+  remoteLocations?: readonly string[];
   // The employer the source stated, if any (never read as a team name).
   company?: string | null;
 }
@@ -1469,7 +1572,11 @@ function broaderLabelledLocation(sourceLocation: string | null | undefined, cand
   const source = readLocationGeography(sourceLocation);
   if (!sourceLocation || source.ambiguous || !source.codes.length) return null;
   const sourceCountries = countriesIn(source.codes);
-  const sourceText = collapse(sourceLocation).toLowerCase();
+  // The source's places, without words that state how the role is worked
+  // ("Remote, United States" → "united states").
+  const sourceText = collapse(sourceLocation.replace(/\b(?:fully\s+)?(?:remote|hybrid|on[- ]?site|in[- ]office)\b/gi, " "))
+    .replace(/^[\s,;:()/|–—-]+|[\s,;:()/|–—-]+$/g, "")
+    .toLowerCase();
   const broader = candidates.filter((candidate) => {
     if (!candidate.sourceField.endsWith(":labelled-location")) return false;
     const stated = scanGeography(candidate.value);
@@ -1478,7 +1585,7 @@ function broaderLabelledLocation(sourceLocation: string | null | undefined, cand
     // More places, or the same place stated more precisely: the source's
     // own wording with a qualifier ("United States (East Coast)" for
     // "United States").
-    const refines = collapse(candidate.value).toLowerCase().includes(sourceText) && candidate.value.length > sourceLocation.length;
+    const refines = sourceText.length > 0 && collapse(candidate.value).toLowerCase().includes(sourceText) && candidate.value.length > sourceText.length;
     return statedCountries.size > sourceCountries.size || refines;
   });
   return agreed(broader);
@@ -1541,6 +1648,7 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
     location,
     workArrangements,
     broaderLocation: broaderLabelledLocation(input.location, locations.flatMap((reading) => reading.candidates)),
+    broaderRemoteLocation: input.remoteLocations?.length ? broaderLabelledLocation(input.remoteLocations.join(", "), locations.flatMap((reading) => reading.candidates)) : null,
     remoteStatus,
     employmentType,
     compensation: tiers ? null : agreedCompensation(compensationCandidates),
@@ -1567,6 +1675,12 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
     relocationSupport: agreed(sources.flatMap(collectRelocation)),
     employerOfRecord: agreed(sources.flatMap(collectEmployerOfRecord), (value) => value.join(",")),
   };
+}
+
+// Tiers stated in a source's own salary text (one statement naming each
+// zone's range), read as the job text's tiers are.
+export function statedCompensationTiers(text: string | null, sourceField: string): JobTextFacts["compensationTiers"] {
+  return text ? compensationTiers([{ value: collapse(text), sourceField, sourceText: text }]) : null;
 }
 
 // Change detection for page context (Core TDD §51). The page content a

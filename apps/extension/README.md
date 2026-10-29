@@ -156,6 +156,32 @@ Add `--evidence ~/case.json` to also save that version's stored evidence (its de
 2. **Recapture** (the collection fixes), one posting each: Lever (Bluesight or Wing: Full-time and Remote), SmartRecruiters (QAD: salary, Remote, application URL), Remote OK (INNERGY: the full description; Renaissance: location IL, no worldwide eligibility), Workday (Thomson Reuters: the job title, requisition ID, posted and end dates), We Work Remotely (Dropbox or New Law Business Model), Greenhouse (SafeBreach: "United States (East Coast)", Remote).
 3. **Welcome to the Jungle (AlphaSense):** note the posting date the page itself shows; if it is not 2025-10-03, send the case with `--evidence`.
 
+**Live acceptance batch: targeted live verification (October 29, 2026).** No migration this time. Run `pnpm extension:build`, reload the extension, then recapture one posting each and check:
+1. Greenhouse SafeBreach: Location "United States (East Coast)", Remote, Time zone Unknown.
+2. Lever Bluesight: Employment type Full-time, Remote.
+3. SmartRecruiters QAD and ServiceNow: an Application URL (the "I'm interested" page).
+4. Remote OK INNERGY and Renaissance: an Application URL (the job's own Apply).
+5. We Work Remotely Dropbox: a U.S. location and the Salary "US Zone 2: 142,700–193,100 USD · US Zone 3: 126,800–171,600 USD"; New Law Business Model: the company.
+6. Himalayas SMB Team: Salary 85,000–90,000 USD, the bonus apart, Full-time, Work arrangement "Remote / On-site". (Jobs for Humanity's monthly pay stays Unknown as a salary, by design.)
+7. Workday ServiceTitan: the Salary shows Zone 1 and Zone 2 side by side.
+8. LinkedIn Serrala: a posting date (from "12 hours ago") and an Application URL.
+9. Welcome to the Jungle AlphaSense: Closing date Unknown; Posting date 2025-10-03 (the page's own structured date). If the page shows a different posted date, send the case.
+
+**When a case still fails, send its evidence.** Run the source-version check above with `--evidence ~/case.json` for that opportunity. For a missing Application URL, a missing sidebar fact or a wrong date, also open the job page, open DevTools (Console), paste the snippet below and send what it copies. It only reads the page; it changes nothing and sends nothing.
+
+```js
+copy(JSON.stringify({
+  url: location.href,
+  title: document.title,
+  jsonLd: [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => s.textContent),
+  applyControls: [...document.querySelectorAll("a, button, [role=button]")]
+    .filter((e) => /apply|interested/i.test(e.textContent || "") && (e.textContent || "").trim().length < 80)
+    .map((e) => e.outerHTML.slice(0, 1500)),
+  sidePanels: [...document.querySelectorAll('aside, [role=complementary], [class*="sidebar" i]')].map((e) => e.outerHTML.slice(0, 4000)),
+  linkedInTopCard: (document.querySelector(".top-card-layout, .job-details-jobs-unified-top-card") || {}).outerHTML?.slice(0, 6000) ?? null,
+}, null, 1));
+```
+
 **7. Cleanup (optional).** Stop the servers, delete `database/.e2e-acceptance-helper.mjs`, then run `dropdb -h localhost -U postgres ai_career_assistant_acceptance`.
 
 ## Known limits

@@ -418,23 +418,63 @@ export function extractJobPosting(): PageExtraction {
       if (label === "seniority level") result.seniority = value;
       if (label === "employment type") result.employmentType = line(value, limits.employmentType);
     }
-    result.postedAt = firstText([".posted-time-ago__text", ".jobs-unified-top-card__posted-date"], limits.postedAt);
-    // The public job page states an employer's own apply link here; Easy
-    // Apply has none, and none is invented.
-    const applyCode = document.querySelector("code#applyUrl");
-    const applyComment = applyCode ? [...applyCode.childNodes].find((node) => node.nodeType === Node.COMMENT_NODE)?.nodeValue ?? "" : "";
-    const applyMatch = /url=([^&"]+)/.exec(applyComment);
-    if (applyMatch) {
-      try {
-        result.applicationUrl = httpUrl(decodeURIComponent(applyMatch[1]!));
-      } catch {
-        result.applicationUrl = null;
-      }
-      if (result.applicationUrl) result.applicationUrlBasis = "PAGE_APPLY_LINK";
-    }
+    result.postedAt = linkedInPostedAge();
+    result.applicationUrl = linkedInApplyUrl();
+    if (result.applicationUrl) result.applicationUrlBasis = "PAGE_APPLY_LINK";
     result.siteJobId = linkedInJobId;
     return result;
   };
+  // The posting's stated age, from its own top card: the public page's
+  // posted-time item, or, in the signed-in view, the one part of the top
+  // card's description row that is an age ("Canada · 12 hours ago · 40
+  // applicants").
+  function linkedInPostedAge(): string | null {
+    const stated = firstText([".posted-time-ago__text", ".jobs-unified-top-card__posted-date", ".job-details-jobs-unified-top-card__posted-date"], limits.postedAt);
+    if (stated) return stated;
+    const ages = new Set<string>();
+    for (const row of document.querySelectorAll(
+      ".job-details-jobs-unified-top-card__tertiary-description-container, .job-details-jobs-unified-top-card__primary-description-container, .jobs-unified-top-card__subtitle-primary-grouping, .topcard__flavor-row",
+    )) {
+      for (const part of (row.textContent ?? "").split(/[·•\n]/)) {
+        const text = line(part, 100);
+        if (text && text.length <= limits.postedAt && /^(?:(?:re)?posted\s+)?(?:\d{1,2}|an?|one)\s+(?:minute|min|hour|hr|day|week|wk|month|year)s?\s+ago$|^(?:(?:re)?posted\s+)?(?:today|yesterday|just now)$/i.test(text)) ages.add(text);
+      }
+    }
+    return ages.size === 1 ? [...ages][0]! : null;
+  }
+  // The employer's own apply link the job states: the public page's apply
+  // URL, else an apply link in the job's top card that leads off LinkedIn
+  // (directly, or through LinkedIn's external-apply redirect, whose url
+  // parameter names the destination). Easy Apply stays on LinkedIn and has
+  // none, and none is invented.
+  function linkedInApplyUrl(): string | null {
+    const decoded = (value: string | null | undefined): string | null => {
+      if (!value) return null;
+      try {
+        return httpUrl(decodeURIComponent(value));
+      } catch {
+        return null;
+      }
+    };
+    const applyCode = document.querySelector("code#applyUrl");
+    const applyComment = applyCode ? [...applyCode.childNodes].find((node) => node.nodeType === Node.COMMENT_NODE)?.nodeValue ?? "" : "";
+    const fromCode = decoded(/url=([^&"]+)/.exec(applyComment)?.[1]);
+    if (fromCode) return fromCode;
+    const targets = new Set<string>();
+    for (const anchor of document.querySelectorAll(
+      ".top-card-layout a[href], .job-details-jobs-unified-top-card a[href], .jobs-unified-top-card a[href], .jobs-apply-button--top-card a[href], a.jobs-apply-button[href], a.apply-button[href]",
+    )) {
+      const phrase = (anchor.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (!/^apply\b/i.test(phrase) || phrase.length > 60) continue;
+      const href = httpUrl((anchor as HTMLAnchorElement).href);
+      if (!href) continue;
+      const url = new URL(href);
+      const onLinkedIn = url.hostname === "linkedin.com" || url.hostname.endsWith(".linkedin.com");
+      const target = !onLinkedIn ? href : /\/(?:jobs\/view\/externalApply|redir\/redirect)\b/.test(url.pathname) ? httpUrl(url.searchParams.get("url") ?? "") : null;
+      if (target && !/(?:^|\.)linkedin\.com$/i.test(new URL(target).hostname)) targets.add(target);
+    }
+    return targets.size === 1 ? [...targets][0]! : null;
+  }
 
   // 3. The user's selection, if any.
   const selectionText = (() => {
@@ -507,11 +547,32 @@ export function extractJobPosting(): PageExtraction {
       if (text.length < 600 && article.querySelector("a[href]") && (!title || !text.toLowerCase().includes(title))) article.remove();
     }
   };
+  // The job's own metadata panel beside its content (a sidebar such as
+  // "About the job": Job type, Salary, Region, Apply before …): a side panel
+  // outside the job's container, or excluded inside it, that names at least
+  // two of the job's metadata labels and lists no other jobs. A panel of
+  // other content ("Similar jobs", a single stray label) is never read.
+  const metadataLabel =
+    /^(?:job type|employment type|type|salary|salary range|compensation|pay|location|locations|location requirements?|region|regions|countries|country|experience level|experience|seniority|career level|posted|posted on|date posted|apply before|apply by|deadline|category|categories|department|team|work type|workplace|work style|remote type|time ?zones?|hiring time ?zones?|skills|industry|benefits)\b/i;
+  const jobMetadataPanels = (root: Element): string[] => {
+    const heading = jobHeading();
+    const panels = [...document.querySelectorAll('aside, [role=complementary], [class*="sidebar" i]')].filter(
+      (panel) => !panel.contains(root) && !(heading && panel.contains(heading)) && !(root.contains(panel) && !panel.matches(siteChrome)) && !panel.closest(`nav, [role=navigation], ${widgets}`),
+    );
+    const outermost = panels.filter((panel) => !panels.some((other) => other !== panel && other.contains(panel)));
+    return outermost.flatMap((panel) => {
+      const text = textOf(panel, widgets, true, withoutOtherJobCards);
+      const lines = text.split("\n").map((item) => item.trim()).filter(Boolean);
+      if (!text || text.length > 3000 || lines.some((item) => otherJobsHeading.test(item))) return [];
+      const labels = new Set(lines.flatMap((item) => metadataLabel.exec(item)?.[0].toLowerCase() ?? []));
+      return labels.size >= 2 ? [text] : [];
+    });
+  };
   const pageContext = (): string | null => {
     if (linkedIn) return null;
     const root = mainRoot();
     if (!root) return null;
-    const text = textOf(root, `${siteChrome}, ${widgets}`, true, withoutOtherJobCards);
+    const text = [textOf(root, `${siteChrome}, ${widgets}`, true, withoutOtherJobCards), ...jobMetadataPanels(root)].filter(Boolean).join("\n");
     if (!text) return null;
     if (text.length > limits.pageText) notes.push("Page context shortened to 20,000 characters");
     return text.slice(0, limits.pageText);
@@ -542,32 +603,71 @@ export function extractJobPosting(): PageExtraction {
       const submit = [...form.querySelectorAll('button, input[type="submit" i]')].some((control) => /submit|apply/i.test(controlText(control)));
       return (resume || person) && submit;
     });
+  // Another job's card: a container, below the one holding this job's own
+  // heading, with a heading that links to (or sits in a link to) another
+  // address (a row or card of another posting, as boards list them).
+  const inOtherJobCard = (element: Element): boolean => {
+    const heading = jobHeading();
+    // (Without this job's own heading, no card can be told apart.)
+    if (!heading) return false;
+    const here = new URL(pageUrl);
+    for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+      if (node.contains(heading)) return false;
+      const linked = [...node.querySelectorAll("h1, h2, h3, h4, [role=heading]")].some((title) => {
+        const link = title.closest("a[href]") ?? title.querySelector("a[href]");
+        const target = link ? httpUrl((link as HTMLAnchorElement).href) : null;
+        return target !== null && new URL(target).pathname !== here.pathname;
+      });
+      if (linked) return true;
+    }
+    return false;
+  };
+  const applyPhrase =
+    /^(?:apply|apply now|apply here|apply today|apply online|apply externally|apply for (?:this )?(?:job|position|role|opportunity)|apply to (?:this )?(?:job|position|role|opportunity)|apply on (?:the )?(?:company|employer)(?:'s)? (?:site|website|page)|apply on (?:their )?website|submit (?:an |your )?application|i'm interested|i am interested)(?: (?:in|for|to) (?:this|the) (?:job|position|role|opportunity))?$/i;
   const applyLink = (): string | null => {
-    // Navigation, side panels and other-job widgets never; the site's own
-    // header and footer never, but the job's own header and footer inside
-    // its container do hold its apply button.
-    const excluded = `nav, aside, [role=navigation], [role=complementary], ${widgets}`;
+    // Navigation and other-job widgets never; a side panel only when it is
+    // not another job's card; the site's own header and footer only when
+    // they repeat this job (a sticky header with its title and apply
+    // button); the job's own header and footer inside its container do hold
+    // its apply button.
+    const excluded = `nav, [role=navigation], ${widgets}`;
     const chrome = "header, footer, [role=banner], [role=contentinfo]";
     const root = mainRoot();
+    const title = line(jobHeading()?.textContent, limits.title)?.toLowerCase() ?? null;
     const here = new URL(pageUrl);
     // One destination per address: the same application page with other
     // query parameters (a button above and below the posting) is one.
     const targets = new Map<string, string>();
-    for (const anchor of document.querySelectorAll("a[href]")) {
-      if (anchor.closest(excluded)) continue;
-      const around = anchor.closest(chrome);
-      if (around && !(root && root.contains(around) && around !== root)) continue;
-      const target = httpUrl((anchor as HTMLAnchorElement).href);
+    // Links, and buttons that carry their destination in an attribute.
+    const controls = document.querySelectorAll(
+      'a[href], button[data-href], button[data-url], button[data-apply-url], button[formaction], [role=button][data-href], [role=button][data-url], [role=button][data-apply-url], form[action] button, form[action] input[type="submit" i]',
+    );
+    for (const control of controls) {
+      if (control.closest(excluded) || inOtherJobCard(control)) continue;
+      const panel = control.closest("aside, [role=complementary]");
+      if (panel && [...panel.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]")].some((title) => otherJobsHeading.test((title.textContent ?? "").replace(/\s+/g, " ").trim()))) continue;
+      const around = control.closest(chrome);
+      if (around && !(root && root.contains(around) && around !== root) && !(title && (around.textContent ?? "").toLowerCase().includes(title))) continue;
+      const form = control.closest("form[action]");
+      const address = control instanceof HTMLAnchorElement
+        ? control.href
+        : control.getAttribute("data-apply-url") ?? control.getAttribute("data-href") ?? control.getAttribute("data-url") ?? control.getAttribute("formaction") ?? (form ? (form as HTMLFormElement).action : null);
+      let target: string | null = null;
+      try {
+        target = address ? httpUrl(new URL(address, pageUrl).href) : null;
+      } catch {
+        target = null;
+      }
       if (!target) continue;
       const url = new URL(target);
       // A link within this page (#apply) leads to no other destination.
       if (url.origin === here.origin && url.pathname === here.pathname && url.search === here.search) continue;
-      const phrase = controlText(anchor).replace(/[‘’ʼ]/g, "'").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
-      const stated = /^(?:apply|apply now|apply here|apply for (?:this )?(?:job|position|role)|apply to (?:this )?(?:job|position|role)|apply on (?:the )?(?:company|employer)(?:'s)? (?:site|website)|apply on (?:their )?website|submit (?:an |your )?application|i'm interested|i am interested)$/i.test(phrase);
+      const phrase = controlText(control).replace(/[‘’ʼ]/g, "'").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").replace(/\s+/g, " ");
+      const stated = applyPhrase.test(phrase);
       const trimmed = (path: string) => path.replace(/\/+$/, "");
       const ownApplicationPage = url.origin === here.origin && /^\/(?:apply|application)$/i.test(trimmed(url.pathname).slice(trimmed(here.pathname).length)) &&
         trimmed(url.pathname).startsWith(trimmed(here.pathname));
-      if (!stated && !ownApplicationPage) continue;
+      if (!stated && !(ownApplicationPage && control instanceof HTMLAnchorElement)) continue;
       url.hash = "";
       if (!targets.has(`${url.origin}${url.pathname}`)) targets.set(`${url.origin}${url.pathname}`, url.href);
     }
@@ -616,8 +716,24 @@ export function extractJobPosting(): PageExtraction {
   // Structured data whose own description is missing takes the page's main
   // content as its description (its other fields are still the posting's).
   const fromStructured = ((): ExtractedPosting | null => {
-    const posting = structured() ?? microdata();
-    if (!posting) return null;
+    const stated = structured() ?? microdata();
+    if (!stated) return null;
+    // On LinkedIn, the job's own top card still states what the structured
+    // data leaves out (its posted age, the employer's apply link, the job
+    // criteria), read as the LinkedIn reader reads them.
+    const card = linkedIn ? linkedInReader() : null;
+    const cardApply = linkedIn && !stated.applicationUrl ? linkedInApplyUrl() : null;
+    const posting: ExtractedPosting = linkedIn
+      ? {
+          ...stated,
+          postedAt: stated.postedAt ?? linkedInPostedAge(),
+          applicationUrl: stated.applicationUrl ?? cardApply,
+          applicationUrlBasis: stated.applicationUrl ? stated.applicationUrlBasis : cardApply ? "PAGE_APPLY_LINK" : null,
+          employmentType: stated.employmentType ?? card?.employmentType ?? null,
+          seniority: stated.seniority ?? card?.seniority ?? null,
+          salaryText: stated.salaryText ?? card?.salaryText ?? null,
+        }
+      : stated;
     if (posting.description) {
       const fuller = fullerRendered(posting.description);
       if (fuller) notes.push("The page shows a longer description than its job data; the page's description was read");
