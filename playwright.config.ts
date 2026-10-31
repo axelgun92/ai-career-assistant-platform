@@ -36,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -94,6 +94,14 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/market\.spec\.ts$/,
       dependencies: ["source-insights"],
+    },
+    {
+      // Feature 17: Personal Job-Search Analytics over a seeded history in its
+      // own past application window, after every other project.
+      name: "my-search",
+      use: chromium,
+      testMatch: /\/my-search\.spec\.ts$/,
+      dependencies: ["market"],
     },
   ],
   webServer: {

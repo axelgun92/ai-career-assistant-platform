@@ -1341,3 +1341,20 @@ Job-Market Analytics (the approved Feature 16 contract; Customer Success PRD v1.
 5. **Domain input:** title groups come from `customerSuccessDiscoveryConfiguration.titleTerms`, passed in by the web service (Core does not import the domain).
 
 Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.
+
+### Feature 17 — Personal Job-Search Analytics: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Personal Job-Search Analytics (the approved Feature 17 contract; Customer Success PRD v1.15 §19, Core Platform TDD v1.18 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic or deduplication changed; no migration; no new semantic call; no accuracy metric.**
+
+1. **Evaluator outputs read, as stored** (`database/src/personal-analytics-repository.ts` is the one place to update if integration renames them): `Recommendation.decision`; `Evaluation.userProfileId` / `userProfileVersion`; `domainResult` at `{resumeMatch,evaluated}`, `{resumeMatch,band}`, `{resumeMatch,match,requirementAssessments}` (items with `classification = "GENUINE_GAP"`: `category`, `strength`, `decisionImpact`, `requirementText` — never `explanation` or `genuineGaps[].finding` prose), `{alexFit,evaluated}` / `{alexFit,fit,classification}`, `{hardFilters,role,classification}`, `{companyAlignment,alignment,customerSegment,classification}`, `{companyAlignment,alignment,customerType,classification}`; and the `promptVersion` of the evaluation's latest SUCCESS `SemanticOperationAttempt` with `operationId = "customer-success.resume-match"`.
+2. **Resume Match / Genuine Gap version boundary (v2 → v3/v4):** this branch runs `cs-resume-match-v2`. The evaluator branch's `cs-resume-match-v3` / `v4` make structured profile limitations the only Genuine Gap proof and add structured `gapEvidence` (`EVALUATOR_STATUS.md`, contract evolution), so a GENUINE_GAP does not mean exactly the same thing across these versions. Feature 17 combines gap and Resume Match band figures only within a declared compatibility group (`resumeMatchCompatibilityGroups` in `packages/core/src/personal-analytics.ts`, today `{ "cs-resume-match-v2": "cs-resume-match-v2" }`); any other version is its own group and is shown in coverage by version, never merged. **Decision for final integration:** declare v4 compatible with v2 for gap reporting, or keep it separate; if v4 moves gap structure (for example into `gapEvidence` or `requirementStatements`), update the repository's JSON paths. No stored result is rewritten or re-run.
+3. **Profile versions:** fit and gap figures are grouped by `userProfileId` (active profile by default; "profile not recorded" apart). Evaluations must keep recording the profile snapshot they used.
+4. **Evaluator versions in general:** recommendation and outcome figures span whatever evaluator versions produced the stored decisions (as in Features 15 and 16), disclosed; no normalization.
+5. **Shared code touched (no behaviour change):** Feature 15's `outcomeOf` takes a structural `SiOutcomeInput`; `sourceInfoOf` exported from `source-intelligence.ts`; the main navigation gains "My search".
+
+Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.

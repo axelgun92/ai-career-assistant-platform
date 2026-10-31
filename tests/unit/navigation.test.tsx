@@ -27,6 +27,7 @@ describe("site header", () => {
       ["/budget", "Budget"],
       ["/sources", "Sources"],
       ["/market", "Market"],
+      ["/my-search", "My search"],
       ["/extension", "Extension"],
     ] as const) {
       pathname.value = current;

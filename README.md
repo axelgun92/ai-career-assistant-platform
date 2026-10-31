@@ -166,7 +166,11 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### In Progress
 
-- Nothing is in progress: Feature 17, personal job-search analytics, is next and has not started.
+- Nothing is in progress: Feature 18, company intelligence, is next and has not started.
+- Feature 17, Personal Job-Search Analytics, is complete (implemented, verified and accepted October 31, 2026):
+  - **My search** (`/my-search`, a top-level entry after Applications): what is working in your own search — your applications and their interviews and offers (an application under 30 days old without a reply is awaiting response; one still interviewing is in process and not counted against offers), what the evaluator said beside what actually happened by kind of role, recurring Genuine Gaps against your profile, outcomes by the source that found each job first and by company type, and where applications are not progressing;
+  - the recommendation you had when you applied is credited only when the timing shows it came first ("same-day order unknown" otherwise); no composite score, no accuracy figure, no effort estimate and no learning plan; `GET /api/my-search` returns the same data; read-only, no migration.
+  - (earlier: "Nothing is in progress: Feature 17, personal job-search analytics, is next and has not started.")
 - Feature 16, Job-Market Analytics, is complete (implemented, verified and accepted October 31, 2026):
   - **Market** (`/market`, a top-level entry in the main navigation): what the collected job market looks like — salary by stated currency and basis (base, OTE or unknown; never converted or combined; amounts without a stated currency count only toward coverage), with tiered pay listed apart; title groups, top titles and the evaluator's role classification; job location, hiring eligibility, work authorization and work arrangement; seniority; the requirements and customer segment of evaluated jobs; and the Apply / Review / Skip mix among evaluated jobs, overall and week by week;
   - each job counts once, by the date it was first seen (last 7, 30 or 90 days, all time or a custom range); jobs first found by automated retrieval by default (a job you captured first stays out even if it is found automatically later), with an "All collected" view that adds your own captures and says they may introduce selection bias;
@@ -184,7 +188,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 ### Main-product work still required before final acceptance
 
 - feature 16 — job-market analytics (complete, October 31, 2026);
-- feature 17 — personal job-search analytics;
+- feature 17 — personal job-search analytics (complete, October 31, 2026);
 - feature 18 — company intelligence;
 - only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 

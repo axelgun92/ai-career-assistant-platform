@@ -255,6 +255,14 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+**Feature 17, Personal Job-Search Analytics, is complete: implemented, verified and accepted by Alex on October 31, 2026.** Built to the approved Feature 17 contract (October 31, 2026; Customer Success PRD v1.15 §19):
+- **My search** (`/my-search`, top-level navigation after Applications; `GET /api/my-search`): Overview, Application funnel, Roles, Recurring Genuine Gaps, Sources, Where applications are not progressing, Company type; filters for window (30/90/180 days, all time by default, custom), title group, recommendation at application, work arrangement, seniority, first-discovering source and profile version.
+- **Outcomes:** Feature 15 rules (application once per job; interview incl. recruiter screen; 30-day maturity). Interview rate over mature applications; offer rate over resolved applications (in-process screening/interviewing/final round excluded); interview → offer over concluded interviews.
+- **Recommendation at application:** an exact Mark-as-applied time credits the latest evaluation before it; with a date only, earlier-day evaluations count, later-day are "Evaluated after applying", same-day is "Same-day order unknown".
+- **Roles:** title group primary (role classification secondary); evaluator view (Apply rate, Resume Match good+, Alex Fit strong/good) beside outcomes; no composite score; orderings rank only groups with n ≥ 5.
+- **Genuine Gaps:** structured GENUINE_GAP assessments by category then exact wording (no semantic merging, never prose); otherwise-good = Apply or Review; active profile version by default; Resume Match versions combined only when declared compatible (v2 only today).
+- **Also:** personal outcomes by first-discovering source (user-collected apart; link to Source insights); groups with ≥ 5 mature applications and no interview; Apply recommendations not applied (information only); outcomes by customer segment and type (evaluated only). Disclosure: «These tables show what happened after each stored evaluation or recommendation. They do not measure evaluator accuracy.» No accuracy, effort or learning figures; read-only, no migration.
+
 **Feature 16, Job-Market Analytics, is complete: implemented, verified and accepted by Alex on October 31, 2026.** Built to the approved Feature 16 contract (October 31, 2026; Customer Success PRD v1.14 §19):
 - **Market** (`/market`, a top-level navigation entry; `GET /api/market`): one page with Overview, Salary, Roles and titles, Location and work arrangement, Seniority, Requirements, Customer segment and Recommendations, filtered by window, title group, seniority, work arrangement, job region, salary currency, collected by and "Exclude no longer listed".
 - **Cohort:** one canonical opportunity per job, every lifecycle status, by first-seen date; **Automated only** by default (jobs first discovered by automated retrieval; a job the user captured first stays out even if found automatically later), **All collected** adds the jobs the user captured first, with the selection-bias note; unresolved possible duplicates both count and the pairs are shown.
@@ -391,10 +399,9 @@ Task 8 and Task 9 are complete. In order:
 8. Done: Feature 14B, the browser-extension companion (committed `e6bacc6`; live acceptance passed October 29, 2026, `2ccdc7f`), completing Feature 14. *(Earlier step: "Now: Feature 14B … awaiting Alex's review. Then come the minimal human retest, acceptance and the commit. Feature 14 is not complete until 14B is accepted, and Feature 15 has not started.")*
 9. Done: Feature 15, Source Intelligence, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.15, Customer Success PRD v1.13, Core Platform TDD v1.16 and Customer Success TDD v1.13. *(Earlier step: "Now: Feature 15 … awaiting Alex's review, then the commit.")*
 10. Done: Feature 16, Job-Market Analytics, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17 and Customer Success TDD v1.14. *(Earlier step: "Now: Feature 16 … awaiting Alex's review, then the commit.")* *(Earlier step: "Next: main-product features 16–18 (Feature 16 has not started)".)*
-11. Next: main-product features 17–18 (Feature 17 has not started):
-   - personal job-search analytics;
-   - company intelligence.
-12. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+11. Done: Feature 17, Personal Job-Search Analytics, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.17, Customer Success PRD v1.15, Core Platform TDD v1.18, Customer Success TDD v1.15; accepted and committed. *(Earlier step: "Now: Feature 17 … awaiting Alex's review, then the commit.")*
+12. Next: main-product feature 18, company intelligence (not started).
+13. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 

@@ -18,3 +18,4 @@ export * from "./extension-capture";
 export * from "./known-sites";
 export * from "./source-intelligence";
 export * from "./market-analytics";
+export * from "./personal-analytics";

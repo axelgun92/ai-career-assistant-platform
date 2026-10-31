@@ -5,6 +5,15 @@
 
 ## Current Objective
 
+**Feature 17, Personal Job-Search Analytics, is complete: implemented, verified and accepted by Alex on October 31, 2026, and committed.** It was built to the approved Feature 17 contract (planning audit approved October 31, 2026, decisions D1–D14 with two corrections: date-only recommendation-at-application timing and offer denominators that exclude processes still in progress); see "Feature 17 — Personal Job-Search Analytics" under Recently Completed.
+
+In order, what follows:
+
+1. Done: Alex's review and acceptance of Feature 17 (October 31, 2026; the seven implementation interpretations accepted as reported) and the checkpoint commit. *(Earlier step: "Next: Alex's review of Feature 17 …, then the checkpoint commit on Alex's approval.")*
+2. Then: main-product feature 18, company intelligence (not started). Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+*(The objective below, from October 31, 2026, is kept as written; Feature 17 has now been implemented.)*
+
 **Feature 16, Job-Market Analytics, is complete: implemented, verified and accepted by Alex on October 31, 2026, and committed.** It was built to the approved Feature 16 contract (planning audit approved October 31, 2026, decisions D1–D10 with the "Automated only" default and requirement option A with stricter version handling); see "Feature 16 — Job-Market Analytics" under Recently Completed.
 
 In order, what follows:
@@ -167,6 +176,39 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
 ## Recently Completed (October 14–31, 2026)
+
+### Feature 17 — Personal Job-Search Analytics (implemented, verified and accepted October 31, 2026; committed)
+
+**What it does.** A read-only view of what is actually working in Alex's own job search, from persisted evaluations and applications (Development Plan item 17: best-fit roles, recurring gaps, application-to-interview outcomes, strongest sources, wasted effort). It never evaluates, scores, retrieves, writes, calls a provider, measures evaluator accuracy, estimates effort or prescribes learning.
+
+**Approved contract (October 31, 2026).** Recorded in Customer Success PRD v1.15 §19 and Core Platform TDD v1.18 §51.
+- **Cohorts (D1, D11):** evaluation figures = one opportunity, latest completed evaluation, dated by `completedAt`; application figures = one opportunity counted as applied by Feature 15's `outcomeOf` (submitted tracked application or `MARK_APPLIED`, once; PLANNED and NOT_SUBMITTED excluded), dated by `appliedAt`, with later interviews/offers kept with the application. Windows 30 / 90 / 180 days, all time (default), custom; Feature 15/16 windows unchanged (a 180-day wrapper).
+- **Recommendation at application (D1 correction):** with an exact time (the earliest `MARK_APPLIED`, when it is the earliest application evidence), the latest completed APPLY/REVIEW/SKIP evaluation with `completedAt ≤` it; with only a date, earlier calendar day = credited, later day = "Evaluated after applying", same day = "Same-day order unknown" (unless an earlier-day recommendation exists that every same-day evaluation agrees with); none = "Not evaluated". Calendar days use the budget's time zone (UTC when none). No end-of-day assumption.
+- **Outcomes and denominators (D6 correction):** Feature 15 rules; mature = not awaiting response (30 days); interview rate = interviews ÷ mature; offer rate = offers ÷ resolved (offer, closed, or mature without progress) — open SCREENING / INTERVIEWING / FINAL_ROUND are "In process" and excluded; interview → offer = offers ÷ concluded interviews (offer or closed). Recruiter screen, beyond screening and final round read from stages and non-cancelled interview kinds.
+- **Funnels:** all applications (applied → any interview stage → recruiter screen → beyond screening → final round → offer; awaiting response, in process, rejected, withdrawn, no response, offer accepted/declined), evaluated opportunities by latest recommendation (evaluated → applied → interview → offer), and applications by recommendation at application.
+- **Roles (D2, D3):** title group primary; per group "What the evaluator said" (evaluated, Apply rate, Resume Match good or better, Alex Fit strong or good) beside "What actually happened" (applied, interview rate, offers); orderings "Highest evaluator fit", "Most APPLY recommendations", "Highest interview conversion" rank only groups with n ≥ 5 (others listed "not ranked"); no composite score, no "best fit" claim. Outcomes also by title group, arrangement, seniority, role classification, and by the Resume Match band / Alex Fit credited at application.
+- **Genuine Gaps (D4, D5, D9):** structured `requirementAssessments` classified `GENUINE_GAP` (never prose); one occurrence per opportunity per category, then per category + exact case-folded/whitespace-collapsed `requirementText`; otherwise-good = Apply or Review; strength (required / preferred / other) and decision impact; active profile version by default (a chosen version, or "profile not recorded"); Resume Match versions combine only within `resumeMatchCompatibilityGroups` (`cs-resume-match-v2` only; v3/v4 separate). Similar wording is not merged (stated on the page).
+- **Sources (D7):** personal outcomes by Feature 15 first-discovery identity (`listingIdentity` of the earliest chain head; names via the newly exported `sourceInfoOf`), automated and user-collected tables apart, a "No source record" row, link to `/sources/insights`; no cost, health, duplicates or presence.
+- **Not progressing (D8):** groups (title group, source, arrangement, seniority, customer segment) with ≥ 5 mature applications and 0 interviews — "N mature applications, no interviews yet"; "Recommended but not applied" as neutral information. Never "wasted"; no effort figure.
+- **Company type (D12):** outcomes by `customerSegment` and `customerType` (evaluated applications only); no named companies; organizational maturity left out.
+- **No accuracy (D14):** disclosure «These tables show what happened after each stored evaluation or recommendation. They do not measure evaluator accuracy.»; no accuracy / precision / recall / calibration / error rates. Recommendations and outcomes span versions as stored, disclosed.
+
+**Implementation.**
+- `packages/core/src/personal-analytics.ts` — the pure contract. Reuses `outcomeOf` (input narrowed to `SiOutcomeInput`, no behaviour change), `listingIdentity`, `sourceInfoOf` (new export of the existing source description), `siRate` / sample labels, `parseInsightsWindow`, and Feature 16's `createTitleGrouper`, `arrangementOf`, `seniorityOf`.
+- `database/src/personal-analytics-repository.ts` — `PrismaPersonalAnalyticsRepository.facts()`: read-only SELECTs (opportunities with originating record, deferral, MARK_APPLIED and no-longer-listed; evaluations with recommendation, profile, JSON paths and Resume Match prompt version; applications with events and interviews; sources; profiles; active profile).
+- `apps/web/src/server/personal-analytics-service.ts` — validates before reading; time zone from budget settings (UTC fallback).
+- API `GET /api/my-search` (`window`, `from`, `to`, `titleGroup`, `recommendation`, `arrangement`, `seniority`, `source`, `profile`); 400 `REQUEST_INVALID`.
+- UI `/my-search` ("My search" in the main navigation after Applications), seven sections, GET-form filters (with a note on which sections each affects) and a role ordering control; CSS bars with equivalent tables; no colouring.
+
+**Schema / migration:** none. 24 migrations, unchanged.
+
+**Tests.** Unit `personal-analytics.test.ts` (31: the six timing cases, the eight offer-maturity cases, rate denominators, Application + MARK_APPLIED once, PLANNED/NOT_SUBMITTED excluded, screens/final rounds, cohorts and windows, unevaluated applications kept, title-group roles and n ≥ 5 ranking, filters, sources, gap grouping and profile/version cohorts, not-progressing threshold, company type, fit versus outcome without accuracy, sample labels) and `my-search-ui.test.tsx` (3); `navigation.test.tsx` updated. Integration `personal-analytics.test.ts` (7, isolated test database; seeded histories across stages, timing cases, sources, gaps, two profile versions, two Resume Match versions, unevaluated and failed-evaluation applications; table counts unchanged by a read; the active profile is never changed). E2E `my-search.spec.ts` (2, own `my-search` project after `market`; a seeded history applied in March 2025, read with `profile=none`).
+
+**Verified:** October 31, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 74 files / 1,824 tests; integration 42 / 348; E2E 52/52 on the first full run (including the new `my-search` project); web and extension builds; `git diff --check`; `apps/web/next-env.d.ts` restored.
+
+**Known limitations.** Exact application time exists only through `MARK_APPLIED`; tracker applications are date-granular, so same-day evaluations are often "Same-day order unknown". Personal volume is small, so most rates start as insufficient samples. Exact-wording gap groups fragment (similar wording stays separate). Fit and gap figures depend on recorded profile ids and Resume Match telemetry; evaluations without them are shown apart. Calendar days use the budget time zone (UTC when no budget is configured).
+
+**Docs and specs.** Core AI Framework PRD v1.17 (§20 descriptive outcomes; accuracy deferred), Customer Success PRD v1.15 (§19 Personal Job-Search Analytics definitions; Feature 15/16/17 deliverable labels corrected), Core Platform TDD v1.18 (§51 Personal Job-Search Analytics), Customer Success TDD v1.15 (evaluator outputs read; evaluator contracts unchanged); previous versions moved unchanged to Archive. HANDOFFS records the Resume Match v2 → v3/v4 Genuine Gap boundary.
 
 ### Feature 16 — Job-Market Analytics (implemented, verified and accepted October 31, 2026; committed)
 

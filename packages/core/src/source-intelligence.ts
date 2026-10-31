@@ -342,6 +342,12 @@ function describeIdentity(identity: string, sources: Map<string, SiSourceDescrip
   };
 }
 
+// A source identity's display information (Feature 17 shows personal
+// outcomes by the same first-discovery identity).
+export function sourceInfoOf(identity: string, sources: readonly SiSourceDescriptor[]): SiSourceInfo {
+  return describeIdentity(identity, new Map(sources.map((source) => [source.id, source])), [...sources]);
+}
+
 // ---------------------------------------------------------------------------
 // Per-opportunity derivations
 
@@ -429,7 +435,10 @@ const earliest = (dates: Array<Date | null | undefined>) =>
 // one; both together count once. An interview is reaching SCREENING or later,
 // or any interview not cancelled (recruiter screens included); an offer is
 // reaching OFFER or an offer outcome.
-export function outcomeOf(opportunity: SiOpportunityFact, now: Date): SiOutcome {
+// (Feature 17 reads the same outcomes, so only the fields it needs are required.)
+export type SiOutcomeInput = Pick<SiOpportunityFact, "application" | "markedAppliedAt">;
+
+export function outcomeOf(opportunity: SiOutcomeInput, now: Date): SiOutcome {
   const application = opportunity.application;
   const events = application?.events ?? [];
   const submittedEvent = earliest(events.filter((event) => event.type === "SUBMITTED").map((event) => event.at));

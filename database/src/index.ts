@@ -26,3 +26,4 @@ export * from "./user-eligibility-repository";
 export * from "./source-version-reader";
 export * from "./source-intelligence-repository";
 export * from "./market-analytics-repository";
+export * from "./personal-analytics-repository";

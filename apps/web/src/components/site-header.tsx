@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 export const siteSections = [
   { href: "/", label: "Dashboard", matches: (path: string) => path === "/" || (path.startsWith("/opportunities/") && path !== "/opportunities/new") },
   { href: "/applications", label: "Applications", matches: (path: string) => path.startsWith("/applications") },
+  { href: "/my-search", label: "My search", matches: (path: string) => path.startsWith("/my-search") },
   { href: "/opportunities/new", label: "New opportunity", matches: (path: string) => path === "/opportunities/new" },
   { href: "/market", label: "Market", matches: (path: string) => path.startsWith("/market") },
   { href: "/sources", label: "Sources", matches: (path: string) => path.startsWith("/sources") },
