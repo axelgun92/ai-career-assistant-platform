@@ -166,7 +166,12 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### In Progress
 
-- Nothing is in progress: Feature 16, job-market analytics, is next and has not started.
+- Nothing is in progress: Feature 17, personal job-search analytics, is next and has not started.
+- Feature 16, Job-Market Analytics, is complete (implemented, verified and accepted October 31, 2026):
+  - **Market** (`/market`, a top-level entry in the main navigation): what the collected job market looks like — salary by stated currency and basis (base, OTE or unknown; never converted or combined; amounts without a stated currency count only toward coverage), with tiered pay listed apart; title groups, top titles and the evaluator's role classification; job location, hiring eligibility, work authorization and work arrangement; seniority; the requirements and customer segment of evaluated jobs; and the Apply / Review / Skip mix among evaluated jobs, overall and week by week;
+  - each job counts once, by the date it was first seen (last 7, 30 or 90 days, all time or a custom range); jobs first found by automated retrieval by default (a job you captured first stays out even if it is found automatically later), with an "All collected" view that adds your own captures and says they may introduce selection bias;
+  - every figure shows its count, coverage and sample label, Unknown is always shown, and nothing is coloured or ranked as good or bad; `GET /api/market` returns the same data; read-only, no migration.
+  - (earlier: "Nothing is in progress: Feature 16, job-market analytics, is next and has not started.")
 - Feature 15, Source Intelligence, is complete (implemented, verified and accepted October 31, 2026):
   - **Source insights** (`/sources/insights`, part of Sources): for each configured source, and separately for jobs you collected with the extension or entered yourself, the listings found, new and already-known jobs, useful jobs (Apply or Review), applications, interviews and offers, evaluation cost per useful job, geographic and employer-ATS coverage and retrieval reliability, for the last 7, 30 or 90 days, all time or a custom range;
   - each job is credited to the source that found it first; other sources that also listed it are shown as presence and never added to the totals;
@@ -178,7 +183,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### Main-product work still required before final acceptance
 
-- feature 16 — job-market analytics;
+- feature 16 — job-market analytics (complete, October 31, 2026);
 - feature 17 — personal job-search analytics;
 - feature 18 — company intelligence;
 - only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.

@@ -10,10 +10,10 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.15.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.16.docx`
-3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.13.docx`
-4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.13.docx`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.16.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.17.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.14.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.14.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
 6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
 7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
@@ -27,10 +27,10 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 
 | Document | Path |
 | --- | --- |
-| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.15.docx` |
-| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.13.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.16.docx` |
-| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.13.docx` |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.16.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.14.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.17.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.14.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
 | `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
@@ -176,8 +176,14 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   /api/sources/insights), first-discovery credit with presence, neutral deferral states, no
   migration; test-DB guard (Core AI Framework PRD v1.15, Customer Success PRD v1.13, Core Platform
   TDD v1.16, Customer Success TDD v1.13)
-→ next: main-product features 16–18 (market analytics, personal job-search analytics, company
-  intelligence); Feature 16 has not started
+→ Feature 16, Job-Market Analytics: complete and accepted (October 31, 2026): read-only market view (/market, top-level "Market" nav, GET /api/market),
+  one canonical opportunity per job by first-seen date, automated-only default with an
+  "All collected" view, salary per currency and basis with tiers apart, title groups from the
+  discovery terms, evaluated-only requirements/segment/recommendations with coverage, no migration
+  (Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17, Customer
+  Success TDD v1.14)
+→ next: main-product features 17–18 (personal job-search analytics, company intelligence);
+  Feature 17 has not started
 → only after features 1–18: deliberate evaluator/product integration, full isolated verification,
   evaluator freeze, deliberate merge
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)

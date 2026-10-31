@@ -255,6 +255,14 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+**Feature 16, Job-Market Analytics, is complete: implemented, verified and accepted by Alex on October 31, 2026.** Built to the approved Feature 16 contract (October 31, 2026; Customer Success PRD v1.14 §19):
+- **Market** (`/market`, a top-level navigation entry; `GET /api/market`): one page with Overview, Salary, Roles and titles, Location and work arrangement, Seniority, Requirements, Customer segment and Recommendations, filtered by window, title group, seniority, work arrangement, job region, salary currency, collected by and "Exclude no longer listed".
+- **Cohort:** one canonical opportunity per job, every lifecycle status, by first-seen date; **Automated only** by default (jobs first discovered by automated retrieval; a job the user captured first stays out even if found automatically later), **All collected** adds the jobs the user captured first, with the selection-bias note; unresolved possible duplicates both count and the pairs are shown.
+- **Salary:** one currency and one basis (base / OTE / unknown) at a time, never converted or combined; median minimum, maximum and midpoint (both bounds only), exact / min-only / max-only counts, 10k midpoint bands, breakdowns within one currency and basis; tiered pay listed tier by tier and never in medians; amounts without a stated currency count toward coverage only.
+- **Roles, geography, seniority:** title groups from the discovery terms (longest match, "Other title"), the evaluator's role classification as a separate evaluated-only view; job location, hiring eligibility, work authorization, sponsorship, relocation, EOR and time zones kept apart; persisted seniority only; Unknown always shown.
+- **Evaluated jobs only:** job-side requirements (categories, required vs preferred, the highest stated minimum experience requirement per job, top phrases; versions combined only when compatible), customer segment, and the Apply / Review / Skip mix, overall and per first-seen week, with n, coverage and the disclosure «Evaluations are jobs you chose to evaluate. These results describe evaluated opportunities, not the entire collected market.»
+- **No verdicts:** counts, coverage and sample labels on every figure; no colouring; read-only, no migration.
+
 **Feature 15, Source Intelligence, is complete: implemented, verified and accepted by Alex on October 31, 2026.** Built to the approved Feature 15 contract (October 31, 2026):
 - **Source insights** (`/sources/insights`, part of Sources; no new top-level navigation): for each configured source, and in a separate **User-collected** section for jobs saved with the extension (per site) or entered manually, it shows listings found, new jobs, already known on arrival, repost on the same source, possible duplicates and exclusive jobs; evaluated and useful jobs (Apply or Review, with Apply alone too); applications, interviews and offers; cost per useful job; geographic and employer-ATS coverage; and retrieval success, for 7, 30 or 90 days, all time or a custom range. Each source has a drill-down (`/sources/<id>/insights`) with every listing's provenance, and each `/sources` card shows a last-30-days line.
 - **Credit:** each job is credited to the source that found it first; other sources that also listed it are shown as presence ("also listed", "also listed before the outcome") and never added to the totals.
@@ -382,11 +390,11 @@ Task 8 and Task 9 are complete. In order:
 7. Done: Feature 14A (`dd77d29`, accepted October 20, 2026), browser-assisted LinkedIn retrieval and source corrections, with Core AI Framework PRD v1.11, Customer Success PRD v1.10, Core Platform TDD v1.12 and Customer Success TDD v1.10; LinkedIn stays unverified and disabled. *(Earlier step: "Now: Feature 14, … implemented and verified, awaiting review.")* *(Corrected October 20, 2026: this step previously also called the browser extension deferred and optional, following an October 19 implementation instruction; see the correction note under "Main-product tasks".)*
 8. Done: Feature 14B, the browser-extension companion (committed `e6bacc6`; live acceptance passed October 29, 2026, `2ccdc7f`), completing Feature 14. *(Earlier step: "Now: Feature 14B … awaiting Alex's review. Then come the minimal human retest, acceptance and the commit. Feature 14 is not complete until 14B is accepted, and Feature 15 has not started.")*
 9. Done: Feature 15, Source Intelligence, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.15, Customer Success PRD v1.13, Core Platform TDD v1.16 and Customer Success TDD v1.13. *(Earlier step: "Now: Feature 15 … awaiting Alex's review, then the commit.")*
-10. Next: main-product features 16–18 (Feature 16 has not started):
-   - job-market analytics;
+10. Done: Feature 16, Job-Market Analytics, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17 and Customer Success TDD v1.14. *(Earlier step: "Now: Feature 16 … awaiting Alex's review, then the commit.")* *(Earlier step: "Next: main-product features 16–18 (Feature 16 has not started)".)*
+11. Next: main-product features 17–18 (Feature 17 has not started):
    - personal job-search analytics;
    - company intelligence.
-11. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+12. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 

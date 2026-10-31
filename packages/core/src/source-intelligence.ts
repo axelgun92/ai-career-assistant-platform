@@ -374,7 +374,15 @@ const byTimeThenId = <T extends { createdAt: Date; id: string }>(a: T, b: T) =>
 // The opportunity's evaluation state now, in precedence order. Only
 // "evaluated" (a completed evaluation with a recommendation) enters quality
 // ratios; every other state is neutral.
-export function evaluationStateOf(opportunity: SiOpportunityFact): { state: SiEvaluationState; decision: string | null } {
+// (Feature 16 reads the same states, so only the fields it needs are required.)
+export interface SiEvaluationStateInput {
+  status: string;
+  evaluations: ReadonlyArray<Pick<SiEvaluationFact, "id" | "status" | "createdAt" | "completedAt" | "decision">>;
+  openDeferralReason: string | null;
+  noLongerListed: boolean;
+}
+
+export function evaluationStateOf(opportunity: SiEvaluationStateInput): { state: SiEvaluationState; decision: string | null } {
   const completed = opportunity.evaluations
     .filter((evaluation) => evaluation.status === "COMPLETED")
     .sort((a, b) => (b.completedAt ?? b.createdAt).getTime() - (a.completedAt ?? a.createdAt).getTime() || byTimeThenId(b, a));

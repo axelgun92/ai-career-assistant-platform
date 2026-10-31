@@ -297,7 +297,7 @@ export function RowNotes({ row }: { row: SiSourceMetrics }) {
 // ---------------------------------------------------------------------------
 // Drill-down
 
-function Bars({ label, rows }: { label: string; rows: Array<{ label: string; count: number }> }) {
+export function Bars({ label, rows }: { label: string; rows: Array<{ label: string; count: number }> }) {
   const max = Math.max(0, ...rows.map((row) => row.count));
   if (max === 0) return null;
   return (

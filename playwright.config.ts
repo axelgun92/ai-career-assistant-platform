@@ -36,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -86,6 +86,14 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/source-insights\.spec\.ts$/,
       dependencies: ["extension"],
+    },
+    {
+      // Feature 16: Job-Market Analytics over a seeded cohort in its own past
+      // first-seen window, after every other project.
+      name: "market",
+      use: chromium,
+      testMatch: /\/market\.spec\.ts$/,
+      dependencies: ["source-insights"],
     },
   ],
   webServer: {

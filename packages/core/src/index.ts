@@ -17,3 +17,4 @@ export * from "./application";
 export * from "./extension-capture";
 export * from "./known-sites";
 export * from "./source-intelligence";
+export * from "./market-analytics";

@@ -1324,3 +1324,20 @@ Source Intelligence (the approved Feature 15 contract; Customer Success PRD v1.1
 6. **Deterministic first record (persistence only):** `PrismaEvaluationTaskRepository.recordSemanticOperation`'s fallback for an evaluation with no `sourceRecordId` now takes the opportunity's first source record by `createdAt ASC, id ASC` (was `createdAt` only), matching `originatingVersion`, which `loadSubject` already uses. It changes only which tied record an attempt is attributed to; no evaluator input, routing or result changes.
 
 Final Integration Checklist: item 2 matters when the evaluator branch is combined; items 1, 3–6 need no evaluator change.
+
+### Feature 16 — Job-Market Analytics: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Job-Market Analytics (the approved Feature 16 contract; Customer Success PRD v1.14 §19, Core Platform TDD v1.17 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic or deduplication changed; no migration; no new semantic call.**
+
+1. **What it reads from the evaluator side, as stored, from each opportunity's latest COMPLETED evaluation:** `Recommendation.decision`; `Evaluation.domainResult` at `{hardFilters,role,classification}`, `{companyAlignment,alignment,customerSegment,classification}` and `{hardFilters,reconstruction,requirements}` (each item's `requirement`, `category`, `strength`, `statedYears`, `statedYearsMaximum`, `statedYearsOpenEnded`); and the `promptVersion` of the evaluation's latest SUCCESS `SemanticOperationAttempt` with `operationId = "customer-success.jd-reconstruction"`. It never reads Resume Match, Genuine Gaps, Alex Fit, Opportunity Priority or any profile-relative result. If integration renames these paths, the operation id or the attempt telemetry, `database/src/market-analytics-repository.ts` is the one place to update.
+2. **JD Reconstruction version boundary (v3 → v7):** this branch produces `cs-jd-reconstruction-v3`. The evaluator branch carries a later reconstruction (v7: "JD Reconstruction specialization category binding" and requirement-relative INDUSTRY; see the records above), so the requirement categories it emits do not mean exactly what v3's mean. Feature 16 therefore combines requirement figures only within a declared compatibility group (`reconstructionCompatibilityGroups` in `packages/core/src/market-analytics.ts`, today `{ "cs-jd-reconstruction-v3": "cs-jd-reconstruction-v3" }`). Any other version is its own group, so after integration v7 evaluations are counted in coverage by version and shown on their own (the largest compatible group is displayed, with the reason), never merged with v3. Evaluations whose reconstruction call left no telemetry are "unrecorded" and shown apart. **Decision for final integration:** declare v7 compatible with v3 (if the category semantics are confirmed equivalent for market reporting) or leave it separate; either way, no stored result is rewritten or re-run. Pre-v3 evaluations recorded the reconstruction under the shared production prompt version `cs-m9-prompts-v1` and are a separate group too.
+3. **Evaluator versions in general:** recommendation mixes span whatever evaluator versions produced the stored decisions, as in Feature 15 (item 2 there); there is no version filtering and no re-normalization.
+4. **Shared code touched (no behaviour change):** Feature 15's `evaluationStateOf` now takes a narrower structural parameter (`SiEvaluationStateInput`); `Bars` is exported from `apps/web/src/components/sources/source-insights.tsx`; the main navigation gains "Market".
+5. **Domain input:** title groups come from `customerSuccessDiscoveryConfiguration.titleTerms`, passed in by the web service (Core does not import the domain).
+
+Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.

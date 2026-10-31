@@ -1652,6 +1652,24 @@ main {
   color: #475569;
 }
 
+/* Job-Market Analytics (feature 16) */
+.market-section {
+  margin-top: 2rem;
+}
+
+.market-section h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.market-distribution {
+  margin-bottom: 1rem;
+}
+
+.market-disclosure {
+  font-weight: 600;
+}
+
 /* Source Intelligence (feature 15) */
 .sources-section-nav {
   display: flex;
