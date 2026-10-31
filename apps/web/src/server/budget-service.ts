@@ -382,13 +382,21 @@ export function createBudgetService(dependencies: BudgetServiceDependencies = {}
       };
     },
 
+    // The currency and pricing basis cost reporting uses (the same as the
+    // report below), for other read-only views such as Source Intelligence.
+    async costBasis() {
+      const status = await this.status();
+      const basis = dependencies.executionBasis?.() ?? null;
+      return { currency: reportCurrency(status, basis), configuredPricingVersions: basis?.pricingVersions ?? [] };
+    },
+
     // Operational AI usage, capacity and backlog reporting for /budget.
     // Estimates are labelled as such and anything without a basis is null.
     async report() {
       const at = now();
       const status = await this.status();
       const basis = dependencies.executionBasis?.() ?? null;
-      const currency = status.configured ? status.settings.currency : basis?.currency ?? null;
+      const currency = reportCurrency(status, basis);
       const timeZone = status.configured ? status.settings.timeZone : "UTC";
       const period = budgetPeriod(at, timeZone);
       const sixMonthsAgo = budgetPeriod(
@@ -502,6 +510,15 @@ export function createBudgetService(dependencies: BudgetServiceDependencies = {}
       return deferrals.list({ status });
     },
   };
+}
+
+// Cost is reported in the configured budget's currency, else the configured
+// pricing currency; with neither, spend is Unknown.
+function reportCurrency(
+  status: { configured: true; settings: { currency: string } } | { configured: false },
+  basis: { currency: string } | null,
+): string | null {
+  return status.configured ? status.settings.currency : basis?.currency ?? null;
 }
 
 export type BudgetService = ReturnType<typeof createBudgetService>;

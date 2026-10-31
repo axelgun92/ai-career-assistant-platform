@@ -1,9 +1,18 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 29, 2026
+**Last updated:** October 31, 2026
 
 ## Current Objective
+
+**Feature 15, Source Intelligence, is complete: implemented, verified and accepted by Alex on October 31, 2026, and committed.** It was built to the approved Feature 15 contract (planning audit approved October 31, 2026 with decisions D1–D11 and seven clarifications); see "Feature 15 — Source Intelligence" under Recently Completed. Feature 14 is complete: Feature 14B's live acceptance passed on October 29, 2026 (`2ccdc7f`).
+
+In order, what follows:
+
+1. Done: Alex's review and acceptance of Feature 15 (October 31, 2026, after the approved pre-commit corrections) and the checkpoint commit. *(Earlier step: "Next: Alex's review of Feature 15 …, then the checkpoint commit on Alex's approval.")*
+2. Next: main-product features 16–18 in order (Feature 16 has not started) (job-market analytics, personal job-search analytics, company intelligence). Only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+*(The objective below, from October 29, 2026, is kept as written; Feature 14 is now complete.)*
 
 **Feature 14B live acceptance passed (October 29, 2026).** The live round of the October 29 batch (`76ce118`) still failed on seven cases (SafeBreach location, SmartRecruiters and Remote OK application URLs, We Work Remotely default capture and the New Law Business Model company, ServiceTitan's default-capture PST/MST hours and its zone tiers). This second round was worked from the real environment, not from fixtures: Alex's computer was connected through Remote Control, his stored extension captures were exported read-only from `ai_career_assistant_acceptance`, and the live pages were rendered and read in Playwright's own Chromium on his machine. Every fix was traced on that real evidence and then verified by Alex through the installed Chrome extension into the live acceptance app: **all eight blocker cases pass** (see "Feature 14B live acceptance, round 2" under Recently Completed). Committed on `claude/gallant-pasteur-y1ou3i`. The remaining known edge cases (Lever Bluesight's employment type, Jobs for Humanity's monthly pay, Remote OK Renaissance's short description, NLBM's "Region: Anywhere" not shown as a location) are explicitly non-blocking. Feature 15 has not started.
 
@@ -148,7 +157,52 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
-## Recently Completed (October 14–29, 2026)
+## Recently Completed (October 14–31, 2026)
+
+### Feature 15 — Source Intelligence (implemented, verified and accepted October 31, 2026; committed)
+
+**What it does.** Measurable, read-only evidence of what each discovery source contributes, so source decisions can be made from what actually happened (CS PRD §19: "Sources should remain because they provide measurable value, not merely because they exist"). Source Intelligence never ranks, judges, disables or changes a source, never evaluates or retrieves, and never calls a provider.
+
+**Approved contract (October 31, 2026).** Recorded in Customer Success PRD v1.13 §19 and Core Platform TDD v1.16 §51.
+- **Rows (D4):** one row per configured `RetrievalSource`; adapter grouping is a secondary view. A separate **User-collected** section holds Browser extension (per captured site) and Manual entry, never ranked against automated sources.
+- **Listing:** a `SourceRecord` chain head. A configured source that saw an already-stored listing writes no record (re-observation is keyed by adapter and listing ID), so its Feature 13 ledger row counts as its listing. No record is manufactured.
+- **Duplicates, kept apart:** already known on arrival (the source's duplicate rate), repost on the same source, possible duplicate (the newer side of an unresolved probable pair, so a pair counts once), exclusive (as of today), and the platform duplicate rate ((listings − distinct opportunities) ÷ listings). A record whose normalization failed is "not processed" (operational).
+- **Attribution (D2):** first discovery — the earliest record by (createdAt, id), the repository's existing origin rule — gets new-opportunity credit, evaluation cost and outcomes; every other source has presence ("also listed", "also listed before the outcome"), never summed. Credit never moves (later employer ATS, canonical link, removal).
+- **Useful (D1):** latest completed evaluation APPLY or REVIEW; useful rate = useful ÷ evaluated; Apply rate shown separately. Neutral states, never negative: Waiting: AI budget (incl. legacy BUDGET_UNAVAILABLE), Waiting: usage limit, Evaluation in progress, Evaluation failed, User dismissed/archived, No longer listed before evaluation (the dashboard's Feature 13 rule, now one shared SQL condition), Not yet evaluated (incl. a cancelled deferral). Coverage = evaluated ÷ cohort.
+- **Outcomes (D5):** application = submitted tracked application, or a lifecycle MARK_APPLIED without one (both count once); interview = reached SCREENING or later, or a non-cancelled interview record (recruiter screens included), once per opportunity; offer = OFFER stage or offer outcome. Under 30 days without progress = awaiting response, excluded from interview/offer rates (D6).
+- **Cost (D3):** completed-evaluation spend in the report currency (budget currency, else pricing currency, as `/budget`) ÷ useful, re-evaluations included; failed and in-progress spend and unknown-cost attempts shown apart, unknown never zero; "No useful jobs yet" when useful = 0; pricing basis shown. All-time platform spend reconciles with the persisted attempts and the budget usage breakdown (integration test).
+- **Reliability:** Feature 12 health and staleness, plus successful ÷ (successful + source failures) runs in the window (neutral runs apart), latest listings scanned, median role-family yield, and "waiting for details" ledger placeholders. No runs / no successful retrieval is a note, never low yield.
+- **Geography (D7):** United States, Canada, United Kingdom, Europe (excluding UK), Latin America, APAC, Global / Anywhere, Other, Unknown; from residency regions → work-authorization regions → unambiguous location → explicit global-remote wording; multi-valued (shares may exceed 100%, stated in the UI), Unknown in the denominator, EMEA / North America / Americas → Other.
+- **ATS (D8):** per-source ATS mix and direct ATS coverage, from direct ATS provenance, `atsPlatform`, or the one shared known-site table (moved from extension capture to `packages/core/src/known-sites.ts`; extension capture now uses it).
+- **Samples and verdicts (D6):** every rate shows its counts; n < 5 "Insufficient sample" (shown, never used to order or highlight), 5–19 "Small sample". No verdicts, no colouring, no auto-disable. Ordering applies within one section only.
+- **Windows:** 7 / 30 / 90 days, all time, custom (UTC dates). Listing figures by listing date; evaluation, cost and outcome figures by discovery cohort; runs by run date.
+- **Evaluator boundary (clarification 6):** recommendations are read as stored; no evaluator-version filtering or second recommendation layer. HANDOFFS records that rates may span evaluator versions.
+
+**Implementation.**
+- `packages/core/src/source-intelligence.ts` — the pure contract (facts → metrics, attribution, states, outcomes, cost, geography, ATS, windows, samples, sorting, drill-down, path segments).
+- `packages/core/src/known-sites.ts` — the shared host → site/category table (`apps/web/src/server/extension-capture.ts` now imports it; behaviour unchanged).
+- `database/src/source-intelligence-repository.ts` — `PrismaSourceIntelligenceRepository.facts()`, read-only SELECTs; `database/src/opportunity-list-repository.ts` exports `noLongerListedCondition` (the dashboard query is unchanged).
+- `apps/web/src/server/source-intelligence-service.ts` — overview, drill-down and per-card value strips; `budget-service.ts` gains `costBasis()` (the same currency rule as the report, shared).
+- API: `GET /api/sources/insights` (`window`, `from`, `to`, `groupBy`, `archived`, `sort`) and `GET /api/sources/[id]/insights` (a configured source's id, `adapter--<key>`, `extension--<site>` or `manual`); 400 for an invalid window, 404 for an unknown source.
+- UI: `/sources/insights` (summary tiles, controls, automated and user-collected tables, notes), `/sources/[id]/insights` (funnel, listings and duplicates, evaluation states, cost, reliability, geography, ATS, weekly trend, every listing's provenance per opportunity), a "Manage sources / Source insights" section nav, and a last-30-days line on each `/sources` card linking to the drill-down. No new top-level navigation; no chart library (CSS bars with table equivalents).
+- **Test-DB guard (D10):** `tests/support/test-database-guard.ts`, called by `vitest.integration.config.ts` and `playwright.config.ts` (not for `--list`): refuses any target database whose name does not end in `_test` (so `ai_career_assistant` and `ai_career_assistant_acceptance` are refused) before a test starts. Reads only the URL; no runtime change.
+
+**Pre-commit corrections (October 31, 2026, approved).**
+- **Deterministic first record.** Two production paths chose an opportunity's first source record by `createdAt` alone, so records sharing a timestamp could resolve either way: the attempt-attribution fallback for an evaluation with no source-version binding (`database/src/evaluation-task-repository.ts`, `SemanticOperationAttempt.sourceRecordId` and `jobSource`) and the opportunity detail's source records (`findRecord`, whose first record is the page's "Found via"). Both now order by `createdAt ASC, id ASC`, the same rule as `originatingVersion` and Feature 15 attribution. Persistence only; no evaluator behaviour change. The flaky `foundation-provenance` snapshot read the same way and now orders by `(createdAt, id)`. New `tests/integration/origin-ordering.test.ts` (2) failed before the fix (3 of 3 runs on the detail order, 1 of 3 on the attempt fallback) and passes after.
+- **No double counting.** New unit (2) and integration (1) tests prove that a configured source's own record plus its ledger rows (current, Feature 13 baseline and earlier tracking scopes), a changed version (same-source re-observation), a cross-source MATCH and a later employer ATS each count once; ledger presence only fills a source that wrote no record.
+- **Sample ordering.** New unit tests (2 + 1 display): insufficient samples (n < 5) never move by value under any rate-based order and keep their value and label; small samples (5–19) rank normally and show "Small sample"; no good/bad styling.
+- **E2E locator.** The Source insights spec's alert check now matches the page's own message (Next.js's route announcer is also an alert).
+- **Docs.** Remaining Feature 14 "awaiting review/acceptance" status labels in README, PRODUCT_STATUS and DEVELOPMENT_PLAN now say accepted (earlier wording kept); HANDOFFS status lines gained appended update notes, nothing rewritten.
+
+**Schema / migration:** none. 24 migrations, unchanged.
+
+**Tests.** Unit `source-intelligence.test.ts` (29: every definition and attribution scenario, deferral neutrality, outcomes, cost, geography, ATS, reliability, windows, samples, sorting), `source-insights-ui.test.tsx` (7: service, API 400/404, value strips, views without good/bad colouring), `test-database-guard.test.ts` (4). Integration `source-intelligence.test.ts` (9, isolated test database, seeded synthetic histories: high-volume/high-duplicate board, low-volume/high-quality ATS, a second configured ATS seen only in the ledger, unreliable source, budget- and usage-limit-deferred source with a cancelled deferral, multi-source opportunity with an offer, applications without interviews (recent and rejected), a lifecycle-only application, failed evaluation and an other-currency reevaluation, a listing removed after application, a probable pair, a failed normalization, manual and extension captures, spend reconciliation with `periodUsageBreakdown`, a 7-day window, the drill-down). E2E `source-insights.spec.ts` (2, own project after `extension`): value strip → drill-down with credit vs presence, the comparison page with the user-collected section, window and grouping switches, an invalid custom window and an unknown source.
+
+**Verified (October 31, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched):** typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 70 files / 1,752 tests; integration 40 / 332; E2E 48/48 (including the new `source-insights` project); re-run after the pre-commit corrections; web and extension builds; `git diff --check`. The guard was shown refusing `ai_career_assistant` (integration) and `ai_career_assistant_acceptance` (E2E) without connecting.
+
+**Known limitations.** Data is aggregated in memory from per-opportunity rows (fine at personal scale; revisit beyond tens of thousands of opportunities). Ledger presence starts with Feature 13 (October 19, 2026) and automated runs with Feature 11 (October 18, 2026); earlier periods have manual entries only (the page says so). The weekly trend shows at most 26 weeks; the drill-down lists the latest 200 opportunities. Co-discovery is a 1-hour tag only; credit stays with the earliest record. The `foundation-provenance` flake seen once is fixed (deterministic ordering, above).
+
+**Docs and specs.** Core AI Framework PRD v1.15, Customer Success PRD v1.13 (§19 definitions), Core Platform TDD v1.16 (§51 Source Intelligence, §39 status), Customer Success TDD v1.13; previous versions moved unchanged to Archive. The accepted October 27, 2026 currency rule (a recognized currency symbol is its currency; a stated code or name wins) is now written into Core Platform TDD §51 and Core AI Framework PRD §13, with the superseded text quoted, as a documentation-only correction (the rule was implemented and committed then).
 
 ### Feature 14B live acceptance, round 2 (verified in the real environment October 29, 2026; committed; live acceptance passed)
 
@@ -1695,7 +1749,9 @@ The routing policy is locked. A GPT-6 Luna Job Evaluation benchmark was rejected
 
 ### Main-product tasks
 
-Feature 14B (the browser-extension companion) is implemented and verified (October 20, 2026) and awaits Alex's review and local acceptance; it is not committed. Feature 14A (browser-assisted LinkedIn retrieval and source corrections) was committed as `dd77d29` and accepted on October 20, 2026; Feature 14 as a whole is not complete until 14B is accepted. Features 15–18 follow 14B.
+Feature 15 (Source Intelligence) is complete (accepted October 31, 2026). Feature 14 is complete (14A `dd77d29`, accepted October 20, 2026; 14B accepted October 29, 2026, `2ccdc7f`). Features 16–18 follow.
+
+*(Earlier status, superseded October 31, 2026: "Feature 14B (the browser-extension companion) is implemented and verified (October 20, 2026) and awaits Alex's review and local acceptance; it is not committed. … Features 15–18 follow 14B.")*
 
 *(Earlier status, superseded on October 20, 2026: "Feature 14 (browser-assisted LinkedIn retrieval and source corrections) is implemented and verified and awaiting user review (see \"Recently Completed\"). It is not committed." It was committed as `dd77d29` and accepted.)*
 
@@ -2372,7 +2428,7 @@ Completes the Core PRD v1.3 "Configurable AI Budget and Throughput Controls" and
 
 **Still open (recorded in `HANDOFFS.md`):**
 - Already-queued evaluations are still not cancelled when the budget is lowered (unchanged, still awaiting explicit acceptance).
-- Source Analytics exclusion of budget deferral applies once Source Analytics exists.
+- Source Analytics exclusion of budget deferral is implemented by Feature 15 (October 31, 2026): deferred jobs are neutral states, never in a source's quality rates.
 
 **Resolved by the Task 6 naming cleanup (below):** the deferral reason name (now `AI_BUDGET_LIMIT`, matching the TDD) and the eligibility wording (neutral "eligible for evaluation").
 
@@ -2431,7 +2487,7 @@ Task 8 (`534a4c7`) and Task 9 (`feat: complete operational hardening`) are compl
 The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026). The features 1–10 gap audit is complete, and the Features 1–10 Gap Closure is committed (`d573acf`, October 17, 2026). Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`, accepted October 20, 2026) are committed; Feature 14B is implemented and verified (October 20, 2026), awaiting review and local acceptance, and not committed.
 
 1. Next: Alex's review and local Chrome acceptance of Feature 14B (implemented October 20, 2026), then its checkpoint commit and documentation closeout; Feature 14 is not complete until it is accepted. *(Earlier steps: "Next: Feature 14B, the browser-extension companion", superseded October 20, 2026 when it was implemented; "Next: user review of Feature 11A …", of Feature 11B, of Feature 12, of Feature 13 and of Feature 14A, superseded October 18–20, 2026 after the commits `fad2341`, `2a1d8c2`, `f10a02b`, `d1bf217` and `dd77d29`; "Next: audit any remaining main-product gaps in features 1–10", superseded October 17, 2026; "Next: user review of the gap closure, the check of the versioned PRDs/TDDs against what changed, then the checkpoint commit", superseded October 18, 2026 after the commit `d573acf`.)*
-2. Then, after 14B is accepted, features 15–18 in order: source intelligence, market analytics, personal job-search analytics, and company intelligence. *(Earlier step: "main-product features 14–18: browser extension, …"; on October 19, 2026 the browser-assisted LinkedIn retrieval and source corrections became feature 14A, and the browser-extension companion remains feature 14B, next.)*
+2. Then features 15–18 in order: source intelligence (complete, October 31, 2026), market analytics, personal job-search analytics, and company intelligence. *(Feature 14 completed October 29, 2026, when 14B's live acceptance passed.)* *(Earlier step: "main-product features 14–18: browser extension, …"; on October 19, 2026 the browser-assisted LinkedIn retrieval and source corrections became feature 14A, and the browser-extension companion remains feature 14B, next.)*
 3. Only after features 1–18 are complete: deliberate evaluator/product integration, migrations/full isolated verification, E2E acceptance, any explicitly authorized live verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons.
@@ -2498,7 +2554,7 @@ Codex reviews still open from the `HANDOFFS.md` Final Integration Checklist:
 
 Main-product follow-up (not an integration blocker):
 
-- Source Analytics must exclude budget/usage-limit deferrals once Source Analytics exists (features 11–18).
+- Source Analytics excludes budget/usage-limit deferrals (implemented by Feature 15, October 31, 2026).
 - Feature 11 must reuse the capture transaction and the deduplication engine for retrieved sources. It must add cross-source matching, canonical-source selection by source type, posting history and any merging of opportunities that already have history (not done in the gap closure, by decision). *(Status October 18, 2026: Feature 11A reuses the capture transaction and engine and adds cross-source matching and canonical-link selection. Posting history is feature 13. Merging opportunities that already have history remains undone by decision.)*
 - Adzuna stays registered, unverified and disabled until the user provides credentials and authorizes its verification. Its documented search response carries only a description excerpt, which conflicts with the complete-description contract; this is an open Adzuna-specific design decision.
 - Run `pnpm db:backfill-dedup --dry-run`, then `pnpm db:backfill-dedup`, on the normal application database. Only when the user chooses to; it changes data.

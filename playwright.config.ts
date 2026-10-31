@@ -1,14 +1,18 @@
 import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
 import { e2eDeterministicOpenAiKey, e2eEnvironment } from "./tests/support/e2e-environment";
+import { assertIsolatedTestDatabase } from "./tests/support/test-database-guard";
 
 // E2E never uses a real provider credential: replace whatever .env loaded, so
 // the test runner, its workers, helper processes and the web server all see
 // only the deterministic, non-live key.
 process.env.OPENAI_API_KEY = e2eDeterministicOpenAiKey;
 
-// Opt-in: run E2E (web server and helpers) against a separate database.
+// Run E2E (web server and helpers) against a separate database
+// (TEST_DATABASE_URL), and refuse any target that is not an isolated test
+// database. Listing the tests (--list) touches no database.
 if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+if (!process.argv.includes("--list")) assertIsolatedTestDatabase(process.env.DATABASE_URL, "E2E tests");
 
 // Opt-in: use a preinstalled Chromium build instead of Playwright's own.
 const chromium = {
@@ -32,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -74,6 +78,14 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/extension\.spec\.ts$/,
       dependencies: ["acceptance"],
+    },
+    {
+      // Feature 15: Source Intelligence over a seeded history. Platform
+      // totals span every source, so it runs alone, after everything else.
+      name: "source-insights",
+      use: chromium,
+      testMatch: /\/source-insights\.spec\.ts$/,
+      dependencies: ["extension"],
     },
   ],
   webServer: {

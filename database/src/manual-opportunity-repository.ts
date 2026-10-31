@@ -871,7 +871,8 @@ export class PrismaManualOpportunityRepository
       where: { id },
       include: {
         company: true,
-        sourceRecords: { orderBy: { createdAt: "asc" }, include: { retrievalSource: { select: { name: true } } } },
+        // First record first, by (createdAt, id) as originatingVersion ("Found via").
+        sourceRecords: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { retrievalSource: { select: { name: true } } } },
         fieldProvenance: { orderBy: { createdAt: "asc" } },
       },
     });

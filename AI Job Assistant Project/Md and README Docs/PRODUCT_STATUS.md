@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development  
-**Last updated:** October 20, 2026
+**Last updated:** October 31, 2026
 
 ## Purpose
 
@@ -110,11 +110,11 @@ Normalized/persisted facts now include, when explicitly supported by source data
 
 Unknown stays Unknown. Raw text and provenance remain preserved. Salary amounts are stored as stated and are not FX-converted in persistence.
 
-**Job-text fallback (Feature 14B correction, October 23, 2026; awaiting review).**
+**Job-text fallback (Feature 14B correction, October 23, 2026; committed; accepted with Feature 14B on October 29, 2026; earlier: awaiting review).**
 - **When the source states nothing:** when the source supplies no structured or stated value, these facts, and the company, location, posting date and time-zone requirement, are also read from explicit statements in the job description itself. Examples: "This is a full-time, NYC-Hybrid position.", "Salary: $100,000–$120,000", "Anticipated role close date: 11/30/2026", "Must overlap Eastern Time business hours."
 - **How:** one shared Core reader serves manual entry, automated retrieval and the browser extension alike. Facts a job source states in its own fields also reach it now: department, seniority or experience level, and Wellfound's compensation text. That covers Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Himalayas, LinkedIn and Wellfound.
 - **Changes on a saved job page:** if a labelled detail on the page changes, the next capture is recorded as a change; layout or navigation changes are not.
-- **Changed listings update the saved job (current-version projection, October 23, 2026; awaiting review).** When the listing a job was found from changes, the job shows the newest version's facts and description; a fact the newest version no longer states becomes Unknown.
+- **Changed listings update the saved job (current-version projection, October 23, 2026; committed; accepted with Feature 14B on October 29, 2026; earlier: awaiting review).** When the listing a job was found from changes, the job shows the newest version's facts and description; a fact the newest version no longer states becomes Unknown.
   - Every earlier version and its provenance are kept, as history.
   - A copy of the job from another site never overwrites the facts.
   - A manually entered job is never changed by retrieval.
@@ -123,9 +123,9 @@ Unknown stays Unknown. Raw text and provenance remain preserved. Salary amounts 
   - *(Before, a changed listing was kept as a linked version but the job's facts stayed as first seen.)*
 - **Precedence and provenance:** a value the user stated or corrected, or a source's structured value, always wins. Text-derived values are marked in provenance as read from the text.
 - **OTE:** OTE is never turned into base salary. *(Superseded October 25, 2026: a stated range keeps its numbers, marked as OTE or base salary when the posting says, in its original currency; the evaluator decides whether it counts as base salary.)*
-- **Work authorization (October 25, 2026; awaiting review):** explicit work-authorization, citizenship, sponsorship, relocation and employer-of-record statements are captured for every job, separate from where candidates must live. Under "Work eligibility" on the profile page you record where you may work; a requirement you already meet raises no warning, and jobs in other countries whose requirements or sponsorship need a look (or state nothing) are marked "Check work eligibility".
+- **Work authorization (October 25, 2026; committed; accepted with Feature 14B on October 29, 2026; earlier: awaiting review):** explicit work-authorization, citizenship, sponsorship, relocation and employer-of-record statements are captured for every job, separate from where candidates must live. Under "Work eligibility" on the profile page you record where you may work; a requirement you already meet raises no warning, and jobs in other countries whose requirements or sponsorship need a look (or state nothing) are marked "Check work eligibility".
 - **Department and application link (October 25, 2026):** a stated team ("You'll join … Customer Success team") fills the department, and the application page is captured whenever the job shows one (an apply link, the page's own application form), with how it was found. *(October 26, 2026: Department is no longer shown, filtered on or entered; see below.)*
-- **Cross-source correction (October 26, 2026; awaiting review and the cross-source live retest).** This follows from the live acceptance captures of every supported source.
+- **Cross-source correction (October 26, 2026; committed; accepted with Feature 14B on October 29, 2026; earlier: awaiting review and the cross-source live retest).** This follows from the live acceptance captures of every supported source.
   - **Remote roles:** a remote role's location is where the source says it may be done from ("Remote (United States)"), and that is its eligible geography. An optional office is never the role's location, and an ordinary job or office location never sets eligibility on its own. A posting's own fuller location statement ("Chicago Office or Remote, North America (US & Canada)") is kept over a narrower listing location it includes. Eligible states listed one per line are read, and "continental U.S." counts as the U.S.
   - **Pay:** one pay range stays readable beside its own OTE or base-plus-variable detail. Pay stated in regional tiers or zones is kept as stated, with no single range and no tier applied everywhere.
   - **Work arrangement:** several stated options are kept, in the posting's order ("Office or Remote" shows as "On-site / Remote"; "Remote or Hybrid" as "Remote / Hybrid"); the dashboard's arrangement filter finds the job under each option. Only ambiguous or conflicting statements stay Unknown.
@@ -255,6 +255,15 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
+**Feature 15, Source Intelligence, is complete: implemented, verified and accepted by Alex on October 31, 2026.** Built to the approved Feature 15 contract (October 31, 2026):
+- **Source insights** (`/sources/insights`, part of Sources; no new top-level navigation): for each configured source, and in a separate **User-collected** section for jobs saved with the extension (per site) or entered manually, it shows listings found, new jobs, already known on arrival, repost on the same source, possible duplicates and exclusive jobs; evaluated and useful jobs (Apply or Review, with Apply alone too); applications, interviews and offers; cost per useful job; geographic and employer-ATS coverage; and retrieval success, for 7, 30 or 90 days, all time or a custom range. Each source has a drill-down (`/sources/<id>/insights`) with every listing's provenance, and each `/sources` card shows a last-30-days line.
+- **Credit:** each job is credited to the source that found it first; other sources that also listed it are shown as presence ("also listed", "also listed before the outcome") and never added to the totals.
+- **Never held against a source:** jobs waiting on the AI budget or a usage limit, being evaluated, whose evaluation failed, dismissed by the user, no longer listed before evaluation, or not yet evaluated. Applications under 30 days old without a response are "awaiting response", not "no interview".
+- **No verdicts:** every rate shows its counts; under 5 is an insufficient sample (never used to order or highlight sources), 5–19 a small sample. Nothing ranks, colours, judges or disables a source.
+- **Read-only:** no new data, migration, evaluation, retrieval or provider call. Automated database tests now refuse any database that is not an isolated `_test` database.
+
+*(Status before October 29, 2026, kept as written; Feature 14 is now complete: 14B's live acceptance passed on October 29, 2026, `2ccdc7f`.)*
+
 Feature 14 has two parts and is not complete yet. **Feature 14B, the browser-extension companion, is committed as `e6bacc6` (October 20, 2026) and stays open.** Alex's local acceptance passed for the local fixture, LinkedIn (Incognito, logged out), Welcome to the Jungle and revocation. On Greenhouse, Lever and an employer careers page, it showed that the shared normalizers left facts stated only in the job description Unknown (company, location, salary, closing date, work arrangement). The approved correction is implemented and verified (October 23, 2026) and awaits Alex's review, then a minimal retest; it is not committed. It is a shared Core job-text fallback with a safer bare-"$" rule, and no extension- or site-specific parsing. **Feature 14A, browser-assisted retrieval and source corrections, is complete**: committed as `dd77d29` and accepted on October 20, 2026 (Feature 13: `d1bf217`). Features 15–18 follow 14B. Feature 14A:
 
 - **LinkedIn (public, logged-out pages only):** a new source that reads LinkedIn's public job search and public job pages in a headless browser started fresh for each run, with no account, cookies, profile or stored state. It never signs in, applies, saves, follows or messages, and only opens and reads pages, one at a time and at least 5 seconds apart. Any refusal (HTTP 403, 429 or 999), sign-in wall, authwall, checkpoint, CAPTCHA or challenge ends the run, and the source waits through Feature 12's backoff; nothing is retried or worked around.
@@ -264,7 +273,7 @@ Feature 14 has two parts and is not complete yet. **Feature 14B, the browser-ext
 - **Wellfound** requests are now at least 12 seconds apart (was 2), still one at a time from the page's embedded data.
 - **Audited and unchanged:** Greenhouse, Lever, Ashby, SmartRecruiters, Himalayas, Remote OK, Working Nomads (its public `exposed_jobs` feed, not the site's internal search), Workday (tenant JSON) and Workable (anonymous JSON). Adzuna stays disabled until verified.
 - **Welcome to the Jungle / Otta:** now treated as a public-webpage source (it has no public jobs API) rather than ruled out by its terms, but still not enabled, because no tested public page shows usable job records. Its public search page shows no listings. From the Claude cloud environment a browser load was refused (HTTP 403), but a local browser check loaded its public company jobs page without any block; that page needs JavaScript and, once rendered, showed a job count but "We didn’t find any jobs for your search", with no job details.
-- **Feature 14B, the browser-extension companion (committed `e6bacc6`; normalization correction awaiting review):** a Chrome extension (`apps/extension`; `pnpm extension:build`, then load `apps/extension/dist` unpacked) that saves the job page you are viewing into your local AI Job Assistant, only when you ask it to.
+- **Feature 14B, the browser-extension companion (committed `e6bacc6`; accepted October 29, 2026; earlier: normalization correction awaiting review):** a Chrome extension (`apps/extension`; `pnpm extension:build`, then load `apps/extension/dist` unpacked) that saves the job page you are viewing into your local AI Job Assistant, only when you ask it to.
   - **Before saving:** you see an editable preview and can correct the title, company, location or description; nothing is sent until you press Save.
   - **What it reads:** that one page's job posting: its structured job data; on LinkedIn, only the job-detail areas of a job page; the text you selected; or, except on LinkedIn, the page's main content. It never reads other tabs, history, cookies, or account, profile, messaging or feed content.
   - **Where saved jobs go:** into the same normalization, deduplication, provenance and lifecycle as every other source, shown as "Found via <site> (browser extension)". An unrecognised site is kept as the lowest-priority source and never replaces an employer or ATS link.
@@ -285,7 +294,7 @@ How each source is read (least intrusive method that works):
 | Public data embedded in a webpage | Wellfound (conservative 12-second cadence) |
 | Browser-assisted, public and logged-out | LinkedIn (unverified and disabled: its local adapter check discovered public jobs, then a job page answered HTTP 429; the Claude cloud check met an anti-bot page) |
 | Public logged-out webpage (candidate) | Welcome to the Jungle / Otta (unverified: its tested public pages expose no usable job records) |
-| Browser extension, on request (Feature 14B, awaiting acceptance) | any job page you are viewing and choose to save, including LinkedIn job pages and Welcome to the Jungle / Otta through the generic reader |
+| Browser extension, on request (Feature 14B, accepted October 29, 2026) | any job page you are viewing and choose to save, including LinkedIn job pages and Welcome to the Jungle / Otta through the generic reader |
 
 *(Earlier status, superseded on October 19, 2026 when Feature 13 was committed as `d1bf217`. It read as follows.)*
 
@@ -371,13 +380,13 @@ Task 8 and Task 9 are complete. In order:
 5. Done: Feature 12 (`f10a02b`, October 18, 2026), with Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10 and Customer Success TDD v1.8. *(Earlier step: "Now: Feature 12, source health and conservative retrieval, implemented and verified, awaiting review.")*
 6. Done: Feature 13 (`d1bf217`, October 19, 2026), with Core AI Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11 and Customer Success TDD v1.9. *(Earlier step: "Now: Feature 13, posting history and listing removal, implemented and verified, awaiting review.")*
 7. Done: Feature 14A (`dd77d29`, accepted October 20, 2026), browser-assisted LinkedIn retrieval and source corrections, with Core AI Framework PRD v1.11, Customer Success PRD v1.10, Core Platform TDD v1.12 and Customer Success TDD v1.10; LinkedIn stays unverified and disabled. *(Earlier step: "Now: Feature 14, … implemented and verified, awaiting review.")* *(Corrected October 20, 2026: this step previously also called the browser extension deferred and optional, following an October 19 implementation instruction; see the correction note under "Main-product tasks".)*
-8. Now: Feature 14B, the browser-extension companion (committed `e6bacc6`). Its local acceptance led to the shared-Core job-text fallback correction, implemented and verified October 23, 2026 with Core Platform TDD v1.15 and Core AI Framework PRD v1.14, and awaiting Alex's review. Then come the minimal human retest, acceptance and the commit. Feature 14 is not complete until 14B is accepted, and Feature 15 has not started. *(Earlier steps: "Now: Feature 14B … (not started)", superseded October 20, 2026; "Now: Feature 14B …, implemented and verified (October 20, 2026), awaiting Alex's review and local Chrome acceptance …", superseded October 23, 2026.)*
-9. Then, after 14B is accepted, build the rest of main-product features 15–18:
-   - source intelligence;
+8. Done: Feature 14B, the browser-extension companion (committed `e6bacc6`; live acceptance passed October 29, 2026, `2ccdc7f`), completing Feature 14. *(Earlier step: "Now: Feature 14B … awaiting Alex's review. Then come the minimal human retest, acceptance and the commit. Feature 14 is not complete until 14B is accepted, and Feature 15 has not started.")*
+9. Done: Feature 15, Source Intelligence, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.15, Customer Success PRD v1.13, Core Platform TDD v1.16 and Customer Success TDD v1.13. *(Earlier step: "Now: Feature 15 … awaiting Alex's review, then the commit.")*
+10. Next: main-product features 16–18 (Feature 16 has not started):
    - job-market analytics;
    - personal job-search analytics;
    - company intelligence.
-10. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+11. Only after features 1–18 are complete: deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
 
 Features 19–23 remain later add-ons (see below).
 
@@ -426,7 +435,7 @@ Beyond the Customer Success product:
 - Core remains domain-neutral.
 - Customer Success owns its salary thresholds and affordability policy.
 - Retrieval must feed the existing normalization/dedup/evaluator boundary rather than create a second evaluator.
-- The browser extension (Feature 14B, required; implemented, awaiting acceptance) is a companion to the same application, backend, data, evaluator, lifecycle, provenance, budget, and dashboard; it never becomes a second evaluator.
+- The browser extension (Feature 14B, required; accepted October 29, 2026) is a companion to the same application, backend, data, evaluator, lifecycle, provenance, budget, and dashboard; it never becomes a second evaluator.
 - Browser-assisted retrieval is public and logged-out only: no account, cookies or stored state, no account actions, and no proxy rotation, stealth, fingerprint changes, CAPTCHA solving or access-control bypass.
 - Paid provider calls require explicit authorization.
 - Experiments/tests must not use the normal application database without explicit authorization.

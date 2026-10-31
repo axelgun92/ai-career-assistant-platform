@@ -475,6 +475,7 @@ One change touches Core evaluation orchestration and needs Codex review: the Cor
    - Product wording is neutral: "eligible for evaluation" (a normalized, active opportunity in a domain the evaluator supports).
    - There is no per-model eligibility concept.
 4. Source Analytics must exclude budget and limit deferrals when Source Analytics is built. Nothing records a deferral as a negative outcome today.
+   - **Resolved (2026-10-31, Feature 15):** Source Intelligence reads `AI_BUDGET_LIMIT` (and legacy `BUDGET_UNAVAILABLE` via `normalizeDeferralReason`) and `USAGE_LIMIT_REACHED` as the separate neutral states "Waiting: AI budget" and "Waiting: usage limit"; only a completed evaluation with a recommendation enters a source's quality rates (unit and integration tests assert it). Nothing is written.
 
 ### Handoff: Profile Limitations Persistence Boundary (Review Requested)
 
@@ -1087,7 +1088,7 @@ Final Integration Checklist: items 1–4 are shared-contract changes to note in 
 **Date:** 2026-10-20\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and local Chrome acceptance; not committed (every entry above is preserved as written)
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and local Chrome acceptance; not committed (every entry above is preserved as written) *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
 
 Feature 14B adds the browser-extension companion. It is a source-collection boundary only. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic or `loadSubject()` changed.**
 
@@ -1112,7 +1113,7 @@ Final Integration Checklist: items 1–2 are shared-contract additions to note i
 **Date:** 2026-10-23\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed (every entry above is preserved as written)
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed (every entry above is preserved as written) *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
 
 Approved by Alex on October 23, 2026. It restores the Core requirement that structured values come first and the posting's own text is the fallback for already-supported normalized facts. Core Platform TDD v1.15 §51 and Core AI Framework PRD v1.14 specify it. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic, `loadSubject()` or `fieldsWithheldFromEvaluator` changed; no migration; no backfill.**
 
@@ -1161,7 +1162,7 @@ Final Integration Checklist: items 1–4 are shared-contract changes to note in 
 **Date:** 2026-10-23\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
 
 Alex approved this on October 23, 2026. It corrects the Core TDD v1.15 §51 re-observation contract: a CHANGED observation of an opportunity's originating listing re-projects the opportunity's current facts, and every version is kept. **It crosses the evaluator boundary in the integration layer only.** No stage logic, prompt, model, routing, semantic schema or recommendation rule changed, and there are no provider calls.
 
@@ -1189,7 +1190,7 @@ Final Integration Checklist: items 2–5 must be carried into the Codex evaluato
 **Date:** 2026-10-25\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
 
 Approved by Alex on October 25, 2026. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
 
@@ -1264,7 +1265,7 @@ Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Un
 **Date:** 2026-10-27\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented, verified on the isolated test database and committed on `claude/gallant-pasteur-y1ou3i`; awaiting the targeted live verification (Codex/local)
+**Status:** Implemented, verified on the isolated test database and committed on `claude/gallant-pasteur-y1ou3i`; awaiting the targeted live verification (Codex/local). *(Update 2026-10-31: Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
 
 From Alex's final human cross-source retest. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
 
@@ -1281,7 +1282,7 @@ From Alex's final human cross-source retest. **No evaluator stage, prompt, model
 **Date:** 2026-10-26\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and the cross-source live retest; not committed
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and the cross-source live retest; not committed. *(Update 2026-10-31: committed as checkpoint v7 `6536ef8`; Feature 14B's live acceptance passed on 2026-10-29.)*
 
 From the live acceptance of every supported source. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
 
@@ -1305,3 +1306,21 @@ From the live acceptance of every supported source. **No evaluator stage, prompt
 6. **Extension envelope:** two optional fields, `remoteLocations` and `seniority` (`schemaVersion` stays 1). Page context is now sent with every non-LinkedIn description, one visible item per line.
 
 Final Integration Checklist: items 1–2 matter when the Milestone 4 fields are released to the evaluator; items 3–6 are shared-contract additions with no evaluator change.
+
+### Feature 15 — Source Intelligence: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Source Intelligence (the approved Feature 15 contract; Customer Success PRD v1.13 §19, Core Platform TDD v1.16 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule or Ghost Job Risk logic changed; no migration; no new semantic call.**
+
+1. **What it reads from the evaluator side, as stored:** `Evaluation.status`, `Recommendation.decision` (`APPLY` / `REVIEW` = useful, `SKIP` = not useful; the latest COMPLETED evaluation per opportunity), and `SemanticOperationAttempt.estimatedCost` with its pricing currency (the same known/unknown rule as `/budget`). It writes nothing to these tables.
+2. **Evaluator versions:** rates span whatever evaluator versions produced the stored decisions. There is no filtering by evaluator version and no second "normalized historical recommendation" layer. At final integration, the integrated evaluator (for example the compensation-basis salary policy) may change the distribution of future Apply / Review / Skip decisions; Source Intelligence will report them as they occur. Decide then whether a version filter is wanted.
+3. **Source identity:** keys on `source`/`sourceType`/`externalId`, `retrievalSourceId` and the extension's `sourceMetadata.capture.site`, never on `reportedSource` (rule above, line 263).
+4. **Shared code touched (no behaviour change):** the known-site host table moved from `apps/web/src/server/extension-capture.ts` to `packages/core/src/known-sites.ts` (extension capture imports it); the dashboard's "No longer listed" SQL is exported once as `noLongerListedCondition`; `costBasis()` on the budget service shares the report currency.
+5. **Test infrastructure:** `vitest.integration.config.ts` and `playwright.config.ts` now refuse to start unless the target database's name ends in `_test`. Codex integration and E2E runs need `TEST_DATABASE_URL` set to an isolated `_test` database.
+6. **Deterministic first record (persistence only):** `PrismaEvaluationTaskRepository.recordSemanticOperation`'s fallback for an evaluation with no `sourceRecordId` now takes the opportunity's first source record by `createdAt ASC, id ASC` (was `createdAt` only), matching `originatingVersion`, which `loadSubject` already uses. It changes only which tied record an attempt is attributed to; no evaluator input, routing or result changes.
+
+Final Integration Checklist: item 2 matters when the evaluator branch is combined; items 1, 3–6 need no evaluator change.

@@ -15,3 +15,5 @@ export * from "./opportunity-lifecycle";
 export * from "./budget";
 export * from "./application";
 export * from "./extension-capture";
+export * from "./known-sites";
+export * from "./source-intelligence";

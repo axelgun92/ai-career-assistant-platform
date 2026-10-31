@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDateTime } from "@/components/budget/budget-format";
 import { pluralize } from "@/components/budget/budget-format";
 import { retrievalSummary, runStatusLabels, scheduleLabel, sourceHealthLabels, sourceHealthTone } from "./source-labels";
 import type { AdapterView, RunView, SourceHealthView, SourceView } from "./types";
+import { sourceValueSummary } from "./insight-labels";
 
 const defaultScheduleHours = 12;
 
@@ -186,6 +188,11 @@ function SourceCard({ source }: { source: SourceView }) {
         {source.lastRunAt ? formatDateTime(source.lastRunAt) : "never"}
       </p>
       {showHealth ? <SourceHealthLines source={source} /> : null}
+      {source.insights ? (
+        <p className="source-value-strip">
+          <Link href={`/sources/${source.id}/insights`}>{sourceValueSummary(source.insights)}</Link>
+        </p>
+      ) : null}
       {source.enableBlockedReason && !archived ? <p className="field-help">Cannot be enabled: {source.enableBlockedReason}</p> : null}
       <div className="source-actions">
         {archived ? (

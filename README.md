@@ -128,7 +128,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 - monthly AI budget with reservation/reconciliation, warnings, daily/weekly evaluation and monthly output-token limits, and deferral, resume and cancel;
 - dashboard search, filters, sorting and summaries;
 - Task 7 normalized opportunity facts: salary minimum/maximum and currency, work arrangement, seniority, department (no longer user-facing since October 26, 2026), employment type, closing date, and residency requirement/regions, with provenance and Unknown preserved;
-- shared-normalization convergence (October 25, 2026; awaiting review): a stated compensation range keeps its numbers and basis (base or OTE) in its original currency; explicit work-authorization, sponsorship, relocation and employer-of-record facts for every job, shown against your own "Work eligibility" (profile page) so a requirement you already meet raises no warning; explicit team statements fill the department; and the application URL is captured with how it was found (an apply link, the page's own application form, or the source's posting page);
+- shared-normalization convergence (October 25, 2026; committed; accepted with Feature 14B on October 29, 2026; earlier: awaiting review): a stated compensation range keeps its numbers and basis (base or OTE) in its original currency; explicit work-authorization, sponsorship, relocation and employer-of-record facts for every job, shown against your own "Work eligibility" (profile page) so a requirement you already meet raises no warning; explicit team statements fill the department; and the application URL is captured with how it was found (an apply link, the page's own application form, or the source's posting page);
 - final cross-source batch (October 27, 2026; committed; awaiting a small targeted live verification): page details read with or without a colon, labelled regional pay ranges shown side by side as the Salary, a bonus kept apart from the salary, annualized hourly pay, the posting's own title over a careers-site title, the page's full description over a shortened copy, and the requisition ID shown;
 - cross-source correction (October 26, 2026; committed as checkpoint v7 `6536ef8`): one shared contract for every supported source. A remote role's location is where it may be done from, never an optional office. Regional pay tiers have no single range. Stated time-zone preferences, seniority labels and posting ages are kept. Job-page details shown as separate items are read, and other jobs' lists never enter the posting. The opportunity shows Salary, not a separate Compensation row, and Department is no longer a product field;
 - application tracker (Task 8 completion pass complete): stages and outcomes with calendar-date rules, rescheduling follow-ups, interviews, contacts, notes, next-action and due visibility, and stale-write protection;
@@ -158,22 +158,26 @@ Model routing is treated as an execution detail. It does not change the meaning 
   - We Work Remotely reads its all-jobs RSS feed (Customer Success titles kept locally); Wellfound waits at least 12 seconds between requests;
   - the browser-extension companion is not part of 14A: it is Feature 14B.
 
+- Feature 14B, the browser-extension companion (complete, committed `e6bacc6`; live acceptance passed October 29, 2026, `2ccdc7f`; Feature 14 is complete):
+  - a Chrome Manifest V3 extension (`apps/extension`) that saves the job page you are viewing, only when you ask, into the same ingestion, deduplication, provenance and lifecycle as every other source;
+  - it reads structured job data, LinkedIn's job-detail areas only (on LinkedIn job pages), your selected text, or (not on LinkedIn) the page's main content; one shared job-text fallback reads facts a job's description states when the source supplied none, for every ingestion path; a recognized currency symbol is read as its currency and a stated currency code takes precedence;
+  - saving never evaluates; "Request evaluation" uses the existing evaluation path and the popup shows the persisted result;
+  - browsers are paired on the Extension page (`/extension`) with a revocable credential shown once and stored only as a hash. See "5b. The browser extension" below.
+
 ### In Progress
 
-- Feature 14B, the browser-extension companion, is committed (`e6bacc6`) and stays open (Feature 14 is not complete until it is accepted):
-  - **The correction from its local acceptance** is implemented and verified (October 23, 2026), and awaits review and a minimal retest; it is not committed. It is a shared Core job-text fallback: facts a job's description states, when the source supplied none (company, location, pay, work arrangement, employment type, dates, time-zone requirement), are read from that text by one shared reader for every ingestion path. A bare "$" is now US dollars only when the job is clearly in the U.S. (superseded October 27, 2026: a recognized currency symbol is read directly as its currency, and a stated currency code takes precedence);
-  - a Chrome Manifest V3 extension (`apps/extension`) that saves the job page you are viewing, only when you ask, into the same ingestion, deduplication, provenance and lifecycle as every other source;
-  - it reads structured job data, LinkedIn's job-detail areas only (on LinkedIn job pages), your selected text, or (not on LinkedIn) the page's main content;
-  - saving never evaluates; "Request evaluation" uses the existing evaluation path and the popup shows the persisted result;
-  - browsers are paired on the new Extension page (`/extension`) with a revocable credential shown once and stored only as a hash. See "5b. The browser extension" below.
-- Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`) and 14A (`dd77d29`) are complete.
+- Nothing is in progress: Feature 16, job-market analytics, is next and has not started.
+- Feature 15, Source Intelligence, is complete (implemented, verified and accepted October 31, 2026):
+  - **Source insights** (`/sources/insights`, part of Sources): for each configured source, and separately for jobs you collected with the extension or entered yourself, the listings found, new and already-known jobs, useful jobs (Apply or Review), applications, interviews and offers, evaluation cost per useful job, geographic and employer-ATS coverage and retrieval reliability, for the last 7, 30 or 90 days, all time or a custom range;
+  - each job is credited to the source that found it first; other sources that also listed it are shown as presence and never added to the totals;
+  - jobs waiting on the AI budget or a usage limit, not yet evaluated, or not evaluated because of a failure never count against a source; every rate shows its counts and a sample label, and nothing ranks, judges or disables a source;
+  - a drill-down per source (`/sources/<id>/insights`) and a short last-30-days summary on each source card; read-only, no migration. See "Source insights" below.
+- Features 11A (`fad2341`), 11B (`2a1d8c2`), 12 (`f10a02b`), 13 (`d1bf217`), 14A (`dd77d29`) and 14B (`e6bacc6`, accepted at `2ccdc7f`) are complete.
 - The Features 1–10 Gap Closure (`d573acf`) and the read-only gap audit of features 1–10 that preceded it are complete.
 - Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete.
 
 ### Main-product work still required before final acceptance
 
-- feature 14B — browser extension companion (implemented, awaiting review and local acceptance; Feature 14 is not complete until it is accepted);
-- feature 15 — source intelligence;
 - feature 16 — job-market analytics;
 - feature 17 — personal job-search analytics;
 - feature 18 — company intelligence;
@@ -272,7 +276,7 @@ The current development order (October 16, 2026) is:
 
 1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
 2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit is complete and the Features 1–10 Gap Closure is implemented and under review;
-3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, implemented, awaiting review and local acceptance), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, accepted October 29, 2026; earlier: implemented, awaiting review and local acceptance), source intelligence, job-market analytics, personal job-search analytics, and company intelligence;
 4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
 5. add the later add-ons (features 19–23) afterward.
 
@@ -317,7 +321,7 @@ pnpm app:doctor               # read-only check of everything above
 | Optional (accepted defaults) | `AI_DEFAULT_REASONING_EFFORT`, `AI_OPERATION_EXECUTION_OVERRIDES_JSON`, `AI_PRICING_*`, `AI_*_COST_PER_MILLION_TOKENS`, `AI_LONG_CONTEXT_*`, `AI_PRICING_EFFECTIVE_FROM` |
 | Leave unset | `AI_EXECUTION_POLICY_VERSION`: the policy version is built into the evaluator and changes with it. An override goes stale, mislabels evaluations and weakens the worker's queued-policy check; `pnpm app:doctor` warns about one. |
 | Retrieval (optional) | `RETRIEVAL_WORKER_POLL_MS` (default 60000), `RETRIEVAL_USER_AGENT` (default: an identifying product string), `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` (Adzuna also stays disabled until it is verified), `RETRIEVAL_BROWSER_EXECUTABLE` (a Chromium or Chrome binary for browser-assisted sources, LinkedIn; without it they cannot be enabled) |
-| Test-only (optional) | `TEST_DATABASE_URL`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE` |
+| Test-only | `TEST_DATABASE_URL` (required for integration and E2E tests: an isolated database whose name ends in `_test`), `PLAYWRIGHT_CHROMIUM_EXECUTABLE` (optional) |
 
 Without an OpenAI key (empty, or the old `YOUR_OPENAI_API_KEY` placeholder) the product still runs: capture, dashboard, profile, budget, applications and existing results all work. Requesting an evaluation returns "AI evaluation is not configured" (nothing is queued), and the worker refuses to start with a clear message. Changing AI settings requires restarting the web app and worker.
 
@@ -357,10 +361,12 @@ Health check: `GET /api/health` returns `{"status":"ok","service":"ai-career-pla
 - **What a run does.** Only listings whose title contains a Customer Success role-family term are kept.
   - A new listing is normalized and deduplicated like a manual capture.
   - A listing seen again unchanged only updates its last-seen time.
-  - A changed listing is stored as a new, linked version. When it is the listing the opportunity was found from, its newest version becomes the opportunity's current facts and description (October 23, 2026 correction, awaiting review). Earlier versions and their provenance are kept, attached copies from other sites and manual entries are never re-projected, and nothing is evaluated automatically.
+  - A changed listing is stored as a new, linked version. When it is the listing the opportunity was found from, its newest version becomes the opportunity's current facts and description (October 23, 2026 correction; committed; accepted with Feature 14B on October 29, 2026; earlier: awaiting review). Earlier versions and their provenance are kept, attached copies from other sites and manual entries are never re-projected, and nothing is evaluated automatically.
   - Run history on `/sources` shows each run's counts and, if it failed, a safe reason.
   - **Coverage per run:** SmartRecruiters reads up to the newest 500 postings, Workday the first 100 postings its listing endpoint returns (5 pages of 20; Workday does not state the order), Workable a bounded window of its search results (up to 5 pages, relevance order) and Wellfound up to 11 pages of its role page. Sources whose lists lack full descriptions (SmartRecruiters, Workday) fetch at most 25 details per run, new listings first.
 - **Verifying a source contract.** `pnpm sources:verify <adapter> --config '<json>' --raw-dir <directory outside the repository>` makes that adapter's single verification request and checks the mapping (for LinkedIn, one search page and its first job page in a fresh logged-out browser). `--offline <directory>` re-checks saved responses without the network. It touches no database. Only run it with approval for that source.
+
+- **Source insights (feature 15).** `/sources/insights` (Source insights, next to Manage sources) shows what each source has contributed, from recorded history only: listings found, new jobs (it found them first), already known on arrival, repost on the same source, possible duplicates and exclusive jobs; jobs evaluated and useful (Apply or Review, with Apply alone shown too); applications, interviews and offers; evaluation cost per useful job (completed evaluations only; failed evaluations and unknown costs shown apart, never as zero); geography and employer-ATS coverage; and retrieval success. Choose the last 7, 30 or 90 days, all time or a custom range, group configured sources by adapter, and include archived sources. Each job is credited to the source that found it first; a source that listed it later shows it as presence ("also listed"), never in its totals. Jobs waiting on the AI budget or a usage limit, being evaluated, failed, dismissed, no longer listed or not yet evaluated are counted in their own states and never lower a source's rates. Rates under 5 are labelled an insufficient sample and never order sources; 5–19 is a small sample. Jobs you saved with the extension or entered yourself are a separate section, never compared with automated sources. Each source's name opens its drill-down with every listing's provenance; the same data is at `GET /api/sources/insights` and `GET /api/sources/<id>/insights`. Nothing on these pages changes, ranks or disables a source.
 
 ### 5b. The browser extension (Feature 14B)
 
@@ -393,11 +399,11 @@ pnpm test:e2e               # Playwright; starts its own dev server unless one i
 
 Test-only startup notes:
 
-- Integration and E2E tests use `DATABASE_URL` unless `TEST_DATABASE_URL` is set. They clean up what they create and restore the budget and active profile, but a separate database is recommended.
+- Integration and E2E tests run only against an isolated test database: `TEST_DATABASE_URL` (or `DATABASE_URL`) must name a database ending in `_test`, such as `ai_career_assistant_test`; any other target, including the normal `ai_career_assistant` and the acceptance database, is refused before a test starts (Feature 15). They clean up what they create and restore the budget and active profile.
 - Stop any `pnpm dev` you started yourself before `pnpm test:e2e`, or Playwright reuses it with your environment. Do **not** run a real worker during E2E (the tests run their own deterministic worker).
 - E2E always uses a deterministic, non-live `OPENAI_API_KEY`, even when `.env` holds a real key: `playwright.config.ts` replaces it for the test runner, its helpers and the web server. Other AI settings in `.env` still apply. No E2E path calls a provider.
 - If Playwright's bundled Chromium is unavailable, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a local Chrome/Chromium.
-- E2E projects run in order: `chromium` → `profile-management` → `budget` → `dashboard` → `acceptance` (later projects change global profile/budget state).
+- E2E projects run in order: `chromium` → `profile-management` → `budget` → `dashboard` → `acceptance` → `extension` → `source-insights` (later projects change global profile/budget state; Source insights reads platform-wide totals, so it runs last).
 
 ### 7. Real-evaluation workflow
 

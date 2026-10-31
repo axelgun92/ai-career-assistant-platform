@@ -303,7 +303,8 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
               select: {
                 source: true,
                 sourceRecords: {
-                  orderBy: { createdAt: "asc" },
+                  // The first source record by (createdAt, id), as originatingVersion.
+                  orderBy: [{ createdAt: "asc" }, { id: "asc" }],
                   select: { id: true, source: true },
                   take: 1,
                 },

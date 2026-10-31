@@ -2,7 +2,8 @@ import {
   cleanCapturedText,
   cleanPageUrl,
   extensionCaptureSchema,
-  isLinkedInHost,
+  knownSiteForHost,
+  normalizedSiteHost,
   linkedInJobIdFromUrl,
   RetrievedListingNormalizationError,
   type ApplicationUrlBasis,
@@ -34,45 +35,11 @@ import type { ZodError } from "zod";
 
 export const extensionSourceKey = "browser-extension";
 
-interface KnownSite {
-  key: string;
-  name: string;
-  category: SourceCategory;
-  matches: (host: string) => boolean;
-}
-
-const exactly = (...hosts: string[]) => (host: string) => hosts.includes(host);
-const within = (domain: string) => (host: string) => host === domain || host.endsWith(`.${domain}`);
-
-// The sites the server recognizes and the category each one's listings
-// carry. Category decides application-link precedence (ATS and employer
-// links outrank job boards, which outrank aggregators); every other host is
-// an aggregator, the lowest precedence, so a capture from an unrecognized
-// site never replaces a stronger link.
 // Sites whose structured validThrough is a rolling listing expiry that moves
 // forward on every visit (Welcome to the Jungle and Otta: 2026-11-10 one day,
 // 2026-11-12 two days later), not an application deadline: it states no
 // closing date. A deadline the posting itself states is still read.
 const rollingValidThroughSites = new Set(["welcome-to-the-jungle", "otta"]);
-
-const knownSites: readonly KnownSite[] = [
-  { key: "greenhouse", name: "Greenhouse", category: "ATS", matches: exactly("boards.greenhouse.io", "job-boards.greenhouse.io") },
-  { key: "lever", name: "Lever", category: "ATS", matches: exactly("jobs.lever.co") },
-  { key: "ashby", name: "Ashby", category: "ATS", matches: exactly("jobs.ashbyhq.com") },
-  { key: "workday", name: "Workday", category: "ATS", matches: within("myworkdayjobs.com") },
-  { key: "smartrecruiters", name: "SmartRecruiters", category: "ATS", matches: exactly("jobs.smartrecruiters.com") },
-  { key: "workable", name: "Workable", category: "ATS", matches: exactly("apply.workable.com") },
-  { key: "workable-jobs", name: "Workable Jobs", category: "JOB_BOARD", matches: exactly("jobs.workable.com") },
-  { key: "linkedin", name: "LinkedIn", category: "JOB_BOARD", matches: isLinkedInHost },
-  { key: "welcome-to-the-jungle", name: "Welcome to the Jungle", category: "JOB_BOARD", matches: within("welcometothejungle.com") },
-  { key: "otta", name: "Otta", category: "JOB_BOARD", matches: within("otta.com") },
-  { key: "we-work-remotely", name: "We Work Remotely", category: "JOB_BOARD", matches: within("weworkremotely.com") },
-  { key: "remote-ok", name: "Remote OK", category: "JOB_BOARD", matches: (host) => within("remoteok.com")(host) || within("remoteok.io")(host) },
-  { key: "himalayas", name: "Himalayas", category: "JOB_BOARD", matches: within("himalayas.app") },
-  { key: "working-nomads", name: "Working Nomads", category: "JOB_BOARD", matches: within("workingnomads.com") },
-  { key: "wellfound", name: "Wellfound", category: "MARKETPLACE", matches: within("wellfound.com") },
-  { key: "adzuna", name: "Adzuna", category: "AGGREGATOR", matches: (host) => /(^|\.)adzuna\.[a-z.]+$/.test(host) },
-];
 
 export interface CaptureSite {
   host: string;
@@ -82,9 +49,14 @@ export interface CaptureSite {
   knownHost: boolean;
 }
 
+// The site a captured page belongs to, from the shared known-site table
+// (Core known-sites). Category decides application-link precedence (ATS and
+// employer links outrank job boards, which outrank aggregators); every other
+// host is an aggregator, the lowest precedence, so a capture from an
+// unrecognized site never replaces a stronger link.
 export function classifyCaptureSite(pageUrl: string): CaptureSite {
-  const host = new URL(pageUrl).hostname.toLowerCase().replace(/^www\./, "");
-  const known = knownSites.find((site) => site.matches(host));
+  const host = normalizedSiteHost(new URL(pageUrl).hostname);
+  const known = knownSiteForHost(host);
   if (known) return { host, key: known.key, name: known.name, category: known.category, knownHost: true };
   return { host, key: host, name: host, category: "AGGREGATOR", knownHost: false };
 }

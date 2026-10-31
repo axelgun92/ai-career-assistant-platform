@@ -62,6 +62,18 @@ export interface SourceHealthView {
   emptyResult: boolean;
 }
 
+// The compact Source Intelligence figures on a source card (feature 15).
+export interface SourceValueStripView {
+  discovered: number;
+  new: number;
+  evaluated: number;
+  useful: number;
+  usefulSample: string;
+  costPerUseful: number | null;
+  costIncomplete: boolean;
+  currency: string | null;
+}
+
 export interface SourceView {
   id: string;
   adapterKey: string;
@@ -78,4 +90,6 @@ export interface SourceView {
   configFields: AdapterConfigFieldView[];
   runs: RunView[];
   health: SourceHealthView;
+  // Null when Source Intelligence could not be loaded (management still works).
+  insights?: SourceValueStripView | null;
 }

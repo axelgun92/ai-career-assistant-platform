@@ -1,9 +1,13 @@
 import "dotenv/config";
 
-// Opt-in: run integration tests against a separate database.
-if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { assertIsolatedTestDatabase } from "./tests/support/test-database-guard";
+
+// Run integration tests against a separate database (TEST_DATABASE_URL), and
+// refuse any target that is not an isolated test database.
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+assertIsolatedTestDatabase(process.env.DATABASE_URL, "Integration tests");
 
 export default defineConfig({
   resolve: {

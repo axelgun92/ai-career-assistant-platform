@@ -129,8 +129,9 @@ async function provenanceSnapshot(opportunityId: string) {
       jobDescription: true, title: true, companyId: true, location: true, salaryText: true, domain: true,
     },
   });
-  const sourceRecords = await database.sourceRecord.findMany({ where: { opportunityId }, orderBy: { createdAt: "asc" } });
-  const fieldProvenance = await database.fieldProvenance.findMany({ where: { opportunityId }, orderBy: { createdAt: "asc" } });
+  // Rows written in one transaction share createdAt; id makes the order deterministic.
+  const sourceRecords = await database.sourceRecord.findMany({ where: { opportunityId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+  const fieldProvenance = await database.fieldProvenance.findMany({ where: { opportunityId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
   return { opportunity, sourceRecords, fieldProvenance };
 }
 

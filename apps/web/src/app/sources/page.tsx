@@ -3,6 +3,8 @@ import { SourcesManager } from "@/components/sources/sources-manager";
 import type { RunView, SourceHealthView, SourceView } from "@/components/sources/types";
 import type { RetrievalRunRecord } from "@ai-career/database";
 import { getRetrievalService, type SourceSummary } from "@/server/retrieval-service";
+import { getSourceInsightsService, type SourceValueStrip } from "@/server/source-intelligence-service";
+import { SourcesSectionNav } from "@/components/sources/source-insights";
 
 export const metadata = { title: "Sources" };
 
@@ -45,6 +47,14 @@ export default async function SourcesPage() {
   await connection();
   const service = getRetrievalService();
   let sources: SourceView[];
+  // Source Intelligence figures are optional here: if they cannot be read,
+  // source management still works.
+  let strips: Record<string, SourceValueStrip> = {};
+  try {
+    strips = await getSourceInsightsService().valueStrips();
+  } catch (error) {
+    console.error("Source value figures could not load", { errorName: error instanceof Error ? error.name : "UnknownError" });
+  }
   try {
     const listed = await service.list({ includeArchived: true });
     const now = new Date();
@@ -68,6 +78,7 @@ export default async function SourcesPage() {
         configFields: [...(source.adapter?.configFields ?? [])],
         runs: runs.slice(0, recentRuns).map(runView),
         health: healthView(source.health, now),
+        insights: strips[source.id] ?? null,
       });
     }
   } catch (error) {
@@ -85,6 +96,7 @@ export default async function SourcesPage() {
   return (
     <main className="sources-page">
       <h1>Sources</h1>
+      <SourcesSectionNav current="manage" />
       <p>
         Automated discovery collects listings from the sources you add here and enable. Only listings whose title
         matches a Customer Success role family are kept. Retrieved opportunities arrive unevaluated; evaluating one

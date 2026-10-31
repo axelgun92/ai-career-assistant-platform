@@ -396,6 +396,19 @@ const currentListings = (alias: string) => Prisma.sql`
    AND ${Prisma.raw(alias)}."trackingScopeKey" = COALESCE(${Prisma.raw(`${alias}s`)}."trackingScopeKey", '')
   WHERE ${Prisma.raw(alias)}."opportunityId" = o."id" AND ${Prisma.raw(alias)}."state" <> 'UNTRACKED'`;
 
+// Whether the opportunity (alias o) is no longer listed (feature 13): every
+// current-scope listing from a removal-capable source is confirmed removed,
+// and no source saw it afterwards. Shared by the dashboard row and Source
+// Intelligence.
+export const noLongerListedCondition = Prisma.sql`(
+  EXISTS (SELECT 1 ${currentListings("la")} AND la."removalCapable")
+  AND NOT EXISTS (SELECT 1 ${currentListings("lb")} AND lb."removalCapable" AND (lb."state" <> 'REMOVED' OR lb."removedAt" IS NULL))
+  AND NOT EXISTS (
+    SELECT 1 ${currentListings("lc")}
+      AND lc."lastSeenAt" > (SELECT MAX(ld."removedAt") ${currentListings("ld")} AND ld."removalCapable")
+  )
+)`;
+
 // Retrieval facts for the row: the first retrieved record's source name and
 // whether any changed observation exists.
 const retrievalStatus = Prisma.sql`(
@@ -404,14 +417,7 @@ const retrievalStatus = Prisma.sql`(
   ORDER BY sr."createdAt" ASC, sr."id" ASC LIMIT 1
 ) AS "foundVia", EXISTS (
   SELECT 1 FROM "SourceRecord" sr WHERE sr."opportunityId" = o."id" AND sr."previousSourceRecordId" IS NOT NULL
-) AS "listingChanged", (
-  EXISTS (SELECT 1 ${currentListings("la")} AND la."removalCapable")
-  AND NOT EXISTS (SELECT 1 ${currentListings("lb")} AND lb."removalCapable" AND (lb."state" <> 'REMOVED' OR lb."removedAt" IS NULL))
-  AND NOT EXISTS (
-    SELECT 1 ${currentListings("lc")}
-      AND lc."lastSeenAt" > (SELECT MAX(ld."removedAt") ${currentListings("ld")} AND ld."removalCapable")
-  )
-) AS "noLongerListed"`;
+) AS "listingChanged", ${noLongerListedCondition} AS "noLongerListed"`;
 
 // The strongest unresolved stored duplicate relationship, either direction.
 const duplicateStatus = Prisma.sql`(
