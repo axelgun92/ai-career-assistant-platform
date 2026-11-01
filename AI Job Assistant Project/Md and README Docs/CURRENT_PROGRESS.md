@@ -1,15 +1,15 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 1, 2026
+**Last updated:** October 31, 2026
 
 ## Current Objective
 
-**Feature 18, Company Intelligence, is complete: implemented, verified and accepted by Alex on November 1, 2026, and committed. Main-product features 1–18 are complete.** It was built to the approved Feature 18 contract (planning audit approved November 1, 2026, decisions D1–D19 as recommended) and completes main-product features 1–18. Details are in the Feature 18 section below.
+**Feature 18, Company Intelligence, is complete: implemented, verified and accepted by Alex on October 31, 2026, and committed. Main-product features 1–18 are complete.** It was built to the approved Feature 18 contract (planning audit approved October 31, 2026, decisions D1–D19 as recommended) and completes main-product features 1–18. Details are in the Feature 18 section below.
 
 In order, what follows:
 
-1. Done: Alex's review and acceptance of Feature 18 (November 1, 2026, after the approved pre-commit corrections) and the checkpoint commit. *(Earlier step: "Next: Alex's review of Feature 18, then the checkpoint commit on Alex's approval.")*
+1. Done: Alex's review and acceptance of Feature 18 (October 31, 2026, after the approved pre-commit corrections) and the checkpoint commit. *(Earlier step: "Next: Alex's review of Feature 18, then the checkpoint commit on Alex's approval.")*
 2. Next: the deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge (not started).
 
 *(The objective below, from October 31, 2026, is kept as written; Feature 18 has now been implemented.)*
@@ -186,11 +186,11 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 ## Recently Completed (October 14–31, 2026)
 
-### Feature 18 — Company Intelligence (implemented, verified and accepted November 1, 2026; committed)
+### Feature 18 — Company Intelligence (implemented, verified and accepted October 31, 2026; committed)
 
 **What it does.** A read-only view of what the system knows about each company over time, from the listings collected and Alex's own applications (Development Plan item 18: repost/frequency patterns, hiring speed, remote friendliness, response patterns, recurring roles), with every term replaced by an observable fact.
 
-**Approved contract (November 1, 2026; D1–D19 as recommended).** Recorded in Customer Success PRD v1.16 §19 and Core Platform TDD v1.19 §51.
+**Approved contract (October 31, 2026; D1–D19 as recommended).** Recorded in Customer Success PRD v1.16 §19 and Core Platform TDD v1.19 §51.
 - **Identity (D1):** a company is the Company rows grouped by `COALESCE(normalizedName, id)` (the dashboard company filter), shown under the oldest row's name with its name variants; any member id resolves to it; no fuzzy, alias, domain or parent merging; jobs without a company counted only; the page discloses that legal entities and brands stay separate.
 - **Routes (D2):** `/companies` ("Companies" after Market) and `/companies/[id]`; `GET /api/companies`, `GET /api/companies/[id]` (400 invalid, 404 unknown or malformed id; a valid company always opens, possibly with no roles observed in the window but with its applications by application date); the opportunity page links its company.
 - **Observed postings (D3):** distinct canonical opportunities by `firstSeenAt` month in the budget time zone; "counts what your sources collected, not the company's actual hiring"; changed postings; unresolved probable duplicates disclosed, not subtracted.
@@ -213,7 +213,7 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 
 **Tests.** Unit `company-intelligence.test.ts` (27: identity grouping, query parsing, roles counted once, listing state, listing duration, months by time zone, probable duplicates, Feature 13 reposts, requisition relisting vs cross-source duplicates, closed elsewhere / unchanged, recurring groups and exact titles, arrangement and regions, Feature 17 outcomes, timing and inconsistent dates, values vs median, windows, company type, index filters / sorts / paging, no score fields; pre-commit corrections: index column Feature 13 only and a role with both signals counted once, index cohort needs a role in the window, listing-level duration never combining two listings) and `companies-ui.test.tsx` (5: 400 before reading, 404, index and detail wording with no hiring, ghost, score or label terms, timing text); navigation test extended. Integration `company-intelligence.test.ts` (6, isolated test database: group ids, stored facts read, scoped reads, detail, history and timing, index; table counts unchanged by a read). E2E `companies.spec.ts` (2, own project after my-search: nav, search and filters, invalid query, detail sections, legacy id, 404, opportunity-page link).
 
-**Verified:** November 1, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 76 files / 1,856 tests; integration 43 files / 354 tests; E2E 54/54 (2 new in the `companies` project); web and extension builds; `git diff --check` clean; `apps/web/next-env.d.ts` restored.
+**Verified:** October 31, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 76 files / 1,856 tests; integration 43 files / 354 tests; E2E 54/54 (2 new in the `companies` project); web and extension builds; `git diff --check` clean; `apps/web/next-env.d.ts` restored.
 
 **Known limitations.** Company identity is exact normalized name only: legal-entity strings (often from Workday) and brands split one employer. Automated retrieval began October 18, 2026, so removal, repost and duration facts are sparse for now and show as insufficient samples. Stage changes are recorded without a date, so progress timing is when Alex recorded the change. Per-company personal samples are almost always below 5. Unresolved probable duplicates may inflate a company's role count (disclosed).
 

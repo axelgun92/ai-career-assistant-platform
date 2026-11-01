@@ -187,7 +187,7 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   rates excluding processes in progress, recommendation at application from timing evidence,
   evaluator view vs outcomes by title group, profile- and version-grouped Genuine Gaps, no
   accuracy metric, no migration (Core AI Framework PRD v1.17, Customer Success PRD v1.15, Core Platform TDD v1.18, Customer Success TDD v1.15)
-→ Feature 18, Company Intelligence: complete and accepted November 1, 2026: read-only company view
+→ Feature 18, Company Intelligence: complete and accepted October 31, 2026: read-only company view
   (/companies index and /companies/[id], "Companies" nav after Market, GET /api/companies and /api/companies/[id]),
   companies grouped by exact normalized name, observed postings (never "hires"), Feature 13 listing state and reposts plus
   requisition relisting, recurring role groups apart from reposts, arrangement and hiring regions (no "remote-friendly" label),

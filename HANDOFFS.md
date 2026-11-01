@@ -1359,12 +1359,12 @@ Personal Job-Search Analytics (the approved Feature 17 contract; Customer Succes
 
 Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.
 
-### Feature 18 — Company Intelligence: shared-boundary record (November 1, 2026; Claude main-product workstream)
+### Feature 18 — Company Intelligence: shared-boundary record (October 31, 2026; Claude main-product workstream)
 
-**Date:** 2026-11-01\
+**Date:** 2026-10-31\
 **From:** Claude main-product workstream\
 **To:** Codex evaluator workstream / final integration\
-**Status:** Implemented, verified on the isolated test database and accepted by Alex (November 1, 2026); committed
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
 
 Company Intelligence (the approved Feature 18 contract; Customer Success PRD v1.16 §19, Core Platform TDD v1.19 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic, deduplication, retrieval or listing-ledger behaviour changed; no migration; no new semantic call; no company score.** It completes main-product features 1–18.
 

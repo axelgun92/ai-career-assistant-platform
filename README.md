@@ -167,7 +167,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 ### In Progress
 
 - Nothing is in progress: main-product features 1–18 are complete; the deliberate evaluator/product integration is next and has not started.
-- Feature 18, Company Intelligence, is complete (implemented, verified and accepted November 1, 2026):
+- Feature 18, Company Intelligence, is complete (implemented, verified and accepted October 31, 2026):
   - **Companies** (`/companies`, a top-level entry after Market) and a page per company (`/companies/[id]`): what has been observed about each company over time — the distinct roles your sources collected by the month first seen (a job on several sources counts once; a posting is never called a hire), which are still listed, roles listed again after removal or relisted under a new listing ID with the same requisition, recurring role groups (kept apart from reposts), how roles are offered and who may be hired (no "remote-friendly" label), the company type the evaluator identified, and your own applications there with their outcomes and timing (observed listing duration and your process timing instead of "hiring speed");
   - companies are grouped by exact normalized name (different legal entities or brands stay separate, and the page says so); no company score, ranking or label; the opportunity page links its company; `GET /api/companies` and `GET /api/companies/[id]` return the same data; read-only, no migration. It completes main-product features 1–18.
   - (earlier: "Nothing is in progress: Feature 18, company intelligence, is next and has not started.")
@@ -193,7 +193,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 - feature 16 — job-market analytics (complete, October 31, 2026);
 - feature 17 — personal job-search analytics (complete, October 31, 2026);
-- feature 18 — company intelligence (complete, November 1, 2026);
+- feature 18 — company intelligence (complete, October 31, 2026);
 - only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 ### Later add-ons only (features 19–23)

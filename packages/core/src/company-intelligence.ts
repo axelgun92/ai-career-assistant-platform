@@ -17,7 +17,7 @@ import { geographyBuckets, sampleLabel, siRate, sourceInfoOf, type SiGeographyBu
 // company over time, from the job listings collected and the user's own
 // applications. Pure definitions over facts the repository reads; nothing here
 // queries, writes, evaluates, infers or estimates. The approved contract (CS
-// PRD v1.16 §19, November 1, 2026):
+// PRD v1.16 §19, October 31, 2026):
 // - A company is a normalized-name group of Company rows (the dashboard's
 //   company filter grouping); different names for one employer stay apart.
 // - A role is one canonical opportunity: a job on several sources counts once.
