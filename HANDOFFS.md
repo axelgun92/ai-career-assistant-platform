@@ -1374,3 +1374,112 @@ Company Intelligence (the approved Feature 18 contract; Customer Success PRD v1.
 4. **Shared code touched (no behaviour change):** Feature 16's `latestCompletedEvaluation` is generic over the evaluation shape; Feature 17's calendar-day rule and first-discovery identity are exported as `dateOnlyDay` and `originIdentityOf` (typed on the fields they read; the private `sourceOf` was renamed), and `personalOutcomeOf` takes only the application fields it reads; the main navigation gains "Companies"; the opportunity page links its company.
 
 Final Integration Checklist: items 1 and 2 need only a check when the evaluator branch is combined (no change unless the paths or the Ghost Job Risk input change); items 3–4 need no evaluator change.
+
+### Handoff: Final Evaluator / Product Integration — Codex Work Package CX-1 to CX-4 (November 1, 2026)
+
+**Date:** 2026-11-01\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream\
+**Status:** Ready. Integration branch created; Codex work not started.
+
+The final integration audit was approved by Alex on November 1, 2026, with all recommended decisions. Alex assigned CX-1 to CX-4 to Codex. Claude prepared only the integration branch and this handoff: no merge, no code change, no migration, no database use, and no live, provider, paid or evaluator call.
+
+#### Completed
+
+- Integration branch `integration/final-evaluator-product` created from the product checkpoint `b1b15afd7119032d4932664b74f8ea37407691d8`. Features 1–18 are complete and accepted there. The full gate passed on that commit:
+  - unit: 76 files / 1,856 tests;
+  - integration: 43 files / 354 tests;
+  - E2E: 54/54;
+  - typecheck, lint, Prisma validate, verify-migrations (24), and the web and extension builds.
+- Decisions approved by Alex:
+  - **D1 Ghost Job Risk:** Option 1 at the freeze. Posting-history facts stay withheld, so the stage stays deterministic UNKNOWN. No route, prompt, schema, cost or recommendation change. Adoption is a later coordinated feature.
+  - **D2 Evaluator checkpoint:** integrate `origin/codex/evaluator-live-diagnostic` @ `7d1f4f01ca5637807794860d69daf38ce2ff0ae8` ("Update Milestone 4 compensation basis policy", 2026-10-25). It is committed and pushed. `EVALUATOR_STATUS.md` §19/§20 and the earlier records here still call it "uncommitted"; that note is obsolete (Claude corrects the docs in CL-5).
+  - **D3 JD Reconstruction:** `cs-jd-reconstruction-v3` and `-v7` stay separate compatibility groups. No entry is added to `reconstructionCompatibilityGroups`.
+  - **D4 Resume Match:** `cs-resume-match-v2` and `-v4` stay separate groups. Historical v2 Genuine Gaps are kept as stored. No entry is added to `resumeMatchCompatibilityGroups`.
+  - **D5 Withheld fields:** release exactly the six listed under CX-2 and keep the other 15 withheld.
+  - **D6 Bundled profile:** adopt the evaluator branch's limitations restructure (the `experience-scope-boundary` statement becomes an EXPERIENCE / DIRECT_SAAS_CUSTOMER_SUCCESS limitation). It is imported and activated as a new profile version (Claude, CL-2).
+  - **D7 Recommendation:** keep the `Recommendation.evidenceReferences` default drift as the documented known exception. No migration.
+  - **D9 Branch strategy:** one controlled `--no-ff` merge of `7d1f4f0` into `integration/final-evaluator-product`. No rebase, no force-push. The final target branch is not yet chosen.
+  - **D10 Specs:** one spec bump at the freeze (Core PRD v1.19, CS PRD v1.17, Core TDD v1.20, CS TDD v1.17).
+  - **D8 Live acceptance:** NOT authorized yet. No live, provider or paid call until Alex authorizes it separately.
+
+#### Files Changed
+
+- `HANDOFFS.md` (this record).
+- `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` (Current Objective).
+
+#### Current Contract / Assumptions
+
+- The product branch is never replaced by the evaluator branch. It forked at `5c132e8` (2026-10-05) and carries older copies of product-owned files.
+- A dry-run merge (`git merge-tree --write-tree b1b15af 7d1f4f0`, nothing written) gives 14 conflicted files:
+  - `database/prisma/schema.prisma`: the evaluator branch re-adds `residencyRequirement` / `residencyRegions`, which the product already has. Keep the product schema. The migration `20261016090000_opportunity_residency_requirement` is byte-identical on both sides.
+  - `database/src/evaluation-repository.ts`: keep the product's `loadSubject` (evaluated-source binding `evaluatedSource`, attached duplicate sources, as-of provenance, the full withheld list). Then apply only the CX-2 release.
+  - `packages/evaluation/src/contracts.ts`: keep the product contracts. CX-2 removes the evaluator's temporary `EvaluationCompensationBasis` in favour of the native Core field.
+  - `domains/customer-success/src/index.ts`: take the evaluator's exports and keep the product's (evaluated-source helpers).
+  - PRODUCT version wins (stale Task 7 copies on the evaluator branch):
+    - `packages/core/src/geography.ts`
+    - `packages/core/src/manual-opportunity.ts`
+    - `packages/core/src/manual-opportunity-service.ts`
+    - `packages/core/src/opportunity.ts`
+    - `packages/normalization/src/compensation.ts`, `index.ts`, `position.ts`, `residency.ts`
+    - `database/src/manual-opportunity-repository.ts`
+    - `tests/unit/manual-opportunity.test.ts`
+- Files that auto-merge but must be checked by hand:
+  - `domains/customer-success/src/extraction/explicit-facts.ts` and `extractor.ts`: keep the product's source binding; take the evaluator's salary and basis evidence.
+  - `packages/shared/src/server-environment.ts`: take policy `customer-success-semantic-policy-v4-final-terra-luna-gpt6` and `gpt6LunaPricingConfiguration`; keep the product's other settings.
+  - `tests/integration/production-evaluation-flow.test.ts`, `tests/unit/evaluation-api-worker.test.ts`, `pnpm-lock.yaml` (regenerate the lockfile with `pnpm install`; do not hand-edit it), `README.md`.
+- Do NOT add the evaluator branch's root-level `Md and README Docs/CURRENT_PROGRESS.md`. Claude merges its records into the canonical `CURRENT_PROGRESS.md` and `EVALUATOR_STATUS.md` (CL-5).
+- Evaluator side wins:
+  - `domains/customer-success/**`: v7 / v4 / v7 schemas, reconciliation, semantic closure, salary policy v3, hard filters v3, `profileLimitationSchema`, Recommendation dedup;
+  - `apps/web/src/server/semantic-execution-config.ts` routing overrides (Company Alignment and Burnout Risk on GPT-6 Luna; Job Evaluation, Organizational Maturity, Alex Fit and Opportunity Priority on GPT-5.6 Luna; JD Reconstruction and Resume Match on the GPT-5.6 Terra default);
+  - the bundled-profile limitations (D6).
+- Product consumers (Features 7 and 15–18) need no code change: every JSON path they read is unchanged (`schemas/results.ts` is identical on both branches).
+
+#### Next Task (Codex)
+
+1. **CX-1 — controlled merge.**
+   - On `integration/final-evaluator-product`, run `git merge --no-ff 7d1f4f0` and resolve the conflicts by the rules above.
+   - Run offline only: the Customer Success unit suites (`live-artifact-replay` skips without `LIVE_REPLAY_DIR`), the full unit suite, typecheck and lint.
+   - Done when the evaluator tests are green (apart from the CX-3 failures) and the product unit suite stays green.
+2. **CX-2 — field release and native `compensationBasis`.**
+   - Remove exactly `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions` and `compensationBasis` from `fieldsWithheldFromEvaluator`.
+   - Keep the other 15 withheld: `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`, `timeZoneRequirements`, `workAuthorizationRequirement`, `workAuthorizationRegions`, `visaSponsorship`, `relocationSupport`, `employerOfRecordRegions`, `seniorityLabel`, `workArrangements`, `compensationTiers`, `bonus`.
+   - Map `compensationBasis` from the native Core field and delete the temporary compatibility type.
+   - Confirm the released fields reach only the deterministic hard filters and salary evidence, not semantic prompt payloads. If any reaches a prompt, stop and report it.
+   - Integration tests, on `ai_career_assistant_test` only: `normalized-opportunity-filters`, `opportunity-residency`, `production-evaluation-flow`, `profile-limitations`.
+   - Expected results:
+     - OTE → salary Unknown;
+     - BASE or null basis → evaluated normally;
+     - residency selects the policy branch;
+     - work authorization unused;
+     - as-of provenance read.
+3. **CX-3:** reproduce the eight pre-existing unit failures (`EVALUATOR_STATUS.md` §20, reproduced on `267124f`) on the integration branch. Fix the evaluator-owned ones; document the rest.
+4. **CX-4:** review sign-off on Final Integration Checklist #1 (Task 6 `enqueueAdmitted`), #4 (Task 8 guarded lifecycle path), #5 (Core executor lifecycle guard; keep the product executor) and #7 (Task 9 additions).
+5. Hand back to Claude here with commit hashes and test results. Alex then accepts the evaluator contract on the integration branch.
+6. After that, Claude runs:
+   - CL-1: withholding tests and fixtures;
+   - CL-2: profile-limitations import, activation and doctor acceptance;
+   - CL-3: cross-feature regression;
+   - CL-4: the full gate;
+   - CL-5: documentation.
+   The final live acceptance (CX-6) comes only after that and only with Alex's separate authorization (D8).
+
+#### Verification Completed
+
+- Read-only only: `git fetch`, `git merge-tree` dry run, `git diff`. No tests run for this handoff; nothing changed in code.
+
+#### Known Issues / Blockers
+
+- D8 live acceptance is not authorized.
+- The final target branch for the integrated result (`claude/gallant-pasteur-y1ou3i` or `main`) is not yet chosen.
+- Evaluations queued under policy v3 will fail closed after the upgrade (`SEMANTIC_EXECUTION_POLICY_MISMATCH`) and must be re-requested. This is an operator step, not a defect.
+- Deferrals pinned to a profile version without limitations will run Resume Match v4 without them, so they show no Genuine Gaps. This is expected under pinning.
+
+#### Do Not Change Without Coordination
+
+- Database rules: never use the normal or the acceptance database. Integration tests run only on `ai_career_assistant_test`.
+- No live, provider, paid or evaluator call before D8.
+- Do not modify `apps/web/next-env.d.ts`.
+- Product-owned code wins in any conflict: `packages/core`, `packages/normalization`, `database` (except the identical migration), `apps/web` services, the budget code and the documentation layout.
+- Ghost Job Risk stays withheld (D1).
+- Do not add entries to `reconstructionCompatibilityGroups` or `resumeMatchCompatibilityGroups` (D3, D4).

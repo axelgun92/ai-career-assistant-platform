@@ -1,9 +1,33 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 31, 2026
+**Last updated:** November 1, 2026
 
 ## Current Objective
+
+**Final evaluator / product integration has started (November 1, 2026). Codex owns the first step.**
+- Alex approved the final integration audit with every recommended decision: D1–D7, D9 and D10. D8, the live acceptance, is not yet authorized.
+- Alex assigned the merge work (CX-1 to CX-4) to Codex.
+- Claude created the integration branch `integration/final-evaluator-product` from the accepted product checkpoint `b1b15af`, and recorded the Codex work package in `HANDOFFS.md` ("Final Evaluator / Product Integration — Codex Work Package CX-1 to CX-4").
+- Nothing has been merged yet. No code, migration or database changed, and no live or provider call was made. Feature 19 has not started.
+
+In order, what follows:
+
+1. Next (Codex), on the integration branch:
+   - CX-1: controlled `--no-ff` merge of `origin/codex/evaluator-live-diagnostic` @ `7d1f4f0`, with product-owned code winning;
+   - CX-2: release of the six salary/residency/basis fields and native `compensationBasis`;
+   - CX-3: the eight pre-existing unit failures;
+   - CX-4: review sign-offs.
+2. Then: Alex accepts the evaluator contract on the integration branch.
+3. Then (Claude):
+   - CL-1: withholding tests;
+   - CL-2: profile-limitations version;
+   - CL-3: cross-feature regression;
+   - CL-4: full isolated gate;
+   - CL-5: documentation.
+4. Then: the final live acceptance (only with Alex's separate authorization), then the documentation and spec bump at the freeze, then the merge.
+
+*(The objective below, from October 31, 2026, is kept as written; integration has now started.)*
 
 **Feature 18, Company Intelligence, is complete: implemented, verified and accepted by Alex on October 31, 2026, and committed. Main-product features 1–18 are complete.** It was built to the approved Feature 18 contract (planning audit approved October 31, 2026, decisions D1–D19 as recommended) and completes main-product features 1–18. Details are in the Feature 18 section below.
 
