@@ -11,6 +11,7 @@ export const siteSections = [
   { href: "/my-search", label: "My search", matches: (path: string) => path.startsWith("/my-search") },
   { href: "/opportunities/new", label: "New opportunity", matches: (path: string) => path === "/opportunities/new" },
   { href: "/market", label: "Market", matches: (path: string) => path.startsWith("/market") },
+  { href: "/companies", label: "Companies", matches: (path: string) => path.startsWith("/companies") },
   { href: "/sources", label: "Sources", matches: (path: string) => path.startsWith("/sources") },
   { href: "/extension", label: "Extension", matches: (path: string) => path.startsWith("/extension") },
   { href: "/profile", label: "Profile & preferences", matches: (path: string) => path.startsWith("/profile") },

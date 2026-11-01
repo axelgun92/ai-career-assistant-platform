@@ -278,8 +278,9 @@ export function recommendationAtApplication(
 }
 
 // appliedOn and event dates are calendar dates (stored at UTC midnight);
-// a timestamp fallback is converted to the user's calendar day.
-function dateOnlyDay(job: PaOpportunityFact, appliedAt: Date, timeZone: string): string {
+// a timestamp fallback is converted to the user's calendar day. Also used by
+// Company Intelligence (feature 18) for application-process timing.
+export function dateOnlyDay(job: Pick<PaOpportunityFact, "application">, appliedAt: Date, timeZone: string): string {
   const application = job.application;
   const dates = [application?.appliedOn, ...(application?.events ?? []).filter((event) => event.type === "SUBMITTED").map((event) => event.at)].filter(
     (date): date is Date => date instanceof Date,
@@ -312,7 +313,7 @@ const reached = (application: PaApplicationFact | null, stages: readonly string[
 const interviewOf = (application: PaApplicationFact | null, kinds: readonly string[] | null) =>
   Boolean(application?.interviews.some((interview) => interview.status !== "CANCELLED" && (kinds === null || kinds.includes(interview.kind))));
 
-export function personalOutcomeOf(job: PaOpportunityFact, now: Date): PaOutcome {
+export function personalOutcomeOf(job: Pick<PaOpportunityFact, "application" | "markedAppliedAt">, now: Date): PaOutcome {
   const outcome = outcomeOf(job, now);
   const application = job.application;
   const mature = outcome.applied && !outcome.awaitingResponse;
@@ -391,7 +392,9 @@ interface EvaluationView extends JobDimensions {
 }
 
 const noSourceKey = "none";
-const sourceOf = (job: PaOpportunityFact) => (job.origin ? listingIdentity({ ...job.origin, recordId: "", opportunityId: null, sourceCategory: null, duplicateDecision: null, sourceUrl: null, applicationUrl: null, createdAt: new Date(0) }) : noSourceKey);
+// The "Found first by" identity of a job's originating listing (Feature 15's
+// listingIdentity); also used by Company Intelligence (feature 18).
+export const originIdentityOf = (job: Pick<PaOpportunityFact, "origin">) => (job.origin ? listingIdentity({ ...job.origin, recordId: "", opportunityId: null, sourceCategory: null, duplicateDecision: null, sourceUrl: null, applicationUrl: null, createdAt: new Date(0) }) : noSourceKey);
 
 // Resume Match prompt versions whose Genuine Gap meaning is the same. Only
 // cs-resume-match-v2 (this branch) is declared; any other version (the
@@ -555,7 +558,7 @@ export function buildPersonalAnalytics(input: BuildPersonalAnalyticsInput): Pers
     titleGroup: grouper(job.title),
     arrangement: arrangementOf(job),
     seniority: seniorityOf(job),
-    source: sourceOf(job),
+    source: originIdentityOf(job),
   });
   const matchesJob = (dims: JobDimensions) =>
     (!filters.titleGroup || dims.titleGroup === filters.titleGroup) &&

@@ -23,6 +23,7 @@ import { ApplicationLoadError, ApplicationPanel } from "@/components/application
 import { toApplicationView } from "@/components/application/types";
 import { getApplicationStore } from "@/server/application-service";
 import { getDuplicateStore } from "@/server/duplicate-service";
+import { getCompanyIntelligenceService } from "@/server/company-intelligence-service";
 import { DuplicateNotices } from "@/components/duplicate-notices";
 import {
   applicationUrlBasisNotes,
@@ -145,6 +146,10 @@ export default async function OpportunityPage({
     return [];
   });
   const noLongerListed = isNoLongerListed(listings.map(toPostingHistoryListing));
+  // Company Intelligence (feature 18): the company page this job belongs to.
+  const companyId = await getCompanyIntelligenceService()
+    .companyIdForOpportunity(detail.opportunity.id)
+    .catch(() => null);
   const now = new Date();
 
   const tracking = await Promise.all([
@@ -211,7 +216,11 @@ export default async function OpportunityPage({
       <header className="opportunity-title">
         <h1>{detail.opportunity.title ?? "Untitled opportunity"}</h1>
         <p>
-          {detail.opportunity.companyName ?? "Unknown company"}
+          {companyId && detail.opportunity.companyName ? (
+            <Link href={`/companies/${companyId}`}>{detail.opportunity.companyName}</Link>
+          ) : (
+            (detail.opportunity.companyName ?? "Unknown company")
+          )}
           {detail.opportunity.location ? ` · ${detail.opportunity.location}` : ""}
         </p>
       </header>

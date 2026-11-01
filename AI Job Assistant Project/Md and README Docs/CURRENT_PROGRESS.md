@@ -1,9 +1,18 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 31, 2026
+**Last updated:** November 1, 2026
 
 ## Current Objective
+
+**Feature 18, Company Intelligence, is complete: implemented, verified and accepted by Alex on November 1, 2026, and committed. Main-product features 1–18 are complete.** It was built to the approved Feature 18 contract (planning audit approved November 1, 2026, decisions D1–D19 as recommended) and completes main-product features 1–18. Details are in the Feature 18 section below.
+
+In order, what follows:
+
+1. Done: Alex's review and acceptance of Feature 18 (November 1, 2026, after the approved pre-commit corrections) and the checkpoint commit. *(Earlier step: "Next: Alex's review of Feature 18, then the checkpoint commit on Alex's approval.")*
+2. Next: the deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge (not started).
+
+*(The objective below, from October 31, 2026, is kept as written; Feature 18 has now been implemented.)*
 
 **Feature 17, Personal Job-Search Analytics, is complete: implemented, verified and accepted by Alex on October 31, 2026, and committed.** It was built to the approved Feature 17 contract (planning audit approved October 31, 2026, decisions D1–D14 with two corrections: date-only recommendation-at-application timing and offer denominators that exclude processes still in progress); see "Feature 17 — Personal Job-Search Analytics" under Recently Completed.
 
@@ -176,6 +185,39 @@ Features 19–23 remain later add-ons. The Task 7 → Customer Success Milestone
 *(Earlier objective, superseded on October 15, 2026: "Finish the evaluator and remaining main-product work in parallel so they can be combined into a stable, usable first product before automated retrieval/scraping begins." Main-product scope is now features 1–18, which include retrieval and intelligence; see `DEVELOPMENT_PLAN.md`.)*
 
 ## Recently Completed (October 14–31, 2026)
+
+### Feature 18 — Company Intelligence (implemented, verified and accepted November 1, 2026; committed)
+
+**What it does.** A read-only view of what the system knows about each company over time, from the listings collected and Alex's own applications (Development Plan item 18: repost/frequency patterns, hiring speed, remote friendliness, response patterns, recurring roles), with every term replaced by an observable fact.
+
+**Approved contract (November 1, 2026; D1–D19 as recommended).** Recorded in Customer Success PRD v1.16 §19 and Core Platform TDD v1.19 §51.
+- **Identity (D1):** a company is the Company rows grouped by `COALESCE(normalizedName, id)` (the dashboard company filter), shown under the oldest row's name with its name variants; any member id resolves to it; no fuzzy, alias, domain or parent merging; jobs without a company counted only; the page discloses that legal entities and brands stay separate.
+- **Routes (D2):** `/companies` ("Companies" after Market) and `/companies/[id]`; `GET /api/companies`, `GET /api/companies/[id]` (400 invalid, 404 unknown or malformed id; a valid company always opens, possibly with no roles observed in the window but with its applications by application date); the opportunity page links its company.
+- **Observed postings (D3):** distinct canonical opportunities by `firstSeenAt` month in the budget time zone; "counts what your sources collected, not the company's actual hiring"; changed postings; unresolved probable duplicates disclosed, not subtracted.
+- **Reposts (D4, A + B):** Feature 13 facts per role — listed again after confirmed removal (with days from `removedAt` to `reappearedAt` and times), closed on the employer board but seen elsewhere, unchanged ≥ 30 days — and relisting under a new listing ID with the same requisition (a MATCH record with `matchedOn` including `requisitionId` from a source that already listed the role under another ID); "x of n", with how many roles could show a repost; no ghost wording.
+- **Recurring roles (D5):** ≥ 2 roles in one title group (Other title never recurring), exact titles case- and space-folded; not a repost.
+- **Arrangement and regions (D6, D13):** arrangement distribution and "x of n … were Remote"; hiring-eligibility and job-location regions as separate tables; sponsorship, relocation and employer-of-record counts; no label.
+- **Your history (D7):** Feature 17 `personalOutcomeOf` unchanged; awaiting response, in process, mature with nothing recorded, recorded closed outcomes; interview and offer rates with their counts, never ranked.
+- **Timing (D8, D9):** observed listing duration per listing, never combining two listings (each removed listing's own first seen → its own confirmed removal; each still-listed listing "at least N days", outside the confirmed figures); application → first progress recorded (stage change or interview by when it was recorded), first interview date, closed, offer — whole days, values below 5, median from 5, out-of-order dates excluded and counted.
+- **Not included (D10, D12, D17):** Ghost Job Risk summary (always UNKNOWN on this branch), salary analysis (stated text per role only), a timeline.
+- **Company type (D11):** customer segment, customer type and business model from each role's latest completed evaluation, counted, never averaged, with coverage.
+- **Windows (D14):** 30/90/180 days, 1 year, all time (default), custom; roles by first seen, applications by application date; listing state as of now.
+- **Index (D15) and detail (D16):** the index lists companies with at least one role first observed in the window (applications alone never add a company; a company page opened directly still shows its applications by application date, even with no role in the window); its "Listed again after removal" column counts only roles with a Feature 13 reappearance after confirmed removal (same-requisition relisting stays a separate detail signal; the has-signals filter accepts either); columns, filters and orderings as approved; 50 per page; no rate ordering; six detail sections plus the observed roles.
+
+**Implementation.**
+- `packages/core/src/company-intelligence.ts` — the pure contract: `companyGroups`, `parseCompanyWindow`, `parseCompanyIndexQuery`, `roleListingState`, `roleSignals`, `requisitionRelisted`, `applicationTimings`, `buildCompanyIndex`, `buildCompanyDetail`. Reuses Feature 13 `isRecentlyListed` / `isNoLongerListed` / `derivePostingHistoryFacts`, Feature 15 `siRate` / sample labels / `sourceInfoOf`, Feature 16 `createTitleGrouper` / `arrangementOf` / `hiringRegionsOf` / `jobRegionsOf` / `median` / `latestCompletedEvaluation` (made generic), Feature 17 `personalOutcomeOf` / `localDay` / `parsePersonalWindow` / `dateOnlyDay` / `originIdentityOf` (exported).
+- `database/src/company-intelligence-repository.ts` — `facts(companyIds?)`, `companyGroupIds(id)`, `companyIdForOpportunity(id)`: read-only SELECTs (companies; opportunities with a company, originating record and MARK_APPLIED; ledger rows with current-scope flag; source records with superseded/changed flags and MATCH `matchedOn`; evaluation classifications by JSON path; unresolved PROBABLE_MATCH pairs; applications with events and interviews). A detail read is scoped to one company group.
+- `apps/web/src/server/company-intelligence-service.ts`, `GET /api/companies`, `GET /api/companies/[id]`, `/companies`, `/companies/[id]`, `apps/web/src/components/companies/*`; nav entry; opportunity-page company link.
+
+**Schema / migration:** none. 24 migrations, unchanged.
+
+**Tests.** Unit `company-intelligence.test.ts` (27: identity grouping, query parsing, roles counted once, listing state, listing duration, months by time zone, probable duplicates, Feature 13 reposts, requisition relisting vs cross-source duplicates, closed elsewhere / unchanged, recurring groups and exact titles, arrangement and regions, Feature 17 outcomes, timing and inconsistent dates, values vs median, windows, company type, index filters / sorts / paging, no score fields; pre-commit corrections: index column Feature 13 only and a role with both signals counted once, index cohort needs a role in the window, listing-level duration never combining two listings) and `companies-ui.test.tsx` (5: 400 before reading, 404, index and detail wording with no hiring, ghost, score or label terms, timing text); navigation test extended. Integration `company-intelligence.test.ts` (6, isolated test database: group ids, stored facts read, scoped reads, detail, history and timing, index; table counts unchanged by a read). E2E `companies.spec.ts` (2, own project after my-search: nav, search and filters, invalid query, detail sections, legacy id, 404, opportunity-page link).
+
+**Verified:** November 1, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 76 files / 1,856 tests; integration 43 files / 354 tests; E2E 54/54 (2 new in the `companies` project); web and extension builds; `git diff --check` clean; `apps/web/next-env.d.ts` restored.
+
+**Known limitations.** Company identity is exact normalized name only: legal-entity strings (often from Workday) and brands split one employer. Automated retrieval began October 18, 2026, so removal, repost and duration facts are sparse for now and show as insufficient samples. Stage changes are recorded without a date, so progress timing is when Alex recorded the change. Per-company personal samples are almost always below 5. Unresolved probable duplicates may inflate a company's role count (disclosed).
+
+**Docs and specs.** Core AI Framework PRD v1.18 (§20 company-level analytics as observed facts), Customer Success PRD v1.16 (§19 Company Intelligence definitions; Feature 17/18 deliverable labels), Core Platform TDD v1.19 (§51 Company Intelligence; the Feature 13 note on new-ID reposts updated), Customer Success TDD v1.16 (evaluator outputs read); previous versions archived unchanged. HANDOFFS Feature 18 record.
 
 ### Feature 17 — Personal Job-Search Analytics (implemented, verified and accepted October 31, 2026; committed)
 

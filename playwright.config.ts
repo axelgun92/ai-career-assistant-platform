@@ -36,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -102,6 +102,14 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/my-search\.spec\.ts$/,
       dependencies: ["market"],
+    },
+    {
+      // Feature 18: Company Intelligence over seeded companies with their own
+      // synthetic names, after every other project.
+      name: "companies",
+      use: chromium,
+      testMatch: /\/companies\.spec\.ts$/,
+      dependencies: ["my-search"],
     },
   ],
   webServer: {

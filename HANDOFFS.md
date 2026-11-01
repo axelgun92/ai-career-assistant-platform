@@ -1358,3 +1358,19 @@ Personal Job-Search Analytics (the approved Feature 17 contract; Customer Succes
 5. **Shared code touched (no behaviour change):** Feature 15's `outcomeOf` takes a structural `SiOutcomeInput`; `sourceInfoOf` exported from `source-intelligence.ts`; the main navigation gains "My search".
 
 Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.
+
+### Feature 18 — Company Intelligence: shared-boundary record (November 1, 2026; Claude main-product workstream)
+
+**Date:** 2026-11-01\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (November 1, 2026); committed
+
+Company Intelligence (the approved Feature 18 contract; Customer Success PRD v1.16 §19, Core Platform TDD v1.19 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic, deduplication, retrieval or listing-ledger behaviour changed; no migration; no new semantic call; no company score.** It completes main-product features 1–18.
+
+1. **Evaluator outputs read, as stored** (`database/src/company-intelligence-repository.ts` is the one place to update if integration renames them): from each role's latest completed evaluation, `domainResult` at `{companyAlignment,alignment,customerSegment,classification}`, `{companyAlignment,alignment,customerType,classification}` (both already read by Features 16 and 17) and, new, `{companyAlignment,alignment,businessModel,classification}`. Never the alignment summary, advantages or concerns, and no profile-relative output. If the evaluator branch changes these enums or paths, update the repository and the labels in `apps/web/src/components/companies/company-labels.ts`.
+2. **Ghost Job Risk is not consumed.** It returns its deterministic UNKNOWN on this branch (posting history withheld; Feature 13 record item 4), so a per-company summary would be meaningless. Feature 18 shows the Feature 13 posting-history facts instead. Any company-level summary of stored Ghost Job Risk is a new product decision after integration makes the stage meaningful, not part of Feature 18.
+3. **Main-product contracts now also read by analytics (no evaluator change):** `SourceRecord.duplicateEvidence.matchedOn` of MATCH attachments (for "relisted under a new listing ID with the same requisition"), the Feature 13 `RetrievedListing` fields, and the dashboard's company grouping `COALESCE(Company.normalizedName, Company.id)`. A change to the deduplication evidence shape or to company normalization should update `packages/core/src/company-intelligence.ts`.
+4. **Shared code touched (no behaviour change):** Feature 16's `latestCompletedEvaluation` is generic over the evaluation shape; Feature 17's calendar-day rule and first-discovery identity are exported as `dateOnlyDay` and `originIdentityOf` (typed on the fields they read; the private `sourceOf` was renamed), and `personalOutcomeOf` takes only the application fields it reads; the main navigation gains "Companies"; the opportunity page links its company.
+
+Final Integration Checklist: items 1 and 2 need only a check when the evaluator branch is combined (no change unless the paths or the Ghost Job Risk input change); items 3–4 need no evaluator change.

@@ -28,6 +28,8 @@ describe("site header", () => {
       ["/sources", "Sources"],
       ["/market", "Market"],
       ["/my-search", "My search"],
+      ["/companies", "Companies"],
+      ["/companies/6f1c9c3e-1d55-4a3b-9b9f-0d2b8a1e4c11", "Companies"],
       ["/extension", "Extension"],
     ] as const) {
       pathname.value = current;

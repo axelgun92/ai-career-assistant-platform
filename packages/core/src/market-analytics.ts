@@ -208,7 +208,9 @@ export const marketEvaluationStates: readonly MarketEvaluationState[] = [
   "not_yet_evaluated",
 ];
 
-const byCompletion = (a: MarketEvaluationFact, b: MarketEvaluationFact) =>
+type CompletionOrdered = Pick<MarketEvaluationFact, "id" | "status" | "createdAt" | "completedAt">;
+
+const byCompletion = (a: CompletionOrdered, b: CompletionOrdered) =>
   (b.completedAt ?? b.createdAt).getTime() - (a.completedAt ?? a.createdAt).getTime() ||
   b.createdAt.getTime() - a.createdAt.getTime() ||
   (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
@@ -216,7 +218,9 @@ const byCompletion = (a: MarketEvaluationFact, b: MarketEvaluationFact) =>
 // The latest completed evaluation (the same ordering as Feature 15's
 // evaluation state): its recommendation, role classification, segment and
 // requirements are the job's evaluated facts.
-export function latestCompletedEvaluation(job: Pick<MarketOpportunityFact, "evaluations">): MarketEvaluationFact | null {
+// Generic over the evaluation shape so Company Intelligence (feature 18) can
+// apply the same rule to its own projection.
+export function latestCompletedEvaluation<T extends CompletionOrdered = MarketEvaluationFact>(job: { evaluations: readonly T[] }): T | null {
   return job.evaluations.filter((evaluation) => evaluation.status === "COMPLETED").sort(byCompletion)[0] ?? null;
 }
 

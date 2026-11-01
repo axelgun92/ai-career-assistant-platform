@@ -166,7 +166,11 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 ### In Progress
 
-- Nothing is in progress: Feature 18, company intelligence, is next and has not started.
+- Nothing is in progress: main-product features 1–18 are complete; the deliberate evaluator/product integration is next and has not started.
+- Feature 18, Company Intelligence, is complete (implemented, verified and accepted November 1, 2026):
+  - **Companies** (`/companies`, a top-level entry after Market) and a page per company (`/companies/[id]`): what has been observed about each company over time — the distinct roles your sources collected by the month first seen (a job on several sources counts once; a posting is never called a hire), which are still listed, roles listed again after removal or relisted under a new listing ID with the same requisition, recurring role groups (kept apart from reposts), how roles are offered and who may be hired (no "remote-friendly" label), the company type the evaluator identified, and your own applications there with their outcomes and timing (observed listing duration and your process timing instead of "hiring speed");
+  - companies are grouped by exact normalized name (different legal entities or brands stay separate, and the page says so); no company score, ranking or label; the opportunity page links its company; `GET /api/companies` and `GET /api/companies/[id]` return the same data; read-only, no migration. It completes main-product features 1–18.
+  - (earlier: "Nothing is in progress: Feature 18, company intelligence, is next and has not started.")
 - Feature 17, Personal Job-Search Analytics, is complete (implemented, verified and accepted October 31, 2026):
   - **My search** (`/my-search`, a top-level entry after Applications): what is working in your own search — your applications and their interviews and offers (an application under 30 days old without a reply is awaiting response; one still interviewing is in process and not counted against offers), what the evaluator said beside what actually happened by kind of role, recurring Genuine Gaps against your profile, outcomes by the source that found each job first and by company type, and where applications are not progressing;
   - the recommendation you had when you applied is credited only when the timing shows it came first ("same-day order unknown" otherwise); no composite score, no accuracy figure, no effort estimate and no learning plan; `GET /api/my-search` returns the same data; read-only, no migration.
@@ -189,7 +193,7 @@ Model routing is treated as an execution detail. It does not change the meaning 
 
 - feature 16 — job-market analytics (complete, October 31, 2026);
 - feature 17 — personal job-search analytics (complete, October 31, 2026);
-- feature 18 — company intelligence;
+- feature 18 — company intelligence (complete, November 1, 2026);
 - only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
 
 ### Later add-ons only (features 19–23)

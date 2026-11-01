@@ -27,3 +27,4 @@ export * from "./source-version-reader";
 export * from "./source-intelligence-repository";
 export * from "./market-analytics-repository";
 export * from "./personal-analytics-repository";
+export * from "./company-intelligence-repository";
