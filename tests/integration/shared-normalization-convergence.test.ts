@@ -2,9 +2,10 @@
 // 14B correction, October 25, 2026). The synthetic Healthie posting, through
 // the Greenhouse adapter and through the browser extension, persists the same
 // normalized facts with path-specific provenance, the detail view shows them,
-// the evaluator still withholds the new facts, the user's own eligibility is
-// stored outside normalization, and a newly collected application URL is one
-// CHANGED version. Fixture transport only; nothing reaches the network.
+// the evaluator receives only the final-integration facts approved for it,
+// the user's own eligibility is stored outside normalization, and a newly
+// collected application URL is one CHANGED version. Fixture transport only;
+// nothing reaches the network.
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createRetrievalIngestionService, extensionCaptureSchemaVersion, workAuthorizationRelevance } from "@ai-career/core";
@@ -159,7 +160,7 @@ describe("Healthie through both paths, persisted", () => {
 });
 
 describe("compensation basis from the description's statement of the same range (Feature 14B v5)", () => {
-  it("persists structured bounds and currency as stated, the OTE basis with its statement, and still withholds the basis from the evaluator", async () => {
+  it("persists structured bounds and currency as stated and releases the OTE basis with its provenance to the evaluator", async () => {
     const token = randomUUID().slice(0, 8);
     const raw = buildRetrievedListing(
       { key: "test-ats", name: "Test ATS", attribution: null, sourceType: "ATS", retrievalType: "OFFICIAL_PUBLIC_API_FEED", sourceCategory: "ATS" },
@@ -182,8 +183,10 @@ describe("compensation basis from the description's statement of the same range 
     });
     expect(rows.find((row) => row.fieldName === "compensationBasis")?.sourceText).toBe("OTE: $120,000 - $150,000 per year (60/40 base to variable).");
     const subject = (await new PrismaEvaluationRepository().loadSubject({ opportunityId: result.opportunityId, userProfileId: null }))!;
-    expect(subject.opportunity.compensationBasis).toBeNull();
-    expect(subject.opportunity.salaryMin).toBeNull();
+    expect(subject.opportunity).toMatchObject({ compensationBasis: "OTE", salaryMin: 120000, salaryMax: 150000, currency: "USD" });
+    expect(subject.provenance.map((row) => row.fieldName)).toEqual(expect.arrayContaining([
+      "compensationBasis", "salaryMin", "salaryMax", "currency",
+    ]));
   });
 });
 

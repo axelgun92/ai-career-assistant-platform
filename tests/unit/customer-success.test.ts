@@ -4,7 +4,11 @@ import {
   customerSuccessDomain,
   type CustomerSuccessSemanticOperations,
 } from "@ai-career/customer-success";
-import { createEvaluationExecutor } from "@ai-career/evaluation";
+import {
+  createEvaluationExecutor,
+  StageExecutionError,
+} from "@ai-career/evaluation";
+import { parseCompensation, parseResidency } from "@ai-career/normalization";
 import { describe, expect, it } from "vitest";
 import {
   createCustomerSuccessFixtureOperations,
@@ -20,6 +24,10 @@ function createSubject(input: {
   rawText: string;
   title?: string;
   salaryText?: string | null;
+  compensationBasis?: "BASE" | "OTE" | null;
+  salaryMinimum?: number | null;
+  salaryMaximum?: number | null;
+  currency?: string | null;
 }) {
   const subject = createNeutralEvaluationSubject();
   subject.opportunity.domain = "customer-success";
@@ -27,6 +35,14 @@ function createSubject(input: {
   subject.opportunity.companyName = "Example Technology";
   subject.opportunity.jobDescription = input.rawText;
   subject.opportunity.salaryText = input.salaryText ?? null;
+  subject.opportunity.compensationBasis = input.compensationBasis ?? null;
+  const compensation = parseCompensation(subject.opportunity.salaryText);
+  subject.opportunity.salaryMin = input.salaryMinimum ?? compensation.minimum;
+  subject.opportunity.salaryMax = input.salaryMaximum ?? compensation.maximum;
+  subject.opportunity.currency = input.currency ?? compensation.currency;
+  const residency = parseResidency({ location: null, rawText: input.rawText });
+  subject.opportunity.residencyRequirement = residency.requirement;
+  subject.opportunity.residencyRegions = residency.regions;
   subject.rawSources[0]!.rawDescription = input.rawText;
   subject.rawSources[0]!.rawPayload = { rawText: input.rawText };
   subject.provenance[0]!.normalizedValue = input.rawText;
@@ -39,6 +55,10 @@ async function run(input: {
   rawText?: string;
   title?: string;
   salaryText?: string | null;
+  compensationBasis?: "BASE" | "OTE" | null;
+  salaryMinimum?: number | null;
+  salaryMaximum?: number | null;
+  currency?: string | null;
   operations?: CustomerSuccessSemanticOperations;
 }) {
   const fixture = createCustomerSuccessFixtureOperations({
@@ -56,6 +76,10 @@ async function run(input: {
       ].join(" "),
     title: input.title,
     salaryText: input.salaryText,
+    compensationBasis: input.compensationBasis,
+    salaryMinimum: input.salaryMinimum,
+    salaryMaximum: input.salaryMaximum,
+    currency: input.currency,
   });
   const repository = new InMemoryEvaluationRepository(subject);
   const executor = createEvaluationExecutor(repository);
@@ -136,8 +160,8 @@ describe("Customer Success domain foundation", () => {
 
   it.each([
     ["$60,000", "PASS"],
-    ["$59,999", "REVIEW"],
-    ["$55,000", "REVIEW"],
+    ["$59,999", "FAIL"],
+    ["$55,000", "FAIL"],
     ["$54,999", "FAIL"],
   ] as const)("applies the salary boundary %s as %s", async (salary, expected) => {
     const { result } = await run({
@@ -147,12 +171,78 @@ describe("Customer Success domain foundation", () => {
     expect(result.domainResult!.hardFilters.salary.result).toBe(expected);
   });
 
-  it("allows sub-threshold evaluation only for explicitly permitted lower-cost residence", async () => {
+  it.each([null, "BASE"] as const)(
+    "evaluates a disclosed salary with basis %s through the full deterministic stage",
+    async (compensationBasis) => {
+      const { result } = await run({
+        salaryText: "$70,000-$90,000 USD",
+        compensationBasis,
+        rawText: "Remote - United States only. Salary $70,000-$90,000 USD.",
+      });
+      expect(result.domainResult!.hardFilters.salary.result).toBe("PASS");
+    },
+  );
+
+  it("keeps an explicit OTE range factual while salary eligibility remains Unknown", async () => {
     const { result } = await run({
-      salaryText: "$50,000",
-      rawText: "Remote. Candidates may reside in Mexico. Salary $50,000.",
+      salaryText: "$105,000-$155,000 USD OTE",
+      compensationBasis: "OTE",
+      salaryMinimum: 105_000,
+      salaryMaximum: 155_000,
+      currency: "USD",
+      rawText:
+        "Remote - United States only. Compensation is $105,000-$155,000 USD OTE.",
+    });
+    const hardFilters = result.domainResult!.hardFilters;
+    expect(hardFilters.reconstruction.salary).toMatchObject({
+      minimum: 105_000,
+      maximum: 155_000,
+      currency: "USD",
+    });
+    expect(hardFilters.salary).toMatchObject({
+      result: "UNKNOWN",
+      evidenceReferences: expect.arrayContaining([
+        "salary-compensation-basis",
+      ]),
+    });
+    expect(hardFilters.salary.explanation).toContain("explicitly OTE");
+    expect(
+      result.evaluation.evidenceRecords.find(
+        (item) => item.referenceId === "salary-compensation-basis",
+      ),
+    ).toMatchObject({
+      sourceText: "$105,000-$155,000 USD OTE",
+      claim: "The normalized compensation basis is OTE.",
+    });
+  });
+
+  it("uses foreign currency only for evaluator-side conversion and preserves source facts", async () => {
+    const { result, subject } = await run({
+      salaryText: "€58,000-€68,000 EUR",
+      salaryMinimum: 58_000,
+      salaryMaximum: 68_000,
+      currency: "EUR",
+      rawText: "Remote. Candidates must reside in Spain. Salary €58,000-€68,000 EUR.",
     });
     expect(result.domainResult!.hardFilters.salary.result).toBe("PASS");
+    expect(result.domainResult!.hardFilters.reconstruction.salary).toMatchObject({
+      minimum: 58_000,
+      maximum: 68_000,
+      currency: "EUR",
+    });
+    expect(subject.opportunity).toMatchObject({
+      salaryMin: 58_000,
+      salaryMax: 68_000,
+      currency: "EUR",
+    });
+  });
+
+  it("reviews the conditional non-US band only for configured viable residence", async () => {
+    const { result } = await run({
+      salaryText: "$50,000",
+      rawText: "Remote. Candidates must reside in Mexico. Salary $50,000.",
+    });
+    expect(result.domainResult!.hardFilters.salary.result).toBe("REVIEW");
   });
 
   it.each([
@@ -286,6 +376,100 @@ describe("Customer Success domain foundation", () => {
         resolutionStatus: "UNRESOLVED",
       }),
     );
+  });
+
+  it("carries a valid mixed Organizational Maturity result through downstream finalization", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    const mixed: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async evaluateOrganizationalMaturity(input) {
+        const maturity = await fixture.semanticOperations.evaluateOrganizationalMaturity(
+          input,
+        );
+        return {
+          ...maturity,
+          ownershipAndCrossFunctionalDesign: {
+            ...maturity.ownershipAndCrossFunctionalDesign,
+            roleBoundaries: {
+              conclusion:
+                "Customer Success ownership is established for the documented lifecycle work.",
+              unknown: false,
+              evidenceReferences: ["actual-work"],
+            },
+          },
+          unknowns: [
+            ...maturity.unknowns,
+            {
+              code: "implementation-boundaries-unknown",
+              description:
+                "The narrower implementation boundary remains unresolved.",
+              materiality:
+                "This reduces completeness without becoming a positive or negative signal.",
+              evidenceReferences: ["actual-work"],
+            },
+          ],
+        };
+      },
+    };
+
+    const { result } = await run({ operations: mixed });
+    expect(result.evaluation.status).toBe("COMPLETED");
+    expect(result.domainResult?.organizationalMaturity).toMatchObject({
+      evaluated: true,
+      maturity: {
+        score: 84,
+        ownershipAndCrossFunctionalDesign: {
+          roleBoundaries: { unknown: false },
+        },
+        unknowns: expect.arrayContaining([
+          expect.objectContaining({
+            code: "implementation-boundaries-unknown",
+          }),
+        ]),
+      },
+    });
+    expect(fixture.stats.burnoutRiskCalls).toBe(1);
+    expect(result.domainResult?.recommendation).toBeDefined();
+  });
+
+  it("stops non-retryably at invalid Organizational Maturity without running downstream stages", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    const invalid: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async evaluateOrganizationalMaturity() {
+        throw new StageExecutionError({
+          code: "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+          message:
+            "A contextual Unknown cannot contradict its supported proposition",
+          retryable: false,
+        });
+      },
+    };
+
+    const { result } = await run({ operations: invalid });
+    expect(result.evaluation.status).toBe("FAILED");
+    expect(result.evaluation.stageResults.slice(0, 4)).toEqual([
+      expect.objectContaining({ stageId: "hard-filters", status: "COMPLETED" }),
+      expect.objectContaining({ stageId: "job-evaluation", status: "COMPLETED" }),
+      expect.objectContaining({ stageId: "company-alignment", status: "COMPLETED" }),
+      expect.objectContaining({
+        stageId: "organizational-maturity",
+        status: "FAILED",
+        failureCode: "ORGANIZATIONAL_MATURITY_MIXED_STATE_INVALID",
+        retryable: false,
+        result: null,
+      }),
+    ]);
+    expect(
+      result.evaluation.stageResults.slice(4).every((stage) =>
+        stage.status === "PENDING" && stage.result === null,
+      ),
+    ).toBe(true);
+    expect(fixture.stats.alexFitCalls).toBe(0);
+    expect(fixture.stats.burnoutRiskCalls).toBe(0);
+    expect(fixture.stats.resumeMatchCalls).toBe(0);
+    expect(fixture.stats.opportunityPriorityCalls).toBe(0);
+    expect(result.recommendation).toBeUndefined();
   });
 
   it("retries a transient reconstruction failure without corrupting the evaluation", async () => {

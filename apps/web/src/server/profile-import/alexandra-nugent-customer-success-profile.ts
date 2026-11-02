@@ -206,12 +206,6 @@ export const alexandraNugentCustomerSuccessProfile =
         statement:
           "Social Science Instructor, Shenzhen International Foundation College, Shenzhen, China (September 2020-June 2022): taught Social Studies and Geography to Grades 6-9 and localized American Common Core-aligned content for four multilingual learner segments across two subjects, translating 40+ competency requirements and adapting explanations and examples to produce a 25% comprehension gain; analyzed PowerSchool performance data to identify learning gaps and risk signals, addressed 90%+ of flagged cases, and contributed to a 20% improvement in measured assessment outcomes; delivered written and verbal feedback cycles through digital platforms for 100+ active ESL learners, increasing on-time assignment completion and consistency by 30% over six months.",
       },
-      {
-        id: "experience-scope-boundary",
-        relationship: "TRANSFERABLE",
-        statement:
-          "No source verifies direct SaaS Customer Success Manager employment, literal SaaS account ownership, production CRM ownership, renewal or expansion quota ownership, or direct software-product account management. HubSpot Service Hub and Pendo evidence is certification-based; these areas must remain transferable, partial, unsupported, or genuine gaps according to the job requirement and complete-profile evidence.",
-      },
     ],
     skills: [
       {
@@ -337,6 +331,18 @@ export const alexandraNugentCustomerSuccessProfile =
         id: "work-travel-context",
         statement:
           "Infrequent company gatherings, conferences, and exceptional customer visits may be acceptable; recurring customer on-site work and field travel are strong mismatches.",
+      },
+    ],
+    // Preferences above are not limitations. This is the profile's explicit
+    // scope boundary: the statement records facts only, and its category and
+    // level alone decide which requirements it can establish.
+    limitations: [
+      {
+        id: "limitation-saas-customer-success-scope",
+        statement:
+          "No source verifies direct SaaS Customer Success Manager employment, literal SaaS account ownership, production CRM ownership, renewal or expansion quota ownership, or direct software-product account management. HubSpot Service Hub and Pendo evidence is certification-based.",
+        category: "EXPERIENCE",
+        disclaimedExperienceSpecificity: "DIRECT_SAAS_CUSTOMER_SUCCESS",
       },
     ],
     companyPreferences: {

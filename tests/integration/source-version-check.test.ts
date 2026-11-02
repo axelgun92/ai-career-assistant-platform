@@ -33,6 +33,10 @@ import { runExtractor } from "../support/extension-pages";
 import { healthieGreenhouseResponse, healthiePage } from "../support/healthie-fixture";
 
 const run = promisify(execFile);
+const runPnpm = (args: string[], env: NodeJS.ProcessEnv) =>
+  process.platform === "win32"
+    ? run(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "pnpm", ...args], { env })
+    : run("pnpm", args, { env });
 const cleanup = createCleanup();
 const repository = new PrismaManualOpportunityRepository();
 const ingestion = createRetrievalIngestionService({ repository, normalizer: createRetrievedOpportunityNormalizer() });
@@ -200,13 +204,13 @@ describe("source-version check: read-only", () => {
     const captured = await capturePage(`https://job-boards.greenhouse.io/healthie-cli-${randomUUID().slice(0, 8)}/jobs/4425790009`);
     const env = { ...process.env, DATABASE_URL: process.env.DATABASE_URL! };
     const before = await fingerprint();
-    const { stdout } = await run("pnpm", ["--silent", "acceptance:check-source-version", "--database", databaseName, "--opportunity", `http://localhost:3000/opportunities/${captured.opportunityId}`], { env });
+    const { stdout } = await runPnpm(["--silent", "acceptance:check-source-version", "--database", databaseName, "--opportunity", `http://localhost:3000/opportunities/${captured.opportunityId}`], env);
     expect(stdout).toContain("Feature 14B source-version check (read-only: nothing was written)");
     expect(stdout).toContain(`Opportunity:     ${captured.opportunityId}`);
     expect(stdout).toContain("No differences");
     expect(await fingerprint()).toEqual(before);
 
-    const refused = await run("pnpm", ["--silent", "acceptance:check-source-version", "--database", "ai_career_assistant_acceptance", "--opportunity", captured.opportunityId], { env })
+    const refused = await runPnpm(["--silent", "acceptance:check-source-version", "--database", "ai_career_assistant_acceptance", "--opportunity", captured.opportunityId], env)
       .then(() => null, (error: { code: number; stderr: string }) => error);
     expect(refused?.code).toBe(1);
     expect(refused?.stderr).toContain(`DATABASE_URL points to database "${databaseName}", not "ai_career_assistant_acceptance". Nothing was read.`);

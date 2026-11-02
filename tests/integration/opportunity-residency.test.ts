@@ -11,8 +11,9 @@ import { createManualOpportunityNormalizer } from "@ai-career/normalization";
 import { parseOpportunityQuery, toListFilters } from "../../apps/web/src/server/opportunity-query";
 
 // Task 7: explicit residency / geographic eligibility, persisted with
-// provenance, independent of salary currency, filterable, and withheld from
-// the evaluator. Every list query is scoped by a unique token in the title.
+// provenance, independent of salary currency, filterable, and released to
+// the evaluator at final integration. Every list query is scoped by a unique
+// token in the title.
 
 const database = getDatabaseClient();
 const repository = new PrismaOpportunityListRepository();
@@ -146,11 +147,12 @@ describe("persisted residency facts", () => {
     expect(stated!.sourceMetadata).toMatchObject({ details: { residencyRequirement: "NON_US", residencyRegions: "Spain, Portugal" } });
   });
 
-  it("withholds residency from the evaluator subject (no contract change yet)", async () => {
+  it("releases salary and residency facts and their provenance to the evaluator subject", async () => {
     const subject = await new PrismaEvaluationRepository().loadSubject({ opportunityId: ids.usRequiredEur!, userProfileId: null });
-    expect(subject!.opportunity).toMatchObject({ residencyRequirement: null, residencyRegions: [], currency: null, salaryMin: null });
-    expect(subject!.provenance.map((row) => row.fieldName)).not.toEqual(expect.arrayContaining(["residencyRequirement"]));
-    expect(subject!.provenance.map((row) => row.fieldName)).not.toEqual(expect.arrayContaining(["residencyRegions"]));
+    expect(subject!.opportunity).toMatchObject({ residencyRequirement: "US_REQUIRED", residencyRegions: ["US"], currency: "EUR", salaryMin: 60000 });
+    expect(subject!.provenance.map((row) => row.fieldName)).toEqual(expect.arrayContaining([
+      "salaryMin", "currency", "residencyRequirement", "residencyRegions",
+    ]));
     expect(subject!.opportunity.jobDescription).toContain("must reside in the United States");
   });
 });

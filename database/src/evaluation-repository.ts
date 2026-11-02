@@ -17,33 +17,20 @@ function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
-// Normalized fields first populated by product normalization in the Task 7
-// completion amendment (residency / geographic eligibility included). Until the evaluator workstream adopts them, the
-// evaluator subject keeps receiving exactly what it received before (null,
-// and no provenance rows for them): the Customer Success salary hard filter
-// prefers salaryMin/salaryMax over its own parsing and does not compare
-// currencies, so delivering them would silently change recommendations.
-// See HANDOFFS.md ("Task 7 Completion Amendment"). timeZoneRequirements
-// (stated by the user since the Features 1–10 Gap Closure) is withheld the
-// same way: the evaluator reads time zones from the job text itself.
+// Product-owned normalized facts that are not part of the accepted evaluator
+// input contract remain hidden, including their provenance. Salary bounds,
+// currency, residency, and compensation basis were deliberately released at
+// final evaluator/product integration; all other normalized product facts stay
+// withheld until a later coordinated adoption.
 export const fieldsWithheldFromEvaluator = [
-  "salaryMin",
-  "salaryMax",
-  "currency",
   "remoteStatus",
   "seniority",
   "department",
   "employmentType",
   "closingDate",
-  "residencyRequirement",
-  "residencyRegions",
   "timeZoneRequirements",
-  // Added with the shared-normalization convergence (October 2026): what a
-  // stated compensation range is (base or OTE), and the explicit work-
-  // authorization facts. Whether an OTE range counts as base salary, and
-  // what work authorization means for a user, are decisions for the
-  // coordinated evaluator integration (HANDOFFS.md).
-  "compensationBasis",
+  // Explicit work-authorization facts remain separate from residency and are
+  // not evaluator input in the accepted salary policy.
   "workAuthorizationRequirement",
   "workAuthorizationRegions",
   "visaSponsorship",
@@ -63,18 +50,12 @@ export const fieldsWithheldFromEvaluator = [
 
 // What the evaluator received for each withheld field before it existed.
 const withheldValues = {
-  salaryMin: null,
-  salaryMax: null,
-  currency: null,
   remoteStatus: null,
   seniority: null,
   department: null,
   employmentType: null,
   closingDate: null,
-  residencyRequirement: null,
-  residencyRegions: [],
   timeZoneRequirements: null,
-  compensationBasis: null,
   workAuthorizationRequirement: null,
   workAuthorizationRegions: [],
   visaSponsorship: null,

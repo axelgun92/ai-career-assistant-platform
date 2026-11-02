@@ -1,5 +1,6 @@
 import {
   createCustomerSuccessFixtureOperations,
+  toRequirementStatementTransport,
   customerSuccessTestPreferences,
   toOrganizationalMaturityProviderTransport,
   toAlexFitProviderTransport,
@@ -128,14 +129,59 @@ function deterministicTransport(input: {
       switch (request.operationId) {
         case "customer-success.jd-reconstruction": {
           const reconstruction =
-            await fixture.semanticOperations.reconstructJobDescription({
+            (await fixture.semanticOperations.reconstructJobDescription({
               ...(trusted as never),
               untrustedJobDescription: payload.untrustedSourceContent!,
-            });
+            })) as SemanticReconstruction;
+          const gapRequested =
+            input.resumeMatch?.requirementClassifications?.[0] === "GENUINE_GAP";
+          const structured = gapRequested
+            ? {
+                ...reconstruction,
+                requirements: [
+                  ...reconstruction.requirements,
+                  {
+                    requirement: "3+ years of Customer Success experience required.",
+                    category: "EXPERIENCE" as const,
+                    strength: "REQUIRED" as const,
+                    statedYears: 3,
+                    statedYearsMaximum: null,
+                    statedYearsOpenEnded: true,
+                    experienceSpecificity: "Customer Success",
+                    minimumExperienceSpecificity:
+                      "DIRECT_CUSTOMER_SUCCESS" as const,
+                    requiresStartupExperience: false,
+                    evidenceReferences: ["semantic-cs-years"],
+                    ambiguity: { isAmbiguous: false, explanation: null },
+                    sourceStatement: {
+                      statementIndex: 0,
+                      statementStrengths: ["REQUIRED" as const],
+                      statementExperienceLevels: [
+                        "DIRECT_CUSTOMER_SUCCESS" as const,
+                      ],
+                    },
+                  },
+                ],
+                evidence: [
+                  ...reconstruction.evidence,
+                  {
+                    ...reconstruction.evidence[0]!,
+                    referenceId: "semantic-cs-years",
+                    criterionId: "jd-reconstruction",
+                    claim:
+                      "The posting requires three or more years of direct Customer Success experience.",
+                    sourceText:
+                      "3+ years of Customer Success experience required.",
+                    evidenceType: "REQUIREMENT",
+                  },
+                ],
+              }
+            : reconstruction;
+          const { requirements: _requirements, ...sections } = structured;
           output = {
-            ...reconstruction,
+            ...sections,
             responsibilityMap: {
-              areas: Object.entries(reconstruction.responsibilityMap.areas).map(
+              areas: Object.entries(structured.responsibilityMap.areas).map(
                 ([area, assessment]) =>
                   assessment.prominence === "ABSENT"
                     ? {
@@ -145,30 +191,20 @@ function deterministicTransport(input: {
                       }
                     : { area, ...assessment },
               ),
-              other: reconstruction.responsibilityMap.other,
+              other: structured.responsibilityMap.other,
             },
-            requirements: reconstruction.requirements.map((requirement) => {
-              if (requirement.evidenceReferences.length !== 1) {
-                throw new Error(
-                  "JD reconstruction fixture requirements must have one atomic evidence reference",
-                );
-              }
-              return {
-                ...requirement,
-                evidenceReferences: [requirement.evidenceReferences[0]!],
-                assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
-                compoundExplanation: null,
-              };
-            }),
+            requirementStatements: toRequirementStatementTransport(
+              structured.requirements,
+            ),
             ownershipMap: {
               functions: Object.entries(
-                reconstruction.ownershipMap.functions,
+                structured.ownershipMap.functions,
               ).map(([functionName, assessment]) => ({
                 function: functionName,
                 ...assessment,
               })),
             },
-            evidence: reconstruction.evidence.map((evidence) => ({
+            evidence: structured.evidence.map((evidence) => ({
               sourceIndex: 0,
               referenceId: evidence.referenceId,
               claim: evidence.claim,
@@ -400,6 +436,15 @@ async function createProductionSubject(input: {
       compensationPreferences: null,
       workPreferences: [
         { id: "work-1", statement: "Prefers strategic asynchronous work." },
+      ],
+      limitations: [
+        {
+          id: "limitation-direct-customer-success-years",
+          statement:
+            "No source verifies three years of direct Customer Success experience.",
+          category: "EXPERIENCE",
+          disclaimedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+        },
       ],
       companyPreferences: null,
       domainPreferences: {
@@ -1080,8 +1125,11 @@ describe("production evaluation vertical slice", () => {
       expected: "REVIEW",
     },
   ])("persists a $name recommendation as $expected", async ({ resumeMatch, impact, expected }) => {
-    const { response } = await runFlow({ resumeMatch });
-    expect(response.status).toBe("COMPLETED");
+    const { response, task } = await runFlow({ resumeMatch });
+    expect(
+      response.status,
+      JSON.stringify({ task, stages: response.stages.filter((stage) => stage.status !== "COMPLETED"), operations: response.operations.filter((operation) => operation.status !== "SUCCESS") }),
+    ).toBe("COMPLETED");
     expect(response.recommendation?.decision).toBe(expected);
     const result = response.result as {
       resumeMatch: {

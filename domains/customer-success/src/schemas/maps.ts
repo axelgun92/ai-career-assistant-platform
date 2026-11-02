@@ -112,6 +112,45 @@ export const requirementCategorySchema = z.enum([
   "TRAVEL",
 ]);
 
+// The Customer Success experience ladder, most specific first. Resume Match
+// profile labels and specificity values use the same ladder.
+export const customerSuccessExperienceLadder = [
+  "DIRECT_SAAS_CUSTOMER_SUCCESS",
+  "DIRECT_CUSTOMER_SUCCESS",
+  "RELATED_CUSTOMER_RELATIONSHIP",
+  "BROADER_CUSTOMER_FACING",
+] as const;
+
+// The least specific experience that satisfies an EXPERIENCE requirement:
+// a ladder rung, or ANY_WORK_EXPERIENCE when the requirement's subject is not
+// a Customer Success level (remote work, a customer segment, company stage).
+export const requirementExperienceLevelSchema = z.enum([
+  ...customerSuccessExperienceLadder,
+  "ANY_WORK_EXPERIENCE",
+]);
+
+export type RequirementExperienceLevel = z.infer<
+  typeof requirementExperienceLevelSchema
+>;
+
+// Identifies evidence authored by JD Reconstruction, as opposed to
+// deterministically extracted job facts.
+export const jdReconstructionCriterionId = "jd-reconstruction";
+// Identifies deterministically extracted candidate-requirement lines.
+export const deterministicRequirementCriterionId = "candidate-requirement";
+
+// The source statement a JD Reconstruction requirement was decomposed from.
+// Every qualification of one statement shares its single evidence record and
+// the strengths and experience levels the statement was declared to express.
+// Absent only in historical maps and deterministic requirements.
+export const requirementSourceStatementSchema = z
+  .object({
+    statementIndex: z.number().int().nonnegative(),
+    statementStrengths: z.array(requirementStrengthSchema).min(1),
+    statementExperienceLevels: z.array(requirementExperienceLevelSchema),
+  })
+  .strict();
+
 export const requirementSchema = z
   .object({
     requirement: requiredText,
@@ -121,6 +160,14 @@ export const requirementSchema = z
     statedYearsMaximum: z.number().nonnegative().nullable(),
     statedYearsOpenEnded: z.boolean(),
     experienceSpecificity: optionalText,
+    // Structured experience semantics authored by JD Reconstruction and
+    // consumed by Resume Match legality. Absent only in historical maps, which
+    // carry no experience-level semantics; wording is never consulted instead.
+    minimumExperienceSpecificity: requirementExperienceLevelSchema.optional(),
+    requiresStartupExperience: z.boolean().optional(),
+    // Historical JD Reconstruction key, still readable in persisted results.
+    // It carries no semantics and is never authored.
+    requiresDirectWorkExperience: z.boolean().optional(),
     evidenceReferences: evidenceReferences.min(1),
     ambiguity: z
       .object({
@@ -128,9 +175,41 @@ export const requirementSchema = z
         explanation: optionalText,
       })
       .strict(),
+    sourceStatement: requirementSourceStatementSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
+    // Statement-derived requirements carry structural ambiguity and a strength
+    // and level their statement declared. Historical maps stay readable.
+    if (value.sourceStatement !== undefined) {
+      if (value.ambiguity.isAmbiguous !== (value.strength === "AMBIGUOUS")) {
+        context.addIssue({
+          code: "custom",
+          path: ["ambiguity", "isAmbiguous"],
+          message: "Requirement ambiguity is derived from an AMBIGUOUS strength",
+        });
+      }
+      if (!value.sourceStatement.statementStrengths.includes(value.strength)) {
+        context.addIssue({
+          code: "custom",
+          path: ["strength"],
+          message: "Requirement strength must be one its source statement expresses",
+        });
+      }
+      if (
+        value.category === "EXPERIENCE" &&
+        (value.minimumExperienceSpecificity === undefined ||
+          !value.sourceStatement.statementExperienceLevels.includes(
+            value.minimumExperienceSpecificity,
+          ))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["minimumExperienceSpecificity"],
+          message: "Requirement experience level must be one its source statement expresses",
+        });
+      }
+    }
     if (
       value.statedYears !== null &&
       value.statedYearsMaximum !== null &&
@@ -142,9 +221,111 @@ export const requirementSchema = z
         message: "The maximum stated years cannot be below the minimum",
       });
     }
+    // Experience semantics belong to EXPERIENCE requirements only. INDUSTRY
+    // requirements already carry direct-specialization legality by category.
+    if (
+      value.category !== "EXPERIENCE" &&
+      (value.minimumExperienceSpecificity !== undefined ||
+        value.requiresDirectWorkExperience === true ||
+        value.requiresStartupExperience === true)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["category"],
+        message: "Only EXPERIENCE requirements can carry specialization semantics",
+      });
+    }
   });
 
-export const requirementMapSchema = z.array(requirementSchema);
+function sameMembers(left: readonly string[], right: readonly string[]) {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return (
+    leftSet.size === left.length &&
+    rightSet.size === right.length &&
+    leftSet.size === rightSet.size &&
+    [...leftSet].every((value) => rightSet.has(value))
+  );
+}
+
+// The qualifications of one source statement must together express exactly
+// the strengths and experience levels the statement declares: neither an
+// unexpressed declaration (a lost qualification) nor an undeclared value.
+type StatementMember = Pick<
+  z.infer<typeof requirementSchema>,
+  | "category"
+  | "strength"
+  | "minimumExperienceSpecificity"
+  | "evidenceReferences"
+  | "sourceStatement"
+>;
+
+export function requirementStatementViolations(
+  requirements: ReadonlyArray<StatementMember>,
+) {
+  const statements = new Map<number, StatementMember[]>();
+  for (const requirement of requirements) {
+    if (requirement.sourceStatement === undefined) continue;
+    const members = statements.get(requirement.sourceStatement.statementIndex) ?? [];
+    members.push(requirement);
+    statements.set(requirement.sourceStatement.statementIndex, members);
+  }
+  const violations: string[] = [];
+  for (const [statementIndex, members] of statements) {
+    const declared = members[0]!.sourceStatement!;
+    const evidence = JSON.stringify(members[0]!.evidenceReferences);
+    if (
+      members.some(
+        (member) =>
+          JSON.stringify(member.sourceStatement) !== JSON.stringify(declared) ||
+          JSON.stringify(member.evidenceReferences) !== evidence,
+      )
+    ) {
+      violations.push(
+        `Statement ${statementIndex} qualifications disagree on their source statement`,
+      );
+      continue;
+    }
+    if (
+      !sameMembers(
+        declared.statementStrengths,
+        [...new Set(members.map((member) => member.strength))],
+      )
+    ) {
+      violations.push(
+        `Statement ${statementIndex} qualification strengths do not correspond to its statement strengths`,
+      );
+    }
+    if (
+      !sameMembers(
+        declared.statementExperienceLevels,
+        [
+          ...new Set(
+            members.flatMap((member) =>
+              member.category === "EXPERIENCE" &&
+              member.minimumExperienceSpecificity !== undefined
+                ? [member.minimumExperienceSpecificity]
+                : [],
+            ),
+          ),
+        ],
+      )
+    ) {
+      violations.push(
+        `Statement ${statementIndex} qualification experience levels do not correspond to its statement experience levels`,
+      );
+    }
+  }
+  return violations;
+}
+
+export const requirementMapSchema = z
+  .array(requirementSchema)
+  .superRefine((requirements, context) => {
+    for (const message of requirementStatementViolations(requirements)) {
+      context.addIssue({ code: "custom", message });
+    }
+  });
 
 export const ownershipFunctions = [
   "customerSuccess",
@@ -308,27 +489,122 @@ const transportOwnershipFunctionsSchema = z
   )
   .max(ownershipFunctions.length);
 
-const transportRequirementBaseShape = {
-  ...requirementSchema.shape,
-  evidenceReferences: evidenceReferences.length(1),
+export const requirementSpecializationDescriptions = {
+  minimumExperienceSpecificity:
+    "The least specific experience that satisfies this requirement. DIRECT_SAAS_CUSTOMER_SUCCESS: Customer Success employment in SaaS. DIRECT_CUSTOMER_SUCCESS: Customer Success employment. RELATED_CUSTOMER_RELATIONSHIP: customer-relationship or account roles. BROADER_CUSTOMER_FACING: any customer-facing work. ANY_WORK_EXPERIENCE: the subject is not a Customer Success level, such as remote work, a customer segment, or company stage.",
+  requiresStartupExperience:
+    "True only if this requirement demands startup or early-stage company experience.",
+} as const;
+
+// Shared fields are named definitions so the category-bound union below does
+// not repeat them in every branch of the provider schema.
+const transportRequirementYears = z.number().nonnegative().nullable().meta({ id: "requirementYears" });
+const transportMinimumExperienceSpecificity = requirementExperienceLevelSchema
+  .describe(requirementSpecializationDescriptions.minimumExperienceSpecificity)
+  .meta({ id: "requirementMinimumExperienceSpecificity" });
+
+// Ambiguity is derived from strength: only an AMBIGUOUS strength can carry an
+// (display-only) explanation, and an explicit strength cannot be ambiguous.
+const transportQualificationStrength = z
+  .union([
+    z.object({ strength: requirementStrengthSchema.exclude(["AMBIGUOUS"]) }).strict(),
+    z
+      .object({
+        strength: z.literal("AMBIGUOUS"),
+        ambiguityExplanation: requiredText,
+      })
+      .strict(),
+  ])
+  .meta({ id: "qualificationStrength" });
+
+const transportRequirementSharedShape = {
+  requirement: requiredText.meta({ id: "requirementText" }),
+  strengthAssessment: transportQualificationStrength,
+  statedYears: transportRequirementYears,
+  statedYearsMaximum: transportRequirementYears,
+  statedYearsOpenEnded: z.boolean(),
+  experienceSpecificity: optionalText.meta({ id: "requirementSpecificity" }),
 };
 
-const transportRequirementSchema = z.union([
-  z
-    .object({
-      ...transportRequirementBaseShape,
-      assessmentUnit: z.literal("INDEPENDENT_QUALIFICATION"),
-      compoundExplanation: z.null(),
-    })
-    .strict(),
-  z
-    .object({
-      ...transportRequirementBaseShape,
-      assessmentUnit: z.literal("SINGLE_COMPOUND_CONCEPT"),
-      compoundExplanation: requiredText,
-    })
-    .strict(),
+
+// Only EXPERIENCE requirements can express experience semantics; other
+// categories have no such fields, so the provider cannot author them there.
+const transportRequirementCategoryShapes = [
+  {
+    category: requirementCategorySchema.exclude(["EXPERIENCE"]).meta({ id: "nonExperienceRequirementCategory" }),
+  },
+  {
+    category: z.literal("EXPERIENCE"),
+    minimumExperienceSpecificity: transportMinimumExperienceSpecificity,
+    requiresStartupExperience: z
+      .boolean()
+      .describe(requirementSpecializationDescriptions.requiresStartupExperience),
+  },
+] as const;
+
+const transportRequirementUnitShapes = [
+  {
+    assessmentUnit: z.literal("INDEPENDENT_QUALIFICATION"),
+    compoundExplanation: z.null(),
+  },
+  {
+    assessmentUnit: z.literal("SINGLE_COMPOUND_CONCEPT"),
+    compoundExplanation: requiredText,
+  },
+] as const;
+
+const { requirement: transportRequirementText, ...transportRequirementDetailShape } =
+  transportRequirementSharedShape;
+
+const transportRequirementVariants = transportRequirementCategoryShapes.flatMap(
+  (categoryShape) =>
+    transportRequirementUnitShapes.map((unitShape) =>
+      z.object({
+        requirement: transportRequirementText,
+        ...categoryShape,
+        ...transportRequirementDetailShape,
+        ...unitShape,
+      }).strict(),
+    ),
+);
+
+const transportQualificationSchema = z.union([
+  transportRequirementVariants[0]!,
+  transportRequirementVariants[1]!,
+  ...transportRequirementVariants.slice(2),
 ]);
+
+export const requirementStatementDescriptions = {
+  evidenceReference:
+    "The one evidence record whose sourceText quotes this source statement verbatim.",
+  statementStrengths:
+    "Every requirement strength the statement expresses, each once.",
+  statementExperienceLevels:
+    "Every minimumExperienceSpecificity used by this statement's EXPERIENCE qualifications, each once.",
+  qualifications:
+    "The statement's atomic qualifications. Each distinct strength or experience level needs its own qualification.",
+} as const;
+
+// One source statement (a bullet or sentence) decomposed into atomic
+// qualifications. The application flattens statements into the Requirement Map.
+const transportRequirementStatementSchema = z
+  .object({
+    evidenceReference: requiredText.describe(
+      requirementStatementDescriptions.evidenceReference,
+    ),
+    statementStrengths: z
+      .array(requirementStrengthSchema)
+      .min(1)
+      .describe(requirementStatementDescriptions.statementStrengths),
+    statementExperienceLevels: z
+      .array(requirementExperienceLevelSchema)
+      .describe(requirementStatementDescriptions.statementExperienceLevels),
+    qualifications: z
+      .array(transportQualificationSchema)
+      .min(1)
+      .describe(requirementStatementDescriptions.qualifications),
+  })
+  .strict();
 
 const transportEvidenceRecordDraftSchema = z
   .object({
@@ -390,7 +666,7 @@ export const semanticReconstructionTransportSchema = z
         other: responsibilityMapSchema.shape.other,
       })
       .strict(),
-    requirements: z.array(transportRequirementSchema),
+    requirementStatements: z.array(transportRequirementStatementSchema),
     ownershipMap: z
       .object({
         functions: transportOwnershipFunctionsSchema,
@@ -411,6 +687,11 @@ export type SemanticReconstructionEvidenceSource = z.infer<
 export type SemanticReconstruction = z.infer<
   typeof semanticReconstructionSchema
 >;
+
+// Whitespace- and case-insensitive identity of a quoted source span.
+export function normalizeSourceSpan(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
 
 export function semanticReconstructionFromTransport(
   input: unknown,
@@ -435,14 +716,14 @@ export function semanticReconstructionFromTransport(
   const evidenceByReference = new Map(
     transport.evidence.map((evidence) => [evidence.referenceId, evidence]),
   );
-  const normalizedSourceContent = evidenceSource.sourceContent
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-  const explicitAbsencePattern =
-    /\b(?:does not|do not|will not|not responsible|not own|no responsibility|excluded|excluding|handled by|owned by|outside (?:the )?role|not part of)\b/i;
+  const normalizedSourceContent = normalizeSourceSpan(
+    evidenceSource.sourceContent,
+  );
   for (const assessment of transport.responsibilityMap.areas) {
     if (assessment.prominence !== "ABSENT") continue;
+    // The grammar requires absenceBasis EXPLICIT_EXCLUSION. Acceptance then
+    // depends on typed evidence and verbatim source grounding, not on whether
+    // the quoted source happens to use particular exclusion vocabulary.
     const validAbsenceEvidence = assessment.evidenceReferences.every(
       (reference) => {
         const evidenceRecord = evidenceByReference.get(reference);
@@ -455,13 +736,8 @@ export function semanticReconstructionFromTransport(
         ) {
           return false;
         }
-        const normalizedQuote = evidenceRecord.sourceText
-          .replace(/\s+/g, " ")
-          .trim()
-          .toLowerCase();
-        return (
-          explicitAbsencePattern.test(normalizedQuote) &&
-          normalizedSourceContent.includes(normalizedQuote)
+        return normalizedSourceContent.includes(
+          normalizeSourceSpan(evidenceRecord.sourceText),
         );
       },
     );
@@ -472,13 +748,106 @@ export function semanticReconstructionFromTransport(
       );
     }
   }
-  const normalizedRequirements = transport.requirements.map((requirement) =>
-    requirement.requirement.replace(/\s+/g, " ").trim().toLowerCase(),
+  // Each source statement cites one evidence record quoting it verbatim.
+  // Only requirement evidence is grounded here; responsibility evidence may
+  // paraphrase, except for an explicit absence (checked above).
+  const statementQuotes = transport.requirementStatements.map(
+    (statement, statementIndex) => {
+      const evidenceRecord = evidenceByReference.get(statement.evidenceReference);
+      if (
+        !evidenceRecord ||
+        evidenceRecord.sourceText === null ||
+        !normalizedSourceContent.includes(
+          normalizeSourceSpan(evidenceRecord.sourceText),
+        )
+      ) {
+        semanticContractViolation(
+          "JD_RECONSTRUCTION_REQUIREMENT_GROUNDING_INVALID",
+          `JD Reconstruction requirement statement ${statementIndex} is not quoted verbatim from the job description`,
+        );
+      }
+      return normalizeSourceSpan(evidenceRecord.sourceText);
+    },
+  );
+  if (
+    new Set(statementQuotes).size !== statementQuotes.length ||
+    new Set(
+      transport.requirementStatements.map(
+        (statement) => statement.evidenceReference,
+      ),
+    ).size !== statementQuotes.length
+  ) {
+    semanticContractViolation(
+      "JD_RECONSTRUCTION_STATEMENT_IDENTITY_INVALID",
+      "JD Reconstruction contains a repeated requirement statement",
+    );
+  }
+  for (const [statementIndex, statement] of transport.requirementStatements.entries()) {
+    const qualificationTexts = statement.qualifications.map((qualification) =>
+      normalizeSourceSpan(qualification.requirement),
+    );
+    if (new Set(qualificationTexts).size !== qualificationTexts.length) {
+      semanticContractViolation(
+        "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID",
+        `JD Reconstruction statement ${statementIndex} repeats a qualification`,
+      );
+    }
+  }
+  const normalizedRequirements = transport.requirementStatements.flatMap(
+    (statement) =>
+      statement.qualifications.map((qualification) =>
+        normalizeSourceSpan(qualification.requirement),
+      ),
   );
   if (new Set(normalizedRequirements).size !== normalizedRequirements.length) {
     semanticContractViolation(
       "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID",
       "JD Reconstruction contains a repeated requirement identity",
+    );
+  }
+  // Flatten statements into the Requirement Map. Ambiguity is derived from
+  // strength; the provider authors only a display explanation.
+  const requirements = transport.requirementStatements.flatMap(
+    (
+      {
+        evidenceReference,
+        statementStrengths,
+        statementExperienceLevels,
+        qualifications,
+      },
+      statementIndex,
+    ) =>
+      qualifications.map(
+        ({
+          assessmentUnit: _assessmentUnit,
+          compoundExplanation: _compoundExplanation,
+          strengthAssessment,
+          ...qualification
+        }) => ({
+          requiresStartupExperience: false,
+          ...qualification,
+          strength: strengthAssessment.strength,
+          evidenceReferences: [evidenceReference],
+          ambiguity: {
+            isAmbiguous: strengthAssessment.strength === "AMBIGUOUS",
+            explanation:
+              "ambiguityExplanation" in strengthAssessment
+                ? strengthAssessment.ambiguityExplanation
+                : null,
+          },
+          sourceStatement: {
+            statementIndex,
+            statementStrengths,
+            statementExperienceLevels,
+          },
+        }),
+      ),
+  );
+  const statementViolations = requirementStatementViolations(requirements);
+  if (statementViolations.length > 0) {
+    semanticContractViolation(
+      "JD_RECONSTRUCTION_STATEMENT_INVALID",
+      `JD Reconstruction requirement statements are inconsistent: ${statementViolations[0]!}`,
     );
   }
   const evidence = transport.evidence.map(
@@ -491,7 +860,7 @@ export function semanticReconstructionFromTransport(
       }
       return {
         ...semanticEvidence,
-        criterionId: "jd-reconstruction",
+        criterionId: jdReconstructionCriterionId,
         sourceType: evidenceSource.sourceType,
         sourceRecordId: evidenceSource.sourceRecordId,
         provenanceId: evidenceSource.provenanceId,
@@ -541,19 +910,13 @@ export function semanticReconstructionFromTransport(
   const result = parseSemanticDomainResult({
     schema: semanticReconstructionSchema,
     value: {
-      ...transport,
+      ...(({ requirementStatements: _statements, ...rest }) => rest)(transport),
       responsibilityMap: {
         areas,
         other: transport.responsibilityMap.other,
       },
       ownershipMap: { functions },
-      requirements: transport.requirements.map(
-        ({
-          assessmentUnit: _assessmentUnit,
-          compoundExplanation: _compoundExplanation,
-          ...requirement
-        }) => requirement,
-      ),
+      requirements,
       evidence,
     },
     code: "JD_RECONSTRUCTION_DOMAIN_INVALID",

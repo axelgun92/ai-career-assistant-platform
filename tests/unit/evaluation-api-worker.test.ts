@@ -216,9 +216,9 @@ describe("evaluation API", () => {
               "openai-gpt-5.6-luna-standard-2026-08-26",
           },
           "customer-success.company-alignment": {
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             pricingVersion:
-              "openai-gpt-5.6-luna-standard-2026-08-26",
+              "openai-gpt-6-luna-standard-2026-09-22",
           },
           "customer-success.organizational-maturity": {
             model: "gpt-5.6-luna",
@@ -231,9 +231,9 @@ describe("evaluation API", () => {
               "openai-gpt-5.6-luna-standard-2026-08-26",
           },
           "customer-success.burnout-risk": {
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             pricingVersion:
-              "openai-gpt-5.6-luna-standard-2026-08-26",
+              "openai-gpt-6-luna-standard-2026-09-22",
           },
           "customer-success.resume-match": {
             model: "gpt-5.6-terra",

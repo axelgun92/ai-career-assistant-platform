@@ -19,12 +19,25 @@ function fail(message: string): never {
 }
 
 function prisma(args: string[], databaseUrl: string) {
-  const result = spawnSync("pnpm", ["exec", "prisma", ...args, "--config", config], {
+  const pnpmArgs = ["exec", "prisma", ...args, "--config", config];
+  const command = process.platform === "win32"
+    ? process.env.ComSpec ?? "cmd.exe"
+    : "pnpm";
+  const commandArgs = process.platform === "win32"
+    ? ["/d", "/s", "/c", "pnpm", ...pnpmArgs]
+    : pnpmArgs;
+  const result = spawnSync(command, commandArgs, {
     cwd: root,
     env: { ...process.env, DATABASE_URL: databaseUrl },
     encoding: "utf8",
   });
-  if (result.status !== 0) fail(`prisma ${args[0]} ${args[1] ?? ""} failed:\n${result.stderr}`);
+  if (result.status !== 0) {
+    fail(
+      `prisma ${args[0]} ${args[1] ?? ""} failed:\n${
+        result.stderr || result.stdout || result.error?.message || "Unknown process failure"
+      }`,
+    );
+  }
   return result.stdout;
 }
 

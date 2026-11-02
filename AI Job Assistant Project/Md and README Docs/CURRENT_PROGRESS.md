@@ -1,25 +1,33 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 1, 2026
+**Last updated:** November 2, 2026
+
+## Final Evaluator / Product Integration — CX-1 to CX-4
+
+**Implemented and fully verified offline in the clean integration worktree on November 2, 2026; uncommitted and unpushed pending Alex's review.**
+
+- The accepted evaluator checkpoint `7d1f4f0` was merged with `--no-ff --no-commit` onto the product-based integration branch. Product-owned Features 11–18 code won its conflicts; evaluator-owned Hard Filters v3, salary policy v3, JD Reconstruction v7, Resume Match v4, Organizational Maturity v7, semantic contract repairs, routing overrides and GPT-6 pricing/configuration were retained.
+- Exactly `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions` and native Core `compensationBasis` are released to the evaluator. The other 15 approved fields remain withheld. Evaluated-source and as-of provenance binding remain intact.
+- The eight reproduced unit failures were resolved as one evaluator regression (six cases of a missing `residencyRegions` array), two stale expectations, and the generated-Prisma environment prerequisite. Full unit verification passes: 81 files passed, one replay file skipped because no local artifacts exist; 2,023 tests passed and six skipped. Typecheck, lint, Prisma schema validation, and focused evaluator/lifecycle verification pass.
+- Ghost Job Risk remains intentionally `UNKNOWN` in production with no posting-history input or provider call. Final Recommendation remains deterministic. The structured profile-limitations contract is integrated without importing or activating a persisted profile.
+- The isolated `ai_career_assistant_test` database was created empty and migrated through all 24 repository migrations. The complete guarded integration suite passes (43 files, 354 tests). Migration verification applied all 24 migrations in order to a fresh temporary `ai_career_migration_check_*` database, confirmed only the documented `Recommendation.evidenceReferences` default drift, and dropped the temporary database. The normal and acceptance databases were untouched.
+- The DB gate exposed four stale Genuine Gap vertical-slice fixtures, two stale pre-integration withholding assertions, and two Windows-only `pnpm` child-process launch defects in test/migration tooling. The fixtures now prove the accepted structured limitation plus JD Reconstruction v7 level contract; the assertions prove the six-field release; the tooling invokes pnpm safely on Windows. No evaluator contract was weakened.
+- No commit or push has been made. The original dirty product checkout remains untouched.
 
 ## Current Objective
 
-**Final evaluator / product integration has started (November 1, 2026). Codex owns the first step.**
+**CX-1 to CX-4 are complete and ready for Alex's final review (November 2, 2026).**
 - Alex approved the final integration audit with every recommended decision: D1–D7, D9 and D10. D8, the live acceptance, is not yet authorized.
 - Alex assigned the merge work (CX-1 to CX-4) to Codex.
 - Claude created the integration branch `integration/final-evaluator-product` from the accepted product checkpoint `b1b15af`, and recorded the Codex work package in `HANDOFFS.md` ("Final Evaluator / Product Integration — Codex Work Package CX-1 to CX-4").
-- Nothing has been merged yet. No code, migration or database changed, and no live or provider call was made. Feature 19 has not started.
+- The controlled merge remains staged and uncommitted. No live or provider call was made. Feature 19 has not started.
 
 In order, what follows:
 
-1. Next (Codex), on the integration branch:
-   - CX-1: controlled `--no-ff` merge of `origin/codex/evaluator-live-diagnostic` @ `7d1f4f0`, with product-owned code winning;
-   - CX-2: release of the six salary/residency/basis fields and native `compensationBasis`;
-   - CX-3: the eight pre-existing unit failures;
-   - CX-4: review sign-offs.
-2. Then: Alex accepts the evaluator contract on the integration branch.
-3. Then (Claude):
+1. Next: Alex's final review and explicit commit/push approval for CX-1 to CX-4.
+2. After acceptance: the Milestones 1–10 Codex integrity audit.
+3. Then (Claude), in the locked final-integration sequence:
    - CL-1: withholding tests;
    - CL-2: profile-limitations version;
    - CL-3: cross-feature regression;

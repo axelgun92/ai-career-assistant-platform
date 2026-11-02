@@ -288,12 +288,22 @@ export function createCustomerSuccessRecommendation(
         : [
             "Hard filters pass, the role remains substantively aligned, effective level is eligible, and no severe evidenced disqualifier is present.",
           ];
-  const uniqueStrengths = uniqueBy(strengths, (item) => item.finding);
-  const uniqueConcerns = uniqueBy(concerns, (item) => item.finding);
+  // Merge only records that are identical in wording and evidence. Distinct
+  // upstream findings that happen to share wording stay separate, so neither
+  // the presented findings nor the evidence set depends on provider wording.
+  const sameRecord = (item: SupportedFinding) =>
+    JSON.stringify([item.finding, item.evidenceReferences]);
+  const uniqueStrengths = uniqueBy(strengths, sameRecord);
+  const uniqueConcerns = uniqueBy(concerns, sameRecord);
   const uniqueUnknowns = uniqueBy(unknowns, (item) => item.code);
-  const uniqueContradictions = uniqueBy(
-    contradictions,
-    (item) => `${item.relevantField}:${item.claimA}:${item.claimB}`,
+  const uniqueContradictions = uniqueBy(contradictions, (item) =>
+    JSON.stringify([
+      item.relevantField,
+      item.claimA,
+      item.claimB,
+      item.evidenceReferencesA,
+      item.evidenceReferencesB,
+    ]),
   );
   const evidenceReferences = [
     ...new Set([
