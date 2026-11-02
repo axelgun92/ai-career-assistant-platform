@@ -9,6 +9,8 @@ import { formatDateTime } from "@/components/budget/budget-format";
 import type { BudgetReportView, BudgetStatusView, DeferralView } from "@/components/budget/types";
 import { getBudgetService } from "@/server/budget-service";
 import { getProfileService } from "@/server/profile-service";
+import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-service";
+import { NeedsReviewBacklog } from "@/components/needs-review-backlog";
 
 export const metadata = { title: "Budget" };
 import { semanticExecutorConfigFromEnvironment } from "@/server/semantic-execution-config";
@@ -65,6 +67,14 @@ export default async function BudgetPage() {
     .overview()
     .then(({ active }) => (active ? { id: active.userProfileId, version: active.version } : null))
     .catch(() => null);
+  const needsReview = await getPreEvaluatorTriageService()
+    .listNeedsReview()
+    .catch((error: unknown) => {
+      console.error("Pre-evaluator review backlog could not be loaded", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return [];
+    });
 
   return (
     <main className="budget-page">
@@ -75,6 +85,20 @@ export default async function BudgetPage() {
       </p>
       <BudgetCard status={status} />
       <BudgetSettingsForm status={status} defaultCurrency={pricingCurrency()} callLimitBounds={report.basis.callLimit} />
+      <NeedsReviewBacklog items={needsReview.map((item) => ({
+        opportunityId: item.opportunityId,
+        opportunityTitle: item.opportunityTitle,
+        companyName: item.companyName,
+        triage: {
+          outcome: item.outcome,
+          automaticOutcome: item.automaticOutcome,
+          reasons: item.reasons,
+          manualDecision: item.manualDecision,
+          manuallyDecidedAt: item.manuallyDecidedAt?.toISOString() ?? null,
+          userProfileVersion: item.userProfileVersion,
+          assessedAt: item.assessedAt.toISOString(),
+        },
+      }))} />
       <DeferredBacklog deferrals={open} activeProfile={activeProfile} />
       <CapacityReport report={report} todayLabel={localDate(report.period.timeZone)} />
       {history.length ? (

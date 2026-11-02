@@ -2,6 +2,7 @@ import {
   canRequestEvaluation,
   isNormalizedLifecycleState,
   opportunityLifecycleStateSchema,
+  preEvaluatorTriageManualDecisionSchema,
 } from "@ai-career/core";
 import {
   createCustomerSuccessEvaluator,
@@ -33,6 +34,10 @@ import { getBudgetService, type EvaluationAdmissionGate } from "./budget-service
 import { EvaluationApiError } from "./evaluation-errors";
 import { evaluationQueueState } from "./evaluation-queue-state";
 import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-config";
+import {
+  getPreEvaluatorTriageService,
+  type EvaluationTriageGate,
+} from "./pre-evaluator-triage-service";
 
 const evaluationRequestSchema = z
   .object({
@@ -103,6 +108,9 @@ export interface EvaluationServiceDependencies {
     blockingTwin(opportunityId: string): Promise<{ opportunityId: string; title: string | null; companyName: string | null } | null>;
   };
   duplicateSpendLock?: <T>(work: () => Promise<T>) => Promise<T>;
+  // Product-only deterministic gate before admission. Optional for isolated
+  // evaluator tests; production always supplies it.
+  triageGate?: EvaluationTriageGate;
 }
 
 // The public evaluation JSON omits stored error messages and provider request
@@ -148,6 +156,7 @@ export function createEvaluationService(
   dependencies: EvaluationServiceDependencies,
 ) {
   const gate = dependencies.admissionGate;
+  const triageGate = dependencies.triageGate;
   const now = dependencies.now ?? (() => new Date());
 
   function execution() {
@@ -360,6 +369,24 @@ export function createEvaluationService(
     });
     if (!subject?.userProfile) throw unavailable();
     validateCustomerSuccessProfile(subject);
+    if (triageGate) {
+      const triage = await triageGate.assess({
+        opportunityId: deferral.opportunityId,
+        domain: deferral.domain,
+        profile: {
+          id: deferral.userProfileId,
+          version: deferral.userProfileVersion ?? subject.userProfile.version,
+        },
+      });
+      if (triage.outcome !== "EVALUATE") {
+        return {
+          outcome: triage.outcome,
+          opportunityId: deferral.opportunityId,
+          domain: deferral.domain,
+          triage,
+        } as const;
+      }
+    }
     return admitAndEnqueue({
       opportunityId: deferral.opportunityId,
       domain: deferral.domain,
@@ -388,9 +415,6 @@ export function createEvaluationService(
     async requestEvaluation(opportunityIdValue: string, body: unknown) {
       const opportunityId = z.uuid().parse(opportunityIdValue);
       const request = evaluationRequestSchema.parse(body ?? {});
-      // Fail before any write (including a deferral) when AI evaluation is
-      // not configured.
-      execution();
       const opportunity = await loadEvaluableOpportunity(opportunityId);
 
       const domain = request.domain ?? opportunity.domain;
@@ -444,13 +468,68 @@ export function createEvaluationService(
       });
       validateCustomerSuccessProfile(subject);
 
+      if (triageGate) {
+        const triage = await triageGate.assess({ opportunityId, domain, profile });
+        if (triage.outcome !== "EVALUATE") {
+          return {
+            outcome: triage.outcome,
+            opportunityId,
+            domain,
+            triage,
+          } as const;
+        }
+      }
+
       return admitAndEnqueue({ opportunityId, domain, profile });
+    },
+
+    async decideTriage(opportunityIdValue: string, body: unknown) {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      const parsed = z
+        .object({ decision: preEvaluatorTriageManualDecisionSchema })
+        .strict()
+        .parse(body);
+      if (!triageGate) {
+        throw new EvaluationApiError(
+          "TRIAGE_NOT_FOUND",
+          "Pre-evaluator triage is unavailable",
+          404,
+        );
+      }
+      const triage = await triageGate.decide({
+        opportunityId,
+        decision: parsed.decision,
+      });
+      if (!triage) {
+        throw new EvaluationApiError(
+          "TRIAGE_NOT_OPEN",
+          "This pre-evaluator review was already resolved or is not open",
+          409,
+        );
+      }
+      if (parsed.decision === "REJECT") {
+        return { outcome: "REJECT" as const, opportunityId, triage };
+      }
+      if (!triage.userProfileId) {
+        throw new EvaluationApiError(
+          "TRIAGE_PROFILE_UNAVAILABLE",
+          "The profile version used for triage is no longer available",
+          422,
+        );
+      }
+      return this.requestEvaluation(opportunityId, {
+        userProfileId: triage.userProfileId,
+      });
+    },
+
+    async getTriage(opportunityIdValue: string) {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      return triageGate ? triageGate.get(opportunityId) : null;
     },
 
     async resumeDeferred(deferredIdValue: string) {
       const deferral = await findDeferral(deferredIdValue);
       if (deferral.status !== "DEFERRED") throw deferralNotOpen();
-      execution();
       return resumeDeferredRequest(deferral);
     },
 
@@ -600,6 +679,7 @@ export function getEvaluationService(): EvaluationService {
     admissionGate: getBudgetService().gate,
     duplicates: new PrismaDuplicateRepository(),
     duplicateSpendLock: (work) => withDuplicateSpendLock(work),
+    triageGate: getPreEvaluatorTriageService().gate,
   });
   return evaluationService;
 }

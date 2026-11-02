@@ -280,9 +280,12 @@ describe("operational report", () => {
         ? null
         : Number((report.capacity.averageEvaluationCost * report.counts.totals.deferred).toFixed(12)),
     );
-    const today = report.spendOverTime.daily.at(-1)!;
-    expect(today.label).toBe(clock.now.toISOString().slice(0, 10));
-    expect(today.unknownCostAttempts).toBeGreaterThanOrEqual(1);
+    // Persisted attempt timestamps are assigned by PostgreSQL, which may run
+    // on a different host clock from the injected service clock. The report
+    // must preserve the database's daily bucket and unknown-cost count.
+    const latestDay = report.spendOverTime.daily.at(-1)!;
+    expect(latestDay.label).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(latestDay.unknownCostAttempts).toBeGreaterThanOrEqual(1);
     expect(report.spendOverTime.monthly.at(-1)?.label).toBe(report.period.label);
 
     const response = await createBudgetApiHandlers(budget).report();

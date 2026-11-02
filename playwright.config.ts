@@ -36,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -110,6 +110,15 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/companies\.spec\.ts$/,
       dependencies: ["my-search"],
+    },
+    {
+      // Post-45d5fff pre-evaluator triage changes the global active profile
+      // and queues test evaluations, so it runs alone after the existing E2E
+      // sequence and uses only the isolated test database.
+      name: "pre-evaluator-triage",
+      use: chromium,
+      testMatch: /\/pre-evaluator-triage\.spec\.ts$/,
+      dependencies: ["companies"],
     },
   ],
   webServer: {

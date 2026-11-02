@@ -48,7 +48,7 @@ export function createEvaluationApiHandlers(service: EvaluationService) {
       try {
         const result = await service.requestEvaluation(opportunityId, body);
         // A deferred request is accepted and persisted but not queued.
-        if (result.outcome === "DEFERRED") return Response.json(result, { status: 200 });
+        if (result.outcome !== "QUEUED") return Response.json(result, { status: 200 });
         return Response.json(result, {
           status: 202,
           headers: {
@@ -62,7 +62,7 @@ export function createEvaluationApiHandlers(service: EvaluationService) {
     async resume(deferredId: string) {
       try {
         const result = await service.resumeDeferred(deferredId);
-        return Response.json(result, { status: result.outcome === "DEFERRED" ? 200 : 202 });
+        return Response.json(result, { status: result.outcome === "QUEUED" ? 202 : 200 });
       } catch (error) {
         return safeError(error);
       }
@@ -95,6 +95,33 @@ export async function handleProductionEvaluationPost(
       request,
       opportunityId,
     );
+  } catch (error) {
+    return safeError(error);
+  }
+}
+
+export async function handlePreEvaluatorTriagePost(
+  request: Request,
+  opportunityId: string,
+) {
+  try {
+    let body: unknown = {};
+    try {
+      const text = await request.text();
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      return Response.json(
+        { error: "Request body must be valid JSON", code: "REQUEST_INVALID" },
+        { status: 400 },
+      );
+    }
+    const result = await getEvaluationService().decideTriage(opportunityId, body);
+    return Response.json(result, {
+      status: result.outcome === "QUEUED" ? 202 : 200,
+      ...(result.outcome === "QUEUED"
+        ? { headers: { Location: `/api/opportunities/${opportunityId}/evaluation` } }
+        : {}),
+    });
   } catch (error) {
     return safeError(error);
   }

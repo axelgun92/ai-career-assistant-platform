@@ -132,6 +132,7 @@ pre {
 }
 
 .evaluation-controls,
+.pre-evaluator-triage,
 .opportunity-hero,
 .recommendation-panel,
 .history-panel,
@@ -150,6 +151,17 @@ pre {
   justify-content: space-between;
   gap: 1.5rem;
   background: #f8fafc;
+}
+
+.pre-evaluator-triage {
+  margin-bottom: 1rem;
+}
+
+.triage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .evaluation-controls h2,
@@ -912,6 +924,7 @@ blockquote {
 
 .budget-card,
 .budget-form,
+.needs-review-backlog,
 .deferred-backlog {
   margin-top: 1.5rem;
   padding: 1rem 1.25rem;
@@ -929,8 +942,23 @@ blockquote {
 
 .budget-card-header h2,
 .budget-form h2,
+.needs-review-backlog h2,
 .deferred-backlog h2 {
   margin: 0 0 0.75rem;
+}
+
+.needs-review-backlog {
+  display: grid;
+  gap: 1rem;
+}
+
+.needs-review-item {
+  border-top: 1px solid #d1d5db;
+  padding-top: 1rem;
+}
+
+.needs-review-item:first-of-type {
+  border-top: 0;
 }
 
 .status-label-muted {

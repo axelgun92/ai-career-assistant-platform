@@ -24,6 +24,7 @@ import { toApplicationView } from "@/components/application/types";
 import { getApplicationStore } from "@/server/application-service";
 import { getDuplicateStore } from "@/server/duplicate-service";
 import { getCompanyIntelligenceService } from "@/server/company-intelligence-service";
+import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-service";
 import { DuplicateNotices } from "@/components/duplicate-notices";
 import {
   applicationUrlBasisNotes,
@@ -129,6 +130,14 @@ export default async function OpportunityPage({
         .then(({ active }) => (active ? { id: active.userProfileId, version: active.version } : null))
         .catch(() => null)
     : null;
+  const triage = await getPreEvaluatorTriageService()
+    .gate.get(detail.opportunity.id)
+    .catch((error: unknown) => {
+      console.error("Pre-evaluator triage could not be loaded", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+      return null;
+    });
 
   const duplicates = await getDuplicateStore()
     .relationships(detail.opportunity.id)
@@ -282,6 +291,15 @@ export default async function OpportunityPage({
         evaluable={lifecycle?.evaluable ?? true}
         deferral={deferral}
         activeProfile={activeProfile}
+        triage={triage ? {
+          outcome: triage.outcome,
+          automaticOutcome: triage.automaticOutcome,
+          reasons: triage.reasons,
+          manualDecision: triage.manualDecision,
+          manuallyDecidedAt: triage.manuallyDecidedAt?.toISOString() ?? null,
+          userProfileVersion: triage.userProfileVersion,
+          assessedAt: triage.assessedAt.toISOString(),
+        } : null}
         listingWarning={
           noLongerListed
             ? "This listing is no longer listed on the sources that can confirm it (see Posting history). You can still evaluate it."

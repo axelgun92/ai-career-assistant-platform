@@ -15,6 +15,10 @@ import type {
 } from "./types";
 import { DeferredNotice } from "../budget/deferred-notice";
 import type { DeferralView } from "../budget/types";
+import {
+  PreEvaluatorTriagePanel,
+  type PreEvaluatorTriagePresentation,
+} from "../pre-evaluator-triage";
 
 type StatusResult =
   | { found: true; evaluation: EvaluationPresentation }
@@ -70,6 +74,7 @@ export function EvaluationExperience({
   deferral = null,
   activeProfile = null,
   listingWarning = null,
+  triage = null,
 }: {
   opportunity: OpportunityPresentation;
   // False for archived/closed opportunities; the API enforces the same rule.
@@ -80,6 +85,7 @@ export function EvaluationExperience({
   // Feature 13: shown before an evaluation is requested for a listing that is
   // no longer listed; a warning, never a block.
   listingWarning?: string | null;
+  triage?: PreEvaluatorTriagePresentation | null;
 }) {
   // `evaluation` is what is displayed; `latest` is the newest evaluation, which
   // drives status, failure details, and the queued-too-long notice.
@@ -214,6 +220,16 @@ export function EvaluationExperience({
           router.refresh();
           return;
         }
+        if (body.outcome === "NEEDS_REVIEW") {
+          setNotice("Evaluation is held for pre-evaluator review. Nothing was spent.");
+          router.refresh();
+          return;
+        }
+        if (body.outcome === "REJECT") {
+          setNotice("Rejected before evaluation. Nothing was spent.");
+          router.refresh();
+          return;
+        }
       }
       if (response.status !== 202) {
         setError(await responseMessage(response, "Evaluation could not be requested"));
@@ -263,9 +279,22 @@ export function EvaluationExperience({
     : null;
   const fallbackShown = fallbackEvaluationId !== null &&
     evaluation?.evaluationId === fallbackEvaluationId;
+  const triageHeld = triage?.outcome === "NEEDS_REVIEW" || triage?.outcome === "REJECT";
 
   return (
     <div className="evaluation-shell">
+      {triage ? (
+        <PreEvaluatorTriagePanel
+          opportunityId={opportunity.id}
+          triage={triage}
+          onChanged={() => {
+            selectedHistoryId.current = null;
+            setPollStopped(false);
+            poller.current?.stop();
+            poller.current?.start();
+          }}
+        />
+      ) : null}
       <section className="evaluation-controls" aria-labelledby="evaluation-status-title">
         <div>
           <p className="eyebrow">Evaluation status</p>
@@ -279,10 +308,12 @@ export function EvaluationExperience({
           <button
             type="button"
             onClick={requestEvaluation}
-            disabled={requesting || active || !evaluable}
+            disabled={requesting || active || !evaluable || triageHeld}
             aria-describedby="evaluation-status-message"
           >
             {requesting ? "Requesting…" : active ? "Evaluation in progress" :
+              triage?.outcome === "NEEDS_REVIEW" ? "Awaiting pre-evaluator review" :
+              triage?.outcome === "REJECT" ? "Rejected before evaluation" :
               deferral ? "Resume deferred evaluation" :
               evaluation ? "Reevaluate opportunity" : "Evaluate Customer Success fit"}
           </button>

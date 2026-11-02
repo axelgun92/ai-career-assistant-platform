@@ -186,6 +186,7 @@ model Opportunity {
   recommendations       Recommendation[]
   evaluationAdmissions  EvaluationAdmission[]
   deferredEvaluations   DeferredEvaluation[]
+  preEvaluatorTriage    PreEvaluatorTriage?
   userActions           OpportunityUserAction[]
   application           Application?
   semanticOperations    SemanticOperationAttempt[]
@@ -432,6 +433,7 @@ model UserProfile {
   evaluations             Evaluation[]
   activeFor               ActiveUserProfile[]
   deferredEvaluations     DeferredEvaluation[]
+  preEvaluatorTriages     PreEvaluatorTriage[]
   createdAt               DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt               DateTime             @updatedAt @db.Timestamptz(3)
 
@@ -701,6 +703,17 @@ enum DeferredEvaluationStatus {
   CANCELLED
 }
 
+enum PreEvaluatorTriageOutcome {
+  EVALUATE
+  NEEDS_REVIEW
+  REJECT
+}
+
+enum PreEvaluatorTriageManualDecision {
+  EVALUATE
+  REJECT
+}
+
 // Request integrity (no money involved): one row per evaluation request the
 // product admitted to the queue. A live admission is consumed only inside the
 // transaction that creates its Evaluation (enqueueAdmitted), or abandoned;
@@ -786,6 +799,31 @@ model DeferredEvaluation {
 
   @@index([status, createdAt])
   @@index([opportunityId, status])
+}
+
+// The deterministic, pre-evaluator admission decision. It is one current
+// record per Opportunity, tied to the profile version used for the decision.
+// Manual decisions remain effective when later observations refresh the
+// automatic outcome, so an explicit user choice is never silently erased.
+model PreEvaluatorTriage {
+  id                 String                            @id @default(uuid()) @db.Uuid
+  opportunityId      String                            @unique @db.Uuid
+  opportunity        Opportunity                       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  domain             String
+  userProfileId      String?                           @db.Uuid
+  userProfile        UserProfile?                      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  userProfileVersion Int?
+  outcome            PreEvaluatorTriageOutcome
+  reasons            Json
+  inputFingerprint   String
+  manualDecision     PreEvaluatorTriageManualDecision?
+  manuallyDecidedAt  DateTime?                         @db.Timestamptz(3)
+  assessedAt         DateTime                           @db.Timestamptz(3)
+  createdAt          DateTime                           @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                           @updatedAt @db.Timestamptz(3)
+
+  @@index([outcome, manualDecision, assessedAt])
+  @@index([userProfileId])
 }
 
 enum ApplicationStage {

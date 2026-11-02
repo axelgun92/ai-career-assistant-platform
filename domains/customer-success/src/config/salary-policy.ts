@@ -94,7 +94,7 @@ function configuredGeographyCodes(values: readonly string[]) {
   });
 }
 
-function sameLocationScope(actual: string, configured: string) {
+export function sameLocationScope(actual: string, configured: string) {
   return (
     actual === configured ||
     actual.startsWith(`${configured}-`) ||
