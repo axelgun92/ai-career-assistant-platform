@@ -2,8 +2,8 @@
 
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
-**Status:** Active development  
-**Last updated:** October 31, 2026
+**Status:** Active development; pre-evaluator triage complete
+**Last updated:** November 2, 2026
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Manual Opportunity
 → Raw source/provenance preservation
 → Deterministic normalization
 → Dashboard / search / filters
+→ Deterministic pre-evaluator triage (Evaluate / Needs Review / Reject)
 → Budget admission and queued evaluation
 → Background Customer Success evaluation
 → Deterministic Apply / Review / Skip
@@ -43,13 +44,15 @@ Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, W
 
 *(Earlier wording, superseded on October 18, 2026: "Automated discovery is not yet complete, but the manual workflow remains the stable product foundation that later retrieval will feed. The current product can evaluate a manually entered job without automated retrieval.")*
 
-**Branch note:** the main-product work described here is implemented on `claude/gallant-pasteur-y1ou3i`. The evaluator branch `codex/evaluator-live-diagnostic` carries three things not on the main-product branch:
+**Branch note:** `integration/final-evaluator-product` contains the completed evaluator/product integration at `45d5fff`. That commit is the preserved pre-triage baseline. The new deterministic pre-evaluator triage enhancement follows at `5ac3c9d`; it is product admission logic, not a retroactive Milestone 9 or evaluator change.
 
-- the October 15 evaluator routing lock;
-- the October 10–13 evaluator semantic-contract repairs;
-- the Milestone 4 salary-policy alignment, with its October 25, 2026 compensation-basis correction (uncommitted on the evaluator worktree).
+### Pre-evaluator triage (post-`45d5fff` enhancement)
 
-Neither branch is merged into `main` yet; they are combined at the deliberate final integration pass.
+- Runs after normalized facts and deduplication, before budget/admission and any evaluator task.
+- Outcomes are exactly **Evaluate**, **Needs Review** and **Reject**. Evaluate enters the existing backlog/admission flow. Needs Review waits for the user's explicit **Evaluate** or **Reject** choice. Reject stops before evaluator spend.
+- Uses only structured normalized facts and existing configured hard policies: salary, residency/location eligibility, work arrangement, and conservative work-authorization relevance. Unknown, conflicting or incomplete hard prerequisites become Needs Review; only definite incompatibility becomes Reject.
+- Persists reasons, causal fields, profile version, fingerprint and manual decision in one additive `PreEvaluatorTriage` record per Opportunity. Reassessment updates that record without changing source/provenance history, and never silently erases a manual choice.
+- The semantic evaluator and its Apply / Review / Skip recommendation remain unchanged. Needs Review and Reject create no evaluator, admission, deferral or semantic-operation rows.
 
 ## Complete or Substantially Implemented
 
@@ -255,7 +258,7 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
-**Feature 18, Company Intelligence, is complete: implemented, verified and accepted by Alex on October 31, 2026. Main-product features 1–18 are complete; the deliberate evaluator/product integration is next and has not started.** Built to the approved Feature 18 contract (October 31, 2026; Customer Success PRD v1.16 §19):
+**No implementation task is currently in progress. Main-product features 1–18 and final evaluator/product integration are complete; the post-`45d5fff` pre-evaluator triage enhancement is complete at `5ac3c9d`. The next separate task is the Milestones 1–10 historical integrity audit.** The Feature 18 record below is preserved as its October 31 closeout:
 - **Companies** (`/companies`, top-level navigation after Market; `/companies/[id]`; `GET /api/companies` and `GET /api/companies/[id]`): an index of companies with at least one role first observed in the window (applications alone never add a company; a company page opened directly still shows its applications by application date, even with no role in the window), with observed roles, currently listed, listed again after removal (Feature 13 reappearance only; a same-requisition relisting is a separate company-page signal), recurring role groups, remote of known arrangements, your applications, interviews, offers and last observed (filters: name, window, title group, work arrangement, has listed roles, has applications, has posting-history signals; ordered by counts or name, never by a rate); a company page with Overview (incl. company type), Observed postings, Recurring roles, Work arrangement and hiring regions, Your history with this company, Posting-history signals and the observed roles. The opportunity page links its company.
 - **Identity:** company = Company rows sharing an exact normalized name (the dashboard filter grouping); any member id opens it; no fuzzy or alias matching; jobs without a company are counted only. A role is one canonical opportunity.
 - **Postings and listing history:** "Observed postings" by month first seen, never "hires"; listed / no longer listed / unknown from Feature 13; listed again after confirmed removal, relisted under a new listing ID with the same requisition (stored MATCH evidence), closed on the employer board but seen elsewhere, unchanged ≥ 30 days — each "x of n"; Ghost Job Risk not summarized. Recurring role group = ≥ 2 roles in one title group, not a repost.
@@ -407,7 +410,9 @@ Task 8 and Task 9 are complete. In order:
 10. Done: Feature 16, Job-Market Analytics, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17 and Customer Success TDD v1.14. *(Earlier step: "Now: Feature 16 … awaiting Alex's review, then the commit.")* *(Earlier step: "Next: main-product features 16–18 (Feature 16 has not started)".)*
 11. Done: Feature 17, Personal Job-Search Analytics, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.17, Customer Success PRD v1.15, Core Platform TDD v1.18, Customer Success TDD v1.15; accepted and committed. *(Earlier step: "Now: Feature 17 … awaiting Alex's review, then the commit.")*
 12. Done: Feature 18, Company Intelligence, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.18, Customer Success PRD v1.16, Core Platform TDD v1.19 and Customer Success TDD v1.16; accepted and committed. Main-product features 1–18 are complete. *(Earlier step: "Now: Feature 18 … awaiting Alex's review, then the commit.")* *(Earlier step: "Next: main-product feature 18, company intelligence (not started).")*
-13. Next (not started): deliberate evaluator/product integration (including the decision on how Ghost Job Risk adopts the Feature 13 posting-history facts), full isolated verification, evaluator freeze, and merge.
+13. Done: deliberate evaluator/product integration, committed as `45d5fff` on November 2, 2026. Ghost Job Risk remains deterministically Unknown while its required evidence is insufficient.
+14. Done: the new post-baseline pre-evaluator triage admission/backlog enhancement, committed as `5ac3c9d` on November 2, 2026.
+15. Next (not started): the Milestones 1–10 historical integrity audit, using `45d5fff` as the pre-triage reference.
 
 Features 19–23 remain later add-ons (see below).
 

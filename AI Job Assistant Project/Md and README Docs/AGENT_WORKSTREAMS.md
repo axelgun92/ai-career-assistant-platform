@@ -1,13 +1,21 @@
 # Agent Workstreams
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 31, 2026
+**Last updated:** November 2, 2026
 
 ## Purpose
 
 This document defines current ownership boundaries for coding agents so parallel development does not create conflicting edits, architectural drift, or duplicated work.
 
 It is a coordination document, not a product specification.
+
+## Current Workstream State (November 2, 2026)
+
+- Final evaluator/product integration is complete on `integration/final-evaluator-product`; `45d5fff` is the preserved pre-triage baseline.
+- Codex completed the separate product-side pre-evaluator triage enhancement at `5ac3c9d`. The gate lives in the existing Milestone 9 admission/backlog path, after normalization/deduplication and before budget/admission. It did not modify evaluator prompts, routing, stage schemas, the six-released/fifteen-withheld boundary, or Apply / Review / Skip.
+- The next assigned task is the Milestones 1–10 historical integrity audit. Its comparison point is `45d5fff`; the audit must not treat triage as historical Milestone 9 behavior.
+- No extension implementation, paid/live evaluator acceptance, or later-add-on work is active. Those require their own handoff and authorization.
+- The October 15 split below is retained as workstream history and remains useful for ownership boundaries, but its branch-status statements are superseded by this section.
 
 ## Current Workstream Split (October 15, 2026; status updated October 16, 2026)
 

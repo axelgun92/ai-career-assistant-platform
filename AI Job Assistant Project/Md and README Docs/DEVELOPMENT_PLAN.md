@@ -1,7 +1,7 @@
 # Development Plan
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** October 31, 2026
+**Last updated:** November 2, 2026
 
 ## Goal
 
@@ -21,9 +21,11 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
 - The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete (October 16, 2026).
 - The features 1–10 gap audit is complete (October 17, 2026), and the Features 1–10 Gap Closure is committed (`d573acf`).
 - Feature 11A (automated retrieval from the verified official API and feed sources) is committed (`fad2341`), and Feature 11B (the verified public/guest-endpoint and public-HTML sources) is committed (`2a1d8c2`). Feature 12 (source health and conservative retrieval) is committed (`f10a02b`). Feature 13 (posting history and listing removal) is committed (`d1bf217`), Feature 14 is complete (14A `dd77d29`; 14B `e6bacc6`, live acceptance passed October 29, 2026 at `2ccdc7f`), and Feature 15 (Source Intelligence) is complete (accepted October 31, 2026). Main-product features 16–18 follow. *(Earlier: "Feature 13 … is implemented and verified and awaiting review (not committed). Main-product features 14–18 follow.")*
-- Final whole-product integration/testing/freeze is intentionally deferred until all intended main-product work is complete.
+- Main-product features 1–18 are complete. Final evaluator/product integration is complete at `45d5fff` (November 2, 2026).
+- A new, explicitly post-baseline Milestone 9 admission/backlog enhancement adds deterministic pre-evaluator triage at `5ac3c9d`. It was not part of the historical Milestone 9 or `45d5fff` state.
+- Next is the Milestones 1–10 historical integrity audit. Final live/provider acceptance remains separately authorized work.
 
-**Branch state:** the routing lock, the October 10–13 evaluator semantic-contract repairs and the Milestone 4 alignment (`267124f`, with its uncommitted October 25 compensation-basis correction) are on `codex/evaluator-live-diagnostic`; the main-product work (including Tasks 7, 8 and 9) is on `claude/gallant-pasteur-y1ou3i`. Neither is merged into `main`. Until the final integration pass, the Claude branch keeps the earlier routing (GPT-5.6 Luna for Company Alignment and Burnout Risk) and withholds all ten Task 7 fields from the evaluator.
+**Branch state:** `integration/final-evaluator-product` contains the completed combined product/evaluator state. `45d5fff` is the authoritative pre-triage integration baseline; `5ac3c9d` adds the conservative product-side triage gate. Exactly six normalized fields remain released to the evaluator and fifteen remain withheld; triage reads product normalization before the evaluator boundary and does not expand evaluator input.
 
 *(Earlier development order, superseded on October 15, 2026: Finish Evaluator + Finish Remaining Main Product → Integrate into a Stable Usable Product → Build Retrieval / Scraper → Expand Discovery, Analytics, and Domains. Retrieval and intelligence are now main-product features 11–18, completed before final acceptance.)*
 
@@ -36,7 +38,11 @@ The manual workflow does not depend on automated retrieval: a user can enter an 
         ↓
 3. Build remaining main-product retrieval and intelligence (features 11–18)
         ↓
-4. Final evaluator + product integration, acceptance, freeze, and deliberate merge
+4. Final evaluator + product integration, acceptance, freeze, and deliberate merge — complete at `45d5fff`
+        ↓
+4a. Post-baseline pre-evaluator triage admission/backlog enhancement — complete at `5ac3c9d`
+        ↓
+4b. Milestones 1–10 historical integrity audit — next; evaluate pre-triage history against `45d5fff`
         ↓
 5. Later add-ons (features 19–23)
 ```

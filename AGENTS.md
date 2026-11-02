@@ -90,10 +90,9 @@ Locked routing (October 15, 2026):
 
 Branch state:
 
-- The GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on the Codex evaluator branch, `codex/evaluator-live-diagnostic`.
-- They are not merged into `main` or into the main-product branch `claude/gallant-pasteur-y1ou3i`. That branch keeps the earlier GPT-5.6 Luna routes for those two stages until the final evaluator/product integration.
-- The evaluator branch also carries the October 10–13 semantic-contract repairs (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) and the Milestone 4 salary-policy alignment (`267124f`). The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`. See `EVALUATOR_STATUS.md` §20.
-- Final live acceptance and measurement of the current-contract cost remain outstanding until final integration; no paid calls are authorized before then.
+- The final evaluator/product integration is committed on `integration/final-evaluator-product` at pre-triage baseline `45d5fff` (November 2, 2026). It combines Features 1–18 with the accepted evaluator checkpoint, including the GPT-6 Luna routes and the current semantic contracts.
+- The post-baseline pre-evaluator triage enhancement is implemented at `5ac3c9d`. It is deterministic product admission logic after normalization/deduplication and before budget/admission; it is not an evaluator stage and does not change Apply / Review / Skip.
+- Final live acceptance and current-contract cost measurement still require separate explicit paid-call authorization.
 
 Do not change routing casually. Model changes require quality/cost comparison against the last known-good route.
 
@@ -122,7 +121,7 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order (October 31, 2026). The intended main product is features 1–18:
+Current order (November 2, 2026). The intended main product is features 1–18:
 
 ```text
 Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
@@ -195,9 +194,9 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   roles, no score or ranking, no migration (Core AI Framework PRD v1.18, Customer Success PRD v1.16, Core Platform TDD v1.19,
   Customer Success TDD v1.16); it completes main-product features 1–18
 → main-product features 1–18 are complete
-→ next: deliberate evaluator/product integration; it has not started
-→ only after features 1–18: deliberate evaluator/product integration, full isolated verification,
-  evaluator freeze, deliberate merge
+→ final evaluator/product integration: complete at 45d5fff (November 2, 2026)
+→ post-45d5fff pre-evaluator triage admission/backlog enhancement: complete at 5ac3c9d
+→ next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)
 ```
 

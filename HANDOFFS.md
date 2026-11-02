@@ -1483,3 +1483,49 @@ The final integration audit was approved by Alex on November 1, 2026, with all r
 - Product-owned code wins in any conflict: `packages/core`, `packages/normalization`, `database` (except the identical migration), `apps/web` services, the budget code and the documentation layout.
 - Ghost Job Risk stays withheld (D1).
 - Do not add entries to `reconstructionCompatibilityGroups` or `resumeMatchCompatibilityGroups` (D3, D4).
+
+### Handoff: Post-`45d5fff` Pre-Evaluator Triage — Admission/Backlog and Later Extension Contract
+
+**Date:** November 2, 2026
+**From:** Codex / final-integration workstream
+**To:** Milestones 1–10 audit; later Claude extension workstream
+**Status:** Implementation complete and verified; extension follow-up explicitly not started
+
+#### Completed
+
+- Preserved `45d5fff` as the authoritative final evaluator/product integration state before triage.
+- Added the new implementation at `5ac3c9d`: normalization/deduplication → deterministic pre-evaluator triage → existing duplicate-spend/budget/admission/backlog → evaluator.
+- Exact outcomes are `EVALUATE`, `NEEDS_REVIEW`, `REJECT`. The evaluator's Apply / Review / Skip is separate and unchanged.
+- `NEEDS_REVIEW` and `REJECT` write only the triage assessment. They create zero Evaluation, EvaluationTask, EvaluationAdmission, DeferredEvaluation and SemanticOperationAttempt rows. Manual Evaluate releases through the ordinary production request path; manual Reject stays before spend.
+- Safe deterministic rules: accepted salary policy; normalized residency versus configured location policy; normalized work arrangements versus configured hard preferences; work authorization only as a conservative review signal. Unknown/conflicting/incomplete facts are review, never rejection. Seniority, employment type, travel, role fit and prose interpretation were deliberately excluded.
+- Added one `PreEvaluatorTriage` row per Opportunity with automatic outcome, reason JSON and causal fields, input fingerprint, domain, profile/version, assessment time, optional manual decision and decision time. Reassessment updates that row and preserves an explicit manual decision. Opportunity identity, `firstSeenAt`, SourceRecord history and field provenance are unchanged.
+- Added the main-app review workflow on opportunity pages and `/budget`, with exactly **Evaluate** and **Reject** actions.
+- No evaluator prompt, model route, semantic schema, six-released/fifteen-withheld input contract, Ghost Job Risk behavior or Final Recommendation logic changed.
+
+#### Verification Completed
+
+- Only `ai_career_assistant_test` was used for database work. The normal and acceptance databases were untouched. No live/provider/paid call was made.
+- Prisma schema valid; the test database is current through 25 migrations; a fresh temporary `ai_career_migration_check_*` database applied all 25 in order, matched the schema except the already documented Recommendation default, and was dropped.
+- Unit: 83 files passed, one replay file skipped; 2,036 passed, 6 skipped.
+- Integration: 44 files, 361 passed. The full constrained run's only failure was a Node/tsx `uv_os_get_passwd` ENOMEM in the source-version CLI subprocess; that unchanged 6-test file passed when rerun outside the constrained sandbox.
+- Focused admission/lifecycle/evaluator/normalization/dedup: 12 files, 229 passed. Triage DB integration: 7 passed. Dedicated Playwright triage scenario: passed.
+- Typecheck, lint, production web build and `git diff --check`: passed.
+
+#### Exact Later Extension Contract (Claude)
+
+Do not put triage policy, normalized-fact comparison or manual-decision persistence in `apps/extension`. The extension remains a thin authenticated client of the existing production evaluation endpoint.
+
+When later extension work is explicitly authorized:
+
+1. Keep `apps/web/src/server/extension-api.ts` as authentication plus delegation to `handleProductionEvaluationPost`; do not create an extension-only admission path.
+2. Extend the extension response/view contract to recognize `NEEDS_REVIEW` and `REJECT` in addition to `QUEUED` and `DEFERRED`.
+3. On `NEEDS_REVIEW`, say that evaluation is held, nothing was spent, and the job must be opened in the main app to choose **Evaluate** or **Reject**. Do not poll and do not add decision buttons to the extension.
+4. On `REJECT`, show the pre-evaluator rejection state, say nothing was spent, keep **Open in AI Job Assistant** available, and do not poll.
+5. Only `QUEUED` starts evaluation polling. `DEFERRED` retains its current budget/usage messaging and no-spend behavior.
+6. Never infer or display a different triage result locally. The server response and persisted main-app assessment are authoritative.
+7. Add extension unit/UI tests for all four response outcomes and a wrapper test proving the extension uses the same production gate. No provider call and no normal/acceptance database.
+
+#### Next Task
+
+- Run the Milestones 1–10 historical integrity audit against `45d5fff`. Do not backdate this enhancement into Milestone 9.
+- The extension follow-up above is later, separate work and has not started.

@@ -6,6 +6,7 @@
 **Addendum:** §19 (October 15, 2026) records the October 10–15 evaluator state: routing lock, GPT-6 Luna outcomes, and branch-specific work. §1–18 are preserved as written for October 5, 2026.
 **Addendum:** §20 (October 16, 2026) records the evaluator-branch semantic-contract history of October 10–13. It also covers current versus superseded contracts, residual risks and outstanding verification.
 **Playbook:** the §20 rules are in Semantic Evaluation Playbook v1.3 §14 (October 16, 2026).
+**Current-state addendum (November 2, 2026):** final evaluator/product integration is complete on `integration/final-evaluator-product` at `45d5fff`. That commit is the preserved pre-triage baseline. The later pre-evaluator triage enhancement (`5ac3c9d`) is deterministic product admission logic before the evaluator; it changes no evaluator route, prompt, stage schema, input-release contract, Ghost Job Risk behavior or Final Recommendation. Final paid/live acceptance and current-contract cost measurement still require separate explicit authorization.
 **Current status (October 16, 2026):**
 
 - Routing is locked and the semantic contracts were repaired on `codex/evaluator-live-diagnostic`; neither is merged.

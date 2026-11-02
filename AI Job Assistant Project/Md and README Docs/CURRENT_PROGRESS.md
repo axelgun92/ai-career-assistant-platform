@@ -3,9 +3,32 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 2, 2026
 
+## Pre-Evaluator Triage — Milestone 9 Admission/Backlog Enhancement
+
+**Implemented, verified and committed on November 2, 2026 at `5ac3c9d`, after the final-integration baseline `45d5fff`.** This is a new enhancement; it was not part of the historical Milestone 9 implementation or the CX-1–CX-4 integration baseline.
+
+- Architecture: normalization and deduplication/re-observation remain unchanged; the product evaluation service now runs deterministic triage before duplicate-spend locking, budget admission, deferral or evaluator enqueue.
+- Contract: exactly `EVALUATE`, `NEEDS_REVIEW` and `REJECT`. `NEEDS_REVIEW` and `REJECT` create zero Evaluation, EvaluationTask, EvaluationAdmission, DeferredEvaluation or SemanticOperationAttempt rows. Only `EVALUATE` reaches the existing admission/backlog path.
+- Deterministic inputs: the accepted salary policy over normalized salary/currency/compensation-basis/residency facts; normalized residency against configured location policy; normalized work arrangements against configured hard preferences; and conservative work-authorization relevance. Unknown, incomplete, ambiguous or conflicting prerequisites are held for review, never guessed or converted to rejection.
+- Deliberately excluded: seniority and employment type have no sufficiently deterministic structured profile hard policy; role fit, travel and all prose interpretation remain in the semantic evaluator.
+- Persistence/UI: one additive `PreEvaluatorTriage` record per Opportunity stores the automatic outcome, reasons, causal fields, input fingerprint, profile version and optional manual decision. `/budget` exposes the review backlog; opportunity pages show reasons; open review has exactly **Evaluate** and **Reject**. Manual decisions preserve the unresolved facts and survive reassessment.
+- Re-observation: triage is recomputed from current normalized facts when evaluation is requested or a deferral is resumed; the same record is updated, provenance/history and `firstSeenAt` are untouched, and an explicit manual decision is not silently erased.
+- Evaluator boundary: no evaluator prompt, model, route, schema, six-released/fifteen-withheld field contract, Ghost Job Risk behavior or deterministic final recommendation changed.
+- Verification: Prisma validation and migration status; all 25 migrations applied in order to a temporary test-only database with only the documented Recommendation default drift; 83 unit files passed plus one replay file skipped (2,036 passed, 6 skipped); 44 integration files passed (361 tests, with the sandbox-failed source-version subprocess rerun successfully outside the constrained sandbox); focused 12-file admission/lifecycle/evaluator/normalization/dedup gate (229 tests); triage DB integration (7 tests); dedicated Playwright E2E (1 complete scenario); typecheck, lint, production web build and `git diff --check`. All DB-backed work used `ai_career_assistant_test`; no live/provider/paid calls; normal and acceptance databases untouched.
+
+## Current Objective
+
+The pre-evaluator triage enhancement is complete. Next is the separate Milestones 1–10 historical integrity audit. Do not start the extension implementation, final live evaluator acceptance, or later add-ons as part of this task.
+
+The historical boundary is explicit:
+
+1. `45d5fff` — final evaluator/product integration, before pre-evaluator triage.
+2. `5ac3c9d` — new triage implementation.
+3. Next — Milestones 1–10 integrity audit, which must evaluate the earlier milestone state against `45d5fff` without backdating triage.
+
 ## Final Evaluator / Product Integration — CX-1 to CX-4
 
-**Implemented and fully verified offline in the clean integration worktree on November 2, 2026; uncommitted and unpushed pending Alex's review.**
+**Implemented, fully verified, committed and pushed as `45d5fff` on November 2, 2026. This is the preserved pre-triage baseline.**
 
 - The accepted evaluator checkpoint `7d1f4f0` was merged with `--no-ff --no-commit` onto the product-based integration branch. Product-owned Features 11–18 code won its conflicts; evaluator-owned Hard Filters v3, salary policy v3, JD Reconstruction v7, Resume Match v4, Organizational Maturity v7, semantic contract repairs, routing overrides and GPT-6 pricing/configuration were retained.
 - Exactly `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions` and native Core `compensationBasis` are released to the evaluator. The other 15 approved fields remain withheld. Evaluated-source and as-of provenance binding remain intact.
@@ -13,11 +36,11 @@
 - Ghost Job Risk remains intentionally `UNKNOWN` in production with no posting-history input or provider call. Final Recommendation remains deterministic. The structured profile-limitations contract is integrated without importing or activating a persisted profile.
 - The isolated `ai_career_assistant_test` database was created empty and migrated through all 24 repository migrations. The complete guarded integration suite passes (43 files, 354 tests). Migration verification applied all 24 migrations in order to a fresh temporary `ai_career_migration_check_*` database, confirmed only the documented `Recommendation.evidenceReferences` default drift, and dropped the temporary database. The normal and acceptance databases were untouched.
 - The DB gate exposed four stale Genuine Gap vertical-slice fixtures, two stale pre-integration withholding assertions, and two Windows-only `pnpm` child-process launch defects in test/migration tooling. The fixtures now prove the accepted structured limitation plus JD Reconstruction v7 level contract; the assertions prove the six-field release; the tooling invokes pnpm safely on Windows. No evaluator contract was weakened.
-- No commit or push has been made. The original dirty product checkout remains untouched.
+- The integration was committed and pushed as `45d5fff`. The original dirty product checkout remained untouched.
 
-## Current Objective
+## Earlier Objective — Final Integration Closeout
 
-**CX-1 to CX-4 are complete and ready for Alex's final review (November 2, 2026).**
+**CX-1 to CX-4 were completed and accepted on November 2, 2026. The text below records that closeout state and is preserved as history.**
 - Alex approved the final integration audit with every recommended decision: D1–D7, D9 and D10. D8, the live acceptance, is not yet authorized.
 - Alex assigned the merge work (CX-1 to CX-4) to Codex.
 - Claude created the integration branch `integration/final-evaluator-product` from the accepted product checkpoint `b1b15af`, and recorded the Codex work package in `HANDOFFS.md` ("Final Evaluator / Product Integration — Codex Work Package CX-1 to CX-4").
@@ -25,8 +48,8 @@
 
 In order, what follows:
 
-1. Next: Alex's final review and explicit commit/push approval for CX-1 to CX-4.
-2. After acceptance: the Milestones 1–10 Codex integrity audit.
+1. Done: Alex's final review and commit/push approval for CX-1 to CX-4; committed as `45d5fff`.
+2. Next after the new post-baseline triage enhancement: the Milestones 1–10 Codex integrity audit.
 3. Then (Claude), in the locked final-integration sequence:
    - CL-1: withholding tests;
    - CL-2: profile-limitations version;

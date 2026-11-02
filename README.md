@@ -23,6 +23,7 @@ The current working Customer Success flow supports:
 ```text
 Manual Opportunity
 → Persistence
+→ Pre-Evaluator Triage (Evaluate / Needs Review / Reject)
 → Background Evaluation
 → Customer Success Evaluation Pipeline
 → Deterministic Final Recommendation
@@ -37,6 +38,7 @@ Job Source(s)
 → Retrieval / Collection
 → Normalization
 → Deduplication
+→ Pre-Evaluator Triage
 → Existing Evaluator
 → Apply / Review / Skip
 ```
@@ -100,7 +102,7 @@ Current accepted semantic model routing:
 
 The routing policy is locked (October 15, 2026). A GPT-6 Luna Job Evaluation benchmark was rejected because it regressed an established classification and omitted established evidence; the remaining GPT-6 benchmarks were skipped by product decision.
 
-**Branch state:** the GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on the Codex evaluator branch (`codex/evaluator-live-diagnostic`). The main-product branch (`claude/gallant-pasteur-y1ou3i`) keeps the earlier accepted GPT-5.6 Luna routes for both until the final evaluator/product integration. Neither branch is merged into `main` yet.
+**Branch state:** the completed product/evaluator integration is on `integration/final-evaluator-product` at `45d5fff` (the preserved pre-triage baseline). The new product-side pre-evaluator triage enhancement is `5ac3c9d`. It does not change evaluator routing, schemas or Apply / Review / Skip.
 
 Model routing is treated as an execution detail. It does not change the meaning of the domain schemas, stage outputs, evidence rules, Unknown handling, contradictions, or recommendation behavior.
 
@@ -173,9 +175,16 @@ The Customer Success salary Hard Filter consumes normalized Core facts rather th
   - saving never evaluates; "Request evaluation" uses the existing evaluation path and the popup shows the persisted result;
   - browsers are paired on the Extension page (`/extension`) with a revocable credential shown once and stored only as a hash. See "5b. The browser extension" below.
 
+- Pre-evaluator triage (new after final-integration baseline `45d5fff`; implementation `5ac3c9d`):
+  - deterministic product gate after normalization/deduplication and before budget admission, deferral or evaluator enqueue;
+  - exactly Evaluate, Needs Review and Reject; Needs Review exposes exactly Evaluate and Reject actions on the opportunity and `/budget` review backlog;
+  - uses normalized salary, residency, work-arrangement and conservative work-authorization evidence; Unknown/conflicting/incomplete hard prerequisites wait for review, and only definite incompatibility rejects;
+  - one persisted triage record per opportunity keeps reasons, causal fields, profile version, fingerprint and manual choice; re-observation refreshes the automatic assessment without duplicating the opportunity or erasing provenance/manual choice;
+  - Needs Review and Reject create zero evaluator/admission/deferral/semantic-operation rows. The evaluator's six-released/fifteen-withheld contract and Apply / Review / Skip remain unchanged.
+
 ### In Progress
 
-- Nothing is in progress: main-product features 1–18 are complete; the deliberate evaluator/product integration is next and has not started.
+- Nothing is in progress: main-product features 1–18, final evaluator/product integration (`45d5fff`) and the new pre-evaluator triage enhancement (`5ac3c9d`) are complete. The next separate task is the Milestones 1–10 historical integrity audit, using `45d5fff` as the pre-triage reference.
 - Feature 18, Company Intelligence, is complete (implemented, verified and accepted October 31, 2026):
   - **Companies** (`/companies`, a top-level entry after Market) and a page per company (`/companies/[id]`): what has been observed about each company over time — the distinct roles your sources collected by the month first seen (a job on several sources counts once; a posting is never called a hire), which are still listed, roles listed again after removal or relisted under a new listing ID with the same requisition, recurring role groups (kept apart from reposts), how roles are offered and who may be hired (no "remote-friendly" label), the company type the evaluator identified, and your own applications there with their outcomes and timing (observed listing duration and your process timing instead of "hiring speed");
   - companies are grouped by exact normalized name (different legal entities or brands stay separate, and the page says so); no company score, ranking or label; the opportunity page links its company; `GET /api/companies` and `GET /api/companies/[id]` return the same data; read-only, no migration. It completes main-product features 1–18.
@@ -500,4 +509,4 @@ Known points for later features:
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment, with its October 25 compensation-basis correction, is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure (`d573acf`) are complete. Features 11A and 11B (automated retrieval, `fad2341` and `2a1d8c2`) and Feature 12 (source health and conservative retrieval, `f10a02b`) are complete, Feature 13 (posting history and listing removal, `d1bf217`) and Feature 14A (browser-assisted LinkedIn retrieval and source corrections, `dd77d29`) are complete, Feature 14B (the browser-extension companion) is next, and main-product features 15–18 follow it. Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Main-product features 1–18 and final evaluator/product integration are complete on `integration/final-evaluator-product`; `45d5fff` is the authoritative pre-triage baseline. The deterministic pre-evaluator triage enhancement is complete at `5ac3c9d`. Next is the Milestones 1–10 historical integrity audit. Final live/provider acceptance and later add-ons remain separately authorized work.

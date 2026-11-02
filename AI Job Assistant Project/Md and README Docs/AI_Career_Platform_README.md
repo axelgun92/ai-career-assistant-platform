@@ -1,6 +1,6 @@
 # AI Career Platform
 
-**Last updated:** October 18, 2026
+**Last updated:** November 2, 2026
 
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
@@ -25,6 +25,7 @@ The current working Customer Success flow supports:
 ```text
 Manual Opportunity
 → Persistence
+→ Pre-Evaluator Triage (Evaluate / Needs Review / Reject)
 → Background Evaluation
 → Customer Success Evaluation Pipeline
 → Deterministic Final Recommendation
@@ -39,6 +40,7 @@ Job Source(s)
 → Retrieval / Collection
 → Normalization
 → Deduplication
+→ Pre-Evaluator Triage
 → Existing Evaluator
 → Apply / Review / Skip
 ```
@@ -102,7 +104,11 @@ Current accepted semantic model routing:
 
 The routing policy is locked (October 15, 2026). A GPT-6 Luna Job Evaluation benchmark was rejected because it regressed an established classification and omitted established evidence; the remaining GPT-6 benchmarks were skipped by product decision.
 
-**Branch state:** the GPT-6 Luna routes for Company Alignment and Burnout Risk are implemented on the Codex evaluator branch (`codex/evaluator-live-diagnostic`). The main-product branch (`claude/gallant-pasteur-y1ou3i`) keeps the earlier accepted GPT-5.6 Luna routes for both until the final evaluator/product integration. Neither branch is merged into `main` yet.
+**Branch state:** the final evaluator/product integration is complete on `integration/final-evaluator-product` at `45d5fff`, the preserved pre-triage baseline. The new deterministic product-side pre-evaluator triage enhancement is `5ac3c9d`; it does not change evaluator routing, schemas, the six-released/fifteen-withheld input boundary, or Apply / Review / Skip.
+
+### Pre-evaluator triage (new after `45d5fff`)
+
+Normalized and deduplicated opportunities now pass through a conservative deterministic gate before budget admission or evaluator enqueue. The only outcomes are **Evaluate**, **Needs Review** and **Reject**. Unknown, ambiguous, conflicting or incomplete hard prerequisites wait for the user's explicit Evaluate/Reject decision; only definite structured incompatibility rejects. Needs Review and Reject create no evaluator spend or evaluator/admission/deferral/semantic-operation records. The review backlog is visible on `/budget`, and every decision preserves source history, normalized Unknowns and provenance.
 
 Model routing is treated as an execution detail. It does not change the meaning of the domain schemas, stage outputs, evidence rules, Unknown handling, contradictions, or recommendation behavior.
 
@@ -264,4 +270,4 @@ Setup, startup, worker operations, deterministic testing and troubleshooting are
 
 **Active development**
 
-The Customer Success evaluator routing is locked. The Task 7 normalized salary/currency/residency facts are complete on the main-product branch; the matching Customer Success Milestone 4 salary-policy alignment is on the Codex evaluator branch and is combined at final integration. The Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B, 12, 13 and 14 (14A and 14B, accepted October 29, 2026) are complete, and Feature 15 (Source Intelligence) and Feature 16 (Job-Market Analytics) are complete (both accepted October 31, 2026). Feature 17 (Personal Job-Search Analytics) is complete (accepted October 31, 2026), and Feature 18 (Company Intelligence) is complete (accepted October 31, 2026); main-product features 1–18 are complete, and the deliberate evaluator/product integration is next (not started). (Earlier: "Feature 18 follows (not started).") (Earlier: "Main-product features 17–18 follow, starting with Feature 17 (not started).") (Earlier: "Main-product features 16–18 follow, starting with Feature 16 (not started).") Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Main-product features 1–18 are complete. The Customer Success evaluator routing and current contracts are integrated with the product on `integration/final-evaluator-product`; `45d5fff` is the preserved November 2, 2026 pre-triage baseline. The separate deterministic pre-evaluator triage enhancement is complete at `5ac3c9d`. The next task is the Milestones 1–10 historical integrity audit. Features 19–23 and final live/provider acceptance remain later, separately authorized work.

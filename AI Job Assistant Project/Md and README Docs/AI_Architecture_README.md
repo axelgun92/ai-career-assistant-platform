@@ -1,6 +1,6 @@
 # AI Career Platform
 
-**Last updated:** October 18, 2026
+**Last updated:** November 2, 2026
 
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
@@ -25,6 +25,7 @@ The current working Customer Success flow supports:
 ```text
 Manual Opportunity
 → Persistence
+→ Pre-Evaluator Triage (Evaluate / Needs Review / Reject)
 → Background Evaluation
 → Customer Success Evaluation Pipeline
 → Deterministic Final Recommendation
@@ -39,6 +40,7 @@ Job Source(s)
 → Retrieval / Collection
 → Normalization
 → Deduplication
+→ Pre-Evaluator Triage
 → Existing Evaluator
 → Apply / Review / Skip
 ```
@@ -79,6 +81,24 @@ The evaluator follows several core rules:
 - **Semantic analysis where needed.** AI is used for interpretation-heavy work such as responsibility reconstruction, ownership analysis, operating-model inference, transferable-experience comparison, and contradiction detection.
 - **Preserve contradictions.** Conflicting signals are surfaced rather than silently resolved.
 - **Transparent recommendations.** Apply / Review / Skip should be explainable from the underlying evidence and rules.
+
+## Pre-Evaluator Triage Boundary (added after `45d5fff`)
+
+The final evaluator/product integration at `45d5fff` is the preserved pre-triage baseline. Commit `5ac3c9d` adds one deterministic product gate in the existing evaluation service:
+
+```text
+normalized Opportunity + active profile policy
+→ persisted PreEvaluatorTriage assessment
+    → EVALUATE → duplicate-spend lock → budget/admission/backlog → evaluator
+    → NEEDS_REVIEW → no admission or evaluator rows → user chooses Evaluate or Reject
+    → REJECT → no admission or evaluator rows
+```
+
+The Core package owns the outcome/reason/manual-decision contract. The Customer Success domain owns the pure deterministic policy over normalized salary, residency, work-arrangement and work-authorization facts. The database owns one current assessment per Opportunity plus reason JSON, input fingerprint, profile/version and manual-decision audit fields. The web evaluation service composes the gate before execution configuration, duplicate-spend, budget and enqueue; `/budget` and the opportunity page expose the backlog and exactly two manual actions.
+
+This boundary does not parse source prose, call an LLM, create a parallel evaluator, or alter normalized facts. Unknown/conflicting/incomplete prerequisites become Needs Review. Only a definite structured hard-policy conflict becomes Reject. Manual choices remain effective across reassessment; new observations refresh the automatic outcome in the same row without changing opportunity identity, source/provenance history or `firstSeenAt`.
+
+The evaluator remains downstream and unchanged: exactly six normalized fields are released, fifteen remain withheld, Ghost Job Risk stays deterministic Unknown when evidence is insufficient, and Final Recommendation remains deterministic Apply / Review / Skip logic.
 
 ## Normalized Opportunity and Evaluator Boundary
 
@@ -403,4 +423,4 @@ No adapter reads `robots.txt`; the conservative cadence, page caps, stop rules a
 
 **Active development**
 
-Task 7, the corresponding Customer Success Milestone 4 salary-policy alignment (on the evaluator branch), the Task 8 Application Tracker completion pass (`534a4c7`) and the Task 9 operations-hardening completion pass (October 16, 2026) are complete. The post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete. The features 1–10 gap audit and the Features 1–10 Gap Closure are complete, Features 11A, 11B, 12, 13 and 14 (14A browser-assisted LinkedIn retrieval and source corrections, `dd77d29`; 14B the browser-extension companion, accepted October 29, 2026) are complete, and Feature 15 (Source Intelligence) and Feature 16 (Job-Market Analytics) are complete (both accepted October 31, 2026). Feature 17 (Personal Job-Search Analytics) is complete (accepted October 31, 2026), and Feature 18 (Company Intelligence) is complete (accepted October 31, 2026); main-product features 1–18 are complete, and the deliberate evaluator/product integration is next (not started). (Earlier: "Feature 18 follows (not started).") (Earlier: "Main-product features 17–18 follow, starting with Feature 17 (not started).") (Earlier: "Main-product features 16–18 follow, starting with Feature 16 (not started).") Deliberate evaluator/product integration, full isolated verification, the evaluator freeze and the merge are intentionally deferred until the entire intended main product (features 1–18) is complete. Features 19–23 remain later add-ons.
+Main-product features 1–18 and the final Customer Success evaluator/product integration are complete on `integration/final-evaluator-product`; `45d5fff` is the preserved pre-triage baseline. The product-side pre-evaluator triage boundary described above is the separate `5ac3c9d` enhancement. Next is the Milestones 1–10 historical integrity audit. Features 19–23 and final live/provider acceptance remain later, separately authorized work.
