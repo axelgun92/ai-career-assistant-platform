@@ -1,10 +1,11 @@
-import { createRetrievalIngestionService, extensionCaptureMaxBytes, extensionCaptureSchemaVersion } from "@ai-career/core";
+import { createRetrievalIngestionService, extensionCaptureMaxBytes, extensionCaptureSchemaVersion, pageCaptureMaxBytes } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   findListingVersionHint,
   PrismaExtensionLookupRepository,
   PrismaExtensionPairingRepository,
   PrismaManualOpportunityRepository,
+  PrismaPageCaptureRepository,
   type ExtensionPairingRecord,
 } from "@ai-career/database";
 import { createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
@@ -27,6 +28,7 @@ import {
   requireSameOrigin,
   type ExtensionPairingStore,
 } from "./extension-auth";
+import { createPageCaptureService, type PageCaptureService } from "./page-capture";
 
 // The browser extension companion's API (feature 14B). Two groups of
 // routes:
@@ -49,6 +51,8 @@ export interface ExtensionPairingManager extends ExtensionPairingStore {
 export interface ExtensionApiDependencies {
   pairings: ExtensionPairingManager;
   captures: ExtensionCaptureService;
+  // Mode B, results-page capture (optional for the single-job tests).
+  pageCaptures?: PageCaptureService;
   evaluation: {
     request(request: Request, opportunityId: string): Promise<Response>;
     status(request: Request, opportunityId: string): Promise<Response>;
@@ -100,11 +104,29 @@ export function createExtensionApiHandlers(dependencies: ExtensionApiDependencie
     async status(request: Request) {
       const auth = await authenticate(request);
       if (!auth.ok) return auth.response;
+      // The sites where "Save jobs on this page" is offered (verified only);
+      // absent while none is, so the status is then exactly as before.
+      const pageCaptureSites = dependencies.pageCaptures?.enabledSites().cards ?? [];
       return extensionJson({
         paired: true,
         pairing: { label: auth.pairing.label, tokenHint: auth.pairing.tokenHint },
         captureSchemaVersion: extensionCaptureSchemaVersion,
+        ...(pageCaptureSites.length ? { pageCapture: { sites: pageCaptureSites } } : {}),
       });
+    },
+
+    // Mode B: stages the job cards the extension read from a results page.
+    async pageCapture(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.pageCaptures) return extensionError("UNSUPPORTED_PAGE", "Saving jobs from results pages is not available");
+      const body = await readJsonBody(request, pageCaptureMaxBytes);
+      if (!body.ok) return body.response;
+      try {
+        return extensionJson(await dependencies.pageCaptures.capture(body.body, auth.pairing), 200);
+      } catch (error) {
+        return captureFailure(error);
+      }
     },
 
     async lookup(request: Request) {
@@ -220,6 +242,7 @@ export function getExtensionApi(): ExtensionApiHandlers {
         evaluationSummaryReader(getEvaluationService(), async (id) => (await findListingVersionHint(id)) !== null)(opportunityId),
       discovery: customerSuccessDiscoveryConfiguration,
     }),
+    pageCaptures: createPageCaptureService({ repository: new PrismaPageCaptureRepository() }),
     evaluation: { request: handleProductionEvaluationPost, status: handleProductionEvaluationGet },
   });
   return handlers;

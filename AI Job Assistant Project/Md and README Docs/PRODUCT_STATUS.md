@@ -2,8 +2,8 @@
 
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
-**Status:** Active development; pre-evaluator triage complete
-**Last updated:** November 2, 2026
+**Status:** Active development; pre-evaluator triage complete; extension Mode B implemented, not yet committed or live-accepted
+**Last updated:** November 3, 2026
 
 ## Purpose
 
@@ -53,6 +53,32 @@ Enabled source (Greenhouse, Lever, Ashby, SmartRecruiters, Workday, Remote OK, W
 - Uses only structured normalized facts and existing configured hard policies: salary, residency/location eligibility, work arrangement, and conservative work-authorization relevance. Unknown, conflicting or incomplete hard prerequisites become Needs Review; only definite incompatibility becomes Reject.
 - Persists reasons, causal fields, profile version, fingerprint and manual decision in one additive `PreEvaluatorTriage` record per Opportunity. Reassessment updates that record without changing source/provenance history, and never silently erases a manual choice.
 - The semantic evaluator and its Apply / Review / Skip recommendation remain unchanged. Needs Review and Reject create no evaluator, admission, deferral or semantic-operation rows.
+
+### Browser extension Mode B — bounded results-page ingestion (implemented after `e84c1cc`; not yet committed or live-accepted)
+
+The extension has two modes:
+- **Mode A**, "Read this page": the single-job capture. It is unchanged and optional.
+- **Mode B**, "Save jobs on this page": an ingestion and discovery mechanism, not a bookmark list.
+
+```text
+Supported results page (Alex's Chrome)
+→ up to 25 already-loaded cards; no autoscroll, paging, crawling, clicking or navigation
+→ preview with per-job deselect → Save selected
+→ staged (PageCaptureItem; not yet an opportunity)
+→ automatic detail acquisition, only where the site's mechanism is verified
+   (the retrieval worker reads each job's own page in a fresh logged-out headless browser, with the unchanged single-job reader)
+→ the same capture ingestion as Mode A: normalization → dedup / re-observation → Opportunity (browser extension, user-collected)
+→ handed once to the existing evaluation request → pre-evaluator triage (Evaluate / Needs Review / Reject)
+→ Evaluate: normal admission/backlog → evaluator → Apply / Review / Skip
+```
+
+- **Per-job fallback:** a job whose page cannot be read waits as **Awaiting details**, with its reason and Retry, Dismiss and Open job. It is never an opportunity and never evaluable. Progress is on **Jobs from results pages** (`/extension/jobs`), linked from the Extension page.
+- **Safety:** each read is open-only, sequential and paced (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops the site for at least a day, with no retry or workaround. No configured retrieval source is created. Analytics (Features 13 and 15–18) see batch jobs exactly as Mode A captures. The evaluator and the triage are unchanged; Mode B only hands jobs to the existing request.
+- **Site status:** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded. **Neither is enabled or complete yet.**
+  - Card reading needs the F0 results-page fixtures.
+  - Automatic details need the bounded P1 experiment, which Alex runs locally. Prior evidence is negative for LinkedIn (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
+  - Mode B is complete for a site only when an approved automatic detail mechanism moves its batch jobs into real opportunities without Alex opening each one. Awaiting details never counts.
+  - If P1 fails for a site, any other mechanism needs Alex's separate decision.
 
 ## Complete or Substantially Implemented
 
@@ -258,7 +284,7 @@ The main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v
 
 ### Main-product tasks
 
-**No implementation task is currently in progress. Main-product features 1–18 and final evaluator/product integration are complete; the post-`45d5fff` pre-evaluator triage enhancement is complete at `5ac3c9d`. The next separate task is the Milestones 1–10 historical integrity audit.** The Feature 18 record below is preserved as its October 31 closeout:
+**In progress now: extension Mode B (bounded results-page ingestion), implemented and verified offline after `e84c1cc` and awaiting Alex's review; see "Browser extension Mode B" above.** *(Earlier, November 2, 2026: "No implementation task is currently in progress. Main-product features 1–18 and final evaluator/product integration are complete; the post-`45d5fff` pre-evaluator triage enhancement is complete at `5ac3c9d`. The next separate task is the Milestones 1–10 historical integrity audit.")* The Feature 18 record below is preserved as its October 31 closeout:
 - **Companies** (`/companies`, top-level navigation after Market; `/companies/[id]`; `GET /api/companies` and `GET /api/companies/[id]`): an index of companies with at least one role first observed in the window (applications alone never add a company; a company page opened directly still shows its applications by application date, even with no role in the window), with observed roles, currently listed, listed again after removal (Feature 13 reappearance only; a same-requisition relisting is a separate company-page signal), recurring role groups, remote of known arrangements, your applications, interviews, offers and last observed (filters: name, window, title group, work arrangement, has listed roles, has applications, has posting-history signals; ordered by counts or name, never by a rate); a company page with Overview (incl. company type), Observed postings, Recurring roles, Work arrangement and hiring regions, Your history with this company, Posting-history signals and the observed roles. The opportunity page links its company.
 - **Identity:** company = Company rows sharing an exact normalized name (the dashboard filter grouping); any member id opens it; no fuzzy or alias matching; jobs without a company are counted only. A role is one canonical opportunity.
 - **Postings and listing history:** "Observed postings" by month first seen, never "hires"; listed / no longer listed / unknown from Feature 13; listed again after confirmed removal, relisted under a new listing ID with the same requisition (stored MATCH evidence), closed on the employer board but seen elsewhere, unchanged ≥ 30 days — each "x of n"; Ghost Job Risk not summarized. Recurring role group = ≥ 2 roles in one title group, not a repost.
@@ -320,6 +346,7 @@ How each source is read (least intrusive method that works):
 | Browser-assisted, public and logged-out | LinkedIn (unverified and disabled: its local adapter check discovered public jobs, then a job page answered HTTP 429; the Claude cloud check met an anti-bot page) |
 | Public logged-out webpage (candidate) | Welcome to the Jungle / Otta (unverified: its tested public pages expose no usable job records) |
 | Browser extension, on request (Feature 14B, accepted October 29, 2026) | any job page you are viewing and choose to save, including LinkedIn job pages and Welcome to the Jungle / Otta through the generic reader |
+| Browser extension, results page (Mode B; implemented, not yet live-accepted) | up to 25 already-loaded jobs on a supported results page (LinkedIn, Welcome to the Jungle / Otta; neither enabled until its F0 fixtures and P1 detail experiment pass), details then read automatically where verified |
 
 *(Earlier status, superseded on October 19, 2026 when Feature 13 was committed as `d1bf217`. It read as follows.)*
 
@@ -412,7 +439,10 @@ Task 8 and Task 9 are complete. In order:
 12. Done: Feature 18, Company Intelligence, implemented, verified and accepted October 31, 2026, with Core AI Framework PRD v1.18, Customer Success PRD v1.16, Core Platform TDD v1.19 and Customer Success TDD v1.16; accepted and committed. Main-product features 1–18 are complete. *(Earlier step: "Now: Feature 18 … awaiting Alex's review, then the commit.")* *(Earlier step: "Next: main-product feature 18, company intelligence (not started).")*
 13. Done: deliberate evaluator/product integration, committed as `45d5fff` on November 2, 2026. Ghost Job Risk remains deterministically Unknown while its required evidence is insufficient.
 14. Done: the new post-baseline pre-evaluator triage admission/backlog enhancement, committed as `5ac3c9d` on November 2, 2026.
-15. Next (not started): the Milestones 1–10 historical integrity audit, using `45d5fff` as the pre-triage reference.
+15. Done: the Milestones 1–10 historical integrity audit (Codex, against `45d5fff`): materially complete, with 0 critical, 0 major, 0 partial and 0 missing findings and no freeze blocker. *(Earlier step: "Next (not started): the Milestones 1–10 historical integrity audit, using `45d5fff` as the pre-triage reference.")*
+16. Now: extension Mode B, bounded results-page ingestion (Revision 5 plan). It is implemented on `integration/final-evaluator-product` after `e84c1cc` and verified offline on the test database; it awaits Alex's review and commit approval.
+17. Then: F0 fixtures and the bounded P1 experiment per site (Alex, local), and each site's targeted live acceptance. Mode B is complete only for sites meeting its completion criterion.
+18. Then: the final whole-product regression gate, the final evaluator live acceptance (D8, separately authorized), and the next formal PRD/TDD versions covering triage and the extension together, then the freeze.
 
 Features 19–23 remain later add-ons (see below).
 
@@ -462,6 +492,7 @@ Beyond the Customer Success product:
 - Customer Success owns its salary thresholds and affordability policy.
 - Retrieval must feed the existing normalization/dedup/evaluator boundary rather than create a second evaluator.
 - The browser extension (Feature 14B, required; accepted October 29, 2026) is a companion to the same application, backend, data, evaluator, lifecycle, provenance, budget, and dashboard; it never becomes a second evaluator.
+- Extension Mode B reads only cards already loaded in the user's own page (at most 25 per action; no autoscroll, paging, crawling, clicking or navigation). Its automatic detail reading uses only a site's verified, logged-out mechanism, and it hands jobs to the existing triage-gated evaluation request, never to the evaluator directly.
 - Browser-assisted retrieval is public and logged-out only: no account, cookies or stored state, no account actions, and no proxy rotation, stealth, fingerprint changes, CAPTCHA solving or access-control bypass.
 - Paid provider calls require explicit authorization.
 - Experiments/tests must not use the normal application database without explicit authorization.

@@ -19,6 +19,9 @@ export const e2eEnvironmentDefaults = {
   EVALUATION_JOB_MAX_ATTEMPTS: "3",
   EVALUATION_JOB_LEASE_SECONDS: "300",
   EVALUATION_WORKER_POLL_MS: "1000",
+  // Enables the synthetic results-page site (jobs.e2e.invalid) for the
+  // extension's Mode B end-to-end test; never a real site.
+  PAGE_CAPTURE_TEST_SITE: "1",
 } as const;
 
 export function e2eEnvironment(

@@ -47,6 +47,25 @@
         <button type="button" id="open-app" class="secondary" hidden>Open in AI Job Assistant</button>
       </section>
 
+      <div id="page-actions" hidden>
+        <button type="button" id="read-jobs" class="secondary">Save jobs on this page</button>
+        <p class="muted">Reads up to 25 jobs already shown on this page. It does not scroll, open other pages or click anything.</p>
+      </div>
+
+      <section id="jobs-preview" hidden aria-labelledby="jobs-heading">
+        <h2 id="jobs-heading">Jobs on this page</h2>
+        <p id="jobs-summary" class="muted"></p>
+        <p class="muted">Untick any job you don't want. Nothing is sent until you press Save.</p>
+        <ul id="jobs-list" class="jobs-list"></ul>
+        <button type="button" id="save-jobs" hidden>Save selected jobs</button>
+      </section>
+
+      <section id="jobs-result" hidden aria-live="polite">
+        <p id="jobs-result-message"></p>
+        <p id="jobs-rejected" class="muted"></p>
+        <button type="button" id="open-progress" class="secondary">Open progress in AI Job Assistant</button>
+      </section>
+
       <p id="error" class="error" role="alert" hidden></p>
       <p class="footer"><button type="button" id="options" class="link">Options</button></p>
     </main>

@@ -1,7 +1,47 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 2, 2026
+**Last updated:** November 3, 2026
+
+## Extension Mode B — Bounded Results-Page Ingestion
+
+**Implemented and verified offline on November 3, 2026, on `integration/final-evaluator-product` after `e84c1cc`. Not committed: it awaits Alex's review and commit approval. It is not live-accepted. Mode B is not complete for any real site yet.**
+
+It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 5".
+
+- **Two modes.** Mode A ("Read this page", single job) is unchanged and optional. Mode B ("Save jobs on this page") is ingestion and discovery, not bookmarking:
+  - it reads up to 25 already-loaded cards, with no autoscroll, paging, crawling, clicking or navigation;
+  - a preview lets the user deselect jobs;
+  - the selected jobs are staged in `PageCaptureItem`.
+- **Detail acquisition** runs only for a `detailVerified` site. It is an isolated pass in the retrieval worker, run when no source is due:
+  - it opens each job's own page with the Feature 14A browser session: fresh and logged-out, sequential, the site's interval, at most 25 per pass, and a stop with a backoff of at least 24 h on any refusal, sign-in wall, challenge, rate limit or account cookie;
+  - it reads the page with the unchanged single-job reader and builds the unchanged capture envelope;
+  - the unchanged `capturedListing()` and retrieval ingestion create or re-observe the opportunity.
+- **Triage integration point:** each newly ingested opportunity without a triage record, open deferral or evaluation is handed once to `EvaluationService.requestEvaluation(id, {})`. There, Codex's `triageGate.assess` runs before `admitAndEnqueue`. No triage logic exists in Mode B or the extension.
+- **Per-job fallback:** AWAITING_DETAILS. The reasons are NO_BROWSER, NOT_SUPPORTED, UNREADABLE, FAILED_REPEATEDLY or a friction stop; a 404 or 410 gives UNAVAILABLE. Such a job has no opportunity, record, listing or evaluation, and offers Retry, Dismiss, Restore and Open job on `/extension/jobs`.
+- **Mode A integration correction:** the popup's Request evaluation now handles `NEEDS_REVIEW` and `REJECT` per the triage handoff's extension contract: it says nothing was spent, does not poll, and has no decision buttons. This is the only Mode A change.
+- **Provenance and analytics:** batch jobs are BROWSER_EXTENSION, user-collected and keyed by Mode A identity. There is no fake RetrievalSource, no RetrievedListing and no opportunity-less SourceRecord. Features 13 and 15–18 are unchanged.
+- **Sites:** LinkedIn and Welcome to the Jungle / Otta stay `cardVerified`/`detailVerified: false`; Wellfound is excluded.
+  - Required next: F0 fixtures (the DevTools snippet `tests/support/page-capture-fixture-export.js`), then the bounded P1 experiment `pnpm page-capture:verify <site> <≤5 job URLs>` with `RETRIEVAL_BROWSER_EXECUTABLE`. Both run locally, by Alex, with authorization.
+  - Prior P1 evidence: negative for LinkedIn (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
+  - If P1 fails, stop; another mechanism (for example P2, background tabs) needs Alex's separate decision.
+- **Verification:** offline only, on `ai_career_assistant_test`; no live, provider, paid or evaluator call; the normal and acceptance databases do not exist in this container and were not touched.
+  - typecheck, lint, `prisma validate`, production web build, extension build, `git diff --check`; `apps/web/next-env.d.ts` untouched.
+  - `db:verify-migrations`: all 26 migrations applied in order to a temporary database; only the documented Recommendation default drift; temporary database dropped.
+  - Unit: 87 files passed, 1 replay file skipped (2,072 passed, 6 skipped). New suites: `page-capture` 17, `page-capture-reader` 10, `page-capture-ui` 6, `extension-triage-outcomes` 3.
+  - Integration: 45 files / 365 tests, including `page-capture` (4): staging creates nothing; acquisition → real ingestion → real triage, with EVALUATE admitted and NEEDS_REVIEW/REJECT creating no admission, evaluation or semantic attempt; idempotent repeats; Mode A re-observation; no RetrievalSource or RetrievedListing.
+  - E2E, every project run sequentially (`--no-deps`), plus each formerly blocked test run on its own: 55 passed, 4 failed, 0 not run (59 tests).
+    - The new `page-capture` project passed 4/4: read loaded cards, deselect, stage, Awaiting details with Retry/Dismiss/Restore, automatic acquisition, Evaluate/Needs Review/Reject, the Needs Review decision in the triage panel, and Mode A re-observation plus a Mode A REJECT message with no polling.
+    - The `extension` project passed 8/8.
+  - **One extension test was updated narrowly to the triage contract:** `extension.spec` "pair, read, … request an evaluation, and capture again".
+    - Its fixture job is legitimately held as Needs Review, and the test had encoded the pre-triage "queued" step.
+    - It now asserts the truthful held message: not queued, no polling, no evaluation.
+    - It then releases the job with **Evaluate** in the existing triage panel and checks that the reopened popup follows the queued evaluation to its recommendation.
+    - The later test "running and failed states" passed unchanged, proving that a `QUEUED` request still starts the normal polling flow.
+  - **All 4 remaining failures reproduce identically on the untouched `e84c1cc` baseline**, in older web-app specs whose fixtures predate the post-`45d5fff` triage/evaluator changes:
+    - `evaluation-results` "material ambiguity … Review" and `dashboard` "search, filter, sort…": the deterministic helper worker ends FAILED;
+    - `golden-path` "golden path…" and "recovery…": triage holds the fixture, so there is no "Evaluation accepted and queued".
+    They need a coordinated fixture decision (Codex / Alex) and are not fixed here.
 
 ## Pre-Evaluator Triage — Milestone 9 Admission/Backlog Enhancement
 
@@ -18,7 +58,14 @@
 
 ## Current Objective
 
-The pre-evaluator triage enhancement is complete. Next is the separate Milestones 1–10 historical integrity audit. Do not start the extension implementation, final live evaluator acceptance, or later add-ons as part of this task.
+Extension Mode B is implemented and verified offline (see above). It awaits Alex's review and commit/push approval. Then come:
+- F0 fixtures and the bounded P1 experiment per site (Alex, local);
+- each site's targeted live acceptance;
+- the final whole-product regression gate;
+- the final evaluator live acceptance (D8, separately authorized);
+- the next formal PRD/TDD versions covering triage and the extension together.
+
+The Milestones 1–10 historical integrity audit is complete (Codex, against `45d5fff`): 0 critical, 0 major, 0 partial, 0 missing and no freeze blocker. *(Earlier objective, November 2, 2026: "The pre-evaluator triage enhancement is complete. Next is the separate Milestones 1–10 historical integrity audit. Do not start the extension implementation, final live evaluator acceptance, or later add-ons as part of this task.")*
 
 The historical boundary is explicit:
 

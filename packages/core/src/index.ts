@@ -16,6 +16,7 @@ export * from "./budget";
 export * from "./application";
 export * from "./extension-capture";
 export * from "./known-sites";
+export * from "./page-capture";
 export * from "./source-intelligence";
 export * from "./market-analytics";
 export * from "./personal-analytics";

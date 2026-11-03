@@ -1759,3 +1759,22 @@ main {
   margin: 0.25rem 0;
   font-size: 0.9rem;
 }
+
+/* Jobs from results pages (browser extension, Mode B) */
+.filter-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.page-capture-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.page-capture-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

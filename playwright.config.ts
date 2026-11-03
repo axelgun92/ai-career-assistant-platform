@@ -36,7 +36,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/, /\/extension-page-capture\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -119,6 +119,15 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/pre-evaluator-triage\.spec\.ts$/,
       dependencies: ["companies"],
+    },
+    {
+      // Extension Mode B (results-page capture): its own extension build and
+      // persistent profile; it activates a profile and hands jobs to the
+      // triage-gated evaluation request, so it runs after everything else.
+      name: "page-capture",
+      use: chromium,
+      testMatch: /\/extension-page-capture\.spec\.ts$/,
+      dependencies: ["pre-evaluator-triage"],
     },
   ],
   webServer: {

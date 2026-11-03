@@ -1,5 +1,6 @@
 import { connection } from "next/server";
-import { PrismaExtensionPairingRepository } from "@ai-career/database";
+import Link from "next/link";
+import { PrismaExtensionPairingRepository, PrismaPageCaptureRepository } from "@ai-career/database";
 import { PairingsManager, type PairingView } from "@/components/extension/pairings-manager";
 import { pairingView } from "@/server/extension-api";
 
@@ -8,8 +9,11 @@ export const metadata = { title: "Browser extension" };
 export default async function ExtensionPage() {
   await connection();
   let pairings: PairingView[];
+  let waiting = 0;
   try {
     pairings = (await new PrismaExtensionPairingRepository().list()).map(pairingView);
+    const counts = await new PrismaPageCaptureRepository().statusCounts();
+    waiting = (counts.QUEUED ?? 0) + (counts.ACQUIRING ?? 0) + (counts.AWAITING_DETAILS ?? 0);
   } catch (error) {
     console.error("Extension page could not load", { errorName: error instanceof Error ? error.name : "UnknownError" });
     return (
@@ -33,6 +37,12 @@ export default async function ExtensionPage() {
       <p className="muted">
         Build it with <code>pnpm extension:build</code> and load <code>apps/extension/dist</code> as an unpacked
         extension in Chrome (<code>chrome://extensions</code>, Developer mode). Then pair it here.
+      </p>
+      <p>
+        On a supported jobs results page, <strong>Save jobs on this page</strong> saves up to 25 jobs already shown there, without scrolling, opening
+        other pages or clicking anything. Their details are then read automatically where that is verified for the site, and each job goes through
+        the same steps as any other. <Link href="/extension/jobs">Jobs from results pages</Link>
+        {waiting ? ` (${waiting} waiting)` : ""}
       </p>
       <PairingsManager pairings={pairings} />
     </main>

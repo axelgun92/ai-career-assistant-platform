@@ -1,4 +1,6 @@
 import type { ExtensionCaptureInput } from "../../../packages/core/src/extension-capture";
+import type { PageCaptureBatch } from "../../../packages/core/src/page-capture";
+import type { PageCaptureResponse } from "./page-capture-view";
 
 // The extension's only network client. It calls the configured local AI Job
 // Assistant, and only its /api/extension/* routes; the pairing credential
@@ -26,9 +28,10 @@ export type ApiResult<T> =
   | { ok: false; status: number; code: string; error: string; body?: unknown };
 
 export interface ApiClient {
-  status(): Promise<ApiResult<{ paired: true; pairing: { label: string; tokenHint: string } }>>;
+  status(): Promise<ApiResult<{ paired: true; pairing: { label: string; tokenHint: string }; pageCapture?: { sites: string[] } }>>;
   lookup(pageUrl: string): Promise<ApiResult<LookupResponse>>;
   capture(envelope: ExtensionCaptureInput): Promise<ApiResult<CaptureResponse>>;
+  pageCapture(batch: PageCaptureBatch): Promise<ApiResult<PageCaptureResponse>>;
   requestEvaluation(opportunityId: string): Promise<ApiResult<{ outcome?: string; reason?: string; evaluationId?: string }>>;
   evaluationStatus(opportunityId: string): Promise<ApiResult<EvaluationStatusResponse>>;
 }
@@ -113,6 +116,7 @@ export function createApiClient(settings: { backendUrl: string; credential: stri
     status: () => call(`${extensionApiPrefix}status`),
     lookup: (pageUrl) => call(`${extensionApiPrefix}lookup?url=${encodeURIComponent(pageUrl)}`),
     capture: (envelope) => call(`${extensionApiPrefix}captures`, { method: "POST", body: envelope }),
+    pageCapture: (batch) => call(`${extensionApiPrefix}page-captures`, { method: "POST", body: batch }),
     requestEvaluation: (id) => call(opportunityPath(id, "evaluation-requests"), { method: "POST", body: {} }),
     evaluationStatus: (id) => call(opportunityPath(id, "evaluation")),
   };

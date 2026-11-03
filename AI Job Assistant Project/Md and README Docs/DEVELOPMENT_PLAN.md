@@ -208,6 +208,7 @@ These features are part of the intended main product and must be complete before
 - Once a source is sufficiently classified under the established source/retrieval categories, stop unnecessary reverse-engineering unless additional detail is actually required.
 - Use browser-assisted collection only where browser/session access is genuinely required. It is public and logged-out only (feature 14): no login or account actions, no proxy rotation, stealth or fingerprint changes, no CAPTCHA solving or access-control bypass, and no query splitting to get around result caps.
 - The extension (Feature 14B) is a companion client, not a separate product or dashboard.
+- Extension Mode B is ingestion and discovery, bounded by the user's own action: at most 25 already-loaded cards, with no autoscroll, paging, crawling, clicking or navigation. Automatic detail acquisition uses only a mechanism verified for that site by a bounded experiment; a failed experiment stops further investigation unless Alex authorizes more.
 - Do not mutate an evaluated opportunity's canonical JD/raw description in place; append observations/source records and preserve history.
 - Keep deduplication upstream of paid evaluation to avoid duplicate spend.
 - Source health must be conservative and respectful of each source.
@@ -217,6 +218,17 @@ These features are part of the intended main product and must be complete before
 ## Phase 4 — Final Integration, Acceptance, and Freeze
 
 This phase begins only after main-product features 1–18 and the evaluator implementation are complete.
+
+Current sequence (November 3, 2026):
+1. Done: CX-1 to CX-4 integration (`45d5fff`).
+2. Done: the pre-evaluator triage enhancement (`5ac3c9d`, documented in `e84c1cc`).
+3. Done: the Milestones 1–10 integrity audit (no blocker).
+4. **Now: extension Mode B, bounded results-page ingestion.** It is implemented after `e84c1cc` and verified offline; it awaits Alex's review and commit approval.
+   - **Mode A**, the single-job "Read this page", is unchanged and optional.
+   - **Mode B** reads up to 25 already-loaded cards per action and stages them (`PageCaptureItem`). It acquires each job's details automatically where the site's mechanism is verified, ingests them through the unchanged capture path, and hands each new opportunity to the existing triage-gated evaluation request.
+   - Awaiting details is a per-job fallback only.
+5. Next: F0 results-page fixtures and the bounded P1 detail experiment per site (LinkedIn, Welcome to the Jungle / Otta; Alex, local runtime), then each site's targeted live acceptance. Mode B is complete for a site only when an approved automatic mechanism moves its batch jobs into real opportunities without Alex opening each one. If P1 fails, another mechanism (P2: background tabs in Alex's Chrome) needs Alex's separate decision.
+6. Then: the final whole-product regression gate, the final evaluator live acceptance (D8, separately authorized), and the next formal PRD/TDD versions covering triage and the extension together, then the freeze.
 
 The final pass should:
 

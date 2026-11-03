@@ -188,6 +188,7 @@ model Opportunity {
   deferredEvaluations   DeferredEvaluation[]
   preEvaluatorTriage    PreEvaluatorTriage?
   userActions           OpportunityUserAction[]
+  pageCaptureItems      PageCaptureItem[]
   application           Application?
   semanticOperations    SemanticOperationAttempt[]
   duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
@@ -1045,6 +1046,60 @@ model ExtensionPairing {
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   lastUsedAt DateTime? @db.Timestamptz(3)
   revokedAt  DateTime? @db.Timestamptz(3)
+}
+
+// A job card the browser extension read from a results page (Mode B, "Save
+// jobs on this page"), staged until its full posting is read by the site's
+// approved automatic detail-acquisition mechanism and ingested through the
+// normal path. A staged card is never an opportunity, is never evaluated and
+// is read by no analytics. externalId is the same listing identity a
+// single-job capture of the job's page records, so both meet in ingestion.
+// opportunityId is set only by this item's own ingestion.
+model PageCaptureItem {
+  id             String                @id @default(uuid()) @db.Uuid
+  site           String
+  host           String
+  externalId     String                @unique
+  sourceUrl      String                @db.Text
+  siteJobId      String?
+  title          String
+  company        String?
+  location       String?
+  postedText     String?
+  resultsPageUrl String                @db.Text
+  firstSeenAt    DateTime              @db.Timestamptz(3)
+  lastSeenAt     DateTime              @db.Timestamptz(3)
+  sightings      Int                   @default(1)
+  lastBatchId    String                @db.Uuid
+  pairingId      String                @db.Uuid
+  status         PageCaptureItemStatus @default(QUEUED)
+  attempts       Int                   @default(0)
+  lastAttemptAt  DateTime?             @db.Timestamptz(3)
+  nextAttemptAt  DateTime?             @db.Timestamptz(3)
+  // A safe code only (Core pageCaptureReasonValues), never page content.
+  lastReason     String?
+  opportunityId  String?               @db.Uuid
+  opportunity    Opportunity?          @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  // What the hand-off into the existing evaluation request (and its
+  // pre-evaluator triage) returned, once.
+  handoffOutcome String?
+  handedOffAt    DateTime?             @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+
+  @@index([status, nextAttemptAt])
+  @@index([site, lastAttemptAt])
+  @@index([opportunityId])
+}
+
+enum PageCaptureItemStatus {
+  QUEUED
+  ACQUIRING
+  INGESTED
+  AWAITING_DETAILS
+  UNAVAILABLE
+  ALREADY_SAVED
+  DISMISSED
 }
 
 // The user's own work eligibility, for showing which jobs' work-

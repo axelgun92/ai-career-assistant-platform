@@ -1,4 +1,4 @@
-# AI Job Assistant Companion (browser extension, Feature 14B)
+# AI Job Assistant Companion (browser extension, Feature 14B, with results-page Mode B)
 
 A Chrome Manifest V3 extension that saves the job posting you are viewing into your **local** AI Job Assistant, when you ask it to. It is a source-collection companion only. It has no evaluator, model calls, prompts, budget, recommendation logic or database of its own. Captured jobs go through Core's existing ingestion: normalization, deduplication, provenance and lifecycle.
 
@@ -13,8 +13,32 @@ A Chrome Manifest V3 extension that saves the job posting you are viewing into y
    - updated (the posting changed);
    - added to an opportunity you already have (only when it shares that listing's URL, or its listing or requisition ID at the same company);
    - a possible duplicate (the same company with a similar title, location and description: flagged, never merged).
-5. Saving never evaluates anything. After a save, **Request evaluation** is offered. It goes through the app's existing evaluation path, with the same budget, duplicate-spend protection, queue and retries. While the popup is open it shows the persisted state (queued, running, completed or failed) and any recommendation, read-only.
+5. Saving never evaluates anything. After a save, **Request evaluation** is offered. It goes through the app's existing evaluation path, with the same pre-evaluator triage, budget, duplicate-spend protection, queue and retries. While the popup is open it shows the persisted state (queued, running, completed or failed) and any recommendation, read-only.
+   - **Held for review before evaluation** (Needs Review): nothing was spent. Choose **Evaluate** or **Reject** on the job's page in AI Job Assistant. The extension offers no decision of its own.
+   - **Rejected before evaluation**: nothing was spent.
+
+   Only a queued evaluation is followed. *(Added November 3, 2026, per the triage handoff's extension contract.)*
 6. **Open in AI Job Assistant** opens the opportunity in the app.
+
+## Save jobs on this page (Mode B: bounded results-page ingestion)
+
+The steps above are Mode A, the single-job capture. It stays unchanged and optional. Mode B saves the jobs a supported results page has already loaded, and AI Job Assistant then reads each job's full posting automatically. Nobody has to open the jobs one by one.
+
+1. On a supported results or search page, the popup offers **Save jobs on this page**. It is shown only for a site the app enables (see *Supported sites* below), and only on that site's results pages, never on account, feed, messaging or profile pages.
+2. Pressing it reads the job cards **already loaded** in the page, once: up to **25**, in page order, each card's title, link, company, location and posted text as the card shows them. The extension never scrolls, pages, clicks, opens or navigates anything, and makes no request to the site. A card the page has not rendered yet is skipped and counted, never invented. So are the page's header, navigation, side panels, detail pane and "Similar jobs"-style lists. A sign-in or security-check page is not read at all.
+3. A preview lists the jobs, all ticked. Untick any you don't want. Nothing is sent until **Save selected jobs**.
+4. The selected jobs are staged in AI Job Assistant, not yet added as opportunities. The popup reports, for example, "3 queued to get their details · 1 already in AI Job Assistant". A job the app already has, from Mode A or a source, is recognised by the same identity Mode A uses and is not queued again. Saving the same page again is idempotent.
+5. **Automatic details:** for a site whose detail reading is verified, the app's retrieval worker reads each staged job's own page. It does this in a fresh, logged-out headless browser (`RETRIEVAL_BROWSER_EXECUTABLE`), the same access model as browser-assisted retrieval: one page at a time, at least the site's interval apart, at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops it, and the site is not contacted again for at least a day. The page is read by the same single-job reader Mode A uses, and the job is ingested through the same path as a Mode A capture: normalization, deduplication and re-observation, recorded as "Found via <site> (browser extension)".
+6. Each newly added job is then handed once to the app's existing evaluation request. Its pre-evaluator triage decides before any spend:
+   - **Evaluate:** goes to the normal admission and backlog (budget and queue), then the evaluator.
+   - **Needs Review before evaluation:** waits for your **Evaluate** or **Reject** on the job's page. This is distinct from the evaluator's final Review.
+   - **Reject:** stops with no evaluator work.
+
+   Mode B decides none of these and never calls the evaluator itself.
+7. **Open progress in AI Job Assistant** opens **Jobs from results pages** (`/extension/jobs`). It shows each job as Getting details, Added (with its triage or evaluation state and a link to the opportunity), Already in AI Job Assistant, Awaiting details, No longer available or Dismissed.
+8. **Awaiting details** is a per-job fallback only. It is used when a job's page could not be read: no browser configured, an unreadable page, repeated failures, or a site whose automatic details are not verified yet. Such a job is never an opportunity and never evaluable. It offers **Retry**, **Dismiss** (and **Restore**) and **Open job ↗**, where Mode A's **Read this page** stays available.
+
+**Supported sites.** Mode B's V1 sites are LinkedIn and Welcome to the Jungle / Otta. Wellfound is not a Mode B site. **Neither site is enabled yet.** A site is offered only after its card reading has been checked on real results-page fixtures (step F0 below). Its jobs are read automatically only after its detail reading has passed the bounded P1 experiment (step P1 below). Mode B is complete for a site only when an approved automatic detail mechanism moves its batch-captured jobs into real opportunities without anyone opening them one by one. Awaiting details never counts as completion. If P1 fails for a site, the site stays incomplete, and any other mechanism (such as reading the jobs in background tabs of your own Chrome) needs Alex's separate decision.
 
 ## What it reads, in order
 
@@ -45,8 +69,8 @@ It has no content scripts and no `tabs`, `cookies`, `webRequest` or all-sites ac
 ## Pairing and privacy
 
 - **Creating a pairing:** pairings are created on the app's **Extension** page (`/extension`). The credential (`aija_…`) is shown once. The app stores only its SHA-256 hash, along with a label, the last four characters, and the created, last-used and revoked times.
-- **Where the extension keeps it:** in `chrome.storage.local`, never in synced storage, with the app's address. Storage is restricted to the extension's own pages with `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })` (Chrome 102 and later; the extension requires Chrome 120), so a script running in a web page cannot read it. In Chromium 141, a page-injected script reads `chrome.storage.local` by default but is refused ("Access to storage is not allowed from this context") once the restriction is set, and the extension's E2E test checks the restriction. The page reader receives no arguments and never touches storage, so the credential never enters a web page.
-- **What it's used for:** the credential is sent only in the `Authorization` header, and only to the configured local app's `/api/extension/*` routes (captures, status, lookup, evaluation request and evaluation status). It is never logged and never shown again.
+- **Where the extension keeps it:** in `chrome.storage.local`, never in synced storage, with the app's address. Storage is restricted to the extension's own pages with `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })` (Chrome 102 and later; the extension requires Chrome 120), so a script running in a web page cannot read it. In Chromium 141, a page-injected script reads `chrome.storage.local` by default but is refused ("Access to storage is not allowed from this context") once the restriction is set, and the extension's E2E test checks the restriction. The single-job page reader receives no arguments, and the results-page reader receives only its site's reader settings (plain selectors and patterns, no credential). Neither touches storage, so the credential never enters a web page.
+- **What it's used for:** the credential is sent only in the `Authorization` header, and only to the configured local app's `/api/extension/*` routes (captures, page captures, status, lookup, evaluation request and evaluation status). It is never logged and never shown again.
 - **What it can't do:** it authenticates no other route of the app. The pairing-management routes refuse it.
 - **Revoking:** revoke a pairing on the Extension page and the next request from that browser gets 401. **Forget pairing** in the extension's options removes the credential from the browser.
 - **What is never in the extension:** provider credentials (OpenAI, Terra, Luna) and app-wide secrets.
@@ -190,8 +214,32 @@ How to gather real evidence when a capture is wrong (the method round 2 used):
 
 **7. Cleanup (optional).** Stop the servers, delete `database/.e2e-acceptance-helper.mjs`, then run `dropdb -h localhost -U postgres ai_career_assistant_acceptance`.
 
+## Mode B site verification (Alex, local runtime only)
+
+Neither step can run from the cloud environment, and neither touches a database.
+
+**F0: results-page fixtures, once per site.**
+1. Open a jobs results page in your normal Chrome: a LinkedIn job search, or a Welcome to the Jungle / Otta jobs search.
+2. Press F12 and open the **Console** tab. Paste the whole of `tests/support/page-capture-fixture-export.js` (Chrome may ask you to type `allow pasting` first) and press Enter.
+3. The sanitized result is now on your clipboard: at most 5 cards, one not-yet-rendered card if any, and the list's structure as tag and class names only. Links have no query strings, and personal-state text ("Viewed", "Applied", profile insights) is blanked. Paste it into the session. The snippet makes no request and changes nothing.
+
+The fixtures become the site's card-reader tests, and its job links become the P1 sample.
+
+**P1: the bounded detail-reading experiment, once per site, only with Alex's authorization.**
+```bash
+RETRIEVAL_BROWSER_EXECUTABLE=/path/to/chrome-or-chromium \
+  pnpm page-capture:verify linkedin "https://www.linkedin.com/jobs/view/<id>" "https://www.linkedin.com/jobs/view/<id>"
+pnpm page-capture:verify welcome-to-the-jungle "<job URL from the F0 cards>" …   # same variable
+# optional: --raw-dir <a folder outside the repository> keeps the raw pages
+```
+- It takes at most 5 job URLs from that site's F0 cards. It reads them one at a time in a fresh, logged-out headless browser, at least 5 s (LinkedIn) or 12 s (Welcome to the Jungle / Otta) apart, and runs the single-job reader on each.
+- The first refusal (403, 429, 999), sign-in wall, challenge or account cookie stops it, with no further request and no retry.
+- It prints **VIABLE** only when every page loaded without friction and gave a readable posting. Anything else is **NOT VIABLE**: stop and report it. There is no further investigation of that site's server-side retrieval (no hidden endpoints, no logged-in access, no repeated probing) unless Alex explicitly authorizes more.
+- Prior evidence: LinkedIn's first logged-out job-detail request answered HTTP 429 (October 20, 2026). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet; this path has not been tested either way.
+
 ## Known limits
 
 - **LinkedIn:** the logged-in markup changes often. If the job-detail reader stops finding the job, select the description text and read again. The extension does not change or work around Feature 14A's automated LinkedIn adapter, which stays unverified and disabled after its HTTP 429.
 - **Pages whose URL doesn't change:** a page whose URL stays the same while it shows different jobs is identified by its URL, so a capture of a second job there is recorded as a change to the first. Open the job's own page (most sites give each job its own URL) before saving.
+- **Mode B:** offered on no real site until that site's F0 fixtures are checked. Jobs are read automatically only after its P1 experiment passes. Until then a saved job would wait as Awaiting details, which does not make Mode B complete for that site. It reads only cards already loaded: scroll the results and save again for more. It never pages or scrolls for you.
 - **What Chrome blocks:** Chrome does not let extensions read some pages (the Chrome Web Store, `chrome://` pages).

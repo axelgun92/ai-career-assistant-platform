@@ -1529,3 +1529,49 @@ When later extension work is explicitly authorized:
 
 - Run the Milestones 1–10 historical integrity audit against `45d5fff`. Do not backdate this enhancement into Milestone 9.
 - The extension follow-up above is later, separate work and has not started.
+
+### Handoff: Extension Mode B — Bounded Results-Page Ingestion (Claude; shared-boundary record)
+
+**Date:** November 3, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, F0, P1, live acceptance); Codex (boundary awareness only)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. Mode B is not complete for any real site until F0 and P1 pass.
+
+#### Completed
+
+- Implemented the approved Revision 5 plan on `integration/final-evaluator-product` after `e84c1cc`.
+  - Mode A ("Read this page") is unchanged and optional.
+  - Mode B ("Save jobs on this page") reads up to 25 already-loaded cards, with no autoscroll, paging, crawling, clicking or navigation. It shows a preview with per-job deselect and stages the selected jobs in the additive `PageCaptureItem` work queue.
+  - For a site with `detailVerified`, the retrieval worker reads each job's own page in a fresh logged-out headless browser (Feature 14A session rules) with the unchanged single-job reader. It ingests the job through the unchanged `capturedListing()` and retrieval ingestion, then hands each new opportunity once to `EvaluationService.requestEvaluation(id, {})`.
+- **Triage is consumed, not duplicated.** No triage policy, comparison, persistence or UI is in the extension or Mode B code. The hand-off skips an opportunity that already has a triage record, an open deferral or an evaluation. Needs Review decisions use Codex's existing opportunity-page panel.
+- **Mode A integration correction** (from the extension contract in the triage handoff above). The popup's **Request evaluation** now words `NEEDS_REVIEW` and `REJECT` from the server's outcome ("nothing was spent"), follows only `QUEUED`, and offers no decision buttons. `extension-api.ts` remains authentication plus delegation to `handleProductionEvaluationPost`.
+
+#### Current Contract / Assumptions
+
+- **Identity:** `capturedPageIdentity(card.url)` (unchanged), so a batch job and a Mode A capture of the same page meet on one opportunity (UNCHANGED or CHANGED). `discoveredAt` is the first batch sighting.
+- **Provenance:** `source: "browser-extension"`, `BROWSER_EXTENSION`, no `RetrievalSource`, no `RetrievedListing`, no opportunity-less `SourceRecord`. Analytics (Features 13 and 15–18) never read `PageCaptureItem`. Batch jobs count exactly as Mode A captures.
+- **Registry:** `packages/core/src/page-capture.ts`. LinkedIn and Welcome to the Jungle / Otta are `cardVerified: false` and `detailVerified: false`. The synthetic `e2e-results` site (host `jobs.e2e.invalid`) is enabled only by `PAGE_CAPTURE_TEST_SITE=1` (E2E). The extension status reports `pageCapture.sites` only when a site is enabled.
+- **Acquisition rules:** open-only, sequential, the site's interval (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. A 403, 429, 999, sign-in wall, challenge or account cookie stops the site for at least 24 h (or the Retry-After). A 404 or 410 gives UNAVAILABLE. An unreadable page is retried up to 3 times, then becomes AWAITING_DETAILS. With no browser, items become AWAITING_DETAILS (NO_BROWSER).
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md, "Extension Mode B — Bounded Results-Page Ingestion", for the full offline gate. Only `ai_career_assistant_test` was used. No live, provider, paid or evaluator call was made. The normal and acceptance databases were untouched.
+
+#### Known Issues / Blockers
+
+- No real site is enabled: F0 fixtures and the bounded P1 experiment (Alex, local runtime) are required per site. LinkedIn's prior evidence is negative (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
+- If P1 fails for a site, that site's Mode B stays incomplete. P2 (background tabs in Alex's Chrome) or any other mechanism needs Alex's separate decision. There is no further reverse-engineering.
+- **For Codex/Alex (pre-existing, not caused by Mode B):** four older web-app E2E tests fail identically on the untouched `e84c1cc` baseline:
+  - `evaluation-results` "material ambiguity … Review" and `dashboard` "search, filter, sort…": the deterministic helper worker ends FAILED;
+  - `golden-path` "golden path…" and "recovery…": no "Evaluation accepted and queued".
+
+  Their fixtures predate the triage/evaluator changes; they need a coordinated fixture decision and were not changed here.
+- The extension-owned `extension.spec` test whose fixture job triage now holds was updated narrowly to the triage contract (truthful held state, then release via the triage panel); see CURRENT_PROGRESS.md.
+
+#### Next Task
+
+- Alex: review; commit and push approval; F0 per site; authorize and run P1 per site; then each site's targeted live acceptance (`ai_career_assistant_acceptance` only, with authorization).
+
+#### Do Not Change Without Coordination
+
+- The triage gate and its persistence (Codex), the evaluator, `extract.ts`, `envelope.ts`, `capturedListing()` and the retrieval ingestion contract.

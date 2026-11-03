@@ -4,6 +4,7 @@ import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-succe
 import {
   getDatabaseClient,
   PrismaManualOpportunityRepository,
+  PrismaPageCaptureRepository,
   PrismaRetrievalSourceRepository,
   RetrievalWorkerLock,
 } from "@ai-career/database";
@@ -11,13 +12,39 @@ import { createFetchTransport, createPoliteTransport, defaultAdapterRegistry } f
 import { createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
 import { readRetrievalWorkerEnvironment, readServerEnvironment } from "@ai-career/shared";
 import { ZodError } from "zod";
-import { createRetrievalWorker, runRetrievalWorkerLoop } from "./retrieval-worker";
+import { getEvaluationService } from "./evaluation-service";
+import { enabledSitesFromEnvironment } from "./page-capture";
+import { createPageCaptureAcquisition, evaluationHandoff, type PageCaptureAcquisition } from "./page-capture-acquisition";
+import { createRetrievalWorker, runRetrievalWorkerLoop, type RetrievalWorker } from "./retrieval-worker";
 import { formatWorkerError } from "./worker-errors";
 
 // pnpm worker:retrieval [--once] — runs enabled retrieval sources on their
 // schedule and Run-now requests from /sources. Exactly one retrieval worker
 // runs at a time. It contacts only the sources the user has enabled, and
-// it never starts an evaluation.
+// it never starts an evaluation for them. When no source run is due, it
+// also reads the details of jobs the browser extension saved from a results
+// page (Mode B), only for sites whose automatic detail acquisition is
+// verified, and hands each newly ingested job to the existing evaluation
+// request, whose pre-evaluator triage decides before anything is admitted.
+
+// The page-capture pass runs only when no retrieval run was due.
+function withPageCaptureAcquisition(worker: RetrievalWorker, acquisition: PageCaptureAcquisition): RetrievalWorker {
+  return {
+    ...worker,
+    async runOnce() {
+      const outcome = await worker.runOnce();
+      if (outcome) return outcome;
+      const pass = await acquisition.runOnce();
+      if (pass) {
+        log.info(
+          `page capture site=${pass.site} claimed=${pass.claimed} ingested=${pass.ingested} awaitingDetails=${pass.awaitingDetails} ` +
+            `unavailable=${pass.unavailable} stopped=${pass.stopped ?? "-"}`,
+        );
+      }
+      return null;
+    },
+  };
+}
 
 const log = {
   info: (message: string) => console.info(`[retrieval] ${message}`),
@@ -79,12 +106,23 @@ async function main(): Promise<number> {
   log.info(`starting pollMs=${settings.RETRIEVAL_WORKER_POLL_MS}${once ? " once" : ""}`);
   const lock = new RetrievalWorkerLock();
   const sources = new PrismaRetrievalSourceRepository();
-  const worker = createRetrievalWorker({
+  const ingestion = createRetrievalIngestionService({
+    repository: new PrismaManualOpportunityRepository(),
+    normalizer: createRetrievedOpportunityNormalizer(),
+  });
+  const browser = settings.RETRIEVAL_BROWSER_EXECUTABLE ? browserLauncher(settings.RETRIEVAL_BROWSER_EXECUTABLE) : null;
+  const acquisition = createPageCaptureAcquisition({
+    repository: new PrismaPageCaptureRepository(),
+    ingestion,
+    handoff: evaluationHandoff(getEvaluationService()),
+    discovery: customerSuccessDiscoveryConfiguration,
+    detailSites: () => enabledSitesFromEnvironment().details,
+    ...(browser ? { browser } : {}),
+    log,
+  });
+  const retrievalWorker = createRetrievalWorker({
     store: sources,
-    ingestion: createRetrievalIngestionService({
-      repository: new PrismaManualOpportunityRepository(),
-      normalizer: createRetrievedOpportunityNormalizer(),
-    }),
+    ingestion,
     registry: defaultAdapterRegistry,
     transport: (options) => createPoliteTransport(createFetchTransport({ userAgent: settings.RETRIEVAL_USER_AGENT }), options),
     discovery: customerSuccessDiscoveryConfiguration,
@@ -93,8 +131,9 @@ async function main(): Promise<number> {
     log,
     lastChecked: (source, externalIds) => sources.lastCheckedListings(source, externalIds),
     pendingListings: (sourceId, trackingScopeKey, since) => sources.pendingListings(sourceId, trackingScopeKey, since),
-    ...(settings.RETRIEVAL_BROWSER_EXECUTABLE ? { browser: browserLauncher(settings.RETRIEVAL_BROWSER_EXECUTABLE) } : {}),
+    ...(browser ? { browser } : {}),
   });
+  const worker = withPageCaptureAcquisition(retrievalWorker, acquisition);
   try {
     return await runRetrievalWorkerLoop({
       worker,

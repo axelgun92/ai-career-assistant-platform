@@ -26,6 +26,8 @@ declare namespace chrome {
       result?: T;
     }
     function executeScript<T>(injection: { target: { tabId: number }; func: () => T }): Promise<Array<InjectionResult<T>>>;
+    // With one JSON-serializable argument (the results-page reader's spec).
+    function executeScript<T, A>(injection: { target: { tabId: number }; func: (arg: A) => T; args: [A] }): Promise<Array<InjectionResult<T>>>;
   }
 
   namespace storage {

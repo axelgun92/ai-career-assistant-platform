@@ -10,6 +10,9 @@ import {
   siteLine,
 } from "./popup-view";
 import { readSettings, restrictStorage } from "./settings";
+import { pageCaptureOffer, type PageCaptureSiteSpec } from "../../../packages/core/src/page-capture";
+import { readResultCards, type ResultCardsReading } from "./results";
+import { buildPageCaptureBatch, cardLine, pageCaptureMessage, readerInputFor, readingSummary, rejectedLines } from "./page-capture-view";
 
 // The popup. Nothing is read from the page until "Read this page", and
 // nothing is sent until "Save". Every message is set as text, never as HTML.
@@ -163,15 +166,86 @@ async function requestEvaluation() {
   button.disabled = false;
   setText("evaluation-request", evaluationRequestMessage(result));
   show("evaluation-request", true);
-  if (result.ok && result.body.outcome !== "DEFERRED") {
+  if (!result.ok) return;
+  // Only a queued evaluation is followed. A job held for review or rejected
+  // before evaluation has nothing running; its decision is made in the app.
+  if (result.body.outcome === "QUEUED") {
     show("request-evaluation", false);
     setText("evaluation-state", "Evaluation queued.");
     startPolling();
+  } else if (result.body.outcome === "NEEDS_REVIEW" || result.body.outcome === "REJECT") {
+    show("request-evaluation", false);
+    setText("evaluation-state", result.body.outcome === "NEEDS_REVIEW" ? "Needs Review before evaluation." : "Rejected before evaluation.");
   }
 }
 
 function openInApp() {
   if (origin && opportunityId) void chrome.tabs.create({ url: `${origin}/opportunities/${encodeURIComponent(opportunityId)}` });
+}
+
+// Mode B: "Save jobs on this page". The cards already loaded in the page are
+// read once, shown for the user to keep or drop, and sent only on Save.
+let pageSite: PageCaptureSiteSpec | null = null;
+let reading: ResultCardsReading | null = null;
+
+async function readJobsOnPage() {
+  showError(null);
+  if (tabId === null || !pageSite) return;
+  const button = element<HTMLButtonElement>("read-jobs");
+  button.disabled = true;
+  try {
+    const [injection] = await chrome.scripting.executeScript({ target: { tabId }, func: readResultCards, args: [readerInputFor(pageSite)] });
+    reading = (injection?.result as ResultCardsReading | undefined) ?? null;
+  } catch {
+    reading = null;
+    showError("This page cannot be read. Chrome does not let extensions read some pages.");
+    return;
+  } finally {
+    button.disabled = false;
+  }
+  if (!reading) return showError("This page could not be read.");
+  setText("jobs-summary", readingSummary(reading));
+  const list = element("jobs-list");
+  list.replaceChildren();
+  reading.cards.forEach((card, index) => {
+    const item = document.createElement("li");
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = true;
+    box.dataset.index = String(index);
+    label.append(box, document.createTextNode(` ${cardLine(card)}`));
+    item.append(label);
+    list.append(item);
+  });
+  show("save-jobs", reading.cards.length > 0);
+  show("jobs-preview", true);
+}
+
+async function saveJobs() {
+  showError(null);
+  if (!api || !reading || !pageSite) return;
+  const kept = [...element("jobs-list").querySelectorAll<HTMLInputElement>("input[type=checkbox]")].map((box) => box.checked);
+  const built = buildPageCaptureBatch(reading, kept, {
+    site: pageSite.key,
+    batchId: crypto.randomUUID(),
+    extensionVersion: chrome.runtime.getManifest().version,
+    capturedAt: new Date(),
+  });
+  if (!built.ok) return showError(built.problem);
+  const button = element<HTMLButtonElement>("save-jobs");
+  button.disabled = true;
+  const result = await api.pageCapture(built.batch);
+  button.disabled = false;
+  if (!result.ok) return showError(result.error);
+  show("jobs-preview", false);
+  setText("jobs-result-message", pageCaptureMessage(result.body));
+  setText("jobs-rejected", rejectedLines(result.body).join("\n"));
+  show("jobs-result", true);
+}
+
+function openProgress() {
+  if (origin) void chrome.tabs.create({ url: `${origin}/extension/jobs` });
 }
 
 async function start() {
@@ -188,6 +262,9 @@ async function start() {
   });
   element("request-evaluation").addEventListener("click", () => void requestEvaluation());
   element("open-app").addEventListener("click", openInApp);
+  element("read-jobs").addEventListener("click", () => void readJobsOnPage());
+  element("save-jobs").addEventListener("click", () => void saveJobs());
+  element("open-progress").addEventListener("click", openProgress);
 
   await restrictStorage();
   const settings = await readSettings();
@@ -211,11 +288,20 @@ async function start() {
     return;
   }
   tabId = tab.id;
+  // Mode B is offered only on a results page of a site the app enables.
+  const offer = pageCaptureOffer(url, status.body.pageCapture?.sites ?? []);
+  pageSite = offer.offered ? offer.site : null;
+  show("page-actions", pageSite !== null);
   const lookup = await api.lookup(url);
   if (lookup.ok) {
     setText("page-site", siteLine(lookup.body.site));
     if (!lookup.body.supported) {
-      setText("page-site", "Open a LinkedIn job page to save it. Only the job posting is read, nothing else on LinkedIn.");
+      setText(
+        "page-site",
+        pageSite
+          ? "This is a results page: save the jobs on it below. To save one job with its full details, open its job page."
+          : "Open a LinkedIn job page to save it. Only the job posting is read, nothing else on LinkedIn.",
+      );
       return;
     }
     if (lookup.body.found && lookup.body.opportunityId) {

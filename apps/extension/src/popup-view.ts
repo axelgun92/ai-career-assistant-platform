@@ -76,6 +76,13 @@ export function evaluationRequestMessage(result: ApiResult<{ outcome?: string; r
         ? "Evaluation deferred: an AI usage limit is reached right now. Nothing was spent."
         : "Evaluation deferred: the budget does not have room right now. Nothing was spent.";
     }
+    // The pre-evaluator triage's outcome, as the server decided it.
+    if (result.body.outcome === "NEEDS_REVIEW") {
+      return "Held for review before evaluation: an important requirement is unknown or unclear. Nothing was spent. Open it in AI Job Assistant to choose Evaluate or Reject.";
+    }
+    if (result.body.outcome === "REJECT") {
+      return "Rejected before evaluation: the posting does not meet a hard requirement. Nothing was spent.";
+    }
     return "Evaluation requested and queued.";
   }
   if (result.code === "DUPLICATE_LISTING_ALREADY_EVALUATED") {

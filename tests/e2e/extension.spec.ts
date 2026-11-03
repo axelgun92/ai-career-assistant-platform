@@ -285,14 +285,36 @@ test("pair, read, edit nothing, save, open in the app, request an evaluation, an
   await expect(opened.getByRole("heading", { name: "Not evaluated" })).toBeVisible({ timeout: 15_000 });
   await opened.close();
 
-  // Request evaluation: the existing path queues it, the helper worker
-  // completes it, and the popup shows the persisted result read-only.
+  // Request evaluation: the existing path's pre-evaluator triage holds this
+  // job for review (updated November 3, 2026 for the triage contract; before
+  // the triage the request was queued). The popup says so truthfully: not
+  // queued, nothing spent, nothing followed, and no decision offered here.
   await popup.getByRole("button", { name: "Request evaluation" }).click();
-  await expect(popup.locator("#evaluation-request")).toHaveText("Evaluation requested and queued.");
+  await expect(popup.locator("#evaluation-request")).toHaveText(
+    "Held for review before evaluation: an important requirement is unknown or unclear. Nothing was spent. Open it in AI Job Assistant to choose Evaluate or Reject.",
+  );
+  await expect(popup.locator("#evaluation-state")).toHaveText("Needs Review before evaluation.");
+  await expect(popup.getByRole("button", { name: "Request evaluation" })).toBeHidden();
+  await popup.waitForTimeout(2_500);
+  expect(requests.filter((entry) => entry.endsWith("/evaluation"))).toEqual([]);
+  expect((await popup.request.get(`${appUrl}/api/opportunities/${saved.opportunityId}/evaluation`)).status()).toBe(404);
+
+  // Alex chooses Evaluate in the app's triage panel, which releases it to the
+  // normal admission path; the popup then follows the queued evaluation, the
+  // helper worker completes it, and the popup shows the persisted result.
+  const review = await context.newPage();
+  await review.goto(`${appUrl}/opportunities/${saved.opportunityId}`);
+  await expect(review.getByRole("heading", { name: "Needs Review before evaluation" })).toBeVisible({ timeout: 15_000 });
+  await review.getByRole("button", { name: "Evaluate", exact: true }).click();
+  await expect(review.getByText(/released to the normal admission path/)).toBeVisible();
+  await review.close();
+  await popup.close();
+  ({ popup, requests } = await openPopup(tabId));
   await expect(popup.locator("#evaluation-state")).toHaveText(/Evaluation (queued|running)/);
   await expect(popup.getByRole("button", { name: "Request evaluation" })).toBeHidden();
   await runHelper("run-worker");
   await expect(popup.locator("#evaluation-state")).toHaveText(/^Evaluation completed\. Recommendation: \w[\w ]*\.$/, { timeout: 15_000 });
+  expect(requests.some((entry) => entry.endsWith("/evaluation"))).toBe(true);
 
   // Capture again: already saved, its recommendation shown; nothing changed.
   await popup.close();
