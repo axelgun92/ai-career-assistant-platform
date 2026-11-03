@@ -25,6 +25,12 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
   - Required next: F0 fixtures (the DevTools snippet `tests/support/page-capture-fixture-export.js`), then the bounded P1 experiment `pnpm page-capture:verify <site> <≤5 job URLs>` with `RETRIEVAL_BROWSER_EXECUTABLE`. Both run locally, by Alex, with authorization.
   - Prior P1 evidence: negative for LinkedIn (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
   - If P1 fails, stop; another mechanism (for example P2, background tabs) needs Alex's separate decision.
+- **LinkedIn F0 collected (November 3, 2026):** 5 real logged-out public cards, job IDs 4484727127, 4423511448, 4486498409, 4444032301 and 4486439538. Their markup matches the Mode B reader spec; the card-reader fixture test belongs to the consolidated step.
+- **P1 runner ready (not run):** `pnpm page-capture:verify` reports PASS / FAIL / BLOCKED (exit 0 / 2 / 3).
+  - It opens the canonical job URL production fetches and checks that the page shown is the requested job.
+  - It now applies LinkedIn's own friction checks (login wall, security check, anti-bot interstitial, even with HTTP 200), as does production Mode B acquisition, where such a page now stops the site for at least a day instead of counting as unreadable.
+  - It is covered offline by `tests/unit/page-capture-verify.test.ts`.
+  - Alex runs it locally for LinkedIn, then for Welcome to the Jungle / Otta after its F0.
 - **Verification:** offline only, on `ai_career_assistant_test`; no live, provider, paid or evaluator call; the normal and acceptance databases do not exist in this container and were not touched.
   - typecheck, lint, `prisma validate`, production web build, extension build, `git diff --check`; `apps/web/next-env.d.ts` untouched.
   - `db:verify-migrations`: all 26 migrations applied in order to a temporary database; only the documented Recommendation default drift; temporary database dropped.

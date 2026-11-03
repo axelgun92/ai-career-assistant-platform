@@ -225,16 +225,29 @@ Neither step can run from the cloud environment, and neither touches a database.
 
 The fixtures become the site's card-reader tests, and its job links become the P1 sample.
 
-**P1: the bounded detail-reading experiment, once per site, only with Alex's authorization.**
+**P1: the bounded detail-reading experiment, once per site, only with Alex's authorization (local runtime).**
 ```bash
-RETRIEVAL_BROWSER_EXECUTABLE=/path/to/chrome-or-chromium \
-  pnpm page-capture:verify linkedin "https://www.linkedin.com/jobs/view/<id>" "https://www.linkedin.com/jobs/view/<id>"
-pnpm page-capture:verify welcome-to-the-jungle "<job URL from the F0 cards>" …   # same variable
-# optional: --raw-dir <a folder outside the repository> keeps the raw pages
+export RETRIEVAL_BROWSER_EXECUTABLE=/path/to/chrome-or-chromium
+mkdir -p ~/aija-p1
+pnpm page-capture:verify linkedin <up to 5 job URLs from the F0 cards> --raw-dir ~/aija-p1/linkedin 2>&1 | tee ~/aija-p1/linkedin-p1.log
+echo "exit=${PIPESTATUS[0]}"
+pnpm page-capture:verify welcome-to-the-jungle <up to 5 job URLs from its F0 cards> --raw-dir ~/aija-p1/wttj 2>&1 | tee ~/aija-p1/wttj-p1.log
 ```
-- It takes at most 5 job URLs from that site's F0 cards. It reads them one at a time in a fresh, logged-out headless browser, at least 5 s (LinkedIn) or 12 s (Welcome to the Jungle / Otta) apart, and runs the single-job reader on each.
-- The first refusal (403, 429, 999), sign-in wall, challenge or account cookie stops it, with no further request and no retry.
-- It prints **VIABLE** only when every page loaded without friction and gave a readable posting. Anything else is **NOT VIABLE**: stop and report it. There is no further investigation of that site's server-side retrieval (no hidden endpoints, no logged-in access, no repeated probing) unless Alex explicitly authorizes more.
+- It takes at most 5 job URLs from that site's F0 cards. It opens each once, in the canonical form production acquisition fetches (LinkedIn: `https://www.linkedin.com/jobs/view/<id>`, whatever slug the card link had). It reads them one at a time in a fresh, logged-out headless browser (no profile, cookies or stored state), at least 5 s (LinkedIn) or 12 s (Welcome to the Jungle / Otta) apart, and runs the unchanged single-job reader on each. Nothing is retried, and no database is read or written.
+- **BLOCKED** (exit 3): the first access restriction stops it, with no further request:
+  - HTTP 401, 403, 429 or 999;
+  - a sign-in, authwall, checkpoint, challenge or CAPTCHA page;
+  - LinkedIn's login wall, security check or anti-bot interstitial (even with HTTP 200);
+  - an account cookie (`li_at`).
+- **FAIL** (exit 2): a page loaded without restriction but was not a readable posting of the requested job, and it stops there. That means:
+  - no title, or a description under 200 characters;
+  - a redirect to another job or a search page;
+  - HTTP 404, 410 or another non-2xx status;
+  - a 5xx, timeout or network error.
+- **PASS** (exit 0): every given URL loaded without restriction, stayed on the requested job and gave a readable posting. Use all 5 F0 jobs: only a PASS on all of them makes the site eligible for automatic details. Enabling it is a separate, reviewed change.
+- Exit 1 is a usage or setup error. Nothing is opened then.
+- `--raw-dir` (outside the repository) keeps each page's HTML (`p1-<site>-<n>.html`) and `p1-<site>-summary.json` (the verdict and per-page results; no cookies or headers).
+- BLOCKED or FAIL means stop and report. There is no further investigation of that site's server-side retrieval (no hidden endpoints, no logged-in access, no repeated probing) unless Alex explicitly authorizes more. Another mechanism (P2) is a separate decision.
 - Prior evidence: LinkedIn's first logged-out job-detail request answered HTTP 429 (October 20, 2026). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet; this path has not been tested either way.
 
 ## Known limits

@@ -9,7 +9,7 @@ import {
   type RetrievedListingOutcome,
 } from "@ai-career/core";
 import type { PageCaptureItemRecord, PrismaPageCaptureRepository } from "@ai-career/database";
-import { AdapterError, createBrowserSession, type BrowserDriver } from "@ai-career/discovery";
+import { AdapterError, createBrowserSession, detectLinkedInFriction, type BrowserDriver } from "@ai-career/discovery";
 import { JSDOM } from "jsdom";
 import { buildCaptureEnvelope } from "../../../extension/src/envelope";
 import { extractJobPosting, type PageExtraction } from "../../../extension/src/extract";
@@ -84,6 +84,14 @@ export function readJobPage(document: Document): PageExtraction | null {
 
 const parseRunnable = (html: string, url: string) => new JSDOM(html, { url, runScripts: "outside-only" }).window.document;
 
+// A site's own access-friction checks beyond the generic ones: the same the
+// browser-assisted adapter uses for that site (LinkedIn's login wall standing
+// in for the content, its security check and its anti-bot interstitial, which
+// can arrive with HTTP 200). Such a page is an access stop, never "unreadable".
+export function pageCaptureFrictionDetector(siteKey: string) {
+  return siteKey === "linkedin" ? detectLinkedInFriction : undefined;
+}
+
 export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitionDependencies) {
   const now = dependencies.now ?? (() => new Date());
   const log = dependencies.log ?? { info: () => undefined, warn: () => undefined };
@@ -150,6 +158,7 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
             minIntervalMs: site.detail.minIntervalMs,
             maxNavigations: pageCaptureDetailsPerPass,
             authCookieNames: site.detail.authCookieNames,
+            detectFriction: pageCaptureFrictionDetector(siteKey),
             parse: parseRunnable,
             ...(dependencies.sleep ? { sleep: dependencies.sleep } : {}),
           });
