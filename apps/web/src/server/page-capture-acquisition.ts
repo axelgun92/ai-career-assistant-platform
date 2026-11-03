@@ -78,7 +78,18 @@ export interface AcquisitionPassResult {
 export function readJobPage(document: Document): PageExtraction | null {
   const window = document.defaultView as (Window & { eval(source: string): unknown }) | null;
   if (!window) return null;
-  const result = window.eval(`(${extractJobPosting.toString()})()`) as PageExtraction;
+  // The reader's own source text is evaluated in the page's window, as Chrome
+  // runs it. Under tsx (the runtime of the retrieval worker and of
+  // page-capture:verify), esbuild compiles with keepNames, which wraps the
+  // reader's inner functions in `__name(fn, "name")` calls whose helper lives
+  // at module scope and is not part of the serialized source. The same helper
+  // is supplied around the source here (it only sets a function's name, as
+  // esbuild's does), so the reader runs unchanged whichever way it was
+  // compiled; the extension's own bundle has no such calls.
+  const source = extractJobPosting.toString();
+  const result = window.eval(
+    `(() => { const __name = (target, value) => Object.defineProperty(target, "name", { value, configurable: true }); return (${source})(); })()`,
+  ) as PageExtraction;
   return JSON.parse(JSON.stringify(result)) as PageExtraction;
 }
 

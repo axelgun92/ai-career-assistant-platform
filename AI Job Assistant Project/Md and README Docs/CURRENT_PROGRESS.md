@@ -31,6 +31,12 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
   - It now applies LinkedIn's own friction checks (login wall, security check, anti-bot interstitial, even with HTTP 200), as does production Mode B acquisition, where such a page now stops the site for at least a day instead of counting as unreadable.
   - It is covered offline by `tests/unit/page-capture-verify.test.ts`.
   - Alex runs it locally for LinkedIn, then for Welcome to the Jungle / Otta after its F0.
+- **P1 runtime fix (November 3, 2026):** the first local LinkedIn P1 run stopped with exit 1 before any verdict ("ReferenceError: __name is not defined" inside the evaluated reader).
+  - Cause: `tsx`, the runtime of `pnpm page-capture:verify` and `pnpm worker:retrieval`, compiles with esbuild `keepNames`. That wraps the reader's inner functions in `__name(...)` calls whose helper sits at module scope, outside the source text `readJobPage` serializes and evaluates in the page.
+  - Vitest and the extension bundle do not compile that way, so the unit tests and Mode A in Chrome were unaffected. Production Mode B acquisition under the worker would have failed the same way.
+  - Fix: `readJobPage` now supplies the same `__name` helper (it only sets a function's name) around the unchanged reader source. There is no extraction change and no LinkedIn-specific logic.
+  - Regression: `tests/unit/page-capture-verify-runtime.test.ts` runs the real P1 path in a tsx child process with a fake browser. It confirms the `__name` calls are present, P1 gives PASS, and the reader output under tsx equals Vitest's for structured-data, LinkedIn and main-content pages. It fails without the fix.
+  - No verdict was produced by the failed run; LinkedIn P1 is to be re-run once.
 - **Verification:** offline only, on `ai_career_assistant_test`; no live, provider, paid or evaluator call; the normal and acceptance databases do not exist in this container and were not touched.
   - typecheck, lint, `prisma validate`, production web build, extension build, `git diff --check`; `apps/web/next-env.d.ts` untouched.
   - `db:verify-migrations`: all 26 migrations applied in order to a temporary database; only the documented Recommendation default drift; temporary database dropped.

@@ -245,7 +245,7 @@ pnpm page-capture:verify welcome-to-the-jungle <up to 5 job URLs from its F0 car
   - HTTP 404, 410 or another non-2xx status;
   - a 5xx, timeout or network error.
 - **PASS** (exit 0): every given URL loaded without restriction, stayed on the requested job and gave a readable posting. Use all 5 F0 jobs: only a PASS on all of them makes the site eligible for automatic details. Enabling it is a separate, reviewed change.
-- Exit 1 is a usage or setup error. Nothing is opened then.
+- Exit 1 is a usage or setup error. Nothing is opened then, or the run stopped before a verdict; it is not a P1 result. *(The first local LinkedIn run, on November 3, 2026, ended this way with "__name is not defined". That runtime defect is fixed and has a regression test; re-run it.)*
 - `--raw-dir` (outside the repository) keeps each page's HTML (`p1-<site>-<n>.html`) and `p1-<site>-summary.json` (the verdict and per-page results; no cookies or headers).
 - BLOCKED or FAIL means stop and report. There is no further investigation of that site's server-side retrieval (no hidden endpoints, no logged-in access, no repeated probing) unless Alex explicitly authorizes more. Another mechanism (P2) is a separate decision.
 - Prior evidence: LinkedIn's first logged-out job-detail request answered HTTP 429 (October 20, 2026). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet; this path has not been tested either way.
