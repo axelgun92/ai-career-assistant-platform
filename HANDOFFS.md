@@ -1581,7 +1581,7 @@ When later extension work is explicitly authorized:
 **Date:** November 4, 2026
 **From:** Claude main-product workstream
 **To:** Alex (review, commit approval, targeted acceptance); Codex (boundary awareness only)
-**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. LinkedIn Mode B is not complete until its targeted end-to-end acceptance.
+**Status:** Committed as `77f7321`. LinkedIn Mode B is not complete until its targeted end-to-end acceptance. *(Status at writing: "Implemented and verified offline on `ai_career_assistant_test`, not committed.")* WTTJ P2 has since been implemented; see the next record.
 
 #### Completed
 
@@ -1621,3 +1621,79 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - Codex's triage and its persistence; the evaluator; `extract.ts`, `envelope.ts`, `capturedListing()`; the P1 runner contract.
+
+### Handoff: Mode B — Welcome to the Jungle / Otta Background-Tab Detail Reading, P2 (Claude; shared-boundary record)
+
+**Date:** November 4, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, live-acceptance authorization); Codex (boundary awareness only)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. Not live-accepted; WTTJ Mode B is not complete.
+
+#### Completed
+
+- **One action:** "Save selected jobs" (up to 25 loaded jobs, no lower cap) asks for the WTTJ-only optional host permission inside the click; declined, nothing is staged.
+- **Reading:** the extension's service worker then reads each job automatically in sequential background tabs of Alex's Chrome:
+  - ≥ 12 s between navigation starts, 30 s load timeout;
+  - a page check, then the unchanged Mode A reader, with re-reads at +2 s/+5 s and no reload;
+  - only its own tabs are closed.
+- **Server:** `apps/web/src/server/page-capture-tabs.ts` behind four pairing-authenticated routes (`items/<id>/start|details|result`, `stop`). It identity-checks each page, ingests through the shared `createPageCaptureIngestor` and hands off to the existing triage-gated evaluation request. Reports are idempotent.
+- **Safeguards:**
+  - access restriction → batch and site stopped for ≥ 24 h, with no automatic resume (a re-save after the wait reads again);
+  - identity mismatch → batch stopped;
+  - 404/410 → UNAVAILABLE; unreadable → UNREADABLE;
+  - closed tab → INTERRUPTED, never reopened;
+  - Stop and a removed permission stop the run;
+  - a browser restart ends the run (session storage), and items queued for 60 minutes become INTERRUPTED;
+  - an alarm backstop resumes after a service-worker restart.
+- **WTTJ card reader:** the F0 page path, a structural company selector and the posted date; the real F0 cards are a regression fixture.
+
+#### Files Changed
+
+- Core: `packages/core/src/page-capture.ts` (`tabAcquisition`, mechanism helpers, acceptance option, new reason, signal and result codes).
+- Database: `database/src/page-capture-repository.ts` (tab-only methods; optional `stageBatch` inputs). No schema change.
+- Web:
+  - `apps/web/src/server/page-capture.ts` (acceptance setting, tab intake);
+  - `page-capture-tabs.ts` (new);
+  - `page-capture-acquisition.ts` (shared ingestor; worker skips non-`server-browser` sites);
+  - `page-capture-progress.ts` (staleness, Retry refused, `retryable`);
+  - `extension-api.ts`;
+  - the routes under `app/api/extension/page-captures/items/[id]/*` and `stop`;
+  - `components/extension/page-capture-list.tsx`.
+- Extension: `manifest.json` (`alarms`, `optional_host_permissions`), `popup.html`, `chrome.d.ts`, `api.ts`, `popup.ts`, `page-capture-view.ts`, `service-worker.ts`, new `tab-acquisition.ts` and `tab-messages.ts`.
+- Tests:
+  - new: `tests/unit/page-capture-wttj.test.ts`, `tests/unit/page-capture-tab-acquisition.test.ts`, `tests/integration/page-capture-wttj.test.ts`, `tests/support/wttj-tab-pages.ts`, `tests/fixtures/page-capture/wttj-f0-cards.json`;
+  - updated: `tests/unit/page-capture-ui.test.tsx` (+2) and `tests/unit/extension-client.test.ts` (the 14B manifest and service-worker contract, narrowly, to P2).
+
+#### Current Contract / Assumptions
+
+- LinkedIn's behaviour and committed tests are unchanged. The two shared changes:
+  - the ingest-and-hand-off step moved verbatim into `createPageCaptureIngestor`;
+  - the worker skips sites whose mechanism is not `server-browser`.
+- WTTJ stays `cardVerified`/`detailVerified: false`. It is offered only with `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle` (server setting, live acceptance only).
+- Triage is consumed unchanged. No E2E, Playwright config, triage or evaluator file changed.
+
+#### Verification Completed
+
+- Offline only: test DB only; no WTTJ request, no host permission granted, no live browser, no provider or evaluator call.
+- Typecheck, lint, `prisma validate`, extension build and `git diff --check` pass; `next-env.d.ts` untouched.
+- Unit: 92 files passed, 1 skipped (2,144 passed, 6 skipped).
+- Integration: 47 files, 373 tests passed.
+- E2E not run: no E2E file changed; Codex's area.
+- The test DB was left clean.
+
+#### Known Issues / Blockers
+
+- Not live-tested:
+  - Chrome's permission prompt and popup behaviour;
+  - WTTJ's real job-page markup (synthetic pages only);
+  - WTTJ's response to background-tab loads in a logged-in session;
+  - service-worker lifetime across a 25-job run (about 5–15 minutes).
+- A job link with non-tracking query parameters (for example `?q=…&o=…`) is a different listing identity under the existing shared rule. A redirect that adds or removes such parameters would stop the batch as an identity mismatch (the safe direction). F0's links had none.
+
+#### Next Task
+
+- Alex: review and commit approval; then authorize WTTJ live acceptance (Alex's Chrome, the acceptance DB, `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`). On PASS, set WTTJ `cardVerified`/`detailVerified` with the evidence.
+
+#### Do Not Change Without Coordination
+
+- Codex's triage; the evaluator; `extract.ts`, `envelope.ts`, `capturedListing()`, `capturedPageIdentity()`; the safeguards above; the manifest's permission set.

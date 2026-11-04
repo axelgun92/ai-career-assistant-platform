@@ -40,7 +40,7 @@ The steps above are Mode A, the single-job capture. It stays unchanged and optio
 
 **Supported sites.** Mode B's V1 sites are LinkedIn and Welcome to the Jungle / Otta. Wellfound is not a Mode B site.
 - **LinkedIn: enabled** (November 4, 2026). F0: its real results cards are read 5/5. P1: PASS, 5/5 job pages read in a fresh logged-out browser. It is not complete until its targeted end-to-end acceptance.
-- **Welcome to the Jungle / Otta: not offered, not complete.** F0 done. P1 BLOCKED (HTTP 403 on the first job page). P3 unsupported: its cards hold no job description. P2 is the chosen mechanism (November 4, 2026): the single Save action for up to 25 already-loaded jobs automatically reads each job in sequential background tabs of your Chrome, with no second action. It is not yet implemented (implementation needs separate approval), then needs live acceptance. *(Superseded plan: a separate three-job proof-of-concept phase, removed November 4, 2026.)*
+- **Welcome to the Jungle / Otta: not offered by default, not complete.** F0 done. P1 BLOCKED (HTTP 403 on the first job page). P3 unsupported: its cards hold no job description. Its mechanism is P2, which is implemented and verified offline (November 4, 2026; see *Background-tab detail reading* below) but not live-accepted. The single **Save selected jobs** action for up to 25 already-loaded jobs reads each job automatically, in sequential background tabs of your Chrome, with no second action. Until its live acceptance it is offered only when the app runs with `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`. *(Earlier, November 4, before implementation: "It is not yet implemented (implementation needs separate approval), then needs live acceptance." Superseded plan: a separate three-job proof-of-concept phase, removed November 4, 2026.)*
 
 *(Earlier wording: "Neither site is enabled yet.")* A site is offered only after its card reading has been checked on real results-page fixtures (step F0 below). Its jobs are read automatically only after its detail reading has passed the bounded P1 experiment (step P1 below). Mode B is complete for a site only when an approved automatic detail mechanism moves its batch-captured jobs into real opportunities without anyone opening them one by one. Awaiting details never counts as completion. If P1 fails for a site, the site stays incomplete, and any other mechanism (such as reading the jobs in background tabs of your own Chrome) needs Alex's separate decision.
 
@@ -61,14 +61,35 @@ The extension does not interpret the posting. It sends what it read, plus neutra
 - the tab's title;
 - the job's own page content, with every description: the job's container without navigation, header, footer, side panels, forms, lists of other jobs, and related-job, sharing or cookie widgets, one visible item per line, up to 20,000 characters. It lets a detail shown beside the description be used: a labelled row ("Remote Type: Hybrid", "Visa Sponsorship" / "Not Available"), or an item that is only a salary, an employment type, office days, a seniority label, a country or a posting age ("$80K – $95K", "1 day a week in office", "Junior and Mid level", "Posted 1 week ago"). *(Before October 26, 2026 it was sent only beside structured data or a selection.)* AI Job Assistant's shared normalization then fills facts the page states only in its text, such as "Location: Chicago, IL", "This is a full-time, hybrid position." or a salary statement. It does this the same way for every source. A field you corrected in the preview is recorded as user-corrected, and a field you cleared stays unknown.
 
+## Background-tab detail reading (Mode B, P2: Welcome to the Jungle / Otta)
+
+For a site whose job pages AI Job Assistant cannot read itself (Welcome to the Jungle / Otta refused a logged-out browser with HTTP 403), the extension reads each saved job's page in your own Chrome instead. It is started by the same **Save selected jobs** click; there is no second action.
+
+1. **Permission, inside the Save click.** The first time, Chrome asks to let the extension read `www.welcometothejungle.com` and `app.welcometothejungle.com` pages. Decline, and nothing is saved or sent. Grant, and the batch is saved. If Chrome closes the popup while it asks, granting still saves the batch. The permission can be removed at any time in Chrome's extension settings; a run in progress then stops.
+2. **One job at a time.** The extension's service worker checks with AI Job Assistant that the job is still to be read, then opens its page in a **new background tab**, at least 12 seconds after the previous one started. Your own tabs are never switched, navigated or closed. You can keep browsing.
+3. **Reading.** When the page has loaded (at most 30 seconds), the extension checks it for an access restriction, then runs the same single-job reader as **Read this page**. If no posting is found yet, it reads the same page again after 2 and 5 seconds, without reloading. It then closes its own tab and sends the posting. AI Job Assistant checks that the page is the saved job, then ingests it and hands it to the pre-evaluator triage, exactly as for LinkedIn. Only the job's own page is used, never the card's text.
+4. **Stops.**
+   - An access restriction stops the whole batch: HTTP 401, 403, 429, 999 or 5xx, a sign-in redirect or sign-in form in place of the job, a challenge or CAPTCHA, or the tab leaving the site. The site is then not contacted for at least 24 hours, and the remaining jobs wait as Awaiting details. When the wait ends nothing resumes by itself: save a results page again to read them.
+   - A page that is not the saved job stops the batch.
+   - A job that is gone (404 or 410) is marked No longer available, and an unreadable page is Awaiting details; the next job is read.
+   - If you close one of the extension's tabs, that job is interrupted and never reopened.
+5. **Progress and Stop.** While a run is active, the popup shows its progress and a **Stop reading details** button. The job being read finishes; nothing more opens. If the browser closes, the run ends and is not resumed at the next start. Its jobs show as interrupted on `/extension/jobs` after an hour. For these jobs `/extension/jobs` offers no **Retry**: save the results page that shows them again.
+
 ## Permissions
 
 - `activeTab`, so it can read the current tab only after you click the toolbar icon;
 - `scripting`, to run the one-off page reader;
-- `storage`, for its two settings;
-- host access to `http://127.0.0.1/*` and `http://localhost/*` only, to reach your local AI Job Assistant.
+- `storage`, for its two settings, and session storage (cleared when the browser closes) for a background-tab run in progress;
+- `alarms`, only to continue a background-tab run if Chrome stops the service worker mid-run;
+- host access to `http://127.0.0.1/*` and `http://localhost/*` only, to reach your local AI Job Assistant;
+- **optional** host access to `https://www.welcometothejungle.com/*` and `https://app.welcometothejungle.com/*`, asked only inside **Save selected jobs** on a Welcome to the Jungle results page, for the background-tab detail reading above.
 
-It has no content scripts and no `tabs`, `cookies`, `webRequest` or all-sites access. Its minimal service worker does one thing: on installation and every browser start it restricts the extension's storage to the extension's own pages.
+It has no content scripts and no `tabs`, `cookies`, `webRequest` or all-sites access. Its service worker:
+- on installation and every browser start, restricts the extension's storage to the extension's own pages;
+- during a background-tab run only, opens, reads and closes its own background tabs;
+- accepts messages from the extension's own popup only.
+
+*(Earlier, before P2: "Its minimal service worker does one thing: on installation and every browser start it restricts the extension's storage to the extension's own pages.")*
 
 ## Pairing and privacy
 
@@ -258,5 +279,5 @@ pnpm page-capture:verify welcome-to-the-jungle <up to 5 job URLs from its F0 car
 
 - **LinkedIn:** the logged-in markup changes often. If the job-detail reader stops finding the job, select the description text and read again. The extension does not change or work around Feature 14A's automated LinkedIn adapter, which stays unverified and disabled after its HTTP 429.
 - **Pages whose URL doesn't change:** a page whose URL stays the same while it shows different jobs is identified by its URL, so a capture of a second job there is recorded as a change to the first. Open the job's own page (most sites give each job its own URL) before saving.
-- **Mode B:** offered on LinkedIn results pages only. Welcome to the Jungle / Otta is not offered (see *Supported sites*). Automatic details need `pnpm worker:retrieval` with `RETRIEVAL_BROWSER_EXECUTABLE`; without a browser, saved jobs wait as Awaiting details, which does not count as Mode B completion. The real F0 cards were LinkedIn's logged-out results markup; the logged-in results markup is covered by synthetic tests until the end-to-end acceptance. It reads only cards already loaded: scroll the results and save again for more. It never pages or scrolls for you.
+- **Mode B:** offered on LinkedIn results pages. Welcome to the Jungle / Otta is offered only when the app runs with `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`, for its live acceptance (see *Supported sites*); its details are read in background tabs of your Chrome, not by the worker. LinkedIn's automatic details need `pnpm worker:retrieval` with `RETRIEVAL_BROWSER_EXECUTABLE`; without a browser, saved LinkedIn jobs wait as Awaiting details, which does not count as Mode B completion. *(Earlier: "offered on LinkedIn results pages only. Welcome to the Jungle / Otta is not offered.")* The real F0 cards were LinkedIn's logged-out results markup; the logged-in results markup is covered by synthetic tests until the end-to-end acceptance. It reads only cards already loaded: scroll the results and save again for more. It never pages or scrolls for you.
 - **What Chrome blocks:** Chrome does not let extensions read some pages (the Chrome Web Store, `chrome://` pages).

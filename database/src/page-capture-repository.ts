@@ -28,6 +28,15 @@ export interface StagedCardInput {
 
 export type StageOutcome = "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED";
 
+export interface StagedResult {
+  externalId: string;
+  outcome: StageOutcome;
+  opportunityId: string | null;
+  itemId: string;
+  // The item's status after staging.
+  status: PageCaptureItemStatusValue;
+}
+
 export interface PageCaptureItemRecord {
   id: string;
   site: string;
@@ -102,19 +111,32 @@ export class PrismaPageCaptureRepository {
     resultsPageUrl: string;
     receivedAt: Date;
     // QUEUED when the site's jobs can be fetched for details automatically;
-    // otherwise AWAITING_DETAILS with NOT_SUPPORTED.
+    // otherwise AWAITING_DETAILS with awaitingReason (NOT_SUPPORTED unless
+    // stated).
     detailsAvailable: boolean;
+    awaitingReason?: string;
+    // Background-tab reading only: the new save is the user's explicit
+    // request to read again, so a job of this batch that is awaiting details
+    // (and was never added) is queued again. Never set for the worker's
+    // sites, whose waiting jobs keep their own retry rules.
+    requeueAwaiting?: boolean;
     cards: StagedCardInput[];
-  }): Promise<Array<{ externalId: string; outcome: StageOutcome; opportunityId: string | null; itemId: string }>> {
+  }): Promise<StagedResult[]> {
     return this.database.$transaction(async (transaction) => {
-      const results: Array<{ externalId: string; outcome: StageOutcome; opportunityId: string | null; itemId: string }> = [];
+      const results: StagedResult[] = [];
       for (const card of input.cards) {
         const saved = await this.savedOpportunity(transaction, card, input.site);
         const existing = await transaction.pageCaptureItem.findUnique({ where: { externalId: card.externalId } });
         if (existing) {
           const repeat = existing.lastBatchId === input.batchId;
+          const requeue =
+            !saved && input.requeueAwaiting === true && input.detailsAvailable && existing.status === "AWAITING_DETAILS" && !existing.opportunityId;
           const status =
-            saved && existing.status !== "INGESTED" && existing.status !== "DISMISSED" ? "ALREADY_SAVED" : existing.status;
+            saved && existing.status !== "INGESTED" && existing.status !== "DISMISSED"
+              ? "ALREADY_SAVED"
+              : requeue
+                ? "QUEUED"
+                : existing.status;
           const updated = repeat
             ? existing
             : await transaction.pageCaptureItem.update({
@@ -131,13 +153,15 @@ export class PrismaPageCaptureRepository {
                   sightings: { increment: 1 },
                   lastBatchId: input.batchId,
                   status,
+                  ...(requeue ? { attempts: 0, lastReason: null, nextAttemptAt: null, lastAttemptAt: null } : {}),
                 },
               });
           results.push({
             externalId: card.externalId,
-            outcome: updated.status === "ALREADY_SAVED" ? "ALREADY_SAVED" : "SEEN_AGAIN",
+            outcome: updated.status === "ALREADY_SAVED" ? "ALREADY_SAVED" : !repeat && requeue ? "QUEUED" : "SEEN_AGAIN",
             opportunityId: updated.opportunityId ?? saved,
             itemId: updated.id,
+            status: updated.status,
           });
           continue;
         }
@@ -158,10 +182,10 @@ export class PrismaPageCaptureRepository {
             lastBatchId: input.batchId,
             pairingId: input.pairingId,
             status: saved ? "ALREADY_SAVED" : input.detailsAvailable ? "QUEUED" : "AWAITING_DETAILS",
-            lastReason: saved || input.detailsAvailable ? null : "NOT_SUPPORTED",
+            lastReason: saved || input.detailsAvailable ? null : (input.awaitingReason ?? "NOT_SUPPORTED"),
           },
         });
-        results.push({ externalId: card.externalId, outcome: saved ? "ALREADY_SAVED" : "QUEUED", opportunityId: saved, itemId: created.id });
+        results.push({ externalId: card.externalId, outcome: saved ? "ALREADY_SAVED" : "QUEUED", opportunityId: saved, itemId: created.id, status: created.status });
       }
       return results;
     });
@@ -246,6 +270,70 @@ export class PrismaPageCaptureRepository {
       where: { id, handedOffAt: null },
       data: { handoffOutcome: outcome, handedOffAt: now },
     });
+  }
+
+  // Background-tab reading (extension-tabs). The extension reads a job's page
+  // only after the server confirms the job is still queued (not dismissed,
+  // not stopped, not already added); the start is recorded. Jobs read this
+  // way are never ACQUIRING, so the worker's recovery never touches them.
+  async startTabItem(id: string, site: string, now: Date): Promise<PageCaptureItemRecord | null> {
+    const { count } = await this.database.pageCaptureItem.updateMany({
+      where: { id, site, status: "QUEUED" },
+      data: { lastAttemptAt: now },
+    });
+    return count ? this.findById(id) : null;
+  }
+
+  // The end of one job's reading other than its ingestion; only a job still
+  // queued changes, so a repeated report changes nothing.
+  async settleTabItem(
+    id: string,
+    input: { status: "AWAITING_DETAILS" | "UNAVAILABLE"; reason: string; nextAttemptAt: Date | null },
+  ): Promise<boolean> {
+    const { count } = await this.database.pageCaptureItem.updateMany({
+      where: { id, status: "QUEUED" },
+      data: { status: input.status, lastReason: input.reason, nextAttemptAt: input.nextAttemptAt, attempts: { increment: 1 } },
+    });
+    return count > 0;
+  }
+
+  // The rest of a stopped batch: the named jobs of the site that are still
+  // queued wait for the user's next save. Nothing resumes them.
+  async stopTabItems(site: string, ids: readonly string[], reason: string): Promise<number> {
+    if (!ids.length) return 0;
+    const { count } = await this.database.pageCaptureItem.updateMany({
+      where: { site, id: { in: [...ids] }, status: "QUEUED" },
+      data: { status: "AWAITING_DETAILS", lastReason: reason },
+    });
+    return count;
+  }
+
+  // An access restriction: every queued job of the site stops, and the site
+  // is not contacted until `until` (siteStoppedUntil reads it). The jobs stay
+  // Awaiting details; the end of the wait does not resume them.
+  async stopTabSite(site: string, until: Date, reason: string): Promise<number> {
+    const { count } = await this.database.pageCaptureItem.updateMany({
+      where: { site, status: "QUEUED" },
+      data: { status: "AWAITING_DETAILS", lastReason: reason, nextAttemptAt: until },
+    });
+    return count;
+  }
+
+  // Jobs of background-tab sites still queued long after their save and
+  // their last start were not being read any more (the browser closed or
+  // the extension stopped): they become Awaiting details, Interrupted.
+  async expireTabItems(sites: readonly string[], cutoff: Date): Promise<number> {
+    if (!sites.length) return 0;
+    const { count } = await this.database.pageCaptureItem.updateMany({
+      where: {
+        site: { in: [...sites] },
+        status: "QUEUED",
+        lastSeenAt: { lt: cutoff },
+        OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: cutoff } }],
+      },
+      data: { status: "AWAITING_DETAILS", lastReason: "INTERRUPTED" },
+    });
+    return count;
   }
 
   async findById(id: string): Promise<PageCaptureItemRecord | null> {

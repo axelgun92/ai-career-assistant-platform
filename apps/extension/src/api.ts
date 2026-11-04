@@ -1,5 +1,6 @@
 import type { ExtensionCaptureInput } from "../../../packages/core/src/extension-capture";
 import type { PageCaptureBatch } from "../../../packages/core/src/page-capture";
+import type { PageCaptureTabResult, PageCaptureTabSignal, PageCaptureTabStop } from "../../../packages/core/src/page-capture";
 import type { PageCaptureResponse } from "./page-capture-view";
 
 // The extension's only network client. It calls the configured local AI Job
@@ -34,6 +35,27 @@ export interface ApiClient {
   pageCapture(batch: PageCaptureBatch): Promise<ApiResult<PageCaptureResponse>>;
   requestEvaluation(opportunityId: string): Promise<ApiResult<{ outcome?: string; reason?: string; evaluationId?: string }>>;
   evaluationStatus(opportunityId: string): Promise<ApiResult<EvaluationStatusResponse>>;
+  // Mode B background-tab detail reading (P2).
+  pageCaptureTabStart(itemId: string): Promise<ApiResult<TabStartResponse>>;
+  pageCaptureTabDetails(itemId: string, body: { capture: ExtensionCaptureInput; remainingItemIds: string[] }): Promise<ApiResult<TabReportResponse>>;
+  pageCaptureTabResult(
+    itemId: string,
+    body: { result: PageCaptureTabResult; signal: PageCaptureTabSignal | null; finalUrl: string | null; remainingItemIds: string[] },
+  ): Promise<ApiResult<TabReportResponse>>;
+  pageCaptureTabStop(body: { site: string; itemIds: string[]; reason: PageCaptureTabStop }): Promise<ApiResult<{ stopped: number }>>;
+}
+
+export type TabStartResponse =
+  | { proceed: true; itemId: string; url: string }
+  | { proceed: false; itemId: string; status: string; reason: string | null; stoppedUntil: string | null };
+
+export interface TabReportResponse {
+  itemId: string;
+  outcome: "INGESTED" | "ALREADY_INGESTED" | "SKIPPED" | "IDENTITY_MISMATCH" | "UNREADABLE" | "UNAVAILABLE" | "INTERRUPTED" | "BLOCKED";
+  status: string;
+  opportunityId: string | null;
+  stopBatch: boolean;
+  stoppedUntil: string | null;
 }
 
 export interface EvaluationSummary {
@@ -112,6 +134,7 @@ export function createApiClient(settings: { backendUrl: string; credential: stri
   }
 
   const opportunityPath = (id: string, leaf: string) => `${extensionApiPrefix}opportunities/${encodeURIComponent(id)}/${leaf}`;
+  const itemPath = (id: string, leaf: string) => `${extensionApiPrefix}page-captures/items/${encodeURIComponent(id)}/${leaf}`;
   return {
     status: () => call(`${extensionApiPrefix}status`),
     lookup: (pageUrl) => call(`${extensionApiPrefix}lookup?url=${encodeURIComponent(pageUrl)}`),
@@ -119,5 +142,9 @@ export function createApiClient(settings: { backendUrl: string; credential: stri
     pageCapture: (batch) => call(`${extensionApiPrefix}page-captures`, { method: "POST", body: batch }),
     requestEvaluation: (id) => call(opportunityPath(id, "evaluation-requests"), { method: "POST", body: {} }),
     evaluationStatus: (id) => call(opportunityPath(id, "evaluation")),
+    pageCaptureTabStart: (id) => call(itemPath(id, "start"), { method: "POST", body: {} }),
+    pageCaptureTabDetails: (id, body) => call(itemPath(id, "details"), { method: "POST", body }),
+    pageCaptureTabResult: (id, body) => call(itemPath(id, "result"), { method: "POST", body }),
+    pageCaptureTabStop: (body) => call(`${extensionApiPrefix}page-captures/stop`, { method: "POST", body }),
   };
 }

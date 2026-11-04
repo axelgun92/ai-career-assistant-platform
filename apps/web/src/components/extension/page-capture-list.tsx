@@ -31,6 +31,9 @@ export interface PageCaptureRowView {
   evaluationStatus: string | null;
   recommendation: string | null;
   handoffOutcome: string | null;
+  // False for a job read in the extension's background tabs: it is read
+  // again by saving the results page again, not by Retry.
+  retryable?: boolean;
 }
 
 export const reasonLabels: Record<string, string> = {
@@ -41,7 +44,15 @@ export const reasonLabels: Record<string, string> = {
   RATE_LIMITED: "The site asked us to slow down; it will not be contacted again for at least a day",
   FAILED_REPEATEDLY: "Reading the job's page failed repeatedly",
   NOT_INGESTED: "The job could not be added",
+  INTERRUPTED: "Reading the job's page was interrupted (its tab was closed, or the browser or extension stopped)",
+  IDENTITY_MISMATCH: "The page that opened was not this job, so reading stopped for this batch",
+  BATCH_STOPPED: "Reading stopped for this batch before this job",
+  USER_STOPPED: "You stopped reading the details",
+  PERMISSION_MISSING: "The extension no longer has permission to read this site's job pages",
 };
+
+// For a job read in background tabs, how to read it again.
+export const saveAgainHint = "Save the results page that shows it again to read its details.";
 
 // The opportunity's state after it was added, from its stored triage and
 // evaluation. "Needs Review before evaluation" is the pre-evaluator triage
@@ -95,7 +106,7 @@ async function act(id: string, action: "retry" | "dismiss" | "restore"): Promise
   }
 }
 
-export function PageCaptureActions({ row }: { row: Pick<PageCaptureRowView, "id" | "status" | "resolvedOpportunityId"> }) {
+export function PageCaptureActions({ row }: { row: Pick<PageCaptureRowView, "id" | "status" | "resolvedOpportunityId" | "retryable"> }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,11 +120,12 @@ export function PageCaptureActions({ row }: { row: Pick<PageCaptureRowView, "id"
   };
   return (
     <span className="page-capture-actions">
-      {row.status === "AWAITING_DETAILS" && !row.resolvedOpportunityId ? (
+      {row.status === "AWAITING_DETAILS" && !row.resolvedOpportunityId && row.retryable !== false ? (
         <button type="button" className="link-button" disabled={busy} onClick={() => void run("retry")}>
           Retry
         </button>
       ) : null}
+      {row.status === "AWAITING_DETAILS" && !row.resolvedOpportunityId && row.retryable === false ? <span className="muted">{saveAgainHint}</span> : null}
       {["QUEUED", "AWAITING_DETAILS", "UNAVAILABLE"].includes(row.status) ? (
         <button type="button" className="link-button" disabled={busy} onClick={() => void run("dismiss")}>
           Dismiss

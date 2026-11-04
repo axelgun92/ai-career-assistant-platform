@@ -2,9 +2,11 @@ import {
   pageCaptureDetailsPerPass,
   pageCaptureFrictionBackoffMs,
   pageCaptureMaxAttempts,
+  pageCaptureDetailMechanism,
   pageCaptureSiteByKey,
   RetrievedListingNormalizationError,
   type DiscoveryConfiguration,
+  type ExtensionCapture,
   type RetrievalIngestionService,
   type RetrievedListingOutcome,
 } from "@ai-career/core";
@@ -103,22 +105,26 @@ export function pageCaptureFrictionDetector(siteKey: string) {
   return siteKey === "linkedin" ? detectLinkedInFriction : undefined;
 }
 
-export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitionDependencies) {
+export interface PageCaptureIngestorDependencies {
+  repository: Pick<PrismaPageCaptureRepository, "markIngested" | "markHandedOff">;
+  ingestion: RetrievalIngestionService;
+  handoff: EvaluationHandoff;
+  discovery: DiscoveryConfiguration;
+  now?: () => Date;
+  log?: { info(message: string): void; warn(message: string): void };
+}
+
+// The one path from a staged job's read posting to an opportunity, shared by
+// both detail mechanisms (the worker's server browser and the extension's
+// background tabs): the single-job capture (envelope.ts) is mapped by the
+// unchanged capturedListing, ingested by the normal retrieval ingestion
+// (first sighting as its discovery time), recorded on the staged job, and
+// handed once to the existing evaluation request. A capture the ingestion
+// cannot read throws (RetrievedListingNormalizationError or
+// ExtensionCaptureError); each mechanism decides what that means for it.
+export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDependencies) {
   const now = dependencies.now ?? (() => new Date());
   const log = dependencies.log ?? { info: () => undefined, warn: () => undefined };
-  let recovered = false;
-
-  async function failOne(item: PageCaptureItemRecord, reason: "UNREADABLE" | "NOT_INGESTED") {
-    const attempts = item.attempts + 1;
-    const finalAttempt = attempts >= pageCaptureMaxAttempts;
-    await dependencies.repository.markFailed(item.id, {
-      status: finalAttempt ? "AWAITING_DETAILS" : "QUEUED",
-      reason: finalAttempt && reason === "UNREADABLE" ? "UNREADABLE" : finalAttempt ? "FAILED_REPEATEDLY" : reason,
-      nextAttemptAt: finalAttempt ? null : new Date(now().getTime() + 60 * 60 * 1000),
-      countAttempt: true,
-    });
-    return finalAttempt;
-  }
 
   async function handOff(item: PageCaptureItemRecord, opportunityId: string, outcome: RetrievedListingOutcome) {
     const at = now();
@@ -138,6 +144,41 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
   }
 
   return {
+    async ingest(item: PageCaptureItemRecord, capture: ExtensionCapture) {
+      const { raw } = capturedListing(capture, {
+        pairingId: item.pairingId,
+        domain: dependencies.discovery.domain,
+        receivedAt: item.firstSeenAt,
+      });
+      const ingested = await dependencies.ingestion.ingest(raw);
+      await dependencies.repository.markIngested(item.id, ingested.opportunityId, now());
+      await handOff(item, ingested.opportunityId, ingested.outcome);
+      return ingested;
+    },
+  };
+}
+
+export type PageCaptureIngestor = ReturnType<typeof createPageCaptureIngestor>;
+
+export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitionDependencies) {
+  const now = dependencies.now ?? (() => new Date());
+  const log = dependencies.log ?? { info: () => undefined, warn: () => undefined };
+  const ingestor = createPageCaptureIngestor(dependencies);
+  let recovered = false;
+
+  async function failOne(item: PageCaptureItemRecord, reason: "UNREADABLE" | "NOT_INGESTED") {
+    const attempts = item.attempts + 1;
+    const finalAttempt = attempts >= pageCaptureMaxAttempts;
+    await dependencies.repository.markFailed(item.id, {
+      status: finalAttempt ? "AWAITING_DETAILS" : "QUEUED",
+      reason: finalAttempt && reason === "UNREADABLE" ? "UNREADABLE" : finalAttempt ? "FAILED_REPEATEDLY" : reason,
+      nextAttemptAt: finalAttempt ? null : new Date(now().getTime() + 60 * 60 * 1000),
+      countAttempt: true,
+    });
+    return finalAttempt;
+  }
+
+  return {
     // One bounded pass for one site with queued jobs due. Returns null when
     // there is nothing to do.
     async runOnce(): Promise<AcquisitionPassResult | null> {
@@ -149,7 +190,9 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
       const enabled = new Set(dependencies.detailSites());
       for (const siteKey of await dependencies.repository.sitesWithQueued(at)) {
         const site = pageCaptureSiteByKey(siteKey);
-        if (!site || !enabled.has(siteKey)) continue;
+        // A site read in the extension's background tabs is never fetched by
+        // the worker, whatever its settings.
+        if (!site || !enabled.has(siteKey) || pageCaptureDetailMechanism(site) !== "server-browser") continue;
         const stoppedUntil = await dependencies.repository.siteStoppedUntil(siteKey, at);
         if (stoppedUntil) continue;
         const items = await dependencies.repository.claimQueued(siteKey, at, pageCaptureDetailsPerPass);
@@ -208,15 +251,8 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
               continue;
             }
             try {
-              const { raw } = capturedListing(built.envelope, {
-                pairingId: item.pairingId,
-                domain: dependencies.discovery.domain,
-                receivedAt: item.firstSeenAt,
-              });
-              const ingested = await dependencies.ingestion.ingest(raw);
-              await dependencies.repository.markIngested(item.id, ingested.opportunityId, now());
+              await ingestor.ingest(item, built.envelope);
               result.ingested += 1;
-              await handOff(item, ingested.opportunityId, ingested.outcome);
             } catch (error) {
               if (error instanceof RetrievedListingNormalizationError || error instanceof ExtensionCaptureError) {
                 if (await failOne(item, "UNREADABLE")) result.awaitingDetails += 1;

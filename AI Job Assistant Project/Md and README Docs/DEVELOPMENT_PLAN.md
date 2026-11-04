@@ -229,7 +229,8 @@ Current sequence (updated November 4, 2026):
    - Awaiting details is a per-job fallback only.
 5. Next, per site. Mode B is complete for a site only when an approved automatic mechanism moves its batch jobs into real opportunities without Alex opening each one.
    - **LinkedIn:** F0 and P1 done (PASS); enabled. Next is its targeted end-to-end acceptance (separately authorized).
-   - **Welcome to the Jungle / Otta:** F0 done; P1 BLOCKED (HTTP 403); P3 unsupported. P2, sequential background tabs triggered by the single Save action for up to 25 loaded jobs, is the chosen mechanism. Its implementation needs separate approval, then live acceptance. No separate proof-of-concept phase.
+   - **Welcome to the Jungle / Otta:** F0 done; P1 BLOCKED (HTTP 403); P3 unsupported. P2 — sequential background tabs triggered by the single Save action for up to 25 loaded jobs — is implemented and verified offline (November 4, 2026), awaiting review and commit approval. Next: live acceptance in Alex's Chrome, with separate authorization, on the acceptance database with `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`; then set `cardVerified`/`detailVerified` on the evidence. No separate proof-of-concept phase.
+     - *(Earlier, November 4: "Its implementation needs separate approval, then live acceptance.")*
    - *(Earlier, November 3: "Next: F0 results-page fixtures and the bounded P1 detail experiment per site …, then each site's targeted live acceptance. … If P1 fails, another mechanism (P2: background tabs in Alex's Chrome) needs Alex's separate decision.")*
 6. Then: the final whole-product regression gate, the final evaluator live acceptance (D8, separately authorized), and the next formal PRD/TDD versions covering triage and the extension together, then the freeze.
 

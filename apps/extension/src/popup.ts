@@ -12,7 +12,9 @@ import {
 import { readSettings, restrictStorage } from "./settings";
 import { pageCaptureOffer, type PageCaptureSiteSpec } from "../../../packages/core/src/page-capture";
 import { readResultCards, type ResultCardsReading } from "./results";
-import { buildPageCaptureBatch, cardLine, pageCaptureMessage, readerInputFor, readingSummary, rejectedLines } from "./page-capture-view";
+import { buildPageCaptureBatch, cardLine, pageCaptureMessage, readerInputFor, readingSummary, rejectedLines, type PageCaptureResponse } from "./page-capture-view";
+import { tabRunLine } from "./tab-acquisition";
+import { pendingSaveKey, startTabSave, type SaveReply, type StateReply, type TabMessage } from "./tab-messages";
 
 // The popup. Nothing is read from the page until "Read this page", and
 // nothing is sent until "Save". Every message is set as text, never as HTML.
@@ -222,7 +224,9 @@ async function readJobsOnPage() {
   show("jobs-preview", true);
 }
 
-async function saveJobs() {
+// Not async before the permission request: Chrome grants a permission only
+// from inside the user's click.
+function saveJobs() {
   showError(null);
   if (!api || !reading || !pageSite) return;
   const kept = [...element("jobs-list").querySelectorAll<HTMLInputElement>("input[type=checkbox]")].map((box) => box.checked);
@@ -235,13 +239,65 @@ async function saveJobs() {
   if (!built.ok) return showError(built.problem);
   const button = element<HTMLButtonElement>("save-jobs");
   button.disabled = true;
-  const result = await api.pageCapture(built.batch);
+  const tabs = pageSite.tabAcquisition;
+  if (!tabs) return void saveBatchHere(built.batch, button);
+  // The site's job pages are read in background tabs of this browser: its
+  // permission is asked now, and the service worker sends the batch and
+  // reads the jobs. Declined, nothing is saved.
+  const site = pageSite;
+  void startTabSave(
+    { batch: built.batch, site: site.key, hostPermissions: tabs.hostPermissions, now: Date.now() },
+    {
+      keepPending: (pending) => void chrome.storage.session.set({ [pendingSaveKey]: pending }).catch(() => undefined),
+      dropPending: () => chrome.storage.session.remove(pendingSaveKey).catch(() => undefined),
+      requestPermission: (origins) => chrome.permissions.request({ origins }),
+      send: (message: TabMessage) => chrome.runtime.sendMessage<SaveReply>(message),
+    },
+  ).then((outcome) => {
+    button.disabled = false;
+    if (!outcome.granted) {
+      return showError(`Reading these jobs' details needs permission to open ${site.name} job pages in background tabs. Nothing was saved.`);
+    }
+    if (!outcome.reply.ok) return showError(outcome.reply.error);
+    showSaved(outcome.reply.body);
+    void refreshTabRun();
+  });
+}
+
+async function saveBatchHere(batch: Parameters<ApiClient["pageCapture"]>[0], button: HTMLButtonElement) {
+  if (!api) return;
+  const result = await api.pageCapture(batch);
   button.disabled = false;
   if (!result.ok) return showError(result.error);
+  showSaved(result.body);
+}
+
+function showSaved(body: PageCaptureResponse) {
   show("jobs-preview", false);
-  setText("jobs-result-message", pageCaptureMessage(result.body));
-  setText("jobs-rejected", rejectedLines(result.body).join("\n"));
+  setText("jobs-result-message", pageCaptureMessage(body));
+  setText("jobs-rejected", rejectedLines(body).join("\n"));
   show("jobs-result", true);
+}
+
+// A background-tab run in progress (or just ended), with its Stop control.
+let runPolling: ReturnType<typeof setTimeout> | null = null;
+async function refreshTabRun() {
+  if (runPolling) clearTimeout(runPolling);
+  runPolling = null;
+  const reply = await chrome.runtime.sendMessage<StateReply>({ type: "page-capture:state" } satisfies TabMessage).catch(() => null);
+  const state = reply?.state ?? null;
+  const line = tabRunLine(state);
+  setText("tab-run-state", line ?? "");
+  show("tab-run", line !== null);
+  show("tab-run-stop", Boolean(state && !state.finished && !state.stopRequested));
+  if (state && !state.finished) runPolling = setTimeout(() => void refreshTabRun(), 2_000);
+}
+
+async function stopTabRun() {
+  element<HTMLButtonElement>("tab-run-stop").disabled = true;
+  await chrome.runtime.sendMessage({ type: "page-capture:stop" } satisfies TabMessage).catch(() => null);
+  element<HTMLButtonElement>("tab-run-stop").disabled = false;
+  await refreshTabRun();
 }
 
 function openProgress() {
@@ -263,7 +319,8 @@ async function start() {
   element("request-evaluation").addEventListener("click", () => void requestEvaluation());
   element("open-app").addEventListener("click", openInApp);
   element("read-jobs").addEventListener("click", () => void readJobsOnPage());
-  element("save-jobs").addEventListener("click", () => void saveJobs());
+  element("save-jobs").addEventListener("click", () => saveJobs());
+  element("tab-run-stop").addEventListener("click", () => void stopTabRun());
   element("open-progress").addEventListener("click", openProgress);
 
   await restrictStorage();
@@ -280,6 +337,7 @@ async function start() {
     return;
   }
   setText("connection", `Connected to AI Job Assistant (${status.body.pairing.label}).`);
+  void refreshTabRun();
 
   const tab = await targetTab();
   const url = tab?.url ?? "";

@@ -29,6 +29,8 @@ import {
   type ExtensionPairingStore,
 } from "./extension-auth";
 import { createPageCaptureService, type PageCaptureService } from "./page-capture";
+import { createPageCaptureIngestor, evaluationHandoff } from "./page-capture-acquisition";
+import { createPageCaptureTabService, PageCaptureTabError, type PageCaptureTabService } from "./page-capture-tabs";
 
 // The browser extension companion's API (feature 14B). Two groups of
 // routes:
@@ -53,6 +55,8 @@ export interface ExtensionApiDependencies {
   captures: ExtensionCaptureService;
   // Mode B, results-page capture (optional for the single-job tests).
   pageCaptures?: PageCaptureService;
+  // Mode B background-tab detail reading (P2), reported by the extension.
+  pageCaptureTabs?: PageCaptureTabService;
   evaluation: {
     request(request: Request, opportunityId: string): Promise<Response>;
     status(request: Request, opportunityId: string): Promise<Response>;
@@ -76,6 +80,7 @@ export function pairingView(pairing: ExtensionPairingRecord) {
 }
 
 function captureFailure(error: unknown): Response {
+  if (error instanceof PageCaptureTabError) return extensionError(error.code, error.message);
   if (error instanceof ExtensionCaptureError) {
     return extensionError(error.code, error.message, error.issues.length ? { issues: error.issues } : {});
   }
@@ -86,6 +91,19 @@ function captureFailure(error: unknown): Response {
 export function createExtensionApiHandlers(dependencies: ExtensionApiDependencies) {
   const now = dependencies.now ?? (() => new Date());
   const authenticate = (request: Request) => requirePairing(request, dependencies.pairings, now);
+
+  async function tabRoute(request: Request, maxBytes: number, run: (body: unknown, tabs: PageCaptureTabService) => Promise<unknown>) {
+    const auth = await authenticate(request);
+    if (!auth.ok) return auth.response;
+    if (!dependencies.pageCaptureTabs) return extensionError("UNSUPPORTED_PAGE", "Reading job details in the browser is not available");
+    const body = await readJsonBody(request, maxBytes);
+    if (!body.ok) return body.response;
+    try {
+      return extensionJson(await run(body.body, dependencies.pageCaptureTabs), 200);
+    } catch (error) {
+      return captureFailure(error);
+    }
+  }
 
   return {
     async capture(request: Request) {
@@ -127,6 +145,22 @@ export function createExtensionApiHandlers(dependencies: ExtensionApiDependencie
       } catch (error) {
         return captureFailure(error);
       }
+    },
+
+    // Mode B background-tab reading (P2): the extension asks before opening
+    // a job's tab, then reports the job page's capture or why it gave none,
+    // or the rest of a batch it stopped. Pairing credential only.
+    async pageCaptureTabStart(request: Request, itemId: string) {
+      return tabRoute(request, 1024, (_body, tabs) => tabs.start(itemId));
+    },
+    async pageCaptureTabDetails(request: Request, itemId: string) {
+      return tabRoute(request, extensionCaptureMaxBytes + 8 * 1024, (body, tabs) => tabs.details(itemId, body));
+    },
+    async pageCaptureTabResult(request: Request, itemId: string) {
+      return tabRoute(request, 8 * 1024, (body, tabs) => tabs.result(itemId, body));
+    },
+    async pageCaptureTabStop(request: Request) {
+      return tabRoute(request, 8 * 1024, (body, tabs) => tabs.stop(body));
     },
 
     async lookup(request: Request) {
@@ -230,19 +264,35 @@ export function evaluationSummaryReader(
 let handlers: ExtensionApiHandlers | undefined;
 
 export function getExtensionApi(): ExtensionApiHandlers {
-  handlers ??= createExtensionApiHandlers({
+  if (handlers) return handlers;
+  const ingestion = createRetrievalIngestionService({
+    repository: new PrismaManualOpportunityRepository(),
+    normalizer: createRetrievedOpportunityNormalizer(),
+  });
+  const pageCaptureRepository = new PrismaPageCaptureRepository();
+  const pageCaptures = createPageCaptureService({ repository: pageCaptureRepository });
+  // The evaluation service is reached only when a job is handed off.
+  const handoff = () => evaluationHandoff(getEvaluationService());
+  handlers = createExtensionApiHandlers({
     pairings: new PrismaExtensionPairingRepository(),
     captures: createExtensionCaptureService({
-      ingestion: createRetrievalIngestionService({
-        repository: new PrismaManualOpportunityRepository(),
-        normalizer: createRetrievedOpportunityNormalizer(),
-      }),
+      ingestion,
       lookup: new PrismaExtensionLookupRepository(),
       latestEvaluation: (opportunityId) =>
         evaluationSummaryReader(getEvaluationService(), async (id) => (await findListingVersionHint(id)) !== null)(opportunityId),
       discovery: customerSuccessDiscoveryConfiguration,
     }),
-    pageCaptures: createPageCaptureService({ repository: new PrismaPageCaptureRepository() }),
+    pageCaptures,
+    pageCaptureTabs: createPageCaptureTabService({
+      repository: pageCaptureRepository,
+      ingestor: createPageCaptureIngestor({
+        repository: pageCaptureRepository,
+        ingestion,
+        handoff: { alreadyHandled: (id) => handoff().alreadyHandled(id), request: (id) => handoff().request(id) },
+        discovery: customerSuccessDiscoveryConfiguration,
+      }),
+      enabledSites: pageCaptures.enabledSites,
+    }),
     evaluation: { request: handleProductionEvaluationPost, status: handleProductionEvaluationGet },
   });
   return handlers;

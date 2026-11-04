@@ -5,9 +5,10 @@
 
 ## Extension Mode B — Bounded Results-Page Ingestion
 
-**Committed on `integration/final-evaluator-product`: `6768598` (Mode B), `3ce9100` (P1 runner), `c946e1b` (P1 runtime fix). LinkedIn enablement (November 4, 2026) is implemented and verified offline and awaits Alex's commit approval.**
+**Committed on `integration/final-evaluator-product`: `6768598` (Mode B), `3ce9100` (P1 runner), `c946e1b` (P1 runtime fix), `77f7321` (LinkedIn enablement). WTTJ / Otta P2 (background tabs, November 4, 2026) is implemented and verified offline and awaits Alex's review and commit approval.**
 - **LinkedIn:** enabled; verified automatic detail mechanism (P1 PASS). Mode B is not complete until LinkedIn's targeted end-to-end acceptance.
-- **Welcome to the Jungle / Otta:** NOT complete and not offered. F0 done, P1 BLOCKED (HTTP 403), P3 unsupported. P2 (sequential background tabs) is the chosen mechanism and not yet implemented; implementation needs separate approval.
+- **Welcome to the Jungle / Otta:** NOT complete and not offered by default. F0 done, P1 BLOCKED (HTTP 403), P3 unsupported. P2 (sequential background tabs in Alex's Chrome) is implemented and verified offline only (see "WTTJ / Otta P2 implemented" below). It is enabled only by the explicit server setting `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`, for its live acceptance, which needs Alex's separate authorization.
+  - *(Earlier status, November 4, before P2 implementation: "P2 (sequential background tabs) is the chosen mechanism and not yet implemented; implementation needs separate approval.")*
 
 *(Earlier status line, November 3, 2026: "Implemented and verified offline on November 3, 2026, on `integration/final-evaluator-product` after `e84c1cc`. Not committed: it awaits Alex's review and commit approval. It is not live-accepted. Mode B is not complete for any real site yet.")*
 
@@ -49,7 +50,7 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
   - F0: 5 real cards from `/en/get-started/jobs-preview`.
   - P1 BLOCKED, exit 3: HTTP 403 ACCESS_DENIED on the first job page; it stopped as designed, and per the stop rule there is no repeat or probing.
   - P3 not viable: the cards hold only the title, company, a company tagline, tags and a date, with no job description. Embedded page state was not observed and would mean reading an internal format.
-  - The card reader identifies all 5 cards but extracts titles only, and `/en/get-started/jobs-preview` is not recognised as a results page. Both are deferred to any approved P2 work.
+  - The card reader identified all 5 cards but extracted titles only, and `/en/get-started/jobs-preview` was not recognised as a results page. Both are fixed in the P2 implementation below.
 - **LinkedIn Mode B enabled (approved D-A, November 4, 2026; implemented and verified offline; awaiting commit approval):**
   - `packages/core/src/page-capture.ts`: LinkedIn `cardVerified`/`detailVerified: true`, with the evidence. Pacing (5 s), ≤ 25 per batch and per pass, the ≥ 24 h friction stop, the `li_at` stop and LinkedIn friction checks are unchanged. Welcome to the Jungle stays off.
   - The real F0 cards are a regression fixture: `tests/fixtures/page-capture/linkedin-f0-cards.json`.
@@ -59,7 +60,7 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
     - idempotent repeats; Mode A re-observation of a batch job; the anti-bot interstitial stops the site with nothing ingested; no RetrievalSource or listing rows.
   - Verification: offline only, on `ai_career_assistant_test`, with no live LinkedIn or WTTJ request and no provider or evaluator call; the normal and acceptance databases do not exist in this container and were not touched. Typecheck, lint and `prisma validate` pass (no schema change, so no migration check was needed). Unit: 90 files passed, 1 replay file skipped (2,091 passed, 6 skipped), including the new `page-capture-linkedin` (4) and the updated `page-capture` registry test. Integration: 46 files, 368 tests passed, including the new `page-capture-linkedin` (3). `browser-driver` (4) needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to point at an installed Chromium; it failed when run without it and passed with it. E2E: the `extension` (8/8) and `page-capture` (4/4) projects pass; no E2E file was changed. `git diff --check` is clean and `apps/web/next-env.d.ts` is untouched; the test database was left clean.
   - Not yet done: LinkedIn's targeted end-to-end acceptance. It needs separate approval: Alex's real Chrome (logged-in results markup is covered by synthetic tests only; F0 was logged-out), the acceptance database, and the retrieval worker with `RETRIEVAL_BROWSER_EXECUTABLE`.
-- **WTTJ P2 — current plan (Alex, November 4, 2026; implementation not yet approved):**
+- **WTTJ P2 — plan (Alex, November 4, 2026; now implemented, see the next entry):**
   - WTTJ will use the proposed sequential background-tab mechanism, subject to implementation and live acceptance.
   - One "Save selected jobs" action for up to 25 already-loaded jobs stages them and automatically reads every job in sequential background tabs of Alex's Chrome. There is no second action and no lower batch cap.
   - Preserved rules:
@@ -67,6 +68,44 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
     - one tab at a time, at least 12 s apart;
     - an access restriction stops the batch, and the end of the 24 h backoff does not resume that blocked batch automatically.
   - *Superseded plan (November 4): a separate three-job proof-of-concept phase before implementation, with Alex's correction that it would use three loaded jobs automatically, was removed. WTTJ goes directly to implementation (when approved) and live acceptance.*
+- **WTTJ / Otta P2 implemented (authorized November 4, 2026; verified offline; awaiting review and commit approval; NOT live-accepted):**
+  - **Flow.** On a WTTJ results page, the existing "Save selected jobs" (up to 25 already-loaded jobs, no lower cap) asks for the WTTJ host permission inside the click. Declined: nothing is staged or sent. Granted: the service worker sends the batch, and the server stages it and lists the queued jobs back in page order. The service worker then reads every job automatically, with no second action:
+    - the server confirms each job is still to be read (`POST /api/extension/page-captures/items/<id>/start`), and the extension checks it still holds the permission;
+    - at least 12 s after the previous navigation started, the job's page opens in a new background tab (`tabs.create({ active: false })`); the user's tabs are never touched, navigated or closed;
+    - after load (30 s timeout), a self-contained page check runs (navigation `responseStatus`, sign-in redirects, challenge and CAPTCHA markers, a sign-in form in place of the posting), then the unchanged Mode A reader, again on the same document at +2 s and +5 s while no posting is found (no reload);
+    - the extension closes its own tab and reports the capture (`…/details`) or why there was none (`…/result`).
+  - **Server.** `apps/web/src/server/page-capture-tabs.ts`: the page must be the staged job (`capturedPageIdentity` of the final address equals the staged `externalId`), then it goes through the shared ingestion path — the same one the LinkedIn worker uses — and is handed once to the existing triage-gated evaluation request. Every report is idempotent: only a job still queued changes.
+  - **Safeguards.**
+    - Access restriction (HTTP 401/403/429/999/5xx, sign-in redirect or wall, challenge or CAPTCHA, the tab leaving the site's hosts): the batch stops, every queued WTTJ job becomes Awaiting details (ACCESS_STOPPED or RATE_LIMITED), and the site is not contacted for at least 24 h. The end of the wait resumes nothing; only a new save of a results page reads again, and a save during the wait stages the jobs but opens no tab.
+    - Identity mismatch: the batch stops; the job is IDENTITY_MISMATCH and the rest BATCH_STOPPED; the site is not stopped.
+    - 404/410: UNAVAILABLE; continue. Unreadable: UNREADABLE; continue.
+    - A tab the user closed: INTERRUPTED; never reopened; continue.
+    - The user's Stop (popup), or a removed permission: the job being read finishes, nothing more opens, and the rest becomes USER_STOPPED or PERMISSION_MISSING.
+    - Browser closed: the run lives in `chrome.storage.session` and is cleared at browser start, so nothing reopens; jobs still queued 60 minutes after their save and last start become INTERRUPTED (`expireTabItems`, run on the progress page and at intake).
+    - Service-worker restart mid-run: an alarm backstop resumes; the open tab is read once, or the job is INTERRUPTED if its tab is gone.
+  - **Registry (`packages/core/src/page-capture.ts`).** WTTJ gains `tabAcquisition` (host permissions `https://www.welcometothejungle.com/*` and `https://app.welcometothejungle.com/*`, 30 s load timeout, re-reads at 2 s and 5 s); its 12 s interval is unchanged. Card-reader fixes from the real F0: `/en/get-started/jobs-preview` is a results page; a structural company selector; the posted date. Location is read from the job page. `cardVerified`/`detailVerified` stay `false` until live acceptance; the new explicit `PAGE_CAPTURE_ACCEPTANCE_SITES` setting enables it for acceptance only. New reason codes: INTERRUPTED, IDENTITY_MISMATCH, BATCH_STOPPED, USER_STOPPED, PERMISSION_MISSING.
+  - **Extension.** Manifest `0.2.0`: adds `alarms` and `optional_host_permissions` (exactly the two WTTJ hosts; still no `tabs`, content script or other host). New `tab-acquisition.ts` (orchestrator and page check) and `tab-messages.ts` (popup ↔ service worker). The service worker runs the reading. The popup shows the run's progress with a Stop button. If Chrome closes the popup while the permission prompt is open, a grant still saves the batch (kept 2 minutes in session storage).
+  - **Progress page.** No Retry for background-tab jobs: they show "Save the results page that shows it again to read its details". The server refuses Retry for them; Dismiss and Restore are unchanged.
+  - **Shared changes, explained.** LinkedIn behaviour is unchanged:
+    - the ingest-and-hand-off step moved verbatim out of the worker pass into `createPageCaptureIngestor`, so both mechanisms share one path;
+    - the worker skips any site whose mechanism is not `server-browser`, so it never fetches WTTJ even when the site is enabled;
+    - the repository gains tab-only methods (`startTabItem`, `settleTabItem`, `stopTabItems`, `stopTabSite`, `expireTabItems`) and two optional `stageBatch` inputs used only for tab sites (`requeueAwaiting`, `awaitingReason`).
+    - No schema change and no migration. LinkedIn's committed tests pass unchanged.
+  - **Tests.**
+    - `tests/fixtures/page-capture/wttj-f0-cards.json`: the real F0 cards, read exactly.
+    - `tests/unit/page-capture-wttj.test.ts` (19): registry, manifest parity, intake, the worker's exclusion, Save asking for the permission inside the click and sending nothing when declined, route authentication, Retry refusal.
+    - `tests/unit/page-capture-tab-acquisition.test.ts` (32): the 25-job run, pacing, re-reads, every restriction signal, identity mismatch, interruption, Stop, permission removal, service-worker resume, page-check markers.
+    - `tests/integration/page-capture-wttj.test.ts` (5, test DB): the real orchestrator against the real server tab service, ingestion and triage (EVALUATE / NEEDS_REVIEW / REJECT, admission only for EVALUATE); the access-restriction stop with no resume and re-save after the wait; identity mismatch; interruption, 404 and Stop; staleness and idempotent reports.
+    - `tests/unit/page-capture-ui.test.tsx` (+2).
+    - `tests/unit/extension-client.test.ts`: the 14B manifest and service-worker contract updated narrowly to P2 (alarms and the two optional WTTJ hosts; the service worker may open background tabs and inject only the page check and the reader).
+  - **Verification** (offline only; test DB only; no WTTJ request, no permission granted, no live browser, no provider or evaluator call):
+    - typecheck, lint, `prisma validate`, extension build and `git diff --check` pass; `apps/web/next-env.d.ts` untouched.
+    - Unit: 92 files passed, 1 skipped (2,144 passed, 6 skipped).
+    - Integration: 47 files, 373 tests passed.
+    - E2E not run: no E2E file changed, and Codex owns the E2E cleanup.
+    - The test database was left clean.
+  - **Not yet done (separate authorization):** WTTJ's live acceptance in Alex's Chrome (acceptance database, `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`). After it passes, set WTTJ `cardVerified`/`detailVerified` and record the evidence.
+    - Risk to confirm live: a job link carrying non-tracking query parameters (for example `?q=…&o=…`) is a different listing identity under the existing shared rule. F0's links had none.
 - **Verification:** offline only, on `ai_career_assistant_test`; no live, provider, paid or evaluator call; the normal and acceptance databases do not exist in this container and were not touched.
   - typecheck, lint, `prisma validate`, production web build, extension build, `git diff --check`; `apps/web/next-env.d.ts` untouched.
   - `db:verify-migrations`: all 26 migrations applied in order to a temporary database; only the documented Recommendation default drift; temporary database dropped.

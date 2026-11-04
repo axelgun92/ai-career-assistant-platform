@@ -73,9 +73,45 @@ export interface PageCaptureSiteSpec {
     // Cookies whose appearance means an account session (stop).
     authCookieNames: string[];
   };
+  // The detail mechanism. Absent: the retrieval worker reads each job's page
+  // in a fresh logged-out headless browser (server-browser, P1). Present: the
+  // extension reads each job's page in the user's own Chrome, one background
+  // tab at a time (extension-tabs, P2), started by the same "Save selected
+  // jobs" action; the server never fetches that site's pages.
+  tabAcquisition?: PageCaptureTabAcquisitionSpec;
   // True only for the synthetic test site, enabled by the server's explicit
   // test setting; never matches a real host.
   testOnly: boolean;
+}
+
+// How the extension reads a site's job pages in background tabs (P2).
+export interface PageCaptureTabAcquisitionSpec {
+  // The only hosts the extension may open and read for the site: its
+  // optional host permissions, requested inside the Save click and equal to
+  // the manifest's optional_host_permissions (checked by a unit test).
+  hostPermissions: string[];
+  // Longest wait for a tab to finish loading.
+  loadTimeoutMs: number;
+  // The single-job reader runs when the page has loaded, then again on the
+  // same document after these delays (no reload) while no posting is found.
+  rereadDelaysMs: number[];
+}
+
+export type PageCaptureDetailMechanism = "server-browser" | "extension-tabs";
+
+export const pageCaptureDetailMechanism = (site: Pick<PageCaptureSiteSpec, "tabAcquisition">): PageCaptureDetailMechanism =>
+  site.tabAcquisition ? "extension-tabs" : "server-browser";
+
+// Whether a job URL is on a host the site's background-tab reading may open:
+// https only, and only the hosts of its host permissions.
+export function pageCaptureTabUrlAllowed(site: Pick<PageCaptureSiteSpec, "tabAcquisition">, value: string): boolean {
+  if (!site.tabAcquisition || !isHttpUrl(value)) return false;
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
+  return site.tabAcquisition.hostPermissions.some((pattern) => {
+    const match = /^https:\/\/([^/*]+)\/\*$/.exec(pattern);
+    return match !== null && match[1]!.toLowerCase() === url.hostname.toLowerCase();
+  });
 }
 
 export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
@@ -113,7 +149,9 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     name: "Welcome to the Jungle / Otta",
     knownSiteKeys: ["welcome-to-the-jungle", "otta"],
     hosts: [],
-    resultsPath: "^/([a-z]{2}/)?(jobs|companies/[^/]+/jobs)/?$",
+    // The search page, a company's jobs page, and the signed-in job feed
+    // (/en/get-started/jobs-preview, where F0 was collected).
+    resultsPath: "^/([a-z]{2}/)?(jobs|companies/[^/]+/jobs|get-started/jobs-preview)/?$",
     excludedPaths: "^/([a-z]{2}/)?(me|account|settings|profile|messages)(/|$)",
     reader: {
       jobLink: "^https://(www\\.|app\\.)?(welcometothejungle|otta)\\.com/(([a-z]{2}/)?companies/[^/]+/jobs/[^/?#]+|jobs/[A-Za-z0-9_-]+)/?(\\?|#|$)",
@@ -121,14 +159,31 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
       jobIdPattern: null,
       jobUrlTemplate: null,
       titleSelector: null,
-      companySelector: null,
+      // Structural, from the real F0 cards (generated class names change):
+      // the company name is the paragraph right after the job link (desktop
+      // layout) or inside the block right after it (narrow layout). The
+      // card's tags (contract, remote, salary, city, headcount) have no
+      // stable structure for the location, which is read from the job page.
+      companySelector: 'a[href*="/jobs/"] + p, a[href*="/jobs/"] + div > p',
       locationSelector: null,
-      postedSelector: null,
+      postedSelector: ".text-neutral-70",
       excludeSelector: "aside",
     },
+    // F0 (November 4, 2026): 5 real cards from /en/get-started/jobs-preview,
+    // read by this reader (tests/unit/page-capture-wttj.test.ts). P1 BLOCKED
+    // (HTTP 403 on the first logged-out job page), and P3 is not viable (the
+    // cards carry no job description), so the approved mechanism is P2:
+    // background tabs in the user's Chrome. Both flags stay false until P2's
+    // live acceptance; until then the site is enabled only by the server's
+    // explicit acceptance setting (PAGE_CAPTURE_ACCEPTANCE_SITES).
     cardVerified: false,
     detailVerified: false,
     detail: { minIntervalMs: 12_000, authCookieNames: [] },
+    tabAcquisition: {
+      hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
+      loadTimeoutMs: 30_000,
+      rereadDelaysMs: [2_000, 5_000],
+    },
     testOnly: false,
   },
   {
@@ -191,16 +246,32 @@ export function pageCaptureOffer(
   return { offered: true, reason: "OFFERED", site };
 }
 
-// The site keys the server enables for card reading: verified real sites, and
-// the synthetic test site only when the test setting asks for it.
-export function enabledPageCaptureSiteKeys(options: { includeTestSite: boolean }): string[] {
-  return pageCaptureSites.filter((site) => (site.testOnly ? options.includeTestSite : site.cardVerified)).map((site) => site.key);
+export interface PageCaptureEnableOptions {
+  includeTestSite: boolean;
+  // Real sites enabled for their targeted live acceptance before they are
+  // verified, by the server's explicit acceptance setting only. Never the
+  // test site; unknown keys are ignored.
+  acceptanceSites?: readonly string[];
 }
 
-// The site keys whose jobs may be fetched for details automatically.
-export function detailEnabledPageCaptureSiteKeys(options: { includeTestSite: boolean }): string[] {
+const acceptedForAcceptance = (site: PageCaptureSiteSpec, options: PageCaptureEnableOptions) =>
+  !site.testOnly && (options.acceptanceSites ?? []).includes(site.key);
+
+// The site keys the server enables for card reading: verified real sites, and
+// the synthetic test site only when the test setting asks for it.
+export function enabledPageCaptureSiteKeys(options: PageCaptureEnableOptions): string[] {
   return pageCaptureSites
-    .filter((site) => (site.testOnly ? options.includeTestSite : site.cardVerified && site.detailVerified))
+    .filter((site) => (site.testOnly ? options.includeTestSite : site.cardVerified || acceptedForAcceptance(site, options)))
+    .map((site) => site.key);
+}
+
+// The site keys whose jobs may be read for details automatically (by the
+// site's mechanism: the retrieval worker, or the extension's background tabs).
+export function detailEnabledPageCaptureSiteKeys(options: PageCaptureEnableOptions): string[] {
+  return pageCaptureSites
+    .filter((site) =>
+      site.testOnly ? options.includeTestSite : (site.cardVerified && site.detailVerified) || acceptedForAcceptance(site, options),
+    )
     .map((site) => site.key);
 }
 
@@ -273,6 +344,12 @@ export const pageCaptureReasonValues = [
   "RATE_LIMITED",
   "FAILED_REPEATEDLY",
   "NOT_INGESTED",
+  // Background-tab reading (extension-tabs) only.
+  "INTERRUPTED",
+  "IDENTITY_MISMATCH",
+  "BATCH_STOPPED",
+  "USER_STOPPED",
+  "PERMISSION_MISSING",
 ] as const;
 export type PageCaptureReason = (typeof pageCaptureReasonValues)[number];
 
@@ -283,3 +360,42 @@ export const pageCaptureMaxAttempts = 3;
 export const pageCaptureFrictionBackoffMs = 24 * 60 * 60 * 1000;
 // Per worker pass, at most this many job pages are read for one site.
 export const pageCaptureDetailsPerPass = 25;
+
+// Background-tab reading (extension-tabs): a job still queued this long after
+// its save (or its last start) is no longer being read, because the browser
+// or the extension stopped; it becomes Awaiting details (Interrupted) and is
+// never reopened automatically.
+export const pageCaptureTabStaleMs = 60 * 60 * 1000;
+
+// What the extension reports for a job page it could not turn into a
+// posting. BLOCKED (an access restriction) stops the batch and the site for
+// at least a day; the others concern the one job. The server itself decides
+// an identity mismatch (the page that opened is not the staged job), which
+// stops the batch.
+export const pageCaptureTabResultValues = ["UNREADABLE", "UNAVAILABLE", "INTERRUPTED", "BLOCKED"] as const;
+export type PageCaptureTabResult = (typeof pageCaptureTabResultValues)[number];
+
+// The access-restriction signals the extension's page check reports (safe
+// codes only, never page content).
+export const pageCaptureTabSignalValues = [
+  "HTTP_401",
+  "HTTP_403",
+  "HTTP_429",
+  "HTTP_999",
+  "HTTP_5XX",
+  "LOGIN_REDIRECT",
+  "CHALLENGE",
+  "CAPTCHA",
+  "LOGIN_WALL",
+  "LEFT_SITE",
+  "HTTP_404",
+  "HTTP_410",
+  "LOAD_FAILED",
+  "NO_POSTING",
+  "TAB_CLOSED",
+] as const;
+export type PageCaptureTabSignal = (typeof pageCaptureTabSignalValues)[number];
+
+// Why the extension stopped a run without a job-specific result.
+export const pageCaptureTabStopValues = ["USER_STOPPED", "PERMISSION_MISSING", "BATCH_STOPPED"] as const;
+export type PageCaptureTabStop = (typeof pageCaptureTabStopValues)[number];

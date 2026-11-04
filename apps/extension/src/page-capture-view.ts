@@ -68,19 +68,37 @@ export interface PageCaptureResponse {
   counts: { queued: number; seenAgain: number; alreadySaved: number; rejected: number };
   outcomes: Array<{ url: string; title: string; outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REJECTED"; reason: string | null; opportunityId: string | null }>;
   progressUrl: string;
+  // Sites whose details the extension reads in background tabs.
+  acquisition?: {
+    mechanism: "extension-tabs";
+    items: Array<{ itemId: string; url: string }>;
+    minIntervalMs: number;
+    loadTimeoutMs: number;
+    rereadDelaysMs: number[];
+    stoppedUntil: string | null;
+  };
 }
 
 export function pageCaptureMessage(response: PageCaptureResponse): string {
   const { queued, seenAgain, alreadySaved, rejected } = response.counts;
   const parts: string[] = [];
-  if (queued) {
+  const tabs = response.acquisition;
+  if (tabs?.stoppedUntil) {
+    parts.push(
+      `${queued + seenAgain} saved; ${response.site.name} restricted access earlier, so no job page is opened before ${new Date(tabs.stoppedUntil).toLocaleString()}. Save this page again after that`,
+    );
+  } else if (tabs && queued) {
+    parts.push(
+      `${queued} queued; their details are read one at a time in background tabs, at least ${Math.round(tabs.minIntervalMs / 1000)} seconds apart. You can keep browsing`,
+    );
+  } else if (queued) {
     parts.push(
       response.site.automaticDetails
         ? `${queued} queued to get their details`
         : `${queued} saved; automatic details are not available for ${response.site.name} yet`,
     );
   }
-  if (seenAgain) parts.push(`${seenAgain} already in progress`);
+  if (seenAgain && !tabs?.stoppedUntil) parts.push(`${seenAgain} already in progress`);
   if (alreadySaved) parts.push(`${alreadySaved} already in AI Job Assistant`);
   if (rejected) parts.push(`${rejected} not saved`);
   return `${parts.join(" · ") || "Nothing was saved"}.`;

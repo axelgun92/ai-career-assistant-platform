@@ -5,8 +5,12 @@ import {
   enabledPageCaptureSiteKeys,
   linkedInJobIdFromUrl,
   pageCaptureBatchSchema,
+  pageCaptureDetailMechanism,
   pageCaptureOffer,
+  pageCaptureSiteByKey,
   pageCaptureSiteForUrl,
+  pageCaptureTabStaleMs,
+  pageCaptureTabUrlAllowed,
   type PageCaptureSiteSpec,
 } from "@ai-career/core";
 import type { ExtensionPairingRecord, PrismaPageCaptureRepository, StagedCardInput } from "@ai-career/database";
@@ -28,13 +32,31 @@ import { capturedPageIdentity, ExtensionCaptureError } from "./extension-capture
 export const pageCaptureTestSiteEnabled = (environment: NodeJS.ProcessEnv = process.env) =>
   environment.PAGE_CAPTURE_TEST_SITE === "1";
 
+// A real site whose detail mechanism is built but not yet verified live is
+// enabled only by this explicit setting, for its targeted live acceptance
+// (comma-separated site keys, for example "welcome-to-the-jungle"). Unset in
+// normal use; it never enables the synthetic test site.
+export const pageCaptureAcceptanceSites = (environment: NodeJS.ProcessEnv = process.env) =>
+  (environment.PAGE_CAPTURE_ACCEPTANCE_SITES ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+
 export function enabledSitesFromEnvironment(environment: NodeJS.ProcessEnv = process.env) {
-  const includeTestSite = pageCaptureTestSiteEnabled(environment);
+  const options = { includeTestSite: pageCaptureTestSiteEnabled(environment), acceptanceSites: pageCaptureAcceptanceSites(environment) };
   return {
-    cards: enabledPageCaptureSiteKeys({ includeTestSite }),
-    details: detailEnabledPageCaptureSiteKeys({ includeTestSite }),
+    cards: enabledPageCaptureSiteKeys(options),
+    details: detailEnabledPageCaptureSiteKeys(options),
   };
 }
+
+// The enabled sites whose details are read in the extension's background
+// tabs (they are never fetched by the worker).
+export const tabAcquisitionSites = (details: readonly string[]) =>
+  details.filter((key) => {
+    const site = pageCaptureSiteByKey(key);
+    return site !== null && pageCaptureDetailMechanism(site) === "extension-tabs";
+  });
 
 export interface PageCaptureOutcome {
   url: string;
@@ -50,6 +72,16 @@ export interface PageCaptureResult {
   counts: { queued: number; seenAgain: number; alreadySaved: number; rejected: number };
   outcomes: PageCaptureOutcome[];
   progressUrl: string;
+  // Background-tab sites only: the jobs the extension now reads, in order,
+  // one tab at a time; empty while the site is stopped (stoppedUntil).
+  acquisition?: {
+    mechanism: "extension-tabs";
+    items: Array<{ itemId: string; url: string }>;
+    minIntervalMs: number;
+    loadTimeoutMs: number;
+    rereadDelaysMs: number[];
+    stoppedUntil: string | null;
+  };
 }
 
 function issuesOf(error: ZodError) {
@@ -65,7 +97,7 @@ function cardBelongsTo(site: PageCaptureSiteSpec, url: string) {
 }
 
 export function createPageCaptureService(dependencies: {
-  repository: Pick<PrismaPageCaptureRepository, "stageBatch">;
+  repository: Pick<PrismaPageCaptureRepository, "stageBatch" | "siteStoppedUntil" | "expireTabItems">;
   enabledSites?: () => { cards: string[]; details: string[] };
   now?: () => Date;
 }) {
@@ -85,6 +117,18 @@ export function createPageCaptureService(dependencies: {
         throw new ExtensionCaptureError("UNSUPPORTED_PAGE", "Saving jobs from this page is not supported");
       }
       const site = offer.site;
+      const automaticDetails = enabled.details.includes(site.key);
+      // Background-tab reading (P2): the extension reads the jobs in the
+      // user's Chrome, so the server only stages them and lists them back.
+      const tabs = automaticDetails && pageCaptureDetailMechanism(site) === "extension-tabs" ? site.tabAcquisition! : null;
+      const at = now();
+      let stoppedUntil: Date | null = null;
+      if (tabs) {
+        await dependencies.repository.expireTabItems([site.key], new Date(at.getTime() - pageCaptureTabStaleMs));
+        // After an access restriction the site is not contacted until its
+        // wait ends: the jobs are kept, awaiting details, and nothing is read.
+        stoppedUntil = await dependencies.repository.siteStoppedUntil(site.key, at);
+      }
       const outcomes: PageCaptureOutcome[] = [];
       const staged: Array<StagedCardInput & { index: number }> = [];
       const seen = new Set<string>();
@@ -94,6 +138,7 @@ export function createPageCaptureService(dependencies: {
         const url = cleanPageUrl(card.url);
         if (!url || !title) return reject("The job's link or title could not be read");
         if (!cardBelongsTo(site, url)) return reject(`The link is not a ${site.name} job page`);
+        if (tabs && !pageCaptureTabUrlAllowed(site, url)) return reject(`The link is not on a ${site.name} address the extension may read`);
         let identity;
         try {
           identity = capturedPageIdentity(url);
@@ -118,7 +163,6 @@ export function createPageCaptureService(dependencies: {
           postedText: optional(card.postedText),
         });
       });
-      const automaticDetails = enabled.details.includes(site.key);
       const results = staged.length
         ? await dependencies.repository.stageBatch({
             site: site.key,
@@ -126,8 +170,10 @@ export function createPageCaptureService(dependencies: {
             batchId: batch.batchId,
             pairingId: pairing.id,
             resultsPageUrl: pageUrl,
-            receivedAt: now(),
-            detailsAvailable: automaticDetails,
+            receivedAt: tabs ? at : now(),
+            detailsAvailable: automaticDetails && !stoppedUntil,
+            ...(stoppedUntil ? { awaitingReason: "ACCESS_STOPPED" } : {}),
+            ...(tabs ? { requeueAwaiting: true } : {}),
             cards: staged.map(({ index: _index, ...card }) => card),
           })
         : [];
@@ -142,6 +188,22 @@ export function createPageCaptureService(dependencies: {
         counts: { queued: count("QUEUED"), seenAgain: count("SEEN_AGAIN"), alreadySaved: count("ALREADY_SAVED"), rejected: count("REJECTED") },
         outcomes,
         progressUrl: "/extension/jobs",
+        ...(tabs
+          ? {
+              acquisition: {
+                mechanism: "extension-tabs" as const,
+                items: stoppedUntil
+                  ? []
+                  : results.flatMap((result, position) =>
+                      result.status === "QUEUED" ? [{ itemId: result.itemId, url: staged[position]!.sourceUrl }] : [],
+                    ),
+                minIntervalMs: site.detail.minIntervalMs,
+                loadTimeoutMs: tabs.loadTimeoutMs,
+                rereadDelaysMs: [...tabs.rereadDelaysMs],
+                stoppedUntil: stoppedUntil?.toISOString() ?? null,
+              },
+            }
+          : {}),
       };
     },
   };

@@ -92,6 +92,18 @@ describe("page-capture progress table", () => {
   });
 });
 
+describe("background-tab reasons", () => {
+  it("words each background-tab reason in plain language", () => {
+    const awaiting = (lastReason: string) => statusText(row({ status: "AWAITING_DETAILS", lastReason, site: "welcome-to-the-jungle", siteName: "Welcome to the Jungle / Otta", retryable: false }));
+    expect(awaiting("INTERRUPTED")).toBe("Awaiting details: Reading the job's page was interrupted (its tab was closed, or the browser or extension stopped)");
+    expect(awaiting("IDENTITY_MISMATCH")).toBe("Awaiting details: The page that opened was not this job, so reading stopped for this batch");
+    expect(awaiting("BATCH_STOPPED")).toBe("Awaiting details: Reading stopped for this batch before this job");
+    expect(awaiting("USER_STOPPED")).toBe("Awaiting details: You stopped reading the details");
+    expect(awaiting("PERMISSION_MISSING")).toBe("Awaiting details: The extension no longer has permission to read this site's job pages");
+    expect(awaiting("ACCESS_STOPPED")).toMatch(/refused or challenged the request; it will not be contacted again for at least a day/);
+  });
+});
+
 describe("page-capture actions", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -127,6 +139,12 @@ describe("page-capture actions", () => {
     expect(buttons()).toEqual([]);
     await render({ id: "a", status: "ALREADY_SAVED", resolvedOpportunityId: "x" });
     expect(buttons()).toEqual([]);
+  });
+
+  it("offers no Retry for a job read in background tabs, only the hint to save the results page again", async () => {
+    await render({ id: "a", status: "AWAITING_DETAILS", resolvedOpportunityId: null, retryable: false });
+    expect(buttons()).toEqual(["Dismiss"]);
+    expect(container.textContent).toContain("Save the results page that shows it again to read its details.");
   });
 
   it("posts the action for the job and refreshes, or shows the server's error", async () => {

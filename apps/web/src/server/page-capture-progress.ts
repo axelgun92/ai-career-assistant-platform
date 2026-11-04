@@ -1,4 +1,4 @@
-import { pageCaptureSiteByKey } from "@ai-career/core";
+import { pageCaptureDetailMechanism, pageCaptureSiteByKey, pageCaptureSites, pageCaptureTabStaleMs } from "@ai-career/core";
 import { PrismaPageCaptureRepository, type PageCaptureItemStatusValue, type PageCaptureListRow } from "@ai-career/database";
 import { z } from "zod";
 import type { PageCaptureRowView } from "@/components/extension/page-capture-list";
@@ -15,6 +15,10 @@ export const pageCaptureFilters = {
 export type PageCaptureFilter = keyof typeof pageCaptureFilters | "all";
 
 export const pageCapturePageSize = 50;
+
+// The sites whose details the extension reads in background tabs.
+const tabSiteKeys = pageCaptureSites.filter((site) => pageCaptureDetailMechanism(site) === "extension-tabs").map((site) => site.key);
+const isTabSite = (key: string) => tabSiteKeys.includes(key);
 
 export function rowView(row: PageCaptureListRow): PageCaptureRowView {
   return {
@@ -36,10 +40,20 @@ export function rowView(row: PageCaptureListRow): PageCaptureRowView {
     evaluationStatus: row.evaluationStatus,
     recommendation: row.recommendation,
     handoffOutcome: row.handoffOutcome,
+    // A job read in background tabs is read again only by a new save of a
+    // results page that shows it, never by Retry.
+    retryable: !isTabSite(row.site),
   };
 }
 
-export async function pageCaptureProgress(input: { filter: PageCaptureFilter; site: string | null; page: number }, repository = new PrismaPageCaptureRepository()) {
+export async function pageCaptureProgress(
+  input: { filter: PageCaptureFilter; site: string | null; page: number },
+  repository = new PrismaPageCaptureRepository(),
+  now: () => Date = () => new Date(),
+) {
+  // Jobs whose background-tab reading stopped with the browser show as
+  // interrupted, never as still being read.
+  await repository.expireTabItems(tabSiteKeys, new Date(now().getTime() - pageCaptureTabStaleMs));
   const statuses = input.filter === "all" ? null : [...pageCaptureFilters[input.filter]];
   const [list, counts] = await Promise.all([
     repository.list({ statuses, site: input.site, page: input.page, pageSize: pageCapturePageSize }),
@@ -58,6 +72,12 @@ export async function handlePageCaptureAction(request: Request, id: string, repo
   if (!body.ok) return body.response;
   const parsed = actionSchema.safeParse(body.body);
   if (!parsed.success) return extensionError("INVALID_REQUEST", "The action is invalid");
+  if (parsed.data.action === "retry") {
+    const existing = await repository.findById(id);
+    if (existing && isTabSite(existing.site)) {
+      return extensionError("INVALID_REQUEST", "Save the results page that shows this job again to read its details");
+    }
+  }
   const item =
     parsed.data.action === "retry" ? await repository.retry(id) : parsed.data.action === "dismiss" ? await repository.dismiss(id) : await repository.restore(id);
   if (!item) return extensionError("NOT_FOUND", "This job cannot be changed that way now");

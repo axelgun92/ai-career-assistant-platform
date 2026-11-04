@@ -271,12 +271,17 @@ describe("the extension package", () => {
   it("requests exactly the planned permissions and nothing broader", () => {
     const manifest = JSON.parse(read("static/manifest.json"));
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.permissions).toEqual(["activeTab", "scripting", "storage"]);
+    // alarms: only the backstop that resumes a background-tab detail run
+    // (Mode B, P2) if Chrome stops the service worker mid-run.
+    expect(manifest.permissions).toEqual(["activeTab", "alarms", "scripting", "storage"]);
     expect(manifest.host_permissions).toEqual(["http://127.0.0.1/*", "http://localhost/*"]);
-    // Only the minimal service worker that restricts storage (no content
-    // scripts, nothing a web page can reach).
+    // Optional, requested inside "Save selected jobs" only: the Welcome to
+    // the Jungle job pages the background-tab reading opens, nothing else (no
+    // tabs permission, no other site, no wildcard host).
+    expect(manifest.optional_host_permissions).toEqual(["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"]);
+    // No content scripts, nothing a web page can reach.
     expect(manifest.background).toEqual({ service_worker: "service-worker.js" });
-    for (const key of ["content_scripts", "web_accessible_resources", "externally_connectable", "optional_permissions", "optional_host_permissions", "content_security_policy", "key"]) {
+    for (const key of ["content_scripts", "web_accessible_resources", "externally_connectable", "optional_permissions", "content_security_policy", "key"]) {
       expect(manifest, key).not.toHaveProperty(key);
     }
   });
@@ -292,12 +297,18 @@ describe("the extension package", () => {
     }
   });
 
-  it("has a service worker that only restricts storage to the extension's own pages", () => {
+  it("has a service worker that restricts storage and otherwise only runs the background-tab detail reading", () => {
     const source = read("src/service-worker.ts");
     expect(source).toContain("restrictStorage");
-    for (const forbidden of ["fetch(", "chrome.scripting", "chrome.tabs", "onMessage", "onConnect", "webRequest", "cookies"]) {
+    for (const forbidden of ["fetch(", "onConnect", "onMessageExternal", "webRequest", "cookies", "chrome.tabs.update", "chrome.tabs.query", "chrome.tabs.reload", "chrome.windows", "history", "active: true"]) {
       expect(source, forbidden).not.toContain(forbidden);
     }
+    // Its tabs are background tabs; only the page check and the unchanged
+    // single-job reader are ever injected; only the extension's own pages
+    // may message it.
+    expect(source).toContain("chrome.tabs.create({ url, active: false })");
+    expect([...source.matchAll(/func: (\w+)/g)].map((match) => match[1])).toEqual(["probeJobPage", "extractJobPosting"]);
+    expect(source).toContain("sender.id !== chrome.runtime.id || sender.tab");
   });
 
   it("calls fetch only from its API client and loads no inline or remote scripts", () => {

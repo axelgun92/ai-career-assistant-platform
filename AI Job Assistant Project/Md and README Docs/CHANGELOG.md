@@ -10,7 +10,27 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
 
-### Mode B — LinkedIn Enabled; Welcome to the Jungle / Otta Not Complete (November 4, 2026; verified offline; awaiting commit approval)
+### Mode B — Welcome to the Jungle / Otta Background-Tab Detail Reading, P2 (November 4, 2026; implemented and verified offline; awaiting review and commit approval; not live-accepted)
+
+- **One action:** "Save selected jobs" on a Welcome to the Jungle results page (up to 25 loaded jobs) asks for the WTTJ-only optional host permission inside the click; declined, nothing is staged. Granted, the service worker sends the batch and reads every job automatically in sequential background tabs of Alex's Chrome (≥ 12 s apart, 30 s load timeout, re-reads at +2 s/+5 s without reload), closing only its own tabs.
+- **Server:** new pairing-authenticated routes `POST /api/extension/page-captures/items/<id>/{start,details,result}` and `POST /api/extension/page-captures/stop` (`page-capture-tabs.ts`). Each page is checked to be the staged job before it goes through the shared ingestion path (moved verbatim out of the worker pass into `createPageCaptureIngestor`) and the existing triage-gated evaluation request.
+- **Safeguards:**
+  - an access restriction stops the batch and the site for ≥ 24 h, with no automatic resume (only a new save reads again);
+  - an identity mismatch stops the batch;
+  - 404/410 → No longer available, and an unreadable page → Awaiting details, continuing;
+  - a closed tab → Interrupted, never reopened;
+  - Stop and a removed permission stop the run;
+  - a run never survives a browser restart, and jobs left queued for 60 minutes become Interrupted.
+- **WTTJ card reader:** `/en/get-started/jobs-preview` is a results page; a structural company selector and the posted date, from the real F0 cards (now a regression fixture).
+- **Not offered by default:** WTTJ stays `cardVerified`/`detailVerified: false`. The new `PAGE_CAPTURE_ACCEPTANCE_SITES` setting enables it for live acceptance only. The worker never fetches a background-tab site.
+- **Extension 0.2.0 manifest:** adds `alarms` and the two optional WTTJ host permissions.
+- **No change to LinkedIn's behaviour, the schema, E2E files, triage or the evaluator.**
+- **Verified:** offline only, on `ai_career_assistant_test`, with no WTTJ request, no permission grant and no live browser.
+  - Typecheck, lint, `prisma validate`, extension build and `git diff --check` pass.
+  - Unit: 92 files passed, 1 skipped (2,144 passed, 6 skipped).
+  - Integration: 47 files, 373 tests passed.
+
+### Mode B — LinkedIn Enabled; Welcome to the Jungle / Otta Not Complete (November 4, 2026; committed `77f7321`)
 
 - **LinkedIn enabled** for Mode B on its verified evidence: F0 (5 real logged-out results cards, read exactly) and P1 (PASS, 5/5 job pages read in a fresh logged-out browser at `c946e1b`). Only the registry flags changed; every safeguard is unchanged (5 s spacing, ≤ 25 per batch and pass, ≥ 24 h friction stop, `li_at` stop, LinkedIn friction checks). Not complete until LinkedIn's targeted end-to-end acceptance.
 - **Real-fixture regression coverage:** the F0 cards in `tests/fixtures/page-capture/linkedin-f0-cards.json`; unit coverage of exact card reading, the production registry and intake, and the LinkedIn job-detail reader path; integration coverage on the test DB from real cards through acquisition, ingestion and the real triage, plus idempotency, Mode A re-observation and the interstitial stop.
