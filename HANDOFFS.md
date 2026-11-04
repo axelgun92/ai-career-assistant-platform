@@ -1575,3 +1575,49 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The triage gate and its persistence (Codex), the evaluator, `extract.ts`, `envelope.ts`, `capturedListing()` and the retrieval ingestion contract.
+
+### Handoff: Mode B — LinkedIn Enablement (D-A) and WTTJ Status (Claude; shared-boundary record)
+
+**Date:** November 4, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, targeted acceptance); Codex (boundary awareness only)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. LinkedIn Mode B is not complete until its targeted end-to-end acceptance.
+
+#### Completed
+
+- LinkedIn F0 (5 real logged-out cards) and P1 (PASS 5/5, Alex, local, at `c946e1b`) verified the card reader and the automatic detail mechanism.
+- `packages/core/src/page-capture.ts`: LinkedIn `cardVerified`/`detailVerified: true`, with the evidence recorded. All safeguards are unchanged: 5 s spacing, ≤ 25 per batch and per pass, the ≥ 24 h friction stop, the `li_at` stop and LinkedIn friction checks.
+- No other production code changed: the Mode B pipeline (6768598, 3ce9100, c946e1b) was already complete.
+- Real-fixture regression coverage:
+  - `tests/fixtures/page-capture/linkedin-f0-cards.json`;
+  - `tests/unit/page-capture-linkedin.test.ts`;
+  - `tests/integration/page-capture-linkedin.test.ts`;
+  - the synthetic public job-page builder `tests/support/linkedin-guest-pages.ts`;
+  - a narrow update of `tests/unit/page-capture.test.ts` (registry assertion).
+
+#### Current Contract / Assumptions
+
+- The triage is consumed unchanged: each new LinkedIn batch Opportunity is handed once to `EvaluationService.requestEvaluation(id, {})`.
+- Identity, provenance and analytics are exactly as in Mode A (`browser-extension`, `linkedin:<id>`); no RetrievalSource or RetrievedListing.
+- Welcome to the Jungle / Otta stays `cardVerified`/`detailVerified: false`:
+  - F0 done; P1 BLOCKED (HTTP 403); P3 unsupported (no job description in the cards);
+  - Current plan (Alex, November 4): P2 is the WTTJ mechanism — one Save action for up to 25 already-loaded jobs (no lower cap), fully automatic, sequential background tabs with WTTJ-only optional host permissions. Implementation is not yet approved; live acceptance follows implementation.
+  - Rules: a declined permission stages and processes nothing; an access restriction stops the batch, and the end of the 24 h backoff does not resume it automatically.
+  - Superseded the same day: a separate three-job proof-of-concept phase (including the correction that it would use three loaded jobs automatically) was removed from the plan.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md, "LinkedIn Mode B enabled". offline only, on `ai_career_assistant_test`, with no live LinkedIn or WTTJ request and no provider or evaluator call; the normal and acceptance databases do not exist in this container and were not touched. Typecheck, lint and `prisma validate` pass (no schema change, so no migration check was needed). Unit: 90 files passed, 1 replay file skipped (2,091 passed, 6 skipped), including the new `page-capture-linkedin` (4) and the updated `page-capture` registry test. Integration: 46 files, 368 tests passed, including the new `page-capture-linkedin` (3). `browser-driver` (4) needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to point at an installed Chromium; it failed when run without it and passed with it. E2E: the `extension` (8/8) and `page-capture` (4/4) projects pass; no E2E file was changed. `git diff --check` is clean and `apps/web/next-env.d.ts` is untouched; the test database was left clean.
+
+#### Known Issues / Blockers
+
+- LinkedIn's logged-in results markup (Alex's real Chrome) is covered by synthetic tests only; F0 was logged-out. This is checked in the targeted acceptance.
+- The four pre-existing Codex-owned E2E failures recorded on 6768598 are unchanged and not touched.
+
+#### Next Task
+
+- Alex: review and commit approval; then authorize LinkedIn's targeted end-to-end acceptance (the acceptance DB, the worker with `RETRIEVAL_BROWSER_EXECUTABLE`, a real results page). WTTJ P2 implementation needs separate approval.
+
+#### Do Not Change Without Coordination
+
+- Codex's triage and its persistence; the evaluator; `extract.ts`, `envelope.ts`, `capturedListing()`; the P1 runner contract.

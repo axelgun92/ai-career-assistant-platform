@@ -2,8 +2,8 @@
 
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
-**Status:** Active development; pre-evaluator triage complete; extension Mode B implemented, not yet committed or live-accepted
-**Last updated:** November 3, 2026
+**Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta not complete
+**Last updated:** November 4, 2026
 
 ## Purpose
 
@@ -74,11 +74,11 @@ Supported results page (Alex's Chrome)
 
 - **Per-job fallback:** a job whose page cannot be read waits as **Awaiting details**, with its reason and Retry, Dismiss and Open job. It is never an opportunity and never evaluable. Progress is on **Jobs from results pages** (`/extension/jobs`), linked from the Extension page.
 - **Safety:** each read is open-only, sequential and paced (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops the site for at least a day, with no retry or workaround. No configured retrieval source is created. Analytics (Features 13 and 15–18) see batch jobs exactly as Mode A captures. The evaluator and the triage are unchanged; Mode B only hands jobs to the existing request.
-- **Site status:** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded. **Neither is enabled or complete yet.**
-  - Card reading needs the F0 results-page fixtures.
-  - Automatic details need the bounded P1 experiment, which Alex runs locally. Prior evidence is negative for LinkedIn (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
+- **Site status (November 4, 2026):** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded.
+  - **LinkedIn: enabled.** F0: 5/5 real cards read exactly. P1: PASS, 5/5 job pages read in a fresh logged-out browser. Its automatic detail mechanism is verified, but Mode B for LinkedIn is not complete until its targeted end-to-end acceptance (separately authorized).
+  - **Welcome to the Jungle / Otta: not complete, not offered.** F0 done; P1 BLOCKED (HTTP 403 on the first job page); P3 unsupported (the cards hold no job description). P2 is the chosen WTTJ mechanism (November 4, 2026): the single Save action for up to 25 already-loaded jobs automatically reads each job in sequential background tabs of Alex's Chrome, with no second action. It is not yet implemented (implementation needs separate approval), then needs live acceptance. Until then WTTJ jobs use Mode A. *(Superseded plan: a separate three-job proof-of-concept phase, removed November 4, 2026.)*
   - Mode B is complete for a site only when an approved automatic detail mechanism moves its batch jobs into real opportunities without Alex opening each one. Awaiting details never counts.
-  - If P1 fails for a site, any other mechanism needs Alex's separate decision.
+  - *(Earlier, November 3: "Neither is enabled or complete yet", pending F0 and P1.)*
 
 ## Complete or Substantially Implemented
 
@@ -346,7 +346,7 @@ How each source is read (least intrusive method that works):
 | Browser-assisted, public and logged-out | LinkedIn (unverified and disabled: its local adapter check discovered public jobs, then a job page answered HTTP 429; the Claude cloud check met an anti-bot page) |
 | Public logged-out webpage (candidate) | Welcome to the Jungle / Otta (unverified: its tested public pages expose no usable job records) |
 | Browser extension, on request (Feature 14B, accepted October 29, 2026) | any job page you are viewing and choose to save, including LinkedIn job pages and Welcome to the Jungle / Otta through the generic reader |
-| Browser extension, results page (Mode B; implemented, not yet live-accepted) | up to 25 already-loaded jobs on a supported results page (LinkedIn, Welcome to the Jungle / Otta; neither enabled until its F0 fixtures and P1 detail experiment pass), details then read automatically where verified |
+| Browser extension, results page (Mode B; not yet end-to-end accepted) | up to 25 already-loaded jobs on a LinkedIn results page (enabled; details read automatically with the verified logged-out mechanism); Welcome to the Jungle / Otta not offered (P1 blocked, P3 unsupported; P2 background tabs chosen, not yet implemented) |
 
 *(Earlier status, superseded on October 19, 2026 when Feature 13 was committed as `d1bf217`. It read as follows.)*
 

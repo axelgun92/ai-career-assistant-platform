@@ -1,11 +1,15 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 3, 2026
+**Last updated:** November 4, 2026
 
 ## Extension Mode B — Bounded Results-Page Ingestion
 
-**Implemented and verified offline on November 3, 2026, on `integration/final-evaluator-product` after `e84c1cc`. Not committed: it awaits Alex's review and commit approval. It is not live-accepted. Mode B is not complete for any real site yet.**
+**Committed on `integration/final-evaluator-product`: `6768598` (Mode B), `3ce9100` (P1 runner), `c946e1b` (P1 runtime fix). LinkedIn enablement (November 4, 2026) is implemented and verified offline and awaits Alex's commit approval.**
+- **LinkedIn:** enabled; verified automatic detail mechanism (P1 PASS). Mode B is not complete until LinkedIn's targeted end-to-end acceptance.
+- **Welcome to the Jungle / Otta:** NOT complete and not offered. F0 done, P1 BLOCKED (HTTP 403), P3 unsupported. P2 (sequential background tabs) is the chosen mechanism and not yet implemented; implementation needs separate approval.
+
+*(Earlier status line, November 3, 2026: "Implemented and verified offline on November 3, 2026, on `integration/final-evaluator-product` after `e84c1cc`. Not committed: it awaits Alex's review and commit approval. It is not live-accepted. Mode B is not complete for any real site yet.")*
 
 It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 5".
 
@@ -21,7 +25,8 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
 - **Per-job fallback:** AWAITING_DETAILS. The reasons are NO_BROWSER, NOT_SUPPORTED, UNREADABLE, FAILED_REPEATEDLY or a friction stop; a 404 or 410 gives UNAVAILABLE. Such a job has no opportunity, record, listing or evaluation, and offers Retry, Dismiss, Restore and Open job on `/extension/jobs`.
 - **Mode A integration correction:** the popup's Request evaluation now handles `NEEDS_REVIEW` and `REJECT` per the triage handoff's extension contract: it says nothing was spent, does not poll, and has no decision buttons. This is the only Mode A change.
 - **Provenance and analytics:** batch jobs are BROWSER_EXTENSION, user-collected and keyed by Mode A identity. There is no fake RetrievalSource, no RetrievedListing and no opportunity-less SourceRecord. Features 13 and 15–18 are unchanged.
-- **Sites:** LinkedIn and Welcome to the Jungle / Otta stay `cardVerified`/`detailVerified: false`; Wellfound is excluded.
+- **Sites (as of November 4, 2026):** LinkedIn is `cardVerified`/`detailVerified: true` (see "LinkedIn Mode B enabled" below). Welcome to the Jungle / Otta stays `false`/`false`; Wellfound is excluded.
+  - *(Earlier, November 3: "LinkedIn and Welcome to the Jungle / Otta stay `cardVerified`/`detailVerified: false`"; the steps below record that state.)*
   - Required next: F0 fixtures (the DevTools snippet `tests/support/page-capture-fixture-export.js`), then the bounded P1 experiment `pnpm page-capture:verify <site> <≤5 job URLs>` with `RETRIEVAL_BROWSER_EXECUTABLE`. Both run locally, by Alex, with authorization.
   - Prior P1 evidence: negative for LinkedIn (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
   - If P1 fails, stop; another mechanism (for example P2, background tabs) needs Alex's separate decision.
@@ -37,6 +42,31 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
   - Fix: `readJobPage` now supplies the same `__name` helper (it only sets a function's name) around the unchanged reader source. There is no extraction change and no LinkedIn-specific logic.
   - Regression: `tests/unit/page-capture-verify-runtime.test.ts` runs the real P1 path in a tsx child process with a fake browser. It confirms the `__name` calls are present, P1 gives PASS, and the reader output under tsx equals Vitest's for structured-data, LinkedIn and main-content pages. It fails without the fix.
   - No verdict was produced by the failed run; LinkedIn P1 is to be re-run once.
+- **LinkedIn F0/P1 results (Alex, local, November 3, 2026):**
+  - P1 PASS, exit 0, 5/5 READABLE (1,731–7,253 description characters) in an isolated Linux-native WSL clone at `c946e1b` with fresh logged-out Chromium.
+  - The real F0 cards are read exactly (5/5) by the Mode B card reader.
+- **Welcome to the Jungle / Otta F0/P1/P3 (November 3–4, 2026):**
+  - F0: 5 real cards from `/en/get-started/jobs-preview`.
+  - P1 BLOCKED, exit 3: HTTP 403 ACCESS_DENIED on the first job page; it stopped as designed, and per the stop rule there is no repeat or probing.
+  - P3 not viable: the cards hold only the title, company, a company tagline, tags and a date, with no job description. Embedded page state was not observed and would mean reading an internal format.
+  - The card reader identifies all 5 cards but extracts titles only, and `/en/get-started/jobs-preview` is not recognised as a results page. Both are deferred to any approved P2 work.
+- **LinkedIn Mode B enabled (approved D-A, November 4, 2026; implemented and verified offline; awaiting commit approval):**
+  - `packages/core/src/page-capture.ts`: LinkedIn `cardVerified`/`detailVerified: true`, with the evidence. Pacing (5 s), ≤ 25 per batch and per pass, the ≥ 24 h friction stop, the `li_at` stop and LinkedIn friction checks are unchanged. Welcome to the Jungle stays off.
+  - The real F0 cards are a regression fixture: `tests/fixtures/page-capture/linkedin-f0-cards.json`.
+  - `tests/unit/page-capture-linkedin.test.ts`: exact card reading, production registry and offer, the popup batch through the production intake (automatic details, Mode A identity `linkedin:<id>`), and the LinkedIn job-detail reader path on the public page.
+  - `tests/integration/page-capture-linkedin.test.ts` (test DB):
+    - real F0 cards → intake → acquisition (fake browser, canonical pages, ≥ 5 s apart) → ingestion → Opportunities (browser-extension, `discoveredAt` = first sighting) → real triage (EVALUATE admitted; NEEDS_REVIEW and REJECT not);
+    - idempotent repeats; Mode A re-observation of a batch job; the anti-bot interstitial stops the site with nothing ingested; no RetrievalSource or listing rows.
+  - Verification: offline only, on `ai_career_assistant_test`, with no live LinkedIn or WTTJ request and no provider or evaluator call; the normal and acceptance databases do not exist in this container and were not touched. Typecheck, lint and `prisma validate` pass (no schema change, so no migration check was needed). Unit: 90 files passed, 1 replay file skipped (2,091 passed, 6 skipped), including the new `page-capture-linkedin` (4) and the updated `page-capture` registry test. Integration: 46 files, 368 tests passed, including the new `page-capture-linkedin` (3). `browser-driver` (4) needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to point at an installed Chromium; it failed when run without it and passed with it. E2E: the `extension` (8/8) and `page-capture` (4/4) projects pass; no E2E file was changed. `git diff --check` is clean and `apps/web/next-env.d.ts` is untouched; the test database was left clean.
+  - Not yet done: LinkedIn's targeted end-to-end acceptance. It needs separate approval: Alex's real Chrome (logged-in results markup is covered by synthetic tests only; F0 was logged-out), the acceptance database, and the retrieval worker with `RETRIEVAL_BROWSER_EXECUTABLE`.
+- **WTTJ P2 — current plan (Alex, November 4, 2026; implementation not yet approved):**
+  - WTTJ will use the proposed sequential background-tab mechanism, subject to implementation and live acceptance.
+  - One "Save selected jobs" action for up to 25 already-loaded jobs stages them and automatically reads every job in sequential background tabs of Alex's Chrome. There is no second action and no lower batch cap.
+  - Preserved rules:
+    - WTTJ-only optional host permissions, granted within the Save click; if declined, nothing is staged or processed;
+    - one tab at a time, at least 12 s apart;
+    - an access restriction stops the batch, and the end of the 24 h backoff does not resume that blocked batch automatically.
+  - *Superseded plan (November 4): a separate three-job proof-of-concept phase before implementation, with Alex's correction that it would use three loaded jobs automatically, was removed. WTTJ goes directly to implementation (when approved) and live acceptance.*
 - **Verification:** offline only, on `ai_career_assistant_test`; no live, provider, paid or evaluator call; the normal and acceptance databases do not exist in this container and were not touched.
   - typecheck, lint, `prisma validate`, production web build, extension build, `git diff --check`; `apps/web/next-env.d.ts` untouched.
   - `db:verify-migrations`: all 26 migrations applied in order to a temporary database; only the documented Recommendation default drift; temporary database dropped.

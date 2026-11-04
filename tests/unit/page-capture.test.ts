@@ -50,13 +50,14 @@ const batch = (overrides: Record<string, unknown> = {}, cards: Array<Record<stri
 });
 
 describe("the page-capture site registry", () => {
-  it("offers no real site until its card reading is verified, and the test site only under its test setting", () => {
-    expect(enabledPageCaptureSiteKeys({ includeTestSite: false })).toEqual([]);
-    expect(detailEnabledPageCaptureSiteKeys({ includeTestSite: false })).toEqual([]);
-    expect(enabledPageCaptureSiteKeys({ includeTestSite: true })).toEqual(["e2e-results"]);
+  it("offers only verified real sites (LinkedIn, verified November 3, 2026), and the test site only under its test setting", () => {
+    expect(enabledPageCaptureSiteKeys({ includeTestSite: false })).toEqual(["linkedin"]);
+    expect(detailEnabledPageCaptureSiteKeys({ includeTestSite: false })).toEqual(["linkedin"]);
+    expect(enabledPageCaptureSiteKeys({ includeTestSite: true })).toEqual(["linkedin", "e2e-results"]);
     for (const site of pageCaptureSites.filter((spec) => !spec.testOnly)) {
-      expect(site.cardVerified, site.key).toBe(false);
-      expect(site.detailVerified, site.key).toBe(false);
+      // Welcome to the Jungle / Otta: F0 done, P1 blocked (HTTP 403), P3 unsupported.
+      expect(site.cardVerified, site.key).toBe(site.key === "linkedin");
+      expect(site.detailVerified, site.key).toBe(site.key === "linkedin");
     }
     expect(pageCaptureSites.map((site) => site.key)).not.toContain("wellfound");
   });

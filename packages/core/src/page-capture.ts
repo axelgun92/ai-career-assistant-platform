@@ -97,8 +97,14 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
       postedSelector: "time, .job-search-card__listdate",
       excludeSelector: ".jobs-search__job-details--container, .jobs-details, .job-view-layout, .scaffold-layout__detail, .jobs-home-recommendations, aside",
     },
-    cardVerified: false,
-    detailVerified: false,
+    // Verified November 3, 2026. F0: 5 real logged-out public result cards,
+    // read exactly by this reader (tests/unit/page-capture-linkedin.test.ts).
+    // P1 at c946e1b: PASS, 5/5 job pages read in a fresh logged-out browser
+    // (1,731–7,253 description characters), with no access restriction.
+    // Approved for Mode B by Alex (D-A, November 4, 2026). Mode B for
+    // LinkedIn stays incomplete until its targeted end-to-end acceptance.
+    cardVerified: true,
+    detailVerified: true,
     detail: { minIntervalMs: 5_000, authCookieNames: ["li_at"] },
     testOnly: false,
   },
