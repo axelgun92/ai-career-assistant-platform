@@ -453,7 +453,8 @@ describe("evaluations stay bound to the listing version they evaluated", () => {
     const kept = await database.evaluation.findUniqueOrThrow({ where: { id: v1Request.evaluationId }, include: { evidenceRecords: true, recommendation: true } });
     expect(kept).toMatchObject({ status: "COMPLETED", sourceRecordId: first.sourceRecordId, completedAt: v1Evaluation.completedAt });
     expect(kept.recommendation).toEqual(v1Evaluation.recommendation);
-    expect(kept.evidenceRecords).toEqual(v1Evaluation.evidenceRecords);
+    const byEvidenceId = <T extends { id: string }>(records: T[]) => [...records].sort((left, right) => left.id.localeCompare(right.id));
+    expect(byEvidenceId(kept.evidenceRecords)).toEqual(byEvidenceId(v1Evaluation.evidenceRecords));
     const cited = await database.fieldProvenance.findMany({ where: { id: { in: v1ProvenanceRefs } } });
     expect(cited).toHaveLength(new Set(v1ProvenanceRefs).size);
     expect(cited.some((row) => row.supersededAt !== null)).toBe(true);

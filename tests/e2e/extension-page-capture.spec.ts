@@ -74,7 +74,8 @@ async function stagedItems(): Promise<Record<string, StagedItem>> {
 }
 
 function unpackedExtensionId(directory: string) {
-  const hex = createHash("sha256").update(realpathSync(directory)).digest("hex").slice(0, 32);
+  const pathBytes = Buffer.from(realpathSync(directory), process.platform === "win32" ? "utf16le" : "utf8");
+  const hex = createHash("sha256").update(pathBytes).digest("hex").slice(0, 32);
   return [...hex].map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 16))).join("");
 }
 
@@ -258,10 +259,10 @@ test("a job whose details cannot be read waits with Retry and Dismiss, never as 
   await expect(later.getByRole("link", { name: jobs.later.title })).toHaveCount(0);
 
   await later.getByRole("button", { name: "Dismiss" }).click();
-  await expect(rowOf(app, jobs.later.title)).toHaveCount(0);
+  await expect(rowOf(app, jobs.later.title)).toHaveCount(0, { timeout: 15_000 });
   await app.goto(`${appUrl}/extension/jobs?status=dismissed`);
   await rowOf(app, jobs.later.title).getByRole("button", { name: "Restore" }).click();
-  await expect(rowOf(app, jobs.later.title)).toHaveCount(0);
+  await expect(rowOf(app, jobs.later.title)).toHaveCount(0, { timeout: 15_000 });
 
   // Retry two of them; the third stays waiting.
   await app.goto(`${appUrl}/extension/jobs?status=waiting`);

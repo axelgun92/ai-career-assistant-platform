@@ -69,6 +69,68 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: Codex E2E Cleanup — Grouped Verification Complete
+
+**Date:** November 4, 2026
+**From:** Codex final-integration workstream
+**To:** Alex
+**Status:** Accepted for closeout; grouped E2E verification is sufficient and no uninterrupted rerun is required
+
+#### Completed
+
+- Preserved and synchronized the integration baseline through `17d2a3289688ce40a17a4a573ead87aefe042e74` without overwriting the unfinished Codex cleanup.
+- Corrected the four stale triage-era E2E scenarios through valid fixture/helper inputs. Production triage and evaluator behavior were not bypassed or weakened.
+- Preserved exact product assertions while adding only measured Windows/runtime synchronization and portability corrections.
+- Corrected the shared browser-session navigation timestamp to enforce the locked minimum interval from the actual driver invocation.
+- Stabilized one integration assertion whose Prisma evidence rows have no contractual order by comparing them in immutable-ID order.
+- Completed grouped E2E verification: every one of the 59 tests has passing evidence on the final unchanged implementation and deterministic configuration.
+
+#### Files Changed
+
+- `packages/discovery/src/browser.ts`
+- `playwright.config.ts`
+- `tests/e2e/dashboard.spec.ts`
+- `tests/e2e/evaluation-results.spec.ts`
+- `tests/e2e/extension-page-capture.spec.ts`
+- `tests/e2e/extension.spec.ts`
+- `tests/e2e/golden-path.spec.ts`
+- `tests/e2e/retrieval.spec.ts`
+- `tests/integration/listing-version-projection.test.ts`
+- `tests/support/e2e-evaluation-helper.ts`
+- `tests/unit/page-capture-verify-runtime.test.ts`
+- `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
+- `AI Job Assistant Project/Md and README Docs/CHANGELOG.md`
+- `HANDOFFS.md`
+
+#### Verification Completed
+
+- Unit: 92 files passed, 1 replay file skipped; 2,144 passed and 6 skipped.
+- Integration corrections: browser-session focused unit 75/75 and focused integration 3/3; after the full integration run exposed only nondeterministic evidence ordering (372 passed, 1 failed), the corrected focused listing-version file passed 13/13.
+- Extension and page-capture E2E after synchronization: 12/12.
+- Latest uninterrupted 59-test attempt: 31 passed, 1 failed, 27 unexecuted under fail-fast.
+- Targeted daily-budget test: 1/1 passed unchanged; both save requests returned HTTP 200.
+- Ordered downstream group: 25 passed, one Companies index test failed during first-use route compilation, and its serial detail test did not run.
+- Focused Companies verification: index 1/1 passed; detail 1/1 passed after its first-use dynamic route compiled. Thus all 27 formerly unexecuted tests, and all 59 overall tests, have current passing evidence.
+- Environment evidence: Next.js measured the worktree filesystem at 6.9 seconds and reported cache compactions of 31.6–66 seconds. The company detail request returned HTTP 200 in 15.7 seconds, of which 14.8 seconds was Next.js compilation/cache work and 828 ms was application code.
+- Database/provider boundary: `ai_career_assistant_test` only; deterministic fixture transport; no live/provider/paid call; normal and acceptance databases untouched.
+
+#### Known Issues / Blockers
+
+- No application failure remains in grouped verification.
+- A single uninterrupted 59/59 run did not pass. Alex explicitly accepted grouped 59/59 evidence as sufficient for this closeout; do not report it as an uninterrupted pass.
+- The Windows integration worktree's very slow filesystem can make first-use Next.js route compilation exceed exact UI assertion windows. Precompiling routes demonstrated the distinction without changing product behavior or assertions.
+
+#### Next Task
+
+- Commit and push the accepted cleanup, verify the local/remote SHA and clean synchronization, then provide fresh copies of every changed documentation file.
+- No further task or E2E run is part of this work package.
+
+#### Do Not Change Without Coordination
+
+- Do not weaken triage, evaluator, retrieval pacing, extension, or E2E assertions to accommodate local compilation latency.
+- Do not claim uninterrupted full-suite acceptance until one complete 59/59 run passes.
+- Do not rerun the full E2E suite for this closeout unless a new demonstrated issue requires it.
+
 ### Handoff: Evaluator Boundary to Main-Product Work
 
 **Date:** 2026-10-06  

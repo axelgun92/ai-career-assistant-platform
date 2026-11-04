@@ -29,10 +29,16 @@ try {
         label: "Deterministic E2E Customer Success profile",
         version: 10,
         careerGoals: [{ id: "goal-e2e", statement: "Build a strategic SaaS career." }],
-        experience: [{ id: "experience-e2e", statement: "Led customer onboarding, adoption, and education.", relationship: "DIRECT" }],
+        experience: [{ id: "experience-e2e", statement: "Led customer onboarding, adoption, and education for four years.", relationship: "DIRECT" }],
         skills: [{ id: "skill-e2e", statement: "Customer enablement" }],
         transferableSkills: [{ id: "transfer-e2e", statement: "Teaching and facilitation" }],
         workPreferences: [{ id: "work-e2e", statement: "Prefers strategic documented work." }],
+        limitations: [{
+          id: "limitation-salesforce-e2e",
+          statement: "No source verifies Salesforce proficiency.",
+          category: "TOOL",
+          disclaimedExperienceSpecificity: null,
+        }],
         domainPreferences: { customerSuccess: customerSuccessTestPreferences },
       },
     });
@@ -98,6 +104,13 @@ try {
   } else if (command === "run-worker") {
     const review = process.argv[3] === "review";
     const tasks = new PrismaEvaluationTaskRepository();
+    const fixtureTransport = createCustomerSuccessFixtureTransport({
+      resumeMatch: review ? {
+        requirementClassifications: ["GENUINE_GAP"],
+        matchedExperienceSpecificities: ["UNSUPPORTED"],
+        decisionImpacts: ["MATERIAL_UNCERTAINTY"],
+      } : undefined,
+    });
     const worker = createEvaluationWorker({
       tasks,
       leaseSeconds: 60,
@@ -114,18 +127,14 @@ try {
           ),
           apiKey: "deterministic-e2e-key",
         },
-        transport: createCustomerSuccessFixtureTransport({
-          resumeMatch: review ? {
-            requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-            matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
-            decisionImpacts: ["MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
-          } : undefined,
-        }),
+        transport: fixtureTransport,
       }), new PrismaOpportunityLifecycleRepository()),
     });
     const task = await worker.runOnce();
     if (task?.status !== "COMPLETED") {
-      throw new Error(`Deterministic worker ended in ${task?.status ?? "NO_TASK"}`);
+      throw new Error(
+        `Deterministic worker ended in ${task?.status ?? "NO_TASK"}${task?.errorCode ? ` (${task.errorCode})` : ""}${task?.errorMessage ? `: ${task.errorMessage}` : ""}`,
+      );
     }
     process.stdout.write(task.evaluationId);
   } else if (command === "fail-latest" || command === "age-latest") {

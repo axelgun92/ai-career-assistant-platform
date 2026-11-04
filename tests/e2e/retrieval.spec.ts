@@ -66,7 +66,7 @@ test("a Greenhouse source is added disabled, enabled, run, and its listing shows
   await expect(card.getByRole("button", { name: "Run now" })).toBeDisabled();
 
   await card.getByRole("button", { name: "Enable" }).click();
-  await expect(card).toContainText("Enabled");
+  await expect(card).toContainText("Enabled", { timeout: 15_000 });
   await card.getByRole("button", { name: "Run now" }).click();
   await expect(card.getByRole("status")).toHaveText("Run queued. The retrieval worker will pick it up.");
 

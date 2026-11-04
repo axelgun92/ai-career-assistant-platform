@@ -62,16 +62,18 @@ async function captureThroughUi(page: Page, token: string) {
   const title = `Golden Path Customer Success Manager ${token}`;
   await page.goto("/");
   await nav(page).getByRole("link", { name: "New opportunity" }).click();
-  await expect(page).toHaveTitle(/New opportunity · AI Career Platform/);
+  await expect(page).toHaveURL(/\/opportunities\/new$/, { timeout: 15_000 });
+  await expect(page).toHaveTitle(/New opportunity · AI Career Platform/, { timeout: 15_000 });
   await page.getByLabel("Raw opportunity or job-description text").fill([
     `${title} at Goldenco ${token}, a SaaS workflow platform.`,
     "Remote. Applicants must reside in the United States.",
     "Salary $72,000-$88,000. No travel required.",
     "Own onboarding, adoption, education, retention, and business reviews.",
-    "3 years of Customer Success experience required.",
+    "3+ years of Customer Success experience required.",
   ].join("\n"));
   await page.getByLabel("Title (optional)").fill(title);
   await page.getByLabel("Company (optional)").fill(`Goldenco ${token}`);
+  await page.getByLabel("Location (optional)").fill("Remote - United States");
   await page.getByLabel("Compensation text (optional)").fill("$72,000-$88,000");
   await page.getByLabel("Where you found it (optional, e.g. LinkedIn)").fill("A recruiter email");
   await page.getByRole("button", { name: "Save opportunity" }).click();
@@ -121,16 +123,19 @@ test("golden path: capture, evaluate, decide, apply, track", async ({ page }) =>
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator("#opportunity-status-title")).toHaveText("Saved");
   await panel(page).getByRole("button", { name: "Planning to apply" }).click();
-  await expect(panel(page).locator(".application-summary .status-label-application")).toHaveText("Planning to apply");
+  await expect(panel(page).locator(".application-summary .status-label-application")).toHaveText(
+    "Planning to apply",
+    { timeout: 15_000 },
+  );
   const submit = panel(page).getByRole("form", { name: "Record submission" });
   await submit.getByLabel("Applied on (UTC date)").fill(utcToday());
   await submit.getByRole("button", { name: "I've applied" }).click();
-  await expect(page.locator("#opportunity-status-title")).toHaveText("Applied");
+  await expect(page.locator("#opportunity-status-title")).toHaveText("Applied", { timeout: 15_000 });
   const followUp = panel(page).getByRole("form", { name: "Add follow-up" });
   await followUp.getByLabel("Next action").fill("Check in with the recruiter");
   await followUp.getByLabel("Due (UTC date)").fill(utcToday());
   await followUp.getByRole("button", { name: "Add follow-up" }).click();
-  await expect(panel(page).getByText(/Next action: Check in with the recruiter/)).toBeVisible();
+  await expect(panel(page).getByText(/Next action: Check in with the recruiter/)).toBeVisible({ timeout: 15_000 });
 
   // Dashboard and tracker agree.
   await page.goto(`/?view=applied&q=${token}`);

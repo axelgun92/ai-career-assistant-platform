@@ -54,7 +54,10 @@ async function createProfile() {
   previousActiveIds.push(previousActiveId);
 }
 
-async function createOpportunity(request: APIRequestContext) {
+async function createOpportunity(
+  request: APIRequestContext,
+  options: { reviewScenario?: boolean } = {},
+) {
   const response = await request.post("/api/opportunities", {
     data: {
       title: "Customer Success Manager",
@@ -63,14 +66,23 @@ async function createOpportunity(request: APIRequestContext) {
       compensationText: "$72,000-$88,000",
       postingDate: "2026-08-16",
       domain: "customer-success",
-      rawText: [
-        "Customer Success Manager at a SaaS workflow platform.",
-        "Remote. Applicants must reside in the United States. Central or Eastern time preferred.",
-        "Salary $72,000-$88,000. No travel required.",
-        "Own onboarding, adoption, education, retention, and business reviews.",
-        "Collaborate with Product and hand technical escalations to Support.",
-        "3 years of Customer Success experience required. Salesforce preferred.",
-      ].join("\n"),
+      rawText: (options.reviewScenario
+        ? [
+            "Customer Success Manager at a SaaS workflow platform.",
+            "Remote. Applicants must reside in the United States.",
+            "Salary $72,000-$88,000.",
+            "Own onboarding, adoption, education, retention, and business reviews.",
+            "Collaborate with Product and hand technical escalations to Support.",
+            "Salesforce proficiency required.",
+          ]
+        : [
+            "Customer Success Manager at a SaaS workflow platform.",
+            "Remote. Applicants must reside in the United States. Central or Eastern time preferred.",
+            "Salary $72,000-$88,000. No travel required.",
+            "Own onboarding, adoption, education, retention, and business reviews.",
+            "Collaborate with Product and hand technical escalations to Support.",
+            "3 years of Customer Success experience required. Salesforce preferred.",
+          ]).join("\n"),
     },
   });
   expect(response.status()).toBe(201);
@@ -126,14 +138,14 @@ test("manual opportunity reaches a persisted Apply result with evidence", async 
 
 test("material ambiguity reaches a persisted Review result", async ({ page, request }) => {
   await createProfile();
-  const opportunityId = await createOpportunity(request);
+  const opportunityId = await createOpportunity(request, { reviewScenario: true });
   await page.goto(`/opportunities/${opportunityId}`);
   await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
   // Wait for the request to be queued before the worker looks for it.
   await expect(page.getByText(/Evaluation accepted and queued/)).toBeVisible();
   await processEvaluation("review");
 
-  await expect(page.getByRole("heading", { name: "Review" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Review", exact: true })).toBeVisible({ timeout: 15_000 });
   await page.getByText("Resume Match", { exact: true }).click();
   await expect(page.getByText("Material Uncertainty").first()).toBeVisible();
 });

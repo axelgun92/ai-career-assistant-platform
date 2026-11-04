@@ -54,7 +54,12 @@ test.afterEach(async () => {
   await runHelper("budget-restore", budgetSnapshot);
 });
 
-async function createOpportunity(request: APIRequestContext, title: string, company: string) {
+async function createOpportunity(
+  request: APIRequestContext,
+  title: string,
+  company: string,
+  options: { requiresSalesforce?: boolean } = {},
+) {
   const response = await request.post("/api/opportunities", {
     data: {
       title,
@@ -65,8 +70,13 @@ async function createOpportunity(request: APIRequestContext, title: string, comp
       rawText: [
         `${title} at ${company}, a SaaS workflow platform.`,
         "Remote. Applicants must reside in the United States.",
-        "Salary $72,000-$88,000. No travel required.",
+        ...(options.requiresSalesforce
+          ? ["Salary $72,000-$88,000."]
+          : ["Salary $72,000-$88,000. No travel required."]),
         "Own onboarding, adoption, education, retention, and business reviews.",
+        ...(options.requiresSalesforce
+          ? ["Salesforce proficiency required."]
+          : []),
       ].join("\n"),
     },
   });
@@ -91,7 +101,12 @@ async function search(page: Page, text: string) {
 test("search, filter, sort, and URL state survive refresh and back navigation", async ({ page, request }) => {
   const token = `T${Date.now()}`;
   const alpha = await createOpportunity(request, `Alpha Customer Success Manager ${token}`, `Alphaco ${token}`);
-  const beta = await createOpportunity(request, `Beta Onboarding Lead ${token}`, `Betaco ${token}`);
+  const beta = await createOpportunity(
+    request,
+    `Beta Onboarding Lead ${token}`,
+    `Betaco ${token}`,
+    { requiresSalesforce: true },
+  );
   await createOpportunity(request, `Gamma Support Specialist ${token}`, `Gammaco ${token}`);
   await evaluate(request, alpha);
   await evaluate(request, beta, true);
@@ -142,7 +157,7 @@ test("search, filter, sort, and URL state survive refresh and back navigation", 
 
   // Open a result, then come back to the same filtered view.
   await rows(page).first().getByRole("link", { name: /Alpha Customer Success Manager/ }).click();
-  await expect(page).toHaveURL(new RegExp(`/opportunities/${alpha}$`));
+  await expect(page).toHaveURL(new RegExp(`/opportunities/${alpha}$`), { timeout: 15_000 });
   await page.goBack();
   await expect(page).toHaveURL(narrowedUrl);
   await expect(rows(page)).toHaveCount(1);

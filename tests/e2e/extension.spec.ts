@@ -61,9 +61,11 @@ async function runHelper(...args: string[]) {
 }
 
 // Chrome's ID for an unpacked extension: the SHA-256 of its directory path,
-// first 32 hex digits written with the letters a–p.
+// first 32 hex digits written with the letters a–p. Chromium hashes the
+// native UTF-16 path bytes on Windows and UTF-8 path bytes elsewhere.
 function unpackedExtensionId(directory: string) {
-  const hex = createHash("sha256").update(realpathSync(directory)).digest("hex").slice(0, 32);
+  const pathBytes = Buffer.from(realpathSync(directory), process.platform === "win32" ? "utf16le" : "utf8");
+  const hex = createHash("sha256").update(pathBytes).digest("hex").slice(0, 32);
   return [...hex].map((digit) => String.fromCharCode(97 + Number.parseInt(digit, 16))).join("");
 }
 
@@ -252,7 +254,10 @@ test("pair, read, edit nothing, save, open in the app, request an evaluation, an
   const { page: job, tabId } = await openJobTab(paths.job);
   let { popup, requests } = await openPopup(tabId);
   await expect(popup.getByText(`Connected to AI Job Assistant (${pairingLabel}).`)).toBeVisible();
-  await expect(popup.locator("#page-site")).toHaveText("127.0.0.1: an unrecognised site, saved as a lower-priority source");
+  await expect(popup.locator("#page-site")).toHaveText(
+    "127.0.0.1: an unrecognised site, saved as a lower-priority source",
+    { timeout: 15_000 },
+  );
   await expect(popup.locator("#preview")).toBeHidden();
   expect(await job.evaluate(() => document.documentElement.outerHTML)).not.toContain("aija_");
 
@@ -306,7 +311,7 @@ test("pair, read, edit nothing, save, open in the app, request an evaluation, an
   await review.goto(`${appUrl}/opportunities/${saved.opportunityId}`);
   await expect(review.getByRole("heading", { name: "Needs Review before evaluation" })).toBeVisible({ timeout: 15_000 });
   await review.getByRole("button", { name: "Evaluate", exact: true }).click();
-  await expect(review.getByText(/released to the normal admission path/)).toBeVisible();
+  await expect(review.getByText(/released to the normal admission path/)).toBeVisible({ timeout: 15_000 });
   await review.close();
   await popup.close();
   ({ popup, requests } = await openPopup(tabId));

@@ -21,13 +21,16 @@ const root = path.resolve(__dirname, "../..");
 
 describe("the P1 reader path under the tsx runtime", () => {
   it("evaluates the unchanged reader despite tsx's __name helper calls and gives the same extraction as here", () => {
-    const run = spawnSync(path.join(root, "node_modules/.bin/tsx"), [path.join(root, "tests/support/p1-runtime-harness.ts")], {
+    const run = spawnSync(process.execPath, [
+      path.join(root, "node_modules/tsx/dist/cli.mjs"),
+      path.join(root, "tests/support/p1-runtime-harness.ts"),
+    ], {
       cwd: root,
       encoding: "utf8",
       timeout: 120_000,
       env: { ...process.env, RETRIEVAL_BROWSER_EXECUTABLE: "" },
     });
-    expect(run.status, run.stderr.slice(0, 2_000)).toBe(0);
+    expect(run.status, (run.stderr ?? run.error?.message ?? "").slice(0, 2_000)).toBe(0);
     const output = JSON.parse(run.stdout.trim().split("\n").pop()!) as {
       readerHasNameHelper: boolean;
       verification: { verdict: string; readable: number; pages: Array<{ result: string; extractor: string | null; openedUrl: string }> };

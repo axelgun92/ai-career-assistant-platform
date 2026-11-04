@@ -3,9 +3,37 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 4, 2026
 
+## Codex E2E Cleanup — Grouped Verification Complete
+
+**State:** implemented and verified on `integration/final-evaluator-product` at baseline `17d2a3289688ce40a17a4a573ead87aefe042e74`; Alex accepted the grouped verification as sufficient for repository closeout. This is grouped E2E verification, not an uninterrupted 59/59 full-suite pass.
+
+- The four stale E2E scenarios identified after pre-evaluator triage were corrected without weakening triage or evaluator behavior:
+  - the Review fixtures now produce the intended material uncertainty through valid evaluator evidence;
+  - dashboard fixtures use jobs that deterministically reach their intended Apply or Review state;
+  - golden-path jobs state the location and no-travel facts needed for deterministic admission;
+  - the deterministic worker helper emits the current evaluator contract.
+- Windows/runtime portability and synchronization corrections are narrow:
+  - extension IDs use Chromium's Windows path hashing behavior;
+  - the P1 runtime test invokes the portable `tsx` CLI entry point;
+  - exact asynchronous UI assertions retain their expected values with a 15-second Playwright assertion allowance for the measured slow filesystem;
+  - browser-assisted retrieval records the navigation start after invoking the driver, preserving the locked minimum source interval;
+  - listing-version projection compares unordered evidence rows by immutable ID.
+- Verification preserved from the synchronized implementation:
+  - unit: 92 files passed, 1 replay file skipped; 2,144 passed and 6 skipped;
+  - integration: the shared-browser cadence correction passed 75 focused unit tests and 3 focused integration tests; the subsequent full integration run passed 372 tests before one nondeterministic evidence-order comparison, and that test-only comparison correction then passed its focused 13-test integration file;
+  - extension plus page capture: 12/12 passed after synchronization.
+- **Grouped E2E verification:** all 59 tests have passing evidence on this unchanged implementation and deterministic configuration, using only `ai_career_assistant_test`:
+  - the latest complete-suite attempt passed 31 tests, failed the daily-limit budget test while its second save request remained stalled, and left 27 unexecuted under fail-fast;
+  - the daily-limit test then passed unchanged (1/1); its trace showed both budget saves returning HTTP 200 in 602 ms and 112 ms;
+  - the ordered downstream group passed 25/27; the Companies index navigation encountered first-use `/companies` compilation and the serial detail test did not run;
+  - after read-only route warm-up, the Companies index test passed; the detail route then returned HTTP 200 in 15.7 seconds (14.8 seconds of Next.js compilation/cache work, 828 ms of application work), just beyond the unchanged assertion window; the focused detail test passed unchanged after compilation;
+  - the Next.js server measured the worktree filesystem at 6.9 seconds and reported cache compactions of 31.6–66 seconds. These trace-backed failures were environmental first-use compilation/stalled-server events, not product, API-contract or assertion defects.
+- No assertion was removed, no retry was added, no test was skipped, and no product behavior was changed to accommodate the environment. No live/provider/paid call was made. The normal and acceptance databases were untouched.
+- **Acceptance:** no additional uninterrupted run is required for this closeout. Report **grouped E2E verification complete** and state explicitly that an uninterrupted 59/59 run did not pass and was deliberately waived for this task.
+
 ## Extension Mode B — Bounded Results-Page Ingestion
 
-**Committed on `integration/final-evaluator-product`: `6768598` (Mode B), `3ce9100` (P1 runner), `c946e1b` (P1 runtime fix), `77f7321` (LinkedIn enablement). WTTJ / Otta P2 (background tabs, November 4, 2026) is implemented and verified offline and awaits Alex's review and commit approval.**
+**Committed on `integration/final-evaluator-product`: `6768598` (Mode B), `3ce9100` (P1 runner), `c946e1b` (P1 runtime fix), `77f7321` (LinkedIn enablement), `17d2a32` (WTTJ / Otta P2). WTTJ / Otta P2 is implemented, committed and verified offline; live acceptance still needs Alex's separate authorization.**
 - **LinkedIn:** enabled; verified automatic detail mechanism (P1 PASS). Mode B is not complete until LinkedIn's targeted end-to-end acceptance.
 - **Welcome to the Jungle / Otta:** NOT complete and not offered by default. F0 done, P1 BLOCKED (HTTP 403), P3 unsupported. P2 (sequential background tabs in Alex's Chrome) is implemented and verified offline only (see "WTTJ / Otta P2 implemented" below). It is enabled only by the explicit server setting `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`, for its live acceptance, which needs Alex's separate authorization.
   - *(Earlier status, November 4, before P2 implementation: "P2 (sequential background tabs) is the chosen mechanism and not yet implemented; implementation needs separate approval.")*
@@ -68,7 +96,7 @@ It follows the locked plan "Final Extension Bounded Page-Capture Plan, Revision 
     - one tab at a time, at least 12 s apart;
     - an access restriction stops the batch, and the end of the 24 h backoff does not resume that blocked batch automatically.
   - *Superseded plan (November 4): a separate three-job proof-of-concept phase before implementation, with Alex's correction that it would use three loaded jobs automatically, was removed. WTTJ goes directly to implementation (when approved) and live acceptance.*
-- **WTTJ / Otta P2 implemented (authorized November 4, 2026; verified offline; awaiting review and commit approval; NOT live-accepted):**
+- **WTTJ / Otta P2 implemented (authorized November 4, 2026; committed as `17d2a32`; verified offline; NOT live-accepted):**
   - **Flow.** On a WTTJ results page, the existing "Save selected jobs" (up to 25 already-loaded jobs, no lower cap) asks for the WTTJ host permission inside the click. Declined: nothing is staged or sent. Granted: the service worker sends the batch, and the server stages it and lists the queued jobs back in page order. The service worker then reads every job automatically, with no second action:
     - the server confirms each job is still to be read (`POST /api/extension/page-captures/items/<id>/start`), and the extension checks it still holds the permission;
     - at least 12 s after the previous navigation started, the job's page opens in a new background tab (`tabs.create({ active: false })`); the user's tabs are never touched, navigated or closed;

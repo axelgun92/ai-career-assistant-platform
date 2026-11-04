@@ -24,6 +24,9 @@ const chromium = {
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // The Windows integration worktree can be a slow filesystem; keep exact
+  // state assertions while allowing server-action refreshes to settle.
+  expect: { timeout: 15_000 },
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,

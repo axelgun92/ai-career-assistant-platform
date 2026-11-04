@@ -110,11 +110,15 @@ export function createBrowserSession(driver: BrowserDriver, options: BrowserSess
       const wait = lastStart + options.minIntervalMs - now();
       if (wait > 0) await sleep(wait);
     }
-    lastStart = now();
     navigations += 1;
     let result: BrowserNavigation;
     try {
-      result = await driver.navigate(url, { timeoutMs });
+      const navigation = driver.navigate(url, { timeoutMs });
+      // Start the next interval only after the driver has accepted this
+      // navigation. Recording it before the call can make actual driver
+      // invocations land a millisecond under the configured minimum.
+      lastStart = now();
+      result = await navigation;
     } catch (error) {
       if (error instanceof AdapterError) return stop(error);
       // A timeout or a failed load stops the run like an HTTP network error.
