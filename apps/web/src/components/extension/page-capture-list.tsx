@@ -12,10 +12,10 @@ import { ExternalLink } from "@/components/external-link";
 // a job that needs review before evaluation are made on its opportunity
 // page, in the pre-evaluator triage panel; nothing is decided here.
 
-import { captureMethodLabels, saveAgainHint, statusText, type PageCaptureRowView } from "./page-capture-labels";
+import { captureMethodText, saveAgainHint, savedBeforeText, statusText, type PageCaptureRowView } from "./page-capture-labels";
 import { formatDateTime } from "@/components/budget/budget-format";
 
-export { addedStateText, captureMethodLabels, reasonLabels, saveAgainHint, statusText, type PageCaptureRowView } from "./page-capture-labels";
+export { addedStateText, captureMethodLabels, captureMethodText, reasonLabels, saveAgainHint, savedBeforeText, statusText, type PageCaptureRowView } from "./page-capture-labels";
 
 async function act(id: string, action: "retry" | "dismiss" | "restore"): Promise<string | null> {
   try {
@@ -108,7 +108,7 @@ export function PageCaptureTable({ rows }: { rows: PageCaptureRowView[] }) {
               <td>{row.siteName}</td>
               {rows.some((candidate) => candidate.method) ? (
                 <td>
-                  {row.method ? captureMethodLabels[row.method] : "—"}
+                  {captureMethodText(row)}
                   {row.capturedAt ? (
                     <>
                       <br />
@@ -117,7 +117,15 @@ export function PageCaptureTable({ rows }: { rows: PageCaptureRowView[] }) {
                   ) : null}
                 </td>
               ) : null}
-              <td>{statusText(row)}</td>
+              <td>
+                {statusText(row)}
+                {row.savedBefore ? (
+                  <>
+                    <br />
+                    <span className="muted">{savedBeforeText}</span>
+                  </>
+                ) : null}
+              </td>
               <td>
                 <PageCaptureActions row={row} />
               </td>

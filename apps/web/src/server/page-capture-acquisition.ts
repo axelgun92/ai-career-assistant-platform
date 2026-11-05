@@ -149,6 +149,7 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
         pairingId: item.pairingId,
         domain: dependencies.discovery.domain,
         receivedAt: item.firstSeenAt,
+        method: "batch",
       });
       const ingested = await dependencies.ingestion.ingest(raw);
       await dependencies.repository.markIngested(item.id, ingested.opportunityId, now());

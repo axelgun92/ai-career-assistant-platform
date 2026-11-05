@@ -61,12 +61,15 @@ export interface CaptureSessionSummary {
   awaiting: number;
   unavailable: number;
   dismissed: number;
+  // Of these jobs, those already saved by an earlier capture when this one
+  // was made (counted in added; absent from older servers).
+  alreadySaved?: number;
   inProgress: boolean;
 }
 
 export interface CaptureSessionDetail {
   session: CaptureSessionSummary | null;
-  jobs: Array<{ id: string; title: string; company: string | null; status: string; statusText: string; opportunityPath: string | null; sourceUrl: string | null }>;
+  jobs: Array<{ id: string; title: string; company: string | null; status: string; statusText: string; savedBefore?: boolean; opportunityPath: string | null; sourceUrl: string | null }>;
 }
 
 export type TabStartResponse =

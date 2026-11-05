@@ -88,7 +88,7 @@ export default async function HomePage({
       return null;
     }),
     // Jobs the pre-evaluator triage holds for a decision (its own queue,
-    // distinct from the "Not acted on" lifecycle view).
+    // distinct from the "Pre-Evaluation Review" lifecycle view).
     getPreEvaluatorTriageService()
       .listNeedsReview()
       .then((items) => items.length)

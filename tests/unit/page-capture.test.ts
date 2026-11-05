@@ -298,11 +298,15 @@ describe("automatic detail acquisition", () => {
     expect(handoff.request).toHaveBeenCalledTimes(2);
     expect(repository.markHandedOff).toHaveBeenCalledWith("a1", "NEEDS_REVIEW", now);
 
-    // The same raw listing a single-job save of that page produces.
+    // The same raw listing a single-job save of that page produces, recorded
+    // as read from a results page (provenance only; not a material field).
     const html = testSiteJobPage({ id: "a1" });
     const modeA = buildCaptureEnvelope(runExtractor(html, "https://jobs.e2e.invalid/jobs/a1"), "page", { extensionVersion: "0.2.0", capturedAt: now });
     if (!modeA.ok) throw new Error("expected a capture");
-    const expected = capturedListing(modeA.envelope, { pairingId: pairing.id, domain: customerSuccessDiscoveryConfiguration.domain, receivedAt: item("a1").firstSeenAt }).raw;
+    const context = { pairingId: pairing.id, domain: customerSuccessDiscoveryConfiguration.domain, receivedAt: item("a1").firstSeenAt };
+    const expected = capturedListing(modeA.envelope, { ...context, method: "batch" }).raw;
+    expect(expected.retrieval?.contentHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(capturedListing(modeA.envelope, { ...context, method: "single" }).raw.retrieval?.contentHash).toBe(expected.retrieval?.contentHash);
     const [raw] = ingest.mock.calls[0] as unknown as [typeof expected];
     expect(raw).toMatchObject({ source: "browser-extension", sourceType: "BROWSER_EXTENSION", externalId: expected.externalId, title: expected.title, description: expected.description, discoveredAt: item("a1").firstSeenAt });
     expect(raw.sourceMetadata).toEqual(expected.sourceMetadata);

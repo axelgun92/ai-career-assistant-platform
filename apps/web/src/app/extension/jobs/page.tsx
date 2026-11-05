@@ -34,7 +34,7 @@ const methodLabels: Record<CaptureMethodFilter, string> = {
 };
 
 function sessionCounts(session: CaptureSessionView) {
-  const parts = [`${session.added} added`];
+  const parts = [`${session.added} added${session.alreadySaved ? ` (${session.alreadySaved} already saved before)` : ""}`];
   if (session.pending) parts.push(`${session.pending} getting details`);
   if (session.awaiting) parts.push(`${session.awaiting} awaiting details`);
   if (session.unavailable) parts.push(`${session.unavailable} no longer available`);

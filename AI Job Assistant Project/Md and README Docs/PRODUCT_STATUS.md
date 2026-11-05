@@ -73,13 +73,14 @@ Supported results page (Alex's Chrome)
 ```
 
 - **Per-job fallback:** a job whose page cannot be read waits as **Awaiting details**, with its reason and Retry, Dismiss and Open job. It is never an opportunity and never evaluable. Progress is on **Captured Jobs** (`/extension/jobs`; formerly "Jobs from results pages").
-- **Extension experience (November 5, 2026; implemented offline, awaiting review):**
+- **Extension experience (November 5, 2026; implemented offline; side panel, Captured Jobs and Setup & Connection committed as `6795fe2`; the pre-acceptance round awaits review):**
   - Chrome **side panel** with explicit **Single Job | Batch Capture** modes, current/latest/previous captures, and a session view of each capture's jobs. No new host permission: the toolbar button gives access to the page shown.
   - In the app, two Extension destinations:
     - **Setup & Connection**: Pair New Extension, paired browsers with last use and version, **Unpair / Revoke Access** with confirmation, troubleshooting, installation/updates, supported sites and modes;
     - **Captured Jobs**: single-job and results-page captures in one list, plus capture history (additive `PageCaptureSession`).
   - Single-job saves are triaged at save (triage only, with an active profile; otherwise reported not triaged).
-  - The dashboard lifecycle view "To triage" is now **Not acted on**, and a **Needs Review before evaluation** count links to the triage queue.
+  - The dashboard lifecycle view "To triage" is now **Pre-Evaluation Review**, and a **Needs Review before evaluation** count links to the triage queue.
+  - Overlapping captures: a later batch reports jobs already added by an earlier capture as already saved, and marks them in that capture. Both captures stay intact. A job saved both as a Single Job and from a results page is one job and one row.
   - Capture-correctness fixes from the November 4–5 acceptance (WTTJ descriptions and Apply links, normalization, LinkedIn friction) wait for Alex's E1–E3 evidence.
 - **Safety:** each read is open-only, sequential and paced (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops the site for at least a day, with no retry or workaround. No configured retrieval source is created. Analytics (Features 13 and 15–18) see batch jobs exactly as Mode A captures. The evaluator and the triage are unchanged; Mode B only hands jobs to the existing request.
 - **Site status (November 4, 2026):** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded.

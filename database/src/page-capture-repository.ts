@@ -104,6 +104,9 @@ export interface CapturedJobRow {
   triageManualDecision: string | null;
   evaluationStatus: string | null;
   recommendation: string | null;
+  // A results-page job that was also saved alone with the single-job capture
+  // (before this results-page capture, or marked as a single-job save).
+  alsoSingle: boolean;
 }
 
 export interface PageCaptureListRow extends PageCaptureItemRecord {
@@ -201,10 +204,14 @@ export class PrismaPageCaptureRepository {
                   ...(requeue ? { attempts: 0, lastReason: null, nextAttemptAt: null, lastAttemptAt: null } : {}),
                 },
               });
+          // A job already in the app (added by an earlier capture, from a
+          // results page or alone) is reported as already saved; a job an
+          // earlier capture is still reading is reported as in progress.
+          const opportunityId = updated.opportunityId ?? saved;
           results.push({
             externalId: card.externalId,
-            outcome: updated.status === "ALREADY_SAVED" ? "ALREADY_SAVED" : !repeat && requeue ? "QUEUED" : "SEEN_AGAIN",
-            opportunityId: updated.opportunityId ?? saved,
+            outcome: opportunityId ? "ALREADY_SAVED" : !repeat && requeue ? "QUEUED" : "SEEN_AGAIN",
+            opportunityId,
             itemId: updated.id,
             status: updated.status,
           });
@@ -243,7 +250,15 @@ export class PrismaPageCaptureRepository {
             pairingId: input.pairingId,
             receivedAt: input.receivedAt,
             itemIds: results.map((result) => result.itemId),
-            counts: input.session.counts,
+            // What this save found, as of the save: the jobs already saved by
+            // an earlier capture and those an earlier capture was still
+            // reading. The jobs' current states are read live.
+            counts: {
+              ...input.session.counts,
+              alreadySaved: results.filter((result) => result.outcome === "ALREADY_SAVED").length,
+              seenAgain: results.filter((result) => result.outcome === "SEEN_AGAIN").length,
+              alreadySavedItemIds: results.filter((result) => result.outcome === "ALREADY_SAVED").map((result) => result.itemId),
+            },
           },
           // A repeated batch is the same save.
           update: {},
@@ -276,13 +291,18 @@ export class PrismaPageCaptureRepository {
                   AND ((sr."source" = 'browser-extension' AND sr."externalId" = i."externalId")
                     OR (i."site" = 'linkedin' AND i."siteJobId" IS NOT NULL AND sr."source" = 'linkedin' AND sr."externalId" = i."siteJobId"))
                 ORDER BY sr."createdAt" ASC, sr."id" ASC LIMIT 1)) AS "resolvedOpportunityId",
+              EXISTS (
+                SELECT 1 FROM "SourceRecord" sr
+                WHERE sr."source" = 'browser-extension' AND sr."externalId" = i."externalId"
+                  AND (sr."sourceMetadata"->'capture'->>'method' = 'single'
+                    OR (sr."sourceMetadata"->'capture'->>'method' IS NULL AND sr."createdAt" < i."firstSeenAt"))) AS "alsoSingle",
               ${input.itemIds ? Prisma.sql`array_position(${input.itemIds}::uuid[], i."id")` : Prisma.sql`NULL::int`} AS "position"
             FROM "PageCaptureItem" i WHERE TRUE ${itemFilter} ${includeBatch ? Prisma.empty : Prisma.sql`AND FALSE`}
         ${includeSingle
           ? Prisma.sql`UNION ALL
             SELECT * FROM (SELECT DISTINCT ON (sr."opportunityId") 'single'::text, sr."id", COALESCE(sr."sourceMetadata"->'capture'->>'site', ''),
               sr."sourceMetadata"->'capture'->>'host', COALESCE(sr."rawTitle", o."title", 'Untitled job'), sr."rawCompany", sr."rawLocation", NULL::text,
-              sr."sourceUrl", sr."createdAt", sr."createdAt", 'INGESTED', NULL::text, NULL::text, sr."opportunityId", NULL::int
+              sr."sourceUrl", sr."createdAt", sr."createdAt", 'INGESTED', NULL::text, NULL::text, sr."opportunityId", FALSE, NULL::int
             FROM "SourceRecord" sr JOIN "Opportunity" o ON o."id" = sr."opportunityId"
             WHERE sr."source" = 'browser-extension'
               AND NOT EXISTS (SELECT 1 FROM "PageCaptureItem" i WHERE i."externalId" = sr."externalId")
@@ -301,7 +321,7 @@ export class PrismaPageCaptureRepository {
         )
         SELECT page."method", page."id", page."site", page."host", page."title", page."company", page."location", page."postedText",
           page."sourceUrl", page."firstSeenAt", page."capturedAt", page."status", page."lastReason", page."handoffOutcome",
-          page."resolvedOpportunityId", o."title" AS "opportunityTitle",
+          page."resolvedOpportunityId", page."alsoSingle", o."title" AS "opportunityTitle",
           t."outcome"::text AS "triageOutcome", t."manualDecision"::text AS "triageManualDecision",
           e."status"::text AS "evaluationStatus", r."decision"::text AS "recommendation"
         FROM page

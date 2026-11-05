@@ -3,7 +3,7 @@
 // - the side panel's mode choice and capture-session wording;
 // - triage at single-job save as the extension reports it (outcome, or not
 //   triaged for want of an active profile), and the batch rows' wording;
-// - the dashboard's "Not acted on" view and its Needs Review entry point;
+// - the dashboard's "Pre-Evaluation Review" view and its Needs Review entry point;
 // - Setup & Connection: "Unpair / Revoke Access" only after confirmation,
 //   the extension version, the supported-sites table from the registry;
 // - Captured Jobs' method column and the two Extension destinations.
@@ -13,9 +13,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import { captureMessage, triageLine } from "../../apps/extension/src/popup-view";
-import { arrangeSessions, capturedJobsPath, defaultMode, sessionCounts, sessionHeading, sessionLine } from "../../apps/extension/src/panel-view";
+import { arrangeSessions, capturedJobsPath, defaultMode, sessionCounts, sessionHeading, sessionJobDetail, sessionLine } from "../../apps/extension/src/panel-view";
 import type { CaptureSessionSummary } from "../../apps/extension/src/api";
-import { addedStateText } from "../../apps/web/src/components/extension/page-capture-labels";
+import { addedStateText, captureMethodText } from "../../apps/web/src/components/extension/page-capture-labels";
 import { captureTriageFrom } from "../../apps/web/src/server/extension-api";
 import { createExtensionCaptureService } from "../../apps/web/src/server/extension-capture";
 import { supportedSites, shippedExtensionVersion } from "../../apps/web/src/server/extension-setup";
@@ -68,6 +68,16 @@ describe("the side panel's modes and captures", () => {
     expect(capturedJobsPath("00000000-0000-4000-8000-000000000001")).toBe("/extension/jobs?session=00000000-0000-4000-8000-000000000001");
     expect(capturedJobsPath()).toBe("/extension/jobs");
   });
+
+  it("says which of a capture's jobs an earlier capture had already saved", () => {
+    expect(sessionCounts(session({ jobs: 10, added: 10, alreadySaved: 3 }))).toBe("10 jobs: 10 added (3 already saved before)");
+    // An older server reports no such count.
+    expect(sessionCounts(session({ jobs: 10, added: 10 }))).toBe("10 jobs: 10 added");
+    expect(sessionJobDetail({ company: "Northwind", statusText: "Added; held for review before evaluation", savedBefore: true })).toBe(
+      " · Northwind — Added; held for review before evaluation · already saved before this capture",
+    );
+    expect(sessionJobDetail({ company: null, statusText: "Getting details" })).toBe(" — Getting details");
+  });
 });
 
 describe("triage at single-job save, as reported", () => {
@@ -117,8 +127,8 @@ describe("triage at single-job save, as reported", () => {
 });
 
 describe("the dashboard", () => {
-  it("calls the lifecycle view Not acted on (its URL stays) and links the Needs Review queue", () => {
-    expect(opportunityViews.triage.label).toBe("Not acted on");
+  it("calls the lifecycle view Pre-Evaluation Review (its URL stays) and links the Needs Review queue", () => {
+    expect(opportunityViews.triage.label).toBe("Pre-Evaluation Review");
     const summary = { activeNotEvaluated: 0, triageRecommendedApply: 0, deferred: 0, activeFailed: 0, queued: 0, running: 0, followUpsDue: 0 } as never;
     const markup = renderToStaticMarkup(<NeedsAttention summary={summary} needsReview={3} />);
     expect(markup).toContain(`aria-label="Needs Review before evaluation: 3" href="${needsReviewLink}"`);
@@ -210,5 +220,18 @@ describe("Captured Jobs", () => {
     expect(markup).toContain(">Captured<");
     expect(markup).toContain("Single job");
     expect(markup).toContain("Results page");
+  });
+
+  it("shows a job captured both ways once, with both methods, and marks jobs saved before a capture", () => {
+    expect(captureMethodText({ method: "batch", alsoSingle: true })).toBe("Results page and single job");
+    expect(captureMethodText({ method: "batch", alsoSingle: false })).toBe("Results page");
+    expect(captureMethodText({ method: "single" })).toBe("Single job");
+    expect(captureMethodText({})).toBe("—");
+    const base = { id: "x", site: "linkedin", siteName: "LinkedIn", title: "CSM", company: null, location: null, postedText: null, sourceUrl: "https://www.linkedin.com/jobs/view/1", firstSeenAt: "2026-11-05T12:00:00.000Z", lastReason: null, resolvedOpportunityId: "00000000-0000-4000-8000-0000000000c1", opportunityTitle: "CSM", triageOutcome: null, triageManualDecision: null, evaluationStatus: null, recommendation: null, handoffOutcome: null };
+    const markup = renderToStaticMarkup(
+      <PageCaptureTable rows={[{ ...base, status: "INGESTED", method: "batch", alsoSingle: true, savedBefore: true, capturedAt: "2026-11-05T12:00:00.000Z" }]} />,
+    );
+    expect(markup).toContain("Results page and single job");
+    expect(markup).toContain("Already saved before this capture");
   });
 });

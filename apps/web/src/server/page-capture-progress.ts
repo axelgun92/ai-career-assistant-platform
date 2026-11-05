@@ -80,8 +80,21 @@ export function capturedJobView(row: CapturedJobRow): PageCaptureRowView {
     retryable: row.method === "batch" ? !isTabSite(row.site) : false,
     method: row.method,
     capturedAt: new Date(row.capturedAt).toISOString(),
+    alsoSingle: row.alsoSingle === true,
   };
 }
+
+// The jobs a capture found already saved by an earlier capture, as recorded
+// at that save (older saves recorded none).
+export function savedBeforeIds(counts: unknown): Set<string> {
+  const ids = counts && typeof counts === "object" ? (counts as { alreadySavedItemIds?: unknown }).alreadySavedItemIds : undefined;
+  return new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : []);
+}
+
+const countOf = (counts: unknown, key: string) => {
+  const value = counts && typeof counts === "object" ? (counts as Record<string, unknown>)[key] : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+};
 
 export type CaptureMethodFilter = "all" | "batch" | "single";
 
@@ -98,6 +111,9 @@ export interface CaptureSessionView {
   awaiting: number;
   unavailable: number;
   dismissed: number;
+  // Of this capture's jobs, those already saved by an earlier capture when
+  // it was made (counted in added).
+  alreadySaved: number;
   // Still being read (jobs queued or being read now).
   inProgress: boolean;
 }
@@ -116,6 +132,7 @@ export function sessionView(row: PageCaptureSessionRow): CaptureSessionView {
     awaiting: row.awaiting,
     unavailable: row.unavailable,
     dismissed: row.dismissed,
+    alreadySaved: countOf(row.counts, "alreadySaved"),
     inProgress: row.pending > 0,
   };
 }
@@ -144,8 +161,9 @@ export async function capturedJobs(
     }),
     repository.listSessions({ site: null, page: 1, pageSize: captureSessionsPageSize }),
   ]);
+  const before = session ? savedBeforeIds(session.counts) : new Set<string>();
   return {
-    rows: list.rows.map(capturedJobView),
+    rows: list.rows.map((row) => ({ ...capturedJobView(row), ...(session ? { savedBefore: before.has(row.id) } : {}) })),
     total: list.total,
     session: session
       ? { id: session.id, site: session.site, siteName: capturedSiteName(session.site, null), pageUrl: session.pageUrl, pageTitle: session.pageTitle, receivedAt: session.receivedAt.toISOString() }
@@ -172,6 +190,7 @@ export async function extensionCaptureSession(id: string, repository = new Prism
     repository.listSessions({ site: null, page: 1, pageSize: 1, id: session.id }),
   ]);
   const own = summary.rows[0];
+  const before = savedBeforeIds(session.counts);
   return {
     session: own ? sessionView(own) : null,
     jobs: list.rows.map((row) => {
@@ -182,6 +201,7 @@ export async function extensionCaptureSession(id: string, repository = new Prism
         company: view.company,
         status: view.status,
         statusText: statusText(view),
+        savedBefore: before.has(view.id),
         opportunityPath: view.resolvedOpportunityId ? `/opportunities/${view.resolvedOpportunityId}` : null,
         sourceUrl: view.sourceUrl || null,
       };

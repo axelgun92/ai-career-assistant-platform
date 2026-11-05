@@ -138,7 +138,10 @@ function capturedApplication(
 
 export function capturedListing(
   capture: ExtensionCapture,
-  context: { pairingId: string; domain: string; receivedAt: Date },
+  // method: how the job was captured, kept as provenance only ("single" for
+  // the single-job save, "batch" for a results-page job read later). It is
+  // not a material field, so it never changes the listing's content hash.
+  context: { pairingId: string; domain: string; receivedAt: Date; method?: "single" | "batch" },
 ): { raw: RawOpportunity; identity: CapturedPageIdentity } {
   const identity = capturedPageIdentity(capture.pageUrl);
   const fields = capture.fields;
@@ -258,6 +261,7 @@ export function capturedListing(
         userCorrectedFields: capture.editedFields,
         capture: {
           pairingId: context.pairingId,
+          ...(context.method ? { method: context.method } : {}),
           extractor: capture.extractor,
           capturedAt: capture.capturedAt,
           extensionVersion: capture.extensionVersion,
@@ -351,6 +355,7 @@ export function createExtensionCaptureService(dependencies: ExtensionCaptureDepe
         pairingId: pairing.id,
         domain: dependencies.discovery.domain,
         receivedAt: now(),
+        method: "single",
       });
       let ingested;
       try {

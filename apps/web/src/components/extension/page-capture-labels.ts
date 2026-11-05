@@ -26,9 +26,22 @@ export interface PageCaptureRowView {
   // Captured Jobs: how the job was captured, and when last.
   method?: "batch" | "single";
   capturedAt?: string;
+  // A results-page job also saved alone with the single-job capture: one
+  // row, both ways recorded.
+  alsoSingle?: boolean;
+  // One capture's own view: the job was already saved by an earlier capture
+  // when this one was made.
+  savedBefore?: boolean;
 }
 
 export const captureMethodLabels = { batch: "Results page", single: "Single job" } as const;
+
+export function captureMethodText(row: Pick<PageCaptureRowView, "method" | "alsoSingle">): string {
+  if (!row.method) return "—";
+  return row.method === "batch" && row.alsoSingle ? "Results page and single job" : captureMethodLabels[row.method];
+}
+
+export const savedBeforeText = "Already saved before this capture";
 
 export const reasonLabels: Record<string, string> = {
   NOT_SUPPORTED: "Automatic details are not available for this site yet",

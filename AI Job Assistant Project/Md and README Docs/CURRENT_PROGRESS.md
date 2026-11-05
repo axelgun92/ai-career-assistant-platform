@@ -31,7 +31,44 @@
 - No assertion was removed, no retry was added, no test was skipped, and no product behavior was changed to accommodate the environment. No live/provider/paid call was made. The normal and acceptance databases were untouched.
 - **Acceptance:** no additional uninterrupted run is required for this closeout. Report **grouped E2E verification complete** and state explicitly that an uninterrupted 59/59 run did not pass and was deliberately waived for this task.
 
-## Consolidated Mode B Acceptance Fixes — Workstreams A, C, D, E (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+## Pre-Acceptance Round — Pre-Evaluation Review, Overlapping Captures, Triage Policy Mapping (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+
+Baseline: `6795fe2` (the Workstreams C–E checkpoint, committed and pushed). Workstream B (capture correctness) is still waiting for Alex's E1 evidence.
+
+- **Pre-Evaluation Review.** The dashboard lifecycle view is renamed **Pre-Evaluation Review** (formerly "To triage", briefly "Not acted on"). Its meaning, statuses and URL (`?view=triage`) are unchanged. It stays separate from the pre-evaluator triage, its Needs Review queue and Captured Jobs.
+- **Overlapping captures.**
+  - Defect fixed: a job an earlier capture had already added was reported by a later batch as "already in progress". It is now reported as **already in AI Job Assistant**, with its opportunity; a job an earlier capture is still reading stays "in progress".
+  - Each capture session records, as of that save, how many of its jobs were already saved and which ones (`counts.alreadySaved`, `counts.seenAgain`, `counts.alreadySavedItemIds`; JSON only, no migration).
+  - The side panel and Captured Jobs show "N added (M already saved before)" for a capture, and mark each such job "already saved before this capture".
+  - Proven on the test DB: batch A (10) plus batch B (10, 3 shared) gives 17 opportunities and 17 staged jobs, not 20. Each page is read once. Both sessions keep their own 10 jobs: a later capture never removes a job from an earlier one. B reports exactly the 3 as already saved, and repeating B changes nothing.
+- **Cross-method deduplication** (the existing dedup is reused).
+  - A job saved as a Single Job and then on a results page, or the other way round, is one opportunity and one Captured Jobs row. The row reads "Results page and single job".
+  - New provenance marker: `sourceMetadata.capture.method` = `single` / `batch` on new extension source records. It is not a material field, so the content hash is unchanged (tested).
+  - Older records without the marker count as a single-job save only when they were saved before the job's first results-page sighting.
+- **Triage policy mapping (G3; no rule added or changed).** A synthetic profile mirrors Alex's stated baseline: remote only, U.S.-only roles allowed, no country exclusions, lower-cost countries configured, U.S. citizen. It is tested case by case in `tests/unit/triage-profile-policy.test.ts` (21 cases).
+  - Matches the stated policy:
+    - $60k+ base → EVALUATE; unknown salary → Needs Review; OTE is not base → Needs Review;
+    - a U.S.-residence job below $55k → REJECT;
+    - non-U.S. $55–59.9k → Needs Review; non-U.S. $50–54.9k → Needs Review (lower-cost country, or unresolved);
+    - below $55k with unclear residency → Needs Review;
+    - hybrid-only or on-site-only → REJECT; remote among the job's arrangements → passes; unknown arrangement → Needs Review;
+    - U.S.-only roles are not rejected; unresolved eligibility → Needs Review;
+    - European roles are never rejected for location (Needs Review while the right to work there is unresolved);
+    - a U.S. citizen meets an explicit U.S. authorization requirement (W-2 is not a factor).
+  - Differs from the stated policy (reported for Alex's decision, not changed):
+    - (1) a U.S.-residence job whose minimum is $55k–59.9k is REJECTED (the stated policy says Review), even when its maximum is $60k+, because the disclosed minimum is the gate;
+    - (2) a non-U.S. base below $50k is REJECTED even in a configured lower-cost country (the stated policy says it may be considered).
+  - No deterministic triage rule exists for: role relevance (the evaluator classifies it after admission), required working hours (nothing checks them), and mandatory travel (the evaluator's hard filters judge it after admission). Not added.
+  - The manual Evaluate / Reject resolution, persistence, idempotency, reassessment, no-profile handling and admission/budget protection are covered by the existing `pre-evaluator-triage` and `captured-jobs` integration tests (re-run, passing).
+  - Verifying Alex's exact saved profile needs one read-only query on the normal database, which has NOT been run (Alex's separate authorization is required).
+- **Verification** (test DB only; no live site, provider, paid or evaluator call; normal and acceptance databases not accessed):
+  - typecheck, lint, `prisma validate`, extension build and `git diff --check` pass;
+  - unit: 94 files passed, 1 skipped (2,181 passed, 6 skipped), including the new `triage-profile-policy` (21) and extended `extension-workflows` and `page-capture`;
+  - integration: 49 files, 380 tests, including the new `overlapping-captures` (2). `browser-driver` needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE` in this container;
+  - E2E: `extension` 8/8, `page-capture` 4/4;
+  - test DB left clean.
+
+## Consolidated Mode B Acceptance Fixes — Workstreams A, C, D, E (November 5, 2026; implemented and verified offline; committed as `6795fe2`)
 
 Baseline: `integration/final-evaluator-product` at `8013226` (Codex's E2E stabilization, on top of `17d2a32` WTTJ P2). Decisions D1–D5 approved by Alex on November 5, 2026.
 
@@ -48,7 +85,7 @@ Baseline: `integration/final-evaluator-product` at `8013226` (Codex's E2E stabil
   - A single-job save now runs the deterministic pre-evaluator triage only (`EvaluationService.assessTriage`): the same profile resolution and triage gate as `requestEvaluation`, with no admission, budget, queue or provider call.
   - With no active profile the job is saved and reported "not triaged: no active profile"; no outcome is invented.
   - The batch hand-off is unchanged; its no-profile rows now read "Added; not triaged yet: no active profile".
-  - The dashboard view "To triage" is now **Not acted on** (URL unchanged). A **Needs Review before evaluation** count links to the existing Needs Review queue.
+  - The dashboard view "To triage" is now **Pre-Evaluation Review** (URL unchanged; briefly "Not acted on"). A **Needs Review before evaluation** count links to the existing Needs Review queue.
   - The opportunity page says when triage has not run yet. Evaluate/Reject resolution is unchanged.
 - **Workstream D3 — capture history.** One additive table, `PageCaptureSession`: each results-page save with its staged item IDs, in page order, and its counts. A repeated batch is the same session, and no job record is copied. Migration `20261105090000_page_capture_session` also adds the nullable `ExtensionPairing.lastExtensionVersion`. Applied to `ai_career_assistant_test` only.
 - **Workstream D — extension 0.3.0 (D1).**

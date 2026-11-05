@@ -24,6 +24,7 @@ import {
   pageAccessNeeded,
   sessionCounts,
   sessionHeading,
+  sessionJobDetail,
   sessionLine,
   singleOnResultsPage,
   type CaptureMode,
@@ -529,7 +530,7 @@ async function renderSession() {
     title.textContent = job.title;
     const detail = document.createElement("span");
     detail.className = "muted";
-    detail.textContent = `${job.company ? ` · ${job.company}` : ""} — ${job.statusText}`;
+    detail.textContent = sessionJobDetail(job);
     item.append(title, detail);
     if (job.opportunityPath) {
       const open = document.createElement("button");

@@ -31,8 +31,10 @@ const when = (iso: string) => {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
 
-export function sessionCounts(session: Pick<CaptureSessionSummary, "jobs" | "pending" | "added" | "awaiting" | "unavailable" | "dismissed">): string {
-  const parts = [`${session.added} added`];
+export function sessionCounts(
+  session: Pick<CaptureSessionSummary, "jobs" | "pending" | "added" | "awaiting" | "unavailable" | "dismissed" | "alreadySaved">,
+): string {
+  const parts = [`${session.added} added${session.alreadySaved ? ` (${session.alreadySaved} already saved before)` : ""}`];
   if (session.pending) parts.push(`${session.pending} getting details`);
   if (session.awaiting) parts.push(`${session.awaiting} awaiting details`);
   if (session.unavailable) parts.push(`${session.unavailable} no longer available`);
@@ -58,6 +60,11 @@ export function arrangeSessions(sessions: readonly CaptureSessionSummary[]): {
   const current = sessions.find((session) => session.inProgress) ?? null;
   const latest = sessions.find((session) => !session.inProgress) ?? null;
   return { current, latest, previous: sessions.filter((session) => session !== current && session !== latest) };
+}
+
+// One job of a capture, as the panel lists it.
+export function sessionJobDetail(job: { company: string | null; statusText: string; savedBefore?: boolean }): string {
+  return `${job.company ? ` · ${job.company}` : ""} — ${job.statusText}${job.savedBefore ? " · already saved before this capture" : ""}`;
 }
 
 // The app's Captured Jobs page, for one capture session or all of them.

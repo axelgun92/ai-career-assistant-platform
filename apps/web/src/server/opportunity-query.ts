@@ -16,12 +16,13 @@ export type OpportunityLifecycleStatus =
 
 // Lifecycle views. "triage" holds opportunities the user has not acted on
 // yet (system states only); dismissed and archived stay in their own views.
-// Labelled "Not acted on" (November 5, 2026; formerly "To triage") so it is
-// not confused with the deterministic pre-evaluator triage, whose Needs
-// Review queue is separate. The URL value stays "triage" for bookmarks.
+// Labelled "Pre-Evaluation Review" (November 5, 2026; formerly "To triage",
+// briefly "Not acted on"); the meaning and statuses are unchanged. It is
+// separate from the deterministic pre-evaluator triage and its Needs Review
+// queue, and from Captured Jobs. The URL value stays "triage".
 export const opportunityViews = {
   active: { label: "Active", statuses: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"] },
-  triage: { label: "Not acted on", statuses: ["NORMALIZED", "EVALUATED", "RECOMMENDED"] },
+  triage: { label: "Pre-Evaluation Review", statuses: ["NORMALIZED", "EVALUATED", "RECOMMENDED"] },
   saved: { label: "Saved", statuses: ["SAVED"] },
   applied: { label: "Applied", statuses: ["APPLIED"] },
   dismissed: { label: "Dismissed", statuses: ["REJECTED_BY_USER"] },

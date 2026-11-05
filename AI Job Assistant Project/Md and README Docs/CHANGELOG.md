@@ -10,7 +10,18 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
 
-### Extension Side Panel, Captured Jobs, Setup & Connection and Triage at Save (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+### Pre-Evaluation Review, Overlapping Captures and Triage Policy Mapping (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+
+- **Dashboard:** the lifecycle view is renamed **Pre-Evaluation Review** (same meaning, statuses and URL).
+- **Overlapping captures:** a later batch reports jobs an earlier capture already added as **already in AI Job Assistant**, not "already in progress". Each capture records which of its jobs were already saved. The side panel and Captured Jobs mark them. Two overlapping batches (10 + 10, 3 shared) give 17 jobs, and both captures stay intact.
+- **Cross-method:** a job saved as a Single Job and on a results page is one opportunity and one row, labelled "Results page and single job". New extension source records carry `capture.method` (provenance only; the content hash is unchanged).
+- **Triage policy mapping:** 21 synthetic-profile cases map Alex's stated requirements to the existing triage. No rule was added or changed. Two differences are reported for decision (the U.S. $55–59.9k band; non-U.S. below $50k in lower-cost countries), and three constraints have no deterministic rule (role relevance, working hours, mandatory travel).
+- **Verified:** offline, on `ai_career_assistant_test` only.
+  - Unit: 2,181 passed, 6 skipped.
+  - Integration: 49 files, 380 tests.
+  - E2E: `extension` 8/8, `page-capture` 4/4.
+
+### Extension Side Panel, Captured Jobs, Setup & Connection and Triage at Save (November 5, 2026; implemented and verified offline; committed as `6795fe2`)
 
 - **Side panel (extension 0.3.0):** the toolbar button opens a Chrome side panel (no popup).
   - Explicit **Single Job | Batch Capture** modes: Single Job never reads a results page; Batch Capture never shows the single-job fields.
@@ -20,7 +31,7 @@ Entries are newest first. The October 15 entries below describe the project as o
 - **Captured Jobs** (`/extension/jobs`, formerly "Jobs from results pages"): single-job and results-page captures in one list, one row per job, with method, status, site and session filters, and capture history.
 - **Setup & Connection** (`/extension`): Pair New Extension; paired browsers with last use and reported version; **Unpair / Revoke Access** with a confirmation naming the pairing (captured jobs kept); troubleshooting; installation/updates; supported sites and modes from the registry.
 - **Triage at single-job save:** `EvaluationService.assessTriage`, triage only (no admission, budget, queue or provider call). With no active profile the job is saved and reported not triaged. Batch rows with no profile read "Added; not triaged yet: no active profile".
-- **Dashboard:** "To triage" is now **Not acted on** (URL unchanged); a **Needs Review before evaluation** count links to the triage queue; the opportunity page says when triage has not run.
+- **Dashboard:** "To triage" is now **Not acted on** (URL unchanged; since renamed **Pre-Evaluation Review**); a **Needs Review before evaluation** count links to the triage queue; the opportunity page says when triage has not run.
 - **Diagnostic (Workstream A):** root causes recorded in CURRENT_PROGRESS. The WTTJ extraction, Apply-link, normalization and LinkedIn friction fixes (Workstream B) wait for evidence.
 - **E2E:** four Codex-owned assertion lines updated for the approved wording, and one helper cleanup line for orphaned sessions.
 - **Verified:** offline, on `ai_career_assistant_test` only.

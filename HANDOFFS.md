@@ -1809,3 +1809,47 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The triage gate and rules; `requestEvaluation`'s order; the capture identity; `PageCaptureSession` semantics (history only).
+
+### Handoff: Pre-Acceptance Round — Pre-Evaluation Review, Overlapping Captures, Triage Policy Mapping (Claude; shared-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, profile decisions, E1); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `6795fe2`; not committed. Workstream B still waits for E1.
+
+#### Completed
+
+- The dashboard lifecycle view is renamed **Pre-Evaluation Review** (label only; the statuses and `?view=triage` are unchanged). This supersedes "Not acted on" in the record above.
+- Overlapping captures:
+  - `stageBatch` reports a job with a known opportunity as `ALREADY_SAVED`, where it previously reported `SEEN_AGAIN` for an already-ingested item;
+  - each session's `counts` records `alreadySaved`, `seenAgain` and `alreadySavedItemIds` at the save (JSON, no migration);
+  - the panel and Captured Jobs mark jobs "already saved before this capture".
+- Cross-method: `capturedListing` takes an optional `method` ("single" | "batch"), stored as `sourceMetadata.capture.method` (not hashed). Captured Jobs batch rows carry `alsoSingle`.
+- Triage policy mapping against a synthetic profile (`tests/unit/triage-profile-policy.test.ts`). No triage rule changed.
+
+#### Current Contract / Assumptions
+
+- The triage gate, rules, salary policy and `requestEvaluation` are unchanged.
+- `PageCaptureSession.itemIds` is never rewritten, so a later capture never changes an earlier capture's membership.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- Unit 2,181 passed; integration 49 files, 380 tests (new `overlapping-captures`); E2E `extension` 8/8, `page-capture` 4/4; test DB clean.
+
+#### Known Issues / Blockers
+
+- For Alex's decision: the U.S. $55–59.9k band (the engine rejects; the stated policy says review); non-U.S. below $50k in lower-cost countries (the engine rejects; the stated policy says may be considered); no deterministic rule for role relevance, working hours or mandatory travel.
+- The exact saved profile is unverified: that needs one read-only normal-database query, which needs Alex's authorization.
+- Workstream B waits for E1.
+
+#### Next Task
+
+- Alex: review; decide the two policy differences; authorize (or not) the read-only profile query; run E1.
+
+#### Do Not Change Without Coordination
+
+- The triage rules and salary policy (Codex/evaluator boundary); `PageCaptureSession` semantics.
