@@ -838,14 +838,24 @@ describe("Customer Success final recommendation precedence", () => {
     expect(result.domainResult!.recommendation.recommendation).toBe("REVIEW");
   });
 
-  it("uses Skip for a below-threshold U.S. salary and Review for a supported posting-history concern", async () => {
+  it("uses Skip for a below-threshold U.S. salary, Review for the U.S. review band, and Review for a supported posting-history concern", async () => {
     const salary = await run({
+      salaryText: "$50,000-$54,000",
+      rawText: defaultJobDescription.replace(
+        "$70,000-$90,000",
+        "$50,000-$54,000",
+      ),
+    });
+    // Salary policy v4 (November 5, 2026, approved): $55,000-$59,999 is reviewed.
+    const band = await run({
       salaryText: "$57,000-$59,000",
       rawText: defaultJobDescription.replace(
         "$70,000-$90,000",
         "$57,000-$59,000",
       ),
     });
+    expect(band.result.domainResult!.hardFilters.salary.result).toBe("REVIEW");
+    expect(band.result.domainResult!.recommendation.recommendation).toBe("REVIEW");
     const ghost = await run({
       history: [
         { type: "REPOSTED", description: "The listing was reposted." },

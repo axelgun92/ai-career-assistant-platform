@@ -8,13 +8,18 @@ import {
 } from "@ai-career/core";
 
 export const customerSuccessSalaryPolicy = {
-  version: "cs-salary-policy-v3-ecb-2026-10-14",
+  // v4 (November 5, 2026; Alex's approved corrections): a U.S.-residence
+  // minimum of $55,000-$59,999 is reviewed, not failed; a non-U.S. minimum
+  // below $50,000 in a configured lower-cost country is reviewed, not failed.
+  // Thresholds, FX rates, salary basis and residency handling are unchanged.
+  version: "cs-salary-policy-v4-ecb-2026-10-14",
   source:
     "European Central Bank euro foreign exchange reference rates, 2026-10-14",
   sourceUrl:
     "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
   referenceDate: "2026-10-14",
   usdPassMinimum: 60_000,
+  usdReviewMinimum: 55_000,
   nonUsReviewMinimum: 55_000,
   nonUsConditionalMinimum: 50_000,
   // ECB values are units of each currency per EUR. EUR itself is the base.
@@ -54,11 +59,13 @@ export interface SalaryPolicyDecision {
     | "CONFLICTING_SALARY"
     | "CONFLICTING_RESIDENCY"
     | "US_THRESHOLD"
+    | "US_REVIEW"
     | "NON_US_PASS"
     | "NON_US_REVIEW"
     | "NON_US_CONDITIONAL_REVIEW"
     | "NON_US_CONDITIONAL_UNKNOWN"
     | "BELOW_NON_US_MINIMUM"
+    | "NON_US_LOWER_COST_REVIEW"
     | "OPEN_MAXIMUM_UNKNOWN";
 }
 
@@ -120,13 +127,13 @@ function classifyKnownAmount(
   lowerCostLocation: boolean,
 ): Pick<SalaryPolicyDecision, "result" | "reason"> {
   if (residencyRequirement === "US_REQUIRED") {
-    return {
-      result:
-        amountUsd >= customerSuccessSalaryPolicy.usdPassMinimum
-          ? "PASS"
-          : "FAIL",
-      reason: "US_THRESHOLD",
-    };
+    if (amountUsd >= customerSuccessSalaryPolicy.usdPassMinimum) {
+      return { result: "PASS", reason: "US_THRESHOLD" };
+    }
+    if (amountUsd >= customerSuccessSalaryPolicy.usdReviewMinimum) {
+      return { result: "REVIEW", reason: "US_REVIEW" };
+    }
+    return { result: "FAIL", reason: "US_THRESHOLD" };
   }
   if (amountUsd >= customerSuccessSalaryPolicy.usdPassMinimum) {
     return { result: "PASS", reason: "NON_US_PASS" };
@@ -139,7 +146,9 @@ function classifyKnownAmount(
       ? { result: "REVIEW", reason: "NON_US_CONDITIONAL_REVIEW" }
       : { result: "UNKNOWN", reason: "NON_US_CONDITIONAL_UNKNOWN" };
   }
-  return { result: "FAIL", reason: "BELOW_NON_US_MINIMUM" };
+  return lowerCostLocation
+    ? { result: "REVIEW", reason: "NON_US_LOWER_COST_REVIEW" }
+    : { result: "FAIL", reason: "BELOW_NON_US_MINIMUM" };
 }
 
 export function evaluateSalaryPolicy(input: {

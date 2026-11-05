@@ -148,11 +148,13 @@ function salaryReasons(
     CONFLICTING_SALARY: "The normalized salary bounds conflict.",
     CONFLICTING_RESIDENCY: "The structured residency evidence conflicts.",
     US_THRESHOLD: "The definite base-salary ceiling is below the U.S. hard minimum.",
+    US_REVIEW: "The salary is in the U.S. review band ($55,000-$59,999).",
     NON_US_PASS: "The salary meets the non-U.S. pass threshold.",
     NON_US_REVIEW: "The salary is in the non-U.S. review band.",
     NON_US_CONDITIONAL_REVIEW: "The salary is in the conditional non-U.S. review band.",
     NON_US_CONDITIONAL_UNKNOWN: "The salary is in the conditional band but location-cost viability is unresolved.",
     BELOW_NON_US_MINIMUM: "The definite base-salary ceiling is below the non-U.S. hard minimum.",
+    NON_US_LOWER_COST_REVIEW: "The salary is below the non-U.S. minimum, but the eligible location is a configured lower-cost country.",
     OPEN_MAXIMUM_UNKNOWN: "Only a salary ceiling is known and it does not establish compatibility.",
   };
   const codes: Record<typeof decision.reason, string> = {
@@ -163,11 +165,13 @@ function salaryReasons(
     CONFLICTING_SALARY: "salary-conflicting-salary",
     CONFLICTING_RESIDENCY: "salary-conflicting-residency",
     US_THRESHOLD: "salary-us-threshold",
+    US_REVIEW: "salary-us-review",
     NON_US_PASS: "salary-non-us-pass",
     NON_US_REVIEW: "salary-non-us-review",
     NON_US_CONDITIONAL_REVIEW: "salary-non-us-conditional-review",
     NON_US_CONDITIONAL_UNKNOWN: "salary-non-us-conditional-unknown",
     BELOW_NON_US_MINIMUM: "salary-below-non-us-minimum",
+    NON_US_LOWER_COST_REVIEW: "salary-non-us-lower-cost-review",
     OPEN_MAXIMUM_UNKNOWN: "salary-open-maximum-unknown",
   };
   return [{

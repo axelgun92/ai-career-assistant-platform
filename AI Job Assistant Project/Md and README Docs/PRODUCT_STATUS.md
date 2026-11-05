@@ -255,7 +255,10 @@ Routing is an execution detail and does not change stage semantics or recommenda
 
 Milestone 4 now consumes the Task 7 salary/currency/residency contract at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged; on `claude/gallant-pasteur-y1ou3i` the evaluator subject still withholds all ten Task 7 fields until final branch combination).
 
-- `US_REQUIRED`: `$60,000 USD-equivalent` or more = Pass; below `$60,000` = Fail/Skip. No U.S. Review band and no maximum.
+- **Salary policy v4 (November 5, 2026; Alex's approved corrections D-P1 and D-P2; `cs-salary-policy-v4-ecb-2026-10-14`).** It supersedes the two bands marked below, for both the pre-evaluator triage and the evaluator's hard filter. Nothing else in this section changes.
+  - `US_REQUIRED` with a minimum of `$55,000–$59,999` = Review (triage Needs Review), including ranges such as `$57,000–$70,000`; below `$55,000` = Fail/Skip.
+  - `NON_US` below `$50,000` = Review when the eligible location matches a configured lower-cost country; otherwise still Fail/Skip.
+- *(Before v4:)* `US_REQUIRED`: `$60,000 USD-equivalent` or more = Pass; below `$60,000` = Fail/Skip. No U.S. Review band and no maximum.
 - `NON_US`: `$60,000+` = Pass; `$55,000–$59,999.99` = Review; `$50,000–$54,999.99` = conditional Review only when explicit configured geography supports viability, otherwise Unknown; below `$50,000` = Fail/Skip.
 - `null` residency requirement = Unknown.
 - Residency selects the policy; currency does not.

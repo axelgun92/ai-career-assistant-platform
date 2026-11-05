@@ -65,12 +65,14 @@ function salaryResult(
     US_THRESHOLD:
       decision.result === "PASS"
         ? `The USD-equivalent salary (${converted}) meets the $60,000 U.S.-residency threshold.`
-        : `The USD-equivalent salary (${converted}) is below the $60,000 U.S.-residency threshold.`,
+        : `The USD-equivalent salary (${converted}) is below the $55,000 U.S.-residency minimum.`,
+    US_REVIEW: `The USD-equivalent salary (${converted}) is in the $55,000–$59,999 U.S.-residency review band.`,
     NON_US_PASS: `The USD-equivalent salary (${converted}) meets the $60,000 non-U.S. pass threshold.`,
     NON_US_REVIEW: `The USD-equivalent salary (${converted}) is in the $55,000–$59,999 non-U.S. review band.`,
     NON_US_CONDITIONAL_REVIEW: `The USD-equivalent salary (${converted}) is in the conditional $50,000–$54,999 non-U.S. band and the eligible geography matches a configured viable location.`,
     NON_US_CONDITIONAL_UNKNOWN: `The USD-equivalent salary (${converted}) is in the conditional $50,000–$54,999 non-U.S. band, but location-cost viability is not established and remains Unknown.`,
     BELOW_NON_US_MINIMUM: `The USD-equivalent salary (${converted}) is below the $50,000 non-U.S. minimum.`,
+    NON_US_LOWER_COST_REVIEW: `The USD-equivalent salary (${converted}) is below the $50,000 non-U.S. minimum, but the eligible geography matches a configured lower-cost location, so it is reviewed.`,
     OPEN_MAXIMUM_UNKNOWN: `Only a maximum USD-equivalent salary (${converted}) is known, so threshold eligibility remains Unknown.`,
   };
   return {

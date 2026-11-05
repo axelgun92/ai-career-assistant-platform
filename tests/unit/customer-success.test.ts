@@ -160,8 +160,9 @@ describe("Customer Success domain foundation", () => {
 
   it.each([
     ["$60,000", "PASS"],
-    ["$59,999", "FAIL"],
-    ["$55,000", "FAIL"],
+    // Salary policy v4 (November 5, 2026, approved): the U.S. review band.
+    ["$59,999", "REVIEW"],
+    ["$55,000", "REVIEW"],
     ["$54,999", "FAIL"],
   ] as const)("applies the salary boundary %s as %s", async (salary, expected) => {
     const { result } = await run({

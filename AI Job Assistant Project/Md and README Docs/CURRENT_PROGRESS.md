@@ -31,7 +31,28 @@
 - No assertion was removed, no retry was added, no test was skipped, and no product behavior was changed to accommodate the environment. No live/provider/paid call was made. The normal and acceptance databases were untouched.
 - **Acceptance:** no additional uninterrupted run is required for this closeout. Report **grouped E2E verification complete** and state explicitly that an uninterrupted 59/59 run did not pass and was deliberately waived for this task.
 
-## Pre-Acceptance Round — Pre-Evaluation Review, Overlapping Captures, Triage Policy Mapping (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+## Salary Policy v4 (D-P1, D-P2) and Triage Boundary Decisions (November 5, 2026; implemented, verified offline and approved by Alex)
+
+Baseline: `39757c1`. Alex approved both salary corrections as targeted changes.
+
+- **One shared policy changed:** `cs-salary-policy-v4-ecb-2026-10-14` in `domains/customer-success/src/config/salary-policy.ts`. The triage and the evaluator's hard filter read the same policy, so the two always agree, and a job Alex releases from Needs Review is not then failed on salary by the evaluator.
+  - **D-P1:** a U.S.-residence job with a stated minimum of $55,000–$59,999 is `REVIEW` (new reason `US_REVIEW`, triage code `salary-us-review` → Needs Review), whatever its maximum (e.g. $57,000–$70,000). Below $55,000 is still `FAIL` (Reject / Skip).
+  - **D-P2:** a non-U.S. job with a minimum below $50,000 is `REVIEW` (new reason `NON_US_LOWER_COST_REVIEW`, code `salary-non-us-lower-cost-review`) only when its eligible location matches a configured lower-cost country; elsewhere it is still `FAIL`.
+  - Unchanged: the thresholds otherwise, the ECB rates, residency selecting the policy (never currency), OTE and unknown salary as Unknown, the max-only rule, and conflicting-evidence handling. A U.S.-residence job never uses the lower-cost exception.
+- **Evaluation and admission compatibility:**
+  - In the evaluator, a salary `REVIEW` makes the hard-filter overall `REVIEW`, which caps the final recommendation at Review. Proven by the updated `customer-success` and `customer-success-priority-recommendation` tests.
+  - Triage maps `REVIEW` to Needs Review, so nothing is admitted until Alex decides. Proven on the test DB (`captured-jobs`: a $57k–$59k U.S. job → Needs Review, `salary-us-review`, zero admissions and evaluations).
+  - No schema, prompt, model, routing or stage change. The hard-filter stage version `cs-hard-filters-v3` is unchanged; its explanations name the policy version.
+- **Triage boundary (role relevance, working hours, mandatory travel): Alex's decisions, November 5. Nothing added.**
+  - Current handling:
+    - Role and travel are judged in the evaluator's first stage (hard filters), after its first paid semantic call (job reconstruction). A failure there stops every later semantic stage.
+    - Working hours are checked by no rule.
+  - B-1 role-title exclusions: **on hold**; existing screening and evaluator behaviour kept.
+  - B-2 working-hours rules: **not implemented**. Explicit working-hours information (for example ServiceTitan's PST/MST hours) must be preserved through capture and normalization; Workstream B checks this against the evidence.
+  - B-3 deterministic travel rules: **on hold**; the evaluator's travel handling is kept.
+  - B-4 salary floor: **no change**. The approved thresholds are final.
+
+## Pre-Acceptance Round — Pre-Evaluation Review, Overlapping Captures, Triage Policy Mapping (November 5, 2026; implemented and verified offline; committed as `39757c1`)
 
 Baseline: `6795fe2` (the Workstreams C–E checkpoint, committed and pushed). Workstream B (capture correctness) is still waiting for Alex's E1 evidence.
 
@@ -55,7 +76,7 @@ Baseline: `6795fe2` (the Workstreams C–E checkpoint, committed and pushed). Wo
     - U.S.-only roles are not rejected; unresolved eligibility → Needs Review;
     - European roles are never rejected for location (Needs Review while the right to work there is unresolved);
     - a U.S. citizen meets an explicit U.S. authorization requirement (W-2 is not a factor).
-  - Differs from the stated policy (reported for Alex's decision, not changed):
+  - Differs from the stated policy (reported; both since corrected with Alex's approval in salary policy v4, above):
     - (1) a U.S.-residence job whose minimum is $55k–59.9k is REJECTED (the stated policy says Review), even when its maximum is $60k+, because the disclosed minimum is the gate;
     - (2) a non-U.S. base below $50k is REJECTED even in a configured lower-cost country (the stated policy says it may be considered).
   - No deterministic triage rule exists for: role relevance (the evaluator classifies it after admission), required working hours (nothing checks them), and mandatory travel (the evaluator's hard filters judge it after admission). Not added.

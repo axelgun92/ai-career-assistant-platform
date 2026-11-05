@@ -1853,3 +1853,42 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The triage rules and salary policy (Codex/evaluator boundary); `PageCaptureSession` semantics.
+
+### Handoff: Salary Policy v4 — Approved D-P1 / D-P2 (Claude; evaluator-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Codex (evaluator boundary: the shared salary policy changed); Alex (review)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `39757c1`; approved by Alex and committed.
+
+#### Completed
+
+- `customerSuccessSalaryPolicy` → `cs-salary-policy-v4-ecb-2026-10-14`, with the new `usdReviewMinimum: 55_000`.
+- `classifyKnownAmount`:
+  - U.S. $55,000–$59,999 → `REVIEW` / `US_REVIEW`;
+  - non-U.S. below $50,000 in a configured lower-cost location → `REVIEW` / `NON_US_LOWER_COST_REVIEW`.
+- New messages and codes in the triage (`salary-us-review`, `salary-non-us-lower-cost-review`) and the hard-filter explanations. This was approved by Alex as a targeted policy correction.
+
+#### Current Contract / Assumptions
+
+- The triage and the hard filter still share one policy.
+- `SalaryPolicyDecision.reason` gained two values; any consumer with an exhaustive record of reasons must add them (both in-repo consumers are updated).
+- The hard-filter stage version is unchanged (`cs-hard-filters-v3`).
+
+#### Files Changed in Codex-Owned Areas
+
+- `domains/customer-success/src/config/salary-policy.ts` and `domains/customer-success/src/evaluation/hard-filters.ts`: policy and explanation text only.
+- `domains/customer-success/src/triage/pre-evaluator-triage.ts`: messages and codes only.
+- Tests that encoded the old bands: `customer-success`, `customer-success-priority-recommendation`, `customer-success-salary-policy`.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Salary Policy v4).
+
+#### Next Task
+
+- None for this change. Alex's decisions: no new deterministic triage rule for role titles, working hours or travel; no new salary floor.
+
+#### Do Not Change Without Coordination
+
+- The salary thresholds, the FX table, and residency selecting the policy.

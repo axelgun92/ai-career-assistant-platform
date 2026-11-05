@@ -10,7 +10,14 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
 
-### Pre-Evaluation Review, Overlapping Captures and Triage Policy Mapping (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+### Salary Policy v4 (November 5, 2026; implemented, verified offline and approved)
+
+- **U.S. review band (D-P1):** a U.S.-residence minimum of $55,000–$59,999 is Review / Needs Review, not Reject; below $55,000 is still rejected.
+- **Lower-cost exception (D-P2):** a non-U.S. minimum below $50,000 is Review / Needs Review only in a configured lower-cost country; elsewhere it is still rejected.
+- One shared policy (`cs-salary-policy-v4-ecb-2026-10-14`) for the triage and the evaluator's hard filter. No schema, prompt, model or routing change.
+- No new deterministic rule for role titles, working hours or travel (Alex's decision; role and travel stay with the evaluator).
+
+### Pre-Evaluation Review, Overlapping Captures and Triage Policy Mapping (November 5, 2026; implemented and verified offline; committed as `39757c1`)
 
 - **Dashboard:** the lifecycle view is renamed **Pre-Evaluation Review** (same meaning, statuses and URL).
 - **Overlapping captures:** a later batch reports jobs an earlier capture already added as **already in AI Job Assistant**, not "already in progress". Each capture records which of its jobs were already saved. The side panel and Captured Jobs mark them. Two overlapping batches (10 + 10, 3 shared) give 17 jobs, and both captures stay intact.

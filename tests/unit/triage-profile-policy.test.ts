@@ -1,10 +1,9 @@
-// Alex's stated profile baseline (November 5, 2026) against the existing
+// Alex's stated profile baseline (November 5, 2026) against the
 // deterministic pre-evaluator triage, with a synthetic profile only: no
 // database, no real profile, no provider call. Each case names the stated
-// requirement it checks. Where the engine's current behaviour differs from
-// the stated policy, the case records the engine as it is, under "differs
-// from the stated policy": those are reported for a decision and not changed
-// here (no hard constraint is added or altered silently).
+// requirement it checks. The two salary differences first reported were
+// corrected with Alex's approval (salary policy v4, D-P1 and D-P2); no other
+// hard constraint is added or altered here.
 import { describe, expect, it } from "vitest";
 import { defineCustomerSuccessPreferences, triageCustomerSuccessOpportunity } from "@ai-career/customer-success";
 
@@ -79,14 +78,24 @@ describe("compensation", () => {
     expect(result.reasons.map((reason) => reason.code)).toEqual(["salary-unknown-residency", "residency-unknown"]);
   });
 
-  describe("differs from the stated policy (reported, not changed)", () => {
-    it("rejects a U.S.-residence job whose minimum is $55k-$59.9k (stated policy: review), even when its maximum reaches $60k+", () => {
-      expect(codes({ salaryMin: 57_000, salaryMax: 59_000 })).toEqual(["salary-us-threshold:REJECT"]);
-      expect(codes({ salaryMin: 57_000, salaryMax: 70_000 })).toEqual(["salary-us-threshold:REJECT"]);
+  describe("approved corrections (D-P1, D-P2; salary policy v4)", () => {
+    it("reviews a U.S.-residence job whose minimum is $55k-$59.9k, including a range reaching $60k+", () => {
+      expect(codes({ salaryMin: 57_000, salaryMax: 59_000 })).toEqual(["salary-us-review:NEEDS_REVIEW"]);
+      expect(codes({ salaryMin: 57_000, salaryMax: 70_000 })).toEqual(["salary-us-review:NEEDS_REVIEW"]);
+      expect(codes({ salaryMin: 55_000, salaryMax: 55_000 })).toEqual(["salary-us-review:NEEDS_REVIEW"]);
+      expect(codes({ salaryMin: 54_999, salaryMax: 70_000 })).toEqual(["salary-us-threshold:REJECT"]);
     });
 
-    it("rejects a non-U.S. base below $50k even in a configured lower-cost country (stated policy: may be considered)", () => {
-      expect(codes(nonUs(["MX"], { salaryMin: 45_000, salaryMax: 48_000 }))).toContain("salary-below-non-us-minimum:REJECT");
+    it("reviews a non-U.S. base below $50k in a configured lower-cost country, and still rejects it elsewhere", () => {
+      expect(codes(nonUs(["MX"], { salaryMin: 45_000, salaryMax: 48_000 }))).toContain("salary-non-us-lower-cost-review:NEEDS_REVIEW");
+      expect(assess(nonUs(["MX"], { salaryMin: 45_000, salaryMax: 48_000 })).outcome).toBe("NEEDS_REVIEW");
+      expect(codes(nonUs(["DE"], { salaryMin: 45_000, salaryMax: 48_000 }))).toContain("salary-below-non-us-minimum:REJECT");
+      expect(assess(nonUs(["DE"], { salaryMin: 45_000, salaryMax: 48_000 })).outcome).toBe("REJECT");
+    });
+
+    it("keeps the salary basis rules: OTE and unknown salary are still reviewed, never passed", () => {
+      expect(codes({ compensationBasis: "OTE", salaryMin: 57_000, salaryMax: 70_000 })).toEqual(["salary-ote-not-confirmed-base:NEEDS_REVIEW"]);
+      expect(codes(nonUs(["MX"], { compensationBasis: "OTE", salaryMin: 45_000, salaryMax: 48_000 }))).toContain("salary-ote-not-confirmed-base:NEEDS_REVIEW");
     });
   });
 });

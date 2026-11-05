@@ -28,7 +28,9 @@ function evaluate(input: {
 
 describe("Customer Success salary policy", () => {
   it.each([
-    [59_999, "FAIL"],
+    [54_999, "FAIL"],
+    [55_000, "REVIEW"],
+    [59_999, "REVIEW"],
     [60_000, "PASS"],
     [75_000, "PASS"],
     [100_000, "PASS"],
@@ -55,6 +57,21 @@ describe("Customer Success salary policy", () => {
       ).toBe(result);
     },
   );
+
+  it("reviews a non-US minimum below $50,000 only in a configured lower-cost location (policy v4)", () => {
+    expect(
+      evaluate({ minimum: 45_000, maximum: 48_000, residencyRequirement: "NON_US", residencyRegions: ["MX"], substantiallyLowerCostCountries: ["Mexico"] }),
+    ).toMatchObject({ result: "REVIEW", reason: "NON_US_LOWER_COST_REVIEW" });
+    // Not a configured lower-cost location: still the hard minimum.
+    expect(
+      evaluate({ minimum: 45_000, maximum: 48_000, residencyRequirement: "NON_US", residencyRegions: ["ES"], substantiallyLowerCostCountries: ["Mexico"] }),
+    ).toMatchObject({ result: "FAIL", reason: "BELOW_NON_US_MINIMUM" });
+    // Unknown residency, OTE and unknown currency keep their own Unknown handling.
+    expect(evaluate({ minimum: 45_000, residencyRequirement: null, substantiallyLowerCostCountries: ["Mexico"] }).reason).toBe("UNKNOWN_RESIDENCY");
+    expect(evaluate({ minimum: 45_000, compensationBasis: "OTE", residencyRequirement: "NON_US", residencyRegions: ["MX"], substantiallyLowerCostCountries: ["Mexico"] }).reason).toBe("OTE_NOT_CONFIRMED_BASE");
+    // A U.S.-residence job never uses the lower-cost exception.
+    expect(evaluate({ minimum: 45_000, residencyRequirement: "US_REQUIRED", residencyRegions: ["US"], substantiallyLowerCostCountries: ["United States"] }).result).toBe("FAIL");
+  });
 
   it.each([50_000, 54_999])(
     "conditionally reviews a non-US minimum of %s only with configured geography viability",
@@ -108,7 +125,7 @@ describe("Customer Success salary policy", () => {
 
   it("uses the versioned ECB cross-rate configuration", () => {
     expect(customerSuccessSalaryPolicy.version).toBe(
-      "cs-salary-policy-v3-ecb-2026-10-14",
+      "cs-salary-policy-v4-ecb-2026-10-14",
     );
     expect(salaryAmountInUsd(10_000, "EUR")).toBe(11_195);
     expect(salaryAmountInUsd(10_000, "GBP")).toBe(13_266.58);
@@ -146,14 +163,20 @@ describe("Customer Success salary policy", () => {
     ).toMatchObject({ result: "UNKNOWN", reason: "CONFLICTING_RESIDENCY" });
   });
 
-  it("uses a disclosed minimum as the gate and never recreates a US review band", () => {
+  it("uses a disclosed minimum as the gate: a U.S. minimum in the $55,000-$59,999 band is reviewed whatever the maximum (policy v4)", () => {
     expect(
       evaluate({
         minimum: 59_999,
         maximum: 100_000,
         residencyRequirement: "US_REQUIRED",
-      }).result,
-    ).toBe("FAIL");
+      }),
+    ).toMatchObject({ result: "REVIEW", reason: "US_REVIEW" });
+    expect(
+      evaluate({ minimum: 57_000, maximum: 70_000, residencyRequirement: "US_REQUIRED" }),
+    ).toMatchObject({ result: "REVIEW", reason: "US_REVIEW" });
+    expect(
+      evaluate({ minimum: 54_999, maximum: 100_000, residencyRequirement: "US_REQUIRED" }),
+    ).toMatchObject({ result: "FAIL", reason: "US_THRESHOLD" });
   });
 
   it.each([null, "BASE"] as const)(
@@ -201,5 +224,8 @@ describe("Customer Success salary policy", () => {
         residencyRequirement: "NON_US",
       }).result,
     ).toBe("FAIL");
+    // A U.S. maximum in the review band does not establish a failure.
+    expect(evaluate({ minimum: null, maximum: 57_000, residencyRequirement: "US_REQUIRED" }).reason).toBe("OPEN_MAXIMUM_UNKNOWN");
+    expect(evaluate({ minimum: null, maximum: 54_000, residencyRequirement: "US_REQUIRED" }).result).toBe("FAIL");
   });
 });

@@ -66,6 +66,7 @@ const singleUrls = {
   evaluate: `https://careers.example-${token}.com/jobs/csm-evaluate`,
   review: `https://careers.example-${token}.com/jobs/csm-review`,
   reject: `https://careers.example-${token}.com/jobs/csm-reject`,
+  band: `https://careers.example-${token}.com/jobs/csm-band`,
 };
 const externalIds = [...wttjF0Urls.map((url) => capturedPageIdentity(url).externalId!), ...Object.values(singleUrls).map((url) => capturedPageIdentity(url).externalId!)];
 
@@ -219,6 +220,20 @@ describe("capture history and Captured Jobs on the test database", () => {
     const again = await singleJob.capture(capture(singleUrls.review, null), pairing);
     expect(again.result.triage).toMatchObject({ status: "ASSESSED", outcome: "NEEDS_REVIEW" });
     expect(await database.preEvaluatorTriage.count({ where: { opportunityId: results.review.opportunityId } })).toBe(1);
+  });
+
+  it("holds a U.S. job in the $55,000-$59,999 band for review (salary policy v4), with no admission or evaluation", async () => {
+    await activateProfile();
+    const admissionsBefore = await database.evaluationAdmission.count();
+    const evaluationsBefore = await database.evaluation.count();
+    const band = (await singleJob.capture(capture(singleUrls.band, "$57,000-$59,000"), pairing)).result;
+    cleanup.opportunityIds.push(band.opportunityId);
+    expect(band.triage).toMatchObject({ status: "ASSESSED", outcome: "NEEDS_REVIEW" });
+    const stored = await database.preEvaluatorTriage.findUniqueOrThrow({ where: { opportunityId: band.opportunityId } });
+    expect(JSON.stringify(stored.reasons)).toContain("salary-us-review");
+    expect(JSON.stringify(stored.reasons)).not.toContain("salary-us-threshold");
+    expect(await database.evaluationAdmission.count()).toBe(admissionsBefore);
+    expect(await database.evaluation.count()).toBe(evaluationsBefore);
   });
 
   it("saves a single job and reports it not triaged when no profile is active", async () => {
