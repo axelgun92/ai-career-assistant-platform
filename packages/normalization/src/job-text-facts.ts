@@ -125,6 +125,9 @@ export const jobTextSourceFields = {
   labelledRelocation: "rawText:labelled-relocation",
   timeZonePreference: "rawText:explicit-time-zone-preference",
   workArrangementCadence: "rawText:explicit-office-days-statement",
+  workplaceTag: "rawText:explicit-workplace-tag",
+  seniorityStatement: "rawText:explicit-seniority-statement",
+  timeZoneClause: "rawText:explicit-time-zone-clause",
   compensationTiers: "rawText:compensation-tiers",
   labelledRequisitionId: "rawText:labelled-requisition-id",
 } as const;
@@ -325,6 +328,17 @@ const labelledArrangementValues: Record<string, WorkArrangement> = {
   "in office": "ONSITE",
   "in-person": "ONSITE",
   "in person": "ONSITE",
+};
+// A job board's remote tag shown alone among the posting's metadata
+// ("Permanent", "Denver", "A few days home", a salary): read only as a whole
+// page metadata item, never from prose. "Remote: Not specified" states none.
+const pageMetadataArrangementValues: Record<string, WorkArrangement> = {
+  "fully-remote": "REMOTE",
+  "fully remote": "REMOTE",
+  "no remote": "ONSITE",
+  "no remote work": "ONSITE",
+  "a few days home": "HYBRID",
+  "a few days at home": "HYBRID",
 };
 // Values only a labelled arrangement field uses ("Work Persona: Flexible or
 // Remote", "Work Style – WFH or come to the office"): a flexible persona is
@@ -733,7 +747,7 @@ interface PositionCandidates {
 // days per week"): one to four is hybrid. Indefinite wording ("up to", "may",
 // "occasionally") states no arrangement.
 const officeDays =
-  /\b(?:(\d|one|two|three|four|five)\s+days?\s+(?:a|per|each)\s+week\s+(?:in|at)\s+(?:the\s+|our\s+|an\s+)?(?:office|hq|headquarters)|in[- ](?:the[- ])?office\s+(\d|one|two|three|four|five)\s+days?\s+(?:a|per|each)\s+week)\b/i;
+  /\b(?:(\d|one|two|three|four|five)\s+days?\s+(?:a|per|each)\s+week\s+(?:in|at)\s+(?:the\s+|our\s+|an\s+)?(?:office|hq|headquarters)|(?:in[- ](?:the[- ])?office|in[- ]person|on[- ]?site)\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?(\d|one|two|three|four|five)\s+days?\s+(?:a|per|each)\s+week)\b/i;
 const indefiniteDays = /\b(?:up to|may|might|occasional(?:ly)?|optional(?:ly)?|if needed|as needed|at most|no more than)\b/i;
 const dayCounts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
 function officeDaysArrangement(text: string): WorkArrangement | null {
@@ -785,6 +799,17 @@ const remotePrimary = /\b(?:remote(?:\s+work)?|working\s+remotely)\s+is\s+(?:the
 // A statement that opens with the role's work being fully remote ("100%
 // Remote Work at a Profitable, Growing Company", "Fully remote work").
 const fullyRemoteLead = /^(?:100\s?%|fully|completely|entirely)\s+remote\s+(?:work|role|position|job|team|company)\b/i;
+// A remote-first statement counts only when it says the office is optional
+// ("We are a remote-first company, but you can always drop by our offices"):
+// remote-first alone states no arrangement.
+const remoteFirstOptionalOffice =
+  /\bremote[- ]first\b.*\b(?:(?:can|may)\s+(?:always\s+)?(?:drop\s+by|come\s+(?:in|into)|visit|use)\b.*\boffices?\b|offices?\b.*\b(?:optional|if\s+you\s+(?:want|wish|like|prefer)|whenever\s+you\s+(?:want|like)))/i;
+// "Work from anywhere" stated as a line of its own (a benefit or a bullet).
+const workFromAnywhereLine = /^(?:remote\s*[-–:]\s*)?work\s+from\s+anywhere\.?$/i;
+// The employer's own LinkedIn workplace tag in the posting text ("#LI-Hybrid",
+// "#LI-Remote", "#LI-Onsite"); other "#LI-" tags (a recruiter's initials) say
+// nothing about the arrangement.
+const linkedInWorkplaceTag = /(?:^|\s)#LI-(Remote|Hybrid|On-?site)\b/gi;
 
 const arrangementLabels = [
   "remote type", "workplace type", "work arrangement", "location type", "job location type", "work location type", "work model",
@@ -827,7 +852,7 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
     for (const line of source.lines) {
       if (line.length > 60) continue;
       const key = trimEnd(line).toLowerCase();
-      const arrangement = labelledArrangementValues[key] ?? officeDaysArrangement(line);
+      const arrangement = labelledArrangementValues[key] ?? pageMetadataArrangementValues[key] ?? officeDaysArrangement(line);
       if (arrangement) result.arrangements.push({ value: arrangement, sourceField: marker(source, "stated-work-arrangement"), sourceText: line });
       const options = arrangement ? null : offeredArrangements(line);
       if (options) result.arrangementOptions.push({ value: options, sourceField: marker(source, "stated-work-arrangement"), sourceText: line });
@@ -845,10 +870,23 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
     }
     return result;
   }
+  for (const line of source.lines) {
+    if (workFromAnywhereLine.test(line.trim())) {
+      result.arrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: line.trim() });
+    }
+    for (const tag of line.matchAll(linkedInWorkplaceTag)) {
+      const value = tag[1]!.toLowerCase().startsWith("on") ? "ONSITE" : (tag[1]!.toUpperCase() as "REMOTE" | "HYBRID");
+      result.arrangements.push({ value, sourceField: marker(source, "explicit-workplace-tag"), sourceText: tag[0].trim() });
+    }
+  }
   for (const sentence of source.sentences) {
-    const cadence = sentence.length <= 200 ? officeDaysArrangement(sentence) : null;
+    const cadence = sentence.length <= maxStatementLength ? officeDaysArrangement(sentence) : null;
     if (cadence) result.arrangements.push({ value: cadence, sourceField: marker(source, "explicit-office-days-statement"), sourceText: sentence });
-    if (sentence.length <= 200 && (remotePrimary.test(sentence) || fullyRemoteLead.test(sentence)) && !negation.test(sentence)) {
+    if (
+      sentence.length <= 200 &&
+      (remotePrimary.test(sentence) || fullyRemoteLead.test(sentence) || remoteFirstOptionalOffice.test(sentence)) &&
+      !negation.test(sentence)
+    ) {
       result.arrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
     }
     const reading = modifierSentence(sentence);
@@ -1290,6 +1328,9 @@ const timeZoneQualifier = /\b(?:prefer(?:red|ably)?|ideally|ideal|nice to have|b
 // A preference is kept as a preference (it says which zones are wanted);
 // "flexible", "optional", "any time zone" state none.
 const timeZonePreferenceWord = /\b(?:prefer(?:red|ably)?|ideally)\b/i;
+// The bounded requirement clause read inside an over-long run-on sentence:
+// "able / willing / required … to work <zones> hours | time zone(s) | schedule".
+const overLongTimeZoneClause = /\b(?:(?:must|should) be )?(?:able|willing|required|expected|available) to work\b[^.;:!?\n]{0,60}?\b(?:hours|time ?zones?|schedule)\b/gi;
 const notAZoneStatement = /\b(?:nice to have|bonus|plus|flexible|optional|not required|any time ?zone|all time ?zones|regardless of)\b/i;
 
 // "Eastern, Central or Mountain time zones": each zone in the list counts.
@@ -1336,7 +1377,24 @@ function collectTimeZone(source: TextSource): Array<TextFact<string>> {
     // A labelled line ("Work Schedule & Compliance: Requires a minimum …")
     // is read after its label.
     const sentence = statement.replace(/^[^:：\d]{1,40}[:：]\s+/, "");
-    if (!sentence || sentence.length > 200 || !timeZoneContext.test(sentence)) continue;
+    if (sentence.length > 200) {
+      // A run-on text (block markup flattened into one "sentence", as some
+      // structured descriptions are) still states a requirement in its own
+      // bounded clause ("… best practices Able to work PST/MST hours Be
+      // Human …"): only that clause is read, with the same zone tests.
+      for (const match of sentence.matchAll(overLongTimeZoneClause)) {
+        const clause = match[0];
+        // A qualifier just before the clause ("Ideally able to work …") makes
+        // it a preference, not a requirement: not read here.
+        const lead = sentence.slice(Math.max(0, match.index - 30), match.index);
+        const families = zoneFamiliesOf(clause);
+        if (families.length && !continentalSpan(clause, families) && !timeZoneQualifier.test(clause) && !timeZoneQualifier.test(lead)) {
+          candidates.push({ value: clause, sourceField: marker(source, "explicit-time-zone-clause"), sourceText: clause });
+        }
+      }
+      continue;
+    }
+    if (!sentence || !timeZoneContext.test(sentence)) continue;
     const families = zoneFamiliesOf(sentence);
     if (!families.length || continentalSpan(sentence, families)) continue;
     if (timeZoneRequirement.test(sentence) && !timeZoneQualifier.test(sentence)) {
@@ -1400,10 +1458,22 @@ function collectSeniorityLabels(source: TextSource): Array<TextFact<string>> {
   return candidates;
 }
 
+// "This is a senior-level role", "The position is an entry-level position":
+// the posting stating the role's level in so many words (never years of
+// experience, a level number such as "III", or a title word).
+const senioritySentence =
+  /\b(?:this|the)\s+(?:role|position|job|opportunity)\s+is\s+an?\s+(entry|junior|mid|senior|lead|principal)[- ]level\b|\bthis\s+is\s+an?\s+(entry|junior|mid|senior|lead|principal)[- ]level\s+(?:role|position|job|opportunity)\b/i;
+
 function collectSeniority(source: TextSource): Array<TextFact<Seniority>> {
-  return collectSeniorityLabels(source).flatMap((label) => {
+  const labelled = collectSeniorityLabels(source).flatMap((label) => {
     const seniority = standardizeSeniorityLabel(label.value);
     return seniority ? [{ value: seniority, sourceField: label.sourceField, sourceText: label.sourceText }] : [];
+  });
+  if (labelled.length || source.labelledOnly) return labelled;
+  return source.sentences.flatMap((sentence) => {
+    const match = sentence.length <= maxStatementLength ? senioritySentence.exec(sentence) : null;
+    const seniority = match && !negation.test(sentence) ? standardizeSeniorityLabel(match[1] ?? match[2]!) : null;
+    return seniority ? [{ value: seniority, sourceField: marker(source, "explicit-seniority-statement"), sourceText: sentence }] : [];
   });
 }
 

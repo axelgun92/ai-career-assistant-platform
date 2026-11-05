@@ -31,6 +31,63 @@
 - No assertion was removed, no retry was added, no test was skipped, and no product behavior was changed to accommodate the environment. No live/provider/paid call was made. The normal and acceptance databases were untouched.
 - **Acceptance:** no additional uninterrupted run is required for this closeout. Report **grouped E2E verification complete** and state explicitly that an uninterrupted 59/59 run did not pass and was deliberately waived for this task.
 
+## Workstream B — Capture Correctness from E1/E2/E3 Evidence (November 5, 2026; implemented and verified offline; approved and committed with Decision 2; live confirmation pending)
+
+Baseline: `d88a83d`. Evidence:
+- E1: a read-only export of the acceptance database, 20 WTTJ records (the ten original jobs, Ogury and 9 more);
+- E2: 9 rendered WTTJ job pages exported from Alex's Chrome;
+- E3: 3 logged-out LinkedIn results-page states (list / app promotion / central sign-in modal), plus Alex's screenshot of the modal and the promotion.
+
+Each is kept as a regression fixture (`tests/fixtures/real-captures/wttj-acceptance-e1.json`, `wttj-e2-pages.json`, `linkedin-e3-friction.json`).
+
+- **Root causes (confirmed):**
+  - (1) **WTTJ description incomplete (extension, Single Job and Batch).**
+    - WTTJ's JSON-LD `description` is only "You'll be working on". The page renders "We're looking for" (the JSON-LD `qualifications`, as run-together text) and "How we hire" (not in the JSON-LD) as separate blocks.
+    - The reader took the JSON-LD description alone. Reproduced on all 9 rendered pages: 8 lacked "We're looking for" and Hack The Box lacked "How we hire". Beam and Ogury publish their whole posting as the description.
+  - (2) **Background-tab timing (extension, Batch only).**
+    - The tab was read the moment it loaded. JSON-LD is in the page source, so the first read succeeded before the page rendered its body.
+    - E1: 16 of 20 records have no page context, and exactly those 16 have no Apply link.
+    - E2: every rendered page has one Apply destination (header and sticky bar), which the reader finds.
+  - (3) **WTTJ header remote tag not normalized (server).** "No remote" and "A few days home" were not read as page metadata.
+  - (4) **LinkedIn false FRICTION (extension results reader).**
+    - The challenge check matched markup by presence. Every E3 state holds the invisible reCAPTCHA Enterprise badge (`div.grecaptcha-badge`, `display:none`, no box) beside 120 loaded cards.
+    - Reproduced: the committed reader answers FRICTION on the real badge markup.
+    - The job-page check for background tabs had the same presence-only challenge selectors.
+- **Fixed (offline):**
+  - **Reader:** after the rendered description, adds the posting's own following blocks, headed as posting parts ("We're looking for", requirements, qualifications, "How we hire", hiring/interview process). It stops at the company, workplace and other-job blocks and never adds text twice. When the page has not rendered them, it adds the JSON-LD `qualifications`/`responsibilities`/`skills`/`education` text instead. This is generic, not employer-specific.
+  - **Tab reader:** a posting read without page context is held and the same document re-read (+2 s, +5 s, +10 s; the registry's re-reads gained +10 s, still inside the 12 s spacing). The read is taken as it is only if the page never renders.
+  - **Normalizer:** page-metadata items "Fully-remote" → Remote, "No remote" → On-site, "A few days home" → Hybrid. "Remote: Not specified" states none.
+  - **Friction:**
+    - only a shown challenge counts (never the reCAPTCHA badge);
+    - **revised per Alex's Decision 2 (November 5):** a shown sign-in modal (a dialog of real size with shown sign-in controls such as Continue with Google, Sign in with Email, Join now, or a shown password field) over loaded, readable cards is **not** FRICTION. The cards are read, the modal is left untouched, and the summary adds "The page shows a sign-in prompt; the jobs already loaded behind it were read, and the prompt was left as it is." (reading notice `SIGN_IN_PROMPT_SHOWN`; not part of the saved batch);
+    - FRICTION is now only: a sign-in/authwall/checkpoint/challenge address, a shown challenge, or a shown sign-in prompt with no readable card behind it ("This page shows a sign-in wall or security check instead of the results. Nothing was read.");
+    - a job link inside a shown sign-in prompt is never taken as a result;
+    - hidden sign-in dialogs, the scroll lock and the app promotion never count;
+    - nothing is ever dismissed, clicked, submitted or bypassed (the reader's spies record no click, scroll or navigation);
+    - the job-page check counts only shown challenge markup;
+    - LinkedIn job details are read by the server worker in its own fresh logged-out browser, so the modal in Alex's tab is not on the detail path; per-job failures (404/410 unavailable, unreadable → later attempt) never stop the other jobs, and a real site restriction stops only that site, leaving its jobs queued until the wait ends, when the next worker pass resumes them with no second action (new unit tests).
+  - **Earlier this round (E1):** Ogury's repeated "Denver, Denver"; ServiceTitan's PST/MST hours inside run-on text; `#LI-` workplace tags, in-person days, remote-first with optional offices, "Work from anywhere" lines and "This is a senior-level role"; the display note for a closing date earlier than the posting date.
+- **Verified on the real pages** (`wttj-e2-pages.test.ts`):
+  - every page keeps its posting blocks once, and its Apply link;
+  - ServiceTitan keeps "Able to work PST/MST hours";
+  - arrangements: ServiceTitan, Zeta, Hack The Box, Vantage and Standard Metrics Remote; Mintlify On-site; Beam and Ogury Hybrid; FourKites Unknown ("Remote: Not specified");
+  - Ogury: "Denver, US";
+  - the tab reader waits for the rendered page, and an unrendered read still keeps the JSON-LD qualifications.
+- **Expected behaviour, not changed:**
+  - Vantage's and Hack The Box's U.S. residency comes from the posting's own structured `applicantLocationRequirements` (US). The visible page shows "Fully-remote" with a U.S. location and states no residency sentence.
+  - Ogury's closing date (October 15, 2025, stated in the posting) predates its posting date (July 16, 2026). Both are kept and noted on the job page.
+- **Not proven by the evidence:**
+  - the central LinkedIn modal's markup is not in E3 (the exporter kept only 40 dialog-like elements; the modal shows only as the body's scroll lock), and the promotion is in no export;
+  - their handling is tested on markup that follows LinkedIn's sign-in modal classes and the screenshot, and needs the live round;
+  - E3 shows 120 loaded cards in all three states; it does not prove that every job detail is retrievable while the central modal is shown (that is the server worker's fresh logged-out read, confirmed only live);
+  - the console's `Cannot read properties of null (reading 'addEventListener')` is not explained by the extension: every element ID the side panel uses exists in `popup.html`; it is likely a page script.
+- **Verification** (test DB only; no live site, provider, paid or evaluator call; normal and acceptance databases not accessed):
+  - typecheck, lint, `prisma validate`, extension build and `git diff --check` pass;
+  - unit: 97 files passed, 1 skipped (2,221 passed, 6 skipped), including `wttj-acceptance-e1` (11), `wttj-e2-pages` (8), `linkedin-e3-friction` (11, revised for Decision 2) and two new acquisition tests (job-level failure isolation; automatic resume after a site wait);
+  - integration: 49 files, 381 tests;
+  - E2E: the full suite, all 12 Playwright projects, 59/59 (after Decision 2);
+  - test DB left clean.
+
 ## Salary Policy v4 (D-P1, D-P2) and Triage Boundary Decisions (November 5, 2026; implemented, verified offline and approved by Alex)
 
 Baseline: `39757c1`. Alex approved both salary corrections as targeted changes.

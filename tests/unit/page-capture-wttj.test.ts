@@ -86,7 +86,7 @@ describe("the registry for background-tab reading", () => {
     expect(site.tabAcquisition).toEqual({
       hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
       loadTimeoutMs: 30_000,
-      rereadDelaysMs: [2_000, 5_000],
+      rereadDelaysMs: [2_000, 5_000, 10_000],
     });
     expect(pageCaptureMaxCards).toBe(25);
   });
@@ -129,7 +129,7 @@ describe("intake for a background-tab site", () => {
       items: wttjF0Urls.map((url, index) => ({ itemId: `item-${index}`, url })),
       minIntervalMs: 12_000,
       loadTimeoutMs: 30_000,
-      rereadDelaysMs: [2_000, 5_000],
+      rereadDelaysMs: [2_000, 5_000, 10_000],
       stoppedUntil: null,
     });
     expect(stageBatch.mock.calls[0]![0]).toMatchObject({ site: "welcome-to-the-jungle", detailsAvailable: true, requeueAwaiting: true });

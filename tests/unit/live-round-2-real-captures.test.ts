@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { RawOpportunity } from "@ai-career/core";
-import { createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
+import { createRetrievedOpportunityNormalizer, readJobTextFacts } from "@ai-career/normalization";
 import { formatSalary, formatWorkArrangements } from "../../apps/web/src/components/opportunity-facts";
 import { buildCaptureEnvelope } from "../../apps/extension/src/envelope";
 import { capturedListing, parseCapture } from "../../apps/web/src/server/extension-capture";
@@ -110,6 +110,14 @@ describe("ServiceTitan (Workday): the two zones as separate tiers, default and h
     const description = fixture.captures["servicetitan-default"]!.rawDescription;
     expect(description).toContain("best practices Able to work PST/MST hours Be Human With Us:");
   });
+
+  // November 5, 2026 (Alex: explicit working hours must be preserved): the
+  // default capture now keeps the same requirement, read from its own
+  // bounded clause inside the run-on sentence.
+  it("the default capture keeps the PST/MST working-hours requirement too", async () => {
+    const normalized = await normalizer.normalize(stored("servicetitan-default"));
+    expect(normalized.opportunity.timeZoneRequirements).toBe("Able to work PST/MST hours");
+  });
 });
 
 describe("We Work Remotely: the stored default captures (header only) still name their company", () => {
@@ -196,5 +204,22 @@ describe("We Work Remotely (rendered): the default capture reads the whole posti
     expect(opportunity).toMatchObject({ companyName: "New Law Business Model", remoteStatus: "REMOTE", employmentType: "FULL_TIME", salaryMin: 85000, salaryMax: 95000, currency: "USD" });
     expect(opportunity.timeZoneRequirements).toBe("Requires minimum (4) hours core schedule to overlap with Pacific Time (e.g., 9:00 AM – 1:00 PM PT)");
     expect(opportunity).toMatchObject({ residencyRequirement: "NON_US", residencyRegions: ["WORLDWIDE"] });
+  });
+});
+
+describe("working hours inside an over-long run-on sentence (November 5, 2026)", () => {
+  const filler = "Partner with teams on onboarding, adoption, renewals, enablement and the customer lifecycle across a book of business while sharing best practices";
+  const timeZone = (clause: string) => readJobTextFacts({ text: `${filler} ${clause} Be Human With Us: we value curiosity and care across every team and every function in the company.`, title: null }).timeZoneRequirements?.value ?? null;
+
+  it("reads a requirement clause and nothing around it", () => {
+    expect(timeZone("Must be able to work Eastern Time hours")).toBe("Must be able to work Eastern Time hours");
+    expect(timeZone("Required to work CST/EST hours")).toBe("Required to work CST/EST hours");
+  });
+
+  it("does not read a preference, an any-zone statement, a continental span or a clause with no zone", () => {
+    expect(timeZone("Ideally able to work PST hours")).toBeNull();
+    expect(timeZone("Able to work flexible hours in any time zone")).toBeNull();
+    expect(timeZone("Able to work hours between PT and ET")).toBeNull();
+    expect(timeZone("Able to work independently for long hours")).toBeNull();
   });
 });

@@ -46,7 +46,7 @@ export function buildPageCaptureBatch(
 }
 
 export function readingSummary(reading: ResultCardsReading): string {
-  if (reading.problem === "FRICTION") return "This page shows a sign-in or security check. Nothing was read.";
+  if (reading.problem === "FRICTION") return "This page shows a sign-in wall or security check instead of the results. Nothing was read.";
   if (reading.problem === "NO_CARDS") {
     return reading.counts.skippedUnloaded
       ? `No loaded job cards were found on this page (${reading.counts.skippedUnloaded} not loaded yet). Scroll the page so the jobs appear, then try again.`
@@ -56,6 +56,7 @@ export function readingSummary(reading: ResultCardsReading): string {
   if (reading.counts.overCap) parts.push(`${reading.counts.overCap} more loaded job${reading.counts.overCap === 1 ? " was" : "s were"} not included (limit ${pageCaptureMaxCards}).`);
   if (reading.counts.skippedUnloaded) parts.push(`${reading.counts.skippedUnloaded} not loaded yet ${reading.counts.skippedUnloaded === 1 ? "was" : "were"} skipped.`);
   if (reading.counts.overCap || reading.counts.skippedUnloaded) parts.push("Scroll the page and save again for more.");
+  if (reading.notice === "SIGN_IN_PROMPT_SHOWN") parts.push("The page shows a sign-in prompt; the jobs already loaded behind it were read, and the prompt was left as it is.");
   return parts.join(" ");
 }
 

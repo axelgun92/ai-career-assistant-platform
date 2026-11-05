@@ -67,9 +67,12 @@ export function probeJobPage(): TabProbe {
   } else if (
     /(^|\/)(challenge|captcha|cdn-cgi\/challenge-platform\/h)(\/|$)/i.test(path) ||
     /^(just a moment|attention required|access denied|checking your browser|verify you are (a )?human|are you a robot|security check)\b/i.test(title) ||
-    document.querySelector(
-      '#challenge-form, #challenge-running, #challenge-stage, #cf-challenge-running, .cf-browser-verification, #cf-error-details, iframe[src*="challenges.cloudflare.com"], iframe[src*="captcha-delivery.com"], #px-captcha',
-    )
+    // A challenge the page shows, not markup it keeps hidden.
+    [
+      ...document.querySelectorAll(
+        '#challenge-form, #challenge-running, #challenge-stage, #cf-challenge-running, .cf-browser-verification, #cf-error-details, iframe[src*="challenges.cloudflare.com"], iframe[src*="captcha-delivery.com"], #px-captcha',
+      ),
+    ].some(visible)
   ) {
     hard = "CHALLENGE";
   }
@@ -187,7 +190,14 @@ export function createTabAcquisition(environment: TabRunEnvironment) {
     const startedAt = environment.now();
     let finalUrl: string | null = null;
     let soft: TabProbe["soft"] = null;
-    for (const offset of offsets) {
+    // A posting read only from the page's structured data, before the page
+    // has rendered its body (no page context, so no Apply link, metadata
+    // tags or the posting's other sections yet): kept, and the same
+    // document read again at the next re-read; taken as it is only when the
+    // page never renders (November 5, 2026: 16 of 20 WTTJ jobs were read
+    // this way, the moment the tab loaded).
+    let early: Extract<PageOutcome, { kind: "DETAILS" }>["capture"] | null = null;
+    for (const [index, offset] of offsets.entries()) {
       const wait = startedAt + offset - environment.now();
       if (wait > 0) await environment.sleep(wait);
       if (!(await environment.tabs.exists(tabId))) return { kind: "INTERRUPTED", signal: "TAB_CLOSED", finalUrl };
@@ -226,9 +236,14 @@ export function createTabAcquisition(environment: TabRunEnvironment) {
       }
       if (extraction?.posting) {
         const built = buildCaptureEnvelope(extraction, "page", { extensionVersion: environment.extensionVersion, capturedAt: new Date(environment.now()) });
-        if (built.ok) return { kind: "DETAILS", capture: built.envelope };
+        if (built.ok) {
+          const rendered = extraction.pageText !== null || extraction.linkedIn;
+          if (rendered || index === offsets.length - 1) return { kind: "DETAILS", capture: built.envelope };
+          early = built.envelope;
+        }
       }
     }
+    if (early) return { kind: "DETAILS", capture: early };
     // No posting: a CAPTCHA or sign-in form in its place is a restriction.
     if (soft) return { kind: "BLOCKED", signal: soft === "CAPTCHA" ? "CAPTCHA" : "LOGIN_WALL", finalUrl };
     return { kind: "UNREADABLE", signal: "NO_POSTING", finalUrl };

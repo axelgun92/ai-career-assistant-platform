@@ -13,6 +13,22 @@ import { jsonLdPage, linkedInDecoys, linkedInLoggedInPage, runExtractor } from "
 const linkedInJob = (id: string) => `https://www.linkedin.com/jobs/view/${id}/?refId=abc&trackingId=xyz`;
 
 describe("the extension's page reader", () => {
+  // Ogury (Welcome to the Jungle, November 4, 2026 acceptance): the page's
+  // JobPosting gives the city again as its region, which was read as
+  // "Denver, Denver, US".
+  it("states a location part once when the page repeats it, and keeps distinct parts", () => {
+    const place = (address: Record<string, unknown>) =>
+      runExtractor(
+        jsonLdPage({ title: "Customer Success Manager", company: "Ogury", descriptionHtml: "<p>Own onboarding and renewals for a portfolio of customers.</p>", extra: { jobLocation: { "@type": "Place", address } } }),
+        "https://www.welcometothejungle.com/en/companies/ogury/jobs/customer-success-manager",
+      ).posting?.location;
+    expect(place({ addressLocality: "Denver", addressRegion: "Denver", addressCountry: "US" })).toBe("Denver, US");
+    expect(place({ addressLocality: "Denver", addressRegion: "denver", addressCountry: { name: "US" } })).toBe("Denver, US");
+    expect(place({ addressLocality: "Austin", addressRegion: "TX", addressCountry: "US" })).toBe("Austin, TX, US");
+    expect(place({ addressRegion: "New York", addressCountry: "US" })).toBe("New York, US");
+    expect(place({ addressLocality: "Paris", addressCountry: "France" })).toBe("Paris, France");
+  });
+
   it("is one self-contained function with no arguments and no access to extension storage, cookies or the network", () => {
     const source = extractJobPosting.toString();
     expect(extractJobPosting.length).toBe(0);

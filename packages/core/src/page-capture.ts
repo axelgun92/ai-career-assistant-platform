@@ -182,7 +182,10 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     tabAcquisition: {
       hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
       loadTimeoutMs: 30_000,
-      rereadDelaysMs: [2_000, 5_000],
+      // Re-reads of the same document while the page has not rendered its
+      // body yet (November 5, 2026: a background tab may render after its
+      // load completes); the last one is still inside the 12 s spacing.
+      rereadDelaysMs: [2_000, 5_000, 10_000],
     },
     testOnly: false,
   },

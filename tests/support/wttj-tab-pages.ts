@@ -80,6 +80,10 @@ export interface ServedPage {
   // The posting appears only after this many re-reads (a page still
   // rendering).
   postingAfterReads?: number;
+  // The page's own document before it renders its body (its structured data
+  // only), served for this many reads before `html`.
+  earlyHtml?: string;
+  renderedAfterReads?: number;
 }
 
 export function runProbe(html: string, url: string, status: number | null): TabProbe {
@@ -113,7 +117,7 @@ export function fakeTabEnvironment(input: {
     probes: [] as Array<{ tabId: number; at: number }>,
     reads: [] as Array<{ tabId: number; at: number }>,
     starts: [] as string[],
-    details: [] as Array<{ itemId: string; pageUrl: string; title: string; remainingItemIds: string[] }>,
+    details: [] as Array<{ itemId: string; pageUrl: string; title: string; remainingItemIds: string[]; capture: Parameters<Api["pageCaptureTabDetails"]>[1]["capture"] }>,
     results: [] as Array<{ itemId: string; result: string; signal: string | null; finalUrl: string | null; remainingItemIds: string[] }>,
     stops: [] as Array<{ site: string; itemIds: string[]; reason: string }>,
     keepAlive: [] as boolean[],
@@ -132,7 +136,7 @@ export function fakeTabEnvironment(input: {
       return { ok: true, status: 200, body };
     },
     pageCaptureTabDetails: async (itemId, body) => {
-      log.details.push({ itemId, pageUrl: body.capture.pageUrl, title: body.capture.fields.title, remainingItemIds: body.remainingItemIds });
+      log.details.push({ itemId, pageUrl: body.capture.pageUrl, title: body.capture.fields.title, remainingItemIds: body.remainingItemIds, capture: body.capture });
       return report(itemId, "INGESTED", { opportunityId: `opportunity-${itemId}` });
     },
     pageCaptureTabResult: async (itemId, body) => {
@@ -191,7 +195,12 @@ export function fakeTabEnvironment(input: {
         const tab = tabs.get(tabId)!;
         log.reads.push({ tabId, at: clock });
         tab.reads += 1;
-        const html = tab.page.postingAfterReads && tab.reads <= tab.page.postingAfterReads ? "<html><body><main><p>Loading…</p></main></body></html>" : tab.page.html;
+        const html =
+          tab.page.postingAfterReads && tab.reads <= tab.page.postingAfterReads
+            ? "<html><body><main><p>Loading…</p></main></body></html>"
+            : tab.page.earlyHtml && tab.reads <= (tab.page.renderedAfterReads ?? Infinity)
+              ? tab.page.earlyHtml
+              : tab.page.html;
         return readJobPage(new JSDOM(html, { url: tab.page.finalUrl ?? tab.url, runScripts: "outside-only" }).window.document);
       },
     },
@@ -239,5 +248,5 @@ export const wttjRunSettings = {
   hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
   minIntervalMs: 12_000,
   loadTimeoutMs: 30_000,
-  rereadDelaysMs: [2_000, 5_000],
+  rereadDelaysMs: [2_000, 5_000, 10_000],
 };

@@ -348,6 +348,35 @@ describe("automatic detail acquisition", () => {
     expect(lastRepository.markFailed).toHaveBeenCalledWith("b2", expect.objectContaining({ status: "AWAITING_DETAILS", reason: "UNREADABLE" }));
   });
 
+  it("keeps a failure to its own job: the jobs after an unreadable or removed one are still read and ingested, once each", async () => {
+    const items = [item("a1"), item("b2"), item("c3")];
+    const { acquisition, repository, navigated, ingest } = acquisitionSetup({
+      items,
+      pages: {
+        "https://jobs.e2e.invalid/jobs/a1": { status: 200, html: "<html><body><p>hi</p></body></html>" },
+        "https://jobs.e2e.invalid/jobs/b2": { status: 410, html: "<html></html>" },
+        "https://jobs.e2e.invalid/jobs/c3": { status: 200, html: testSiteJobPage({ id: "c3" }) },
+      },
+    });
+    const result = await acquisition.runOnce();
+    expect(navigated).toEqual(items.map((entry) => entry.sourceUrl));
+    expect(result).toMatchObject({ claimed: 3, ingested: 1, unavailable: 1, stopped: null });
+    expect(ingest).toHaveBeenCalledTimes(1);
+    expect(repository.markIngested).toHaveBeenCalledTimes(1);
+    expect(repository.deferSite).not.toHaveBeenCalled();
+  });
+
+  it("resumes on its own when a site's wait is over: the jobs left queued are read with no second action", async () => {
+    const { acquisition, repository, navigated, ingest } = acquisitionSetup();
+    repository.siteStoppedUntil.mockResolvedValueOnce(new Date(now.getTime() + 3_600_000) as never);
+    expect(await acquisition.runOnce()).toBeNull();
+    expect(navigated).toEqual([]);
+    // The next worker pass, after the wait (the repository answers no stop
+    // once its time has passed): the same queued jobs are read.
+    expect(await acquisition.runOnce()).toMatchObject({ claimed: 2, ingested: 2, stopped: null });
+    expect(ingest).toHaveBeenCalledTimes(2);
+  });
+
   it("fetches nothing for a site without verified detail reading, or when no browser is configured", async () => {
     const disabled = acquisitionSetup({ detailSites: [] });
     expect(await disabled.acquisition.runOnce()).toBeNull();

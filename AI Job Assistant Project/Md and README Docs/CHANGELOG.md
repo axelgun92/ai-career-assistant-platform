@@ -10,6 +10,14 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
 
+### Workstream B — Capture Correctness (November 5, 2026; implemented and verified offline from E1/E2/E3 evidence; approved and committed; live confirmation pending)
+
+- **WTTJ descriptions complete:** the reader adds the posting's own rendered blocks after its structured description ("We're looking for", "How we hire"), or the structured data's qualifications when the page has not rendered. Generic, never doubled.
+- **Batch background tabs** wait for the page to render (re-reads +2 s, +5 s, +10 s) before taking a structured-data-only read, so Apply links and header tags are captured.
+- **WTTJ header remote tags** normalized: "No remote" → On-site, "A few days home" → Hybrid, "Fully-remote" → Remote.
+- **LinkedIn friction:** only a sign-in/checkpoint address, a shown challenge, or a shown sign-in prompt with no loaded card behind it count. A shown sign-in modal over loaded cards is read through and reported (Decision 2). The hidden reCAPTCHA badge (the cause of the false FRICTION), hidden sign-in dialogs, the scroll lock and the app promotion never stop a read. Nothing is dismissed, clicked or bypassed.
+- **Real-evidence regression fixtures** for all 20 E1 records, 9 E2 pages and 3 E3 states.
+
 ### Salary Policy v4 (November 5, 2026; implemented, verified offline and approved)
 
 - **U.S. review band (D-P1):** a U.S.-residence minimum of $55,000–$59,999 is Review / Needs Review, not Reject; below $55,000 is still rejected.

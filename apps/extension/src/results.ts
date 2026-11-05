@@ -37,6 +37,10 @@ export interface ResultCardsReading {
   cards: ReadResultCard[];
   counts: { loaded: number; skippedUnloaded: number; overCap: number };
   problem: "FRICTION" | "NO_CARDS" | null;
+  // A sign-in prompt the page shows over results that are still loaded and
+  // readable: the cards are read, the prompt is left as it is (never
+  // dismissed or used), and the user is told it is there.
+  notice?: "SIGN_IN_PROMPT_SHOWN" | null;
 }
 
 export function readResultCards(input: ResultCardReaderInput): ResultCardsReading {
@@ -56,12 +60,51 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
     problem,
   });
 
-  // A sign-in wall, checkpoint or challenge in place of the results: read
-  // nothing.
+  // A sign-in wall, checkpoint or shown challenge in place of the results:
+  // read nothing. A sign-in prompt shown over results that are still loaded
+  // does not stop the read: the loaded cards are read and the prompt is left
+  // untouched; only a prompt with no readable card behind it is FRICTION.
+  // Only what the page shows counts (November 5, 2026 evidence, LinkedIn
+  // logged out): the invisible reCAPTCHA badge (.grecaptcha-badge,
+  // display:none, on every state of the page) and the hidden Apply/Save
+  // sign-in modals are always in the page, and never stop a read; a
+  // "LinkedIn is better on the app" promotion is not a sign-in prompt.
   if (/\/(authwall|login|signup|checkpoint|challenge|uas\/login|captcha)(\/|\?|$)/i.test(location.pathname)) return none("FRICTION");
-  if (document.querySelector('iframe[src*="captcha" i], iframe[src*="challenge" i], [id*="captcha" i], [class*="captcha" i], form[action*="checkpoint" i]')) {
-    return none("FRICTION");
-  }
+  // With a layout engine (Chrome), an element with no box is not shown;
+  // without one, only the style rules are checked.
+  const hasLayout = document.documentElement.getClientRects().length > 0;
+  const shown = (element: Element): boolean => {
+    if (element.closest("[hidden], [aria-hidden=true], [inert]")) return false;
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+    }
+    if (!hasLayout) return true;
+    const box = element.getBoundingClientRect();
+    return box.width > 0 && box.height > 0;
+  };
+  const challenge = [...document.querySelectorAll('iframe[src*="captcha" i], iframe[src*="challenge" i], [id*="captcha" i], [class*="captcha" i], form[action*="checkpoint" i]')].some(
+    (element) => !element.closest(".grecaptcha-badge") && shown(element),
+  );
+  if (challenge) return none("FRICTION");
+  // A shown dialog or modal of a real size whose own shown controls ask the
+  // user to sign in or join ("Sign in to view more jobs": Continue with
+  // Google, Sign in with Email, Join now), or that shows a password field.
+  const signInWords = /^(?:sign in|log in|login|join now|join linkedin|continue with google|continue with apple|sign in with (?:email|google|apple)|sign in to (?:view|see|continue)\b.*)$/i;
+  // A page-wide wrapper (the body, or anything holding the page's main
+  // content, such as a "modal-open" class) is never the prompt itself.
+  const signInPrompts = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], [class*="modal" i]')].filter((dialog) => {
+    if (dialog === document.body || dialog === document.documentElement || dialog.querySelector("main, [role=main]")) return false;
+    if (!shown(dialog)) return false;
+    if (hasLayout) {
+      const box = dialog.getBoundingClientRect();
+      if (box.width < 200 || box.height < 150) return false;
+    }
+    if ([...dialog.querySelectorAll('input[type="password" i]')].some(shown)) return true;
+    return [...dialog.querySelectorAll("button, a, [role=button], h1, h2, h3")].some(
+      (control) => shown(control) && signInWords.test((control.textContent ?? "").replace(/\s+/g, " ").trim()),
+    );
+  });
 
   const jobLink = new RegExp(input.jobLink, "i");
   const jobIdPattern = input.jobIdPattern ? new RegExp(input.jobIdPattern, "i") : null;
@@ -88,12 +131,15 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
   for (const heading of [...document.querySelectorAll("h1, h2, h3, h4, h5, h6, [role=heading]")]) {
     if (relatedHeading.test(clean(heading.textContent, 200) ?? "") && heading.parentElement) relatedSections.push(heading.parentElement);
   }
+  // Nothing inside a shown sign-in prompt is a result card.
   const isExcluded = (element: Element) =>
-    Boolean(element.closest(excluded)) || relatedSections.some((section) => section.contains(element));
+    Boolean(element.closest(excluded)) ||
+    relatedSections.some((section) => section.contains(element)) ||
+    signInPrompts.some((prompt) => prompt.contains(element));
 
   // Rendering: with a layout engine (Chrome), a card with no box is not shown.
-  // Without one (no element has a box), only the style rules are checked.
-  const hasLayout = document.documentElement.getClientRects().length > 0;
+  // Without one (no element has a box), only the style rules are checked
+  // (hasLayout, above).
   const isRendered = (element: Element) => {
     for (let node: Element | null = element; node; node = node.parentElement) {
       const style = getComputedStyle(node);
@@ -221,7 +267,9 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
   const maxCards = Math.max(1, Math.min(25, Math.floor(input.maxCards)));
   const cards = found.slice(0, maxCards).map((item) => item.read);
   if (!cards.length) {
-    const empty = none("NO_CARDS");
+    // A sign-in prompt with no readable card behind it stands in for the
+    // results: that is the friction to report.
+    const empty = none(signInPrompts.length ? "FRICTION" : "NO_CARDS");
     empty.counts.skippedUnloaded = skippedUnloaded;
     return empty;
   }
@@ -231,5 +279,6 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
     cards,
     counts: { loaded: found.length, skippedUnloaded, overCap: Math.max(0, found.length - cards.length) },
     problem: null,
+    notice: signInPrompts.length ? "SIGN_IN_PROMPT_SHOWN" : null,
   };
 }

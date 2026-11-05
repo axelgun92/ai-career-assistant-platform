@@ -1892,3 +1892,55 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The salary thresholds, the FX table, and residency selecting the policy.
+
+### Handoff: Workstream B — Capture Correctness from E1/E2/E3 (Claude; shared-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, live round); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `d88a83d`; approved by Alex (Decisions 1–2) and committed to `integration/final-evaluator-product`. No production merge.
+
+#### Completed
+
+- `extract.ts`:
+  - `postingSections` adds the rendered posting blocks after the structured description (heading allowlist; company, workplace and other-job blocks end it), with a JSON-LD `qualifications`/`responsibilities`/`skills`/`education` fallback;
+  - a repeated location part is stated once.
+- `tab-acquisition.ts`:
+  - a posting read with no page context is held while re-reads remain (registry: re-reads +2/+5/+10 s);
+  - the job-page check counts only shown challenge markup.
+- `results.ts`: a sign-in/checkpoint address or a shown challenge (never `.grecaptcha-badge`) is FRICTION. A shown sign-in modal (shown sign-in controls or password field) is FRICTION only when no loaded card can be read; over readable cards, the cards are read, links inside the modal are excluded, and the reading carries `notice: "SIGN_IN_PROMPT_SHOWN"` (Decision 2). Hidden markup never counts.
+- `job-text-facts.ts`:
+  - page-metadata remote tags;
+  - `#LI-` workplace tags;
+  - in-person days;
+  - remote-first with optional offices;
+  - "Work from anywhere" lines;
+  - explicit seniority statements;
+  - time-zone clauses in run-on text.
+- Opportunity page: a note when the stated closing date precedes the posting date.
+
+#### Current Contract / Assumptions
+
+- Mode B is unchanged: one Save of up to 25 loaded jobs, then automatic per-job reading; nothing is clicked or dismissed.
+- Captures stay additive. The capture schema is unchanged.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Workstream B).
+
+#### Known Issues / Blockers
+
+- The central LinkedIn sign-in modal and the app promotion are not in the E3 markup (the exporter's 40-element cap); their handling needs the live round. E3 does not prove full job-detail retrieval while the modal is shown (server-side fresh logged-out read; live only).
+- Background-tab render timing in real Chrome is verified only by the fake orchestrator.
+
+#### Next Task
+
+- Alex: the single live acceptance round (full integrated regression passed: E2E 59/59), including the real-Chrome LinkedIn checks with the central sign-in modal shown.
+
+#### Do Not Change Without Coordination
+
+- The friction contract (fail closed on a sign-in wall, a shown challenge or a prompt with no readable cards; a prompt over loaded cards is read through and reported; never dismiss); the capture identity; `PageCaptureSession` semantics.

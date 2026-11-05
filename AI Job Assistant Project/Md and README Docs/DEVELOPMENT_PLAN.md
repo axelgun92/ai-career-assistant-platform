@@ -236,7 +236,7 @@ Current sequence (updated November 4, 2026):
      - Workstreams A (diagnostic) and C–E are committed (`6795fe2`): triage at single-job save, the side panel with Single Job / Batch Capture, capture history, Captured Jobs, Setup & Connection.
      - The pre-acceptance round is committed (`39757c1`): the "Pre-Evaluation Review" rename, overlapping and cross-method captures, and the triage policy mapping.
      - Salary policy v4 (Alex's approved D-P1 and D-P2) is implemented, verified and approved. No new deterministic triage rule for role titles, working hours or travel (on hold / not implemented by Alex's decision); explicit working-hours text must be preserved through capture and normalization.
-     - Next: Workstream B (WTTJ description completeness, Apply links, normalization, LinkedIn friction) from Alex's E1–E3 evidence, with real-markup regression fixtures.
+     - Workstream B (WTTJ description completeness, Apply links, normalization, LinkedIn friction) is implemented and verified offline from Alex's E1–E3 evidence, with real-markup regression fixtures; approved and committed with Decision 2 (a shown LinkedIn sign-in modal over loaded cards is read through, never dismissed). The full integrated regression (E2E 59/59) passed. Next: the pre-acceptance report, then the single live acceptance round.
      - Then a live check of the side panel in Alex's Chrome, and the WTTJ and LinkedIn acceptance reruns, each separately authorized.
 6. Then: the final whole-product regression gate, the final evaluator live acceptance (D8, separately authorized), and the next formal PRD/TDD versions covering triage and the extension together, then the freeze.
 

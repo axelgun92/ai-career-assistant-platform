@@ -52,12 +52,13 @@ describe("background-tab detail reading (P2)", () => {
     expect(run.log.keepAlive).toEqual([true, false]);
   });
 
-  it("re-reads the same document at +2 s and +5 s while no posting is found, without reloading", async () => {
+  it("re-reads the same document at +2 s, +5 s and +10 s while no posting is found, without reloading", async () => {
     const run = setup((url) => ({ ...jobPage(url), postingAfterReads: 2 }));
     await run.start(1);
     expect(run.log.opened).toHaveLength(1);
     const reads = run.log.reads.map((read) => read.at - run.log.reads[0]!.at);
     expect(reads).toEqual([0, 2_000, 5_000]);
+    // A posting found at the second re-read: no further read.
     expect(run.log.details).toHaveLength(1);
   });
 
@@ -65,7 +66,7 @@ describe("background-tab detail reading (P2)", () => {
     const run = setup((url) => (url === urlOf(1) ? { status: 200, html: "<html><body><main><p>Nothing here.</p></main></body></html>" } : jobPage(url)));
     const state = await run.start(2);
     expect(run.log.results).toEqual([{ itemId: itemIdOf(1), result: "UNREADABLE", signal: "NO_POSTING", finalUrl: urlOf(1), remainingItemIds: [itemIdOf(2)] }]);
-    expect(run.log.reads.filter((read) => read.tabId === run.log.opened[0]!.tabId)).toHaveLength(3);
+    expect(run.log.reads.filter((read) => read.tabId === run.log.opened[0]!.tabId)).toHaveLength(4);
     expect(run.log.details.map((detail) => detail.pageUrl)).toEqual([urlOf(2)]);
     expect(state.finished?.reason).toBe("COMPLETED");
   });

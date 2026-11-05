@@ -81,6 +81,12 @@ Supported results page (Alex's Chrome)
   - Single-job saves are triaged at save (triage only, with an active profile; otherwise reported not triaged).
   - The dashboard lifecycle view "To triage" is now **Pre-Evaluation Review**, and a **Needs Review before evaluation** count links to the triage queue.
   - Overlapping captures: a later batch reports jobs already added by an earlier capture as already saved, and marks them in that capture. Both captures stay intact. A job saved both as a Single Job and from a results page is one job and one row.
+  - Capture correctness from the November 4 acceptance evidence (offline; approved and committed), confirmed against real pages:
+    - WTTJ descriptions keep their requirements and hiring-process sections;
+    - batch background tabs wait for the rendered page, so Apply links and header tags are captured;
+    - WTTJ remote tags are normalized;
+    - the LinkedIn false FRICTION (a hidden reCAPTCHA badge) is fixed; a shown sign-in modal over loaded cards no longer stops the read (the cards are read, the modal is left untouched and reported), and only a sign-in wall, a shown challenge or a prompt with no readable cards is FRICTION.
+    - Live confirmation is still required.
   - Capture-correctness fixes from the November 4–5 acceptance (WTTJ descriptions and Apply links, normalization, LinkedIn friction) wait for Alex's E1–E3 evidence.
 - **Safety:** each read is open-only, sequential and paced (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops the site for at least a day, with no retry or workaround. No configured retrieval source is created. Analytics (Features 13 and 15–18) see batch jobs exactly as Mode A captures. The evaluator and the triage are unchanged; Mode B only hands jobs to the existing request.
 - **Site status (November 4, 2026):** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded.

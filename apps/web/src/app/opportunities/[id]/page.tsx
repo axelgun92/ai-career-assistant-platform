@@ -182,6 +182,13 @@ export default async function OpportunityPage({
   const postingDate = postedAge && detail.opportunity.postingDate
     ? `About ${display(detail.opportunity.postingDate)} (stated as "${postedAge.sourceText}")`
     : detail.opportunity.postingDate;
+  // Both dates are kept as the posting states them; a closing date before
+  // the posting date (a posting that restates an old deadline) is shown with
+  // a note, never corrected.
+  const closingDate =
+    detail.opportunity.closingDate && detail.opportunity.postingDate && new Date(detail.opportunity.closingDate) < new Date(detail.opportunity.postingDate)
+      ? `${display(detail.opportunity.closingDate)} (as stated; earlier than the posting date, so the posting may restate a past deadline)`
+      : detail.opportunity.closingDate;
   const normalizedFields = [
     ["Lifecycle", formatLifecycle(detail.opportunity.status)],
     ["Domain", detail.opportunity.domain],
@@ -190,7 +197,7 @@ export default async function OpportunityPage({
     ["Location", detail.opportunity.location],
     ["Salary", formatSalary(detail.opportunity)],
     ["Posting date", postingDate],
-    ["Closing date", detail.opportunity.closingDate],
+    ["Closing date", closingDate],
     ["Work arrangement", detail.opportunity.remoteStatus || detail.opportunity.workArrangements.length ? formatWorkArrangements(detail.opportunity) : null],
     ["Work authorization", formatWorkAuthorization(detail.opportunity, geographyName)],
     // Where candidates must live, a separate fact from work authorization:

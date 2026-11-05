@@ -222,6 +222,11 @@ export function extractJobPosting(): PageExtraction {
   // 1. schema.org JobPosting (JSON-LD). Only the posting's own fields are
   //    read from it.
   let directApply = false;
+  // The chosen structured posting's other text parts (schema.org
+  // qualifications, responsibilities, skills, education), which some boards
+  // publish apart from its description (Welcome to the Jungle: the
+  // description is only "You'll be working on").
+  let structuredParts: Array<{ label: string; text: string }> = [];
   const structured = (): ExtractedPosting | null => {
     const postings: Record<string, unknown>[] = [];
     const visit = (node: unknown, depth: number) => {
@@ -267,7 +272,12 @@ export function extractJobPosting(): PageExtraction {
         if (!address || typeof address !== "object") return [];
         const parts = address as Record<string, unknown>;
         const country = parts.addressCountry && typeof parts.addressCountry === "object" ? (parts.addressCountry as Record<string, unknown>).name : parts.addressCountry;
-        const name = [parts.addressLocality, parts.addressRegion, country].map((part) => line(part, limits.short)).filter(Boolean).join(", ");
+        // A part repeating the one before it ("Denver, Denver, US": the city
+        // given again as the region) is stated once.
+        const name = [parts.addressLocality, parts.addressRegion, country]
+          .map((part) => line(part, limits.short))
+          .filter((part, index, all): part is string => Boolean(part) && (index === 0 || part!.toLowerCase() !== (all[index - 1] ?? "").toLowerCase()))
+          .join(", ");
         return name ? [{ name, office: Boolean(line(parts.addressLocality, limits.short) || line(parts.streetAddress, limits.short)) }] : [];
       });
       const locationTypes = [posting.jobLocationType].flat().map((value) => String(value ?? "").toUpperCase());
@@ -302,7 +312,20 @@ export function extractJobPosting(): PageExtraction {
         result.salaryPeriod = unit === "YEAR" || unit === "MONTH" || unit === "WEEK" || unit === "DAY" || unit === "HOUR" ? unit : null;
       }
       if (linkedInJobId) result.siteJobId = linkedInJobId;
-      if (result.description) return result;
+      if (result.description) {
+        structuredParts = (
+          [
+            ["Responsibilities", posting.responsibilities],
+            ["Qualifications", posting.qualifications],
+            ["Skills", posting.skills],
+            ["Education", posting.educationRequirements],
+          ] as const
+        ).flatMap(([label, value]) => {
+          const text = typeof value === "string" ? htmlText(value) : null;
+          return text ? [{ label, text }] : [];
+        });
+        return result;
+      }
       partial ??= result;
     }
     return partial;
@@ -786,6 +809,76 @@ export function extractJobPosting(): PageExtraction {
     return null;
   };
 
+  // The posting's other sections the page shows beside its structured
+  // description, in page order: on a board that renders the description in
+  // one block and the posting's requirements or hiring process in the blocks
+  // after it ("We're looking for", "How we hire"). Only a block headed as a
+  // part of the posting is taken; the company, workplace and other-job
+  // blocks end the posting. When the page has not rendered them (yet), the
+  // structured data's own qualifications or responsibilities are taken
+  // instead. Text the description already holds is never added twice.
+  const postingSectionHeading =
+    /^(?:(?:what )?we(?:'|’)re looking for|who (?:you are|we(?:'|’)re looking for)|what (?:you(?:'|’)ll|you will) (?:bring|need)|what you bring|about you|your profile|(?:desired |the )?profile|(?:minimum |preferred |basic |required )?(?:qualifications|requirements)|(?:required |preferred )?skills(?: (?:and|&) experience)?|nice to haves?|bonus points|how we hire|(?:our )?(?:recruitment|recruiting|hiring|interview|application) process|next steps)\b/i;
+  const notPostingSection =
+    /^(?:the workplace|explore the company|key figures|you(?:'|’)ll be part of|our take|meet the team|about the company|the company|similar jobs|other jobs|more jobs)\b/i;
+  const renderedHolder = (structuredText: string): Element | null => {
+    if (!document.body) return null;
+    const squash = (value: string) => value.replace(/\s+/g, "");
+    const described = squash(structuredText);
+    if (described.length < 120) return null;
+    const opening = described.slice(0, 60);
+    const probes = structuredText.split("\n").map((item) => item.replace(/\s+/g, " ").trim()).filter((item) => item.length >= 25).slice(0, 3).map((item) => item.slice(0, 25));
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const nodeText = (node.textContent ?? "").replace(/\s+/g, " ");
+      if (!probes.some((probe) => nodeText.includes(probe))) continue;
+      for (let element = node.parentElement; element && element !== document.body; element = element.parentElement) {
+        if (element.closest("script, style, template, noscript, nav")) break;
+        const text = squash(element.textContent ?? "");
+        if (text.length < described.length * 0.9) continue;
+        const at = text.indexOf(opening);
+        return at >= 0 && at <= 40 ? element : null;
+      }
+    }
+    return null;
+  };
+  const postingSections = (description: string): string => {
+    if (linkedIn) return description;
+    const squash = (value: string) => value.replace(/\s+/g, "");
+    const added: string[] = [];
+    const covered = (text: string) => {
+      const probe = squash(text).slice(0, 60);
+      return !probe || squash([description, ...added].join("")).includes(probe);
+    };
+    const holder = renderedHolder(description);
+    if (holder) {
+      const size = (element: Element) => squash(element.textContent ?? "").length;
+      let block: Element = holder;
+      // The block that holds the description and at most its heading (it may
+      // be rendered across several elements: a list, then its "Benefits").
+      const whole = Math.max(size(holder), squash(description).length);
+      while (block.parentElement && block.parentElement !== document.body && size(block.parentElement) <= whole + 200) block = block.parentElement;
+      for (let sibling = block.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+        if (sibling.matches(`nav, [role=navigation], ${widgets}`)) continue;
+        const heading = sibling.matches("h1, h2, h3, h4, [role=heading]") ? sibling : sibling.querySelector("h1, h2, h3, h4, [role=heading]");
+        const title = heading ? headingText(heading) : "";
+        if (title && (notPostingSection.test(title) || otherJobsHeading.test(title))) break;
+        if (!title || title.length > 60 || !postingSectionHeading.test(title)) continue;
+        const text = textOf(sibling, `${sideParts}, ${widgets}`);
+        const body = text.split("\n").slice(1).join("\n");
+        if (!body.trim() || covered(body)) continue;
+        added.push(text);
+      }
+      if (added.length) notes.push("The page's other job sections were added to the description");
+    }
+    const fromData = structuredParts.filter((part) => !covered(part.text));
+    if (fromData.length) {
+      added.push(...fromData.map((part) => `${part.label}\n${part.text}`));
+      notes.push("The job data's own qualifications were added to the description");
+    }
+    return added.length ? (capDescription([description, ...added].join("\n\n")) ?? description) : description;
+  };
+
   const fromMain = mainContent();
   // Structured data whose own description is missing takes the page's main
   // content as its description (its other fields are still the posting's).
@@ -811,7 +904,7 @@ export function extractJobPosting(): PageExtraction {
     if (posting.description) {
       const fuller = fullerRendered(posting.description);
       if (fuller) notes.push("The page shows a longer description than its job data; the page's description was read");
-      return fuller ? { ...posting, description: fuller } : posting;
+      return { ...posting, description: postingSections(fuller ?? posting.description) };
     }
     if (linkedIn || !fromMain?.description) return null;
     return { ...posting, description: fromMain.description };
