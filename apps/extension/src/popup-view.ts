@@ -1,4 +1,4 @@
-import type { ApiResult, CaptureResponse } from "./api";
+import type { ApiResult, CaptureResponse, CaptureTriage } from "./api";
 import type { PageExtractor } from "./extract";
 
 // What the popup says. Every state comes from the server's persisted data;
@@ -20,6 +20,18 @@ export const extractorLabels: Record<PageExtractor, string> = {
 export function siteLine(site: { name: string; knownHost: boolean } | null): string {
   if (!site) return "";
   return site.knownHost ? site.name : `${site.name}: an unrecognised site, saved as a lower-priority source`;
+}
+
+// The saved job's pre-evaluator triage, in plain words. This is not the
+// evaluator's recommendation, and nothing was evaluated or spent.
+export function triageLine(triage: CaptureTriage | undefined): string | null {
+  if (!triage) return null;
+  if (triage.status === "NO_PROFILE") return "Pre-evaluator triage was not run: AI Job Assistant has no active profile yet. The job is saved.";
+  if (triage.status === "UNAVAILABLE") return "Pre-evaluator triage could not be run for this job. The job is saved.";
+  const why = triage.reasons.length ? ` ${triage.reasons[0]}` : "";
+  if (triage.outcome === "EVALUATE") return "Pre-evaluator triage: Evaluate. It passes your hard constraints; request evaluation when you want it.";
+  if (triage.outcome === "NEEDS_REVIEW") return `Pre-evaluator triage: Needs Review before evaluation.${why} Decide on the job's page in AI Job Assistant.`;
+  return `Pre-evaluator triage: Rejected before evaluation.${why}`;
 }
 
 export function captureMessage(capture: CaptureResponse): string {

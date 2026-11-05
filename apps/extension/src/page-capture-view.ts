@@ -64,6 +64,8 @@ export const cardLine = (card: ReadResultCard) =>
 
 export interface PageCaptureResponse {
   batchId: string;
+  // The capture-history session of this save (null when nothing was staged).
+  sessionId?: string | null;
   site: { key: string; name: string; automaticDetails: boolean };
   counts: { queued: number; seenAgain: number; alreadySaved: number; rejected: number };
   outcomes: Array<{ url: string; title: string; outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REJECTED"; reason: string | null; opportunityId: string | null }>;

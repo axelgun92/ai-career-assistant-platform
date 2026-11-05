@@ -1,7 +1,13 @@
-import { pageCaptureDetailMechanism, pageCaptureSiteByKey, pageCaptureSites, pageCaptureTabStaleMs } from "@ai-career/core";
-import { PrismaPageCaptureRepository, type PageCaptureItemStatusValue, type PageCaptureListRow } from "@ai-career/database";
+import { knownSiteByKey, pageCaptureDetailMechanism, pageCaptureSiteByKey, pageCaptureSites, pageCaptureTabStaleMs } from "@ai-career/core";
+import {
+  PrismaPageCaptureRepository,
+  type CapturedJobRow,
+  type PageCaptureItemStatusValue,
+  type PageCaptureListRow,
+  type PageCaptureSessionRow,
+} from "@ai-career/database";
 import { z } from "zod";
-import type { PageCaptureRowView } from "@/components/extension/page-capture-list";
+import { statusText, type PageCaptureRowView } from "../components/extension/page-capture-labels";
 import { extensionError, extensionJson, readJsonBody, requireSameOrigin } from "./extension-auth";
 
 // The progress page's reads and Alex's actions on staged jobs (Mode B).
@@ -43,6 +49,143 @@ export function rowView(row: PageCaptureListRow): PageCaptureRowView {
     // A job read in background tabs is read again only by a new save of a
     // results page that shows it, never by Retry.
     retryable: !isTabSite(row.site),
+  };
+}
+
+// A site's display name: a results-page site, a known site, else its host.
+export function capturedSiteName(site: string, host: string | null): string {
+  return pageCaptureSiteByKey(site)?.name ?? knownSiteByKey(site)?.name ?? (host || site || "Unknown site");
+}
+
+export function capturedJobView(row: CapturedJobRow): PageCaptureRowView {
+  return {
+    id: row.id,
+    site: row.site,
+    siteName: capturedSiteName(row.site, row.host),
+    title: row.title,
+    company: row.company,
+    location: row.location,
+    postedText: row.postedText,
+    sourceUrl: row.sourceUrl ?? "",
+    firstSeenAt: new Date(row.firstSeenAt).toISOString(),
+    status: row.status,
+    lastReason: row.lastReason,
+    resolvedOpportunityId: row.resolvedOpportunityId,
+    opportunityTitle: row.opportunityTitle,
+    triageOutcome: row.triageOutcome,
+    triageManualDecision: row.triageManualDecision,
+    evaluationStatus: row.evaluationStatus,
+    recommendation: row.recommendation,
+    handoffOutcome: row.handoffOutcome,
+    retryable: row.method === "batch" ? !isTabSite(row.site) : false,
+    method: row.method,
+    capturedAt: new Date(row.capturedAt).toISOString(),
+  };
+}
+
+export type CaptureMethodFilter = "all" | "batch" | "single";
+
+export interface CaptureSessionView {
+  id: string;
+  site: string;
+  siteName: string;
+  pageUrl: string;
+  pageTitle: string | null;
+  receivedAt: string;
+  jobs: number;
+  pending: number;
+  added: number;
+  awaiting: number;
+  unavailable: number;
+  dismissed: number;
+  // Still being read (jobs queued or being read now).
+  inProgress: boolean;
+}
+
+export function sessionView(row: PageCaptureSessionRow): CaptureSessionView {
+  return {
+    id: row.id,
+    site: row.site,
+    siteName: capturedSiteName(row.site, null),
+    pageUrl: row.pageUrl,
+    pageTitle: row.pageTitle,
+    receivedAt: new Date(row.receivedAt).toISOString(),
+    jobs: row.jobs,
+    pending: row.pending,
+    added: row.added,
+    awaiting: row.awaiting,
+    unavailable: row.unavailable,
+    dismissed: row.dismissed,
+    inProgress: row.pending > 0,
+  };
+}
+
+export const captureSessionsPageSize = 10;
+
+// Captured Jobs: every job the extension captured (single-job and results
+// pages), with optional method, status, site and session filters, and the
+// capture history beside it.
+export async function capturedJobs(
+  input: { method: CaptureMethodFilter; filter: PageCaptureFilter; site: string | null; sessionId: string | null; page: number },
+  repository = new PrismaPageCaptureRepository(),
+  now: () => Date = () => new Date(),
+) {
+  await repository.expireTabItems(tabSiteKeys, new Date(now().getTime() - pageCaptureTabStaleMs));
+  const statuses = input.filter === "all" ? null : [...pageCaptureFilters[input.filter]];
+  const session = input.sessionId ? await repository.findSession(input.sessionId) : null;
+  const [list, sessions] = await Promise.all([
+    repository.capturedJobs({
+      method: session ? "batch" : input.method,
+      statuses,
+      site: input.site,
+      itemIds: session ? session.itemIds : null,
+      page: input.page,
+      pageSize: pageCapturePageSize,
+    }),
+    repository.listSessions({ site: null, page: 1, pageSize: captureSessionsPageSize }),
+  ]);
+  return {
+    rows: list.rows.map(capturedJobView),
+    total: list.total,
+    session: session
+      ? { id: session.id, site: session.site, siteName: capturedSiteName(session.site, null), pageUrl: session.pageUrl, pageTitle: session.pageTitle, receivedAt: session.receivedAt.toISOString() }
+      : null,
+    sessions: sessions.rows.map(sessionView),
+    sessionsTotal: sessions.total,
+  };
+}
+
+// For the extension's side panel: recent capture sessions, and one session's
+// jobs with each job's state in the app's own words.
+export async function extensionCaptureSessions(limit: number, repository = new PrismaPageCaptureRepository(), now: () => Date = () => new Date()) {
+  await repository.expireTabItems(tabSiteKeys, new Date(now().getTime() - pageCaptureTabStaleMs));
+  const sessions = await repository.listSessions({ site: null, page: 1, pageSize: Math.max(1, Math.min(25, limit)) });
+  return { sessions: sessions.rows.map(sessionView) };
+}
+
+export async function extensionCaptureSession(id: string, repository = new PrismaPageCaptureRepository(), now: () => Date = () => new Date()) {
+  await repository.expireTabItems(tabSiteKeys, new Date(now().getTime() - pageCaptureTabStaleMs));
+  const session = await repository.findSession(id);
+  if (!session) return null;
+  const [list, summary] = await Promise.all([
+    repository.capturedJobs({ method: "batch", statuses: null, site: null, itemIds: session.itemIds, page: 1, pageSize: 100 }),
+    repository.listSessions({ site: null, page: 1, pageSize: 1, id: session.id }),
+  ]);
+  const own = summary.rows[0];
+  return {
+    session: own ? sessionView(own) : null,
+    jobs: list.rows.map((row) => {
+      const view = capturedJobView(row);
+      return {
+        id: view.id,
+        title: view.opportunityTitle ?? view.title,
+        company: view.company,
+        status: view.status,
+        statusText: statusText(view),
+        opportunityPath: view.resolvedOpportunityId ? `/opportunities/${view.resolvedOpportunityId}` : null,
+        sourceUrl: view.sourceUrl || null,
+      };
+    }),
   };
 }
 

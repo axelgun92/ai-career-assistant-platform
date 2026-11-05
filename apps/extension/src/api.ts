@@ -43,6 +43,30 @@ export interface ApiClient {
     body: { result: PageCaptureTabResult; signal: PageCaptureTabSignal | null; finalUrl: string | null; remainingItemIds: string[] },
   ): Promise<ApiResult<TabReportResponse>>;
   pageCaptureTabStop(body: { site: string; itemIds: string[]; reason: PageCaptureTabStop }): Promise<ApiResult<{ stopped: number }>>;
+  // Capture history (the side panel's Current and Previous captures).
+  captureSessions(limit: number): Promise<ApiResult<{ sessions: CaptureSessionSummary[] }>>;
+  captureSession(id: string): Promise<ApiResult<CaptureSessionDetail>>;
+}
+
+export interface CaptureSessionSummary {
+  id: string;
+  site: string;
+  siteName: string;
+  pageUrl: string;
+  pageTitle: string | null;
+  receivedAt: string;
+  jobs: number;
+  pending: number;
+  added: number;
+  awaiting: number;
+  unavailable: number;
+  dismissed: number;
+  inProgress: boolean;
+}
+
+export interface CaptureSessionDetail {
+  session: CaptureSessionSummary | null;
+  jobs: Array<{ id: string; title: string; company: string | null; status: string; statusText: string; opportunityPath: string | null; sourceUrl: string | null }>;
 }
 
 export type TabStartResponse =
@@ -79,7 +103,14 @@ export interface CaptureResponse {
   probableDuplicate: boolean;
   outsideRoleFamilies: boolean;
   evaluation: EvaluationSummary | null;
+  // Pre-evaluator triage run at save (never an evaluation).
+  triage?: CaptureTriage;
 }
+
+export type CaptureTriage =
+  | { status: "ASSESSED"; outcome: "EVALUATE" | "NEEDS_REVIEW" | "REJECT"; reasons: string[] }
+  | { status: "NO_PROFILE" }
+  | { status: "UNAVAILABLE"; reason: string };
 
 export interface LookupResponse {
   found: boolean;
@@ -99,7 +130,10 @@ export interface EvaluationStatusResponse {
   recommendation: { decision: string; explanation?: string | null } | null;
 }
 
-export function createApiClient(settings: { backendUrl: string; credential: string }, fetcher: typeof fetch = fetch): ApiClient {
+export function createApiClient(
+  settings: { backendUrl: string; credential: string; extensionVersion?: string },
+  fetcher: typeof fetch = fetch,
+): ApiClient {
   const origin = normalizeBackendUrl(settings.backendUrl);
 
   async function call<T>(path: string, init: { method: "GET" | "POST"; body?: unknown } = { method: "GET" }): Promise<ApiResult<T>> {
@@ -112,6 +146,8 @@ export function createApiClient(settings: { backendUrl: string; credential: stri
         method: init.method,
         headers: {
           Authorization: `Bearer ${settings.credential}`,
+          // The extension's own version, shown on Setup & Connection.
+          ...(settings.extensionVersion ? { "X-Extension-Version": settings.extensionVersion } : {}),
           ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
         },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -146,5 +182,7 @@ export function createApiClient(settings: { backendUrl: string; credential: stri
     pageCaptureTabDetails: (id, body) => call(itemPath(id, "details"), { method: "POST", body }),
     pageCaptureTabResult: (id, body) => call(itemPath(id, "result"), { method: "POST", body }),
     pageCaptureTabStop: (body) => call(`${extensionApiPrefix}page-captures/stop`, { method: "POST", body }),
+    captureSessions: (limit) => call(`${extensionApiPrefix}page-captures/sessions?limit=${encodeURIComponent(String(limit))}`),
+    captureSession: (id) => call(`${extensionApiPrefix}page-captures/sessions/${encodeURIComponent(id)}`),
   };
 }

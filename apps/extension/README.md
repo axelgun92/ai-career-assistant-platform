@@ -2,10 +2,25 @@
 
 A Chrome Manifest V3 extension that saves the job posting you are viewing into your **local** AI Job Assistant, when you ask it to. It is a source-collection companion only. It has no evaluator, model calls, prompts, budget, recommendation logic or database of its own. Captured jobs go through Core's existing ingestion: normalization, deduplication, provenance and lifecycle.
 
+## The side panel and its two modes (November 5, 2026)
+
+The extension works in Chrome's **side panel**, which stays open while you browse. Click the AI Job Assistant button in the toolbar to open it. That click also lets it read the page shown. The extension asks for no broad host permission, so after you move to another page the panel says "click the AI Job Assistant button in the toolbar" until you click it once on that page.
+
+- **Single Job** reads one job posting: the review, edit and save steps below (Mode A). It is the mode on a job's own page. On a results page it never reads the whole list as one job; it tells you to open a job's page or use Batch Capture.
+- **Batch Capture** saves the jobs already loaded on a supported results page (Mode B, below) and shows their progress. It is the mode on a supported results page. It never shows the single-job Title, Company, Location and Description fields.
+- The **Single Job | Batch Capture** switch is always shown, and your choice stays as you move between pages.
+- **Captures:**
+  - Batch Capture lists the **current capture** (jobs still being read: **View current capture**), the latest finished one (**View results**) and **Previous captures**.
+  - Each capture opens in the panel with every job's current state and a link to the added opportunity.
+  - When you reopen the panel, a banner offers your latest capture straight away, so a running or finished capture never needs to be redone.
+  - **View Captured Jobs in AI Job Assistant** opens that capture, or all of them, in the app.
+- Closing the panel stops nothing: background-tab reading runs in the extension's service worker, and LinkedIn details are read by the app.
+- *(Before November 5, 2026, the extension used a toolbar popup that showed both modes together and always reopened at its first screen.)*
+
 ## What it does
 
-1. You open a job page in Chrome and click the extension's toolbar icon.
-2. The popup checks its pairing with AI Job Assistant and whether the page is already saved. Only the page's URL is sent for that check.
+1. You open a job page in Chrome and click the extension's toolbar button; the side panel opens in **Single Job**.
+2. The panel checks its pairing with AI Job Assistant and whether the page is already saved. Only the page's URL is sent for that check.
 3. **Read this page** reads that one page, once, and shows an editable preview of the title, company, location and description. You can correct any of them, and a field the page did not state is left empty (Unknown). Nothing is sent yet. On LinkedIn it reads only the job details.
 4. **Save to AI Job Assistant** sends the job's fields, naming any you corrected so their provenance shows they were edited by you. The popup reports the outcome:
    - saved;
@@ -18,6 +33,13 @@ A Chrome Manifest V3 extension that saves the job posting you are viewing into y
    - **Rejected before evaluation**: nothing was spent.
 
    Only a queued evaluation is followed. *(Added November 3, 2026, per the triage handoff's extension contract.)*
+
+   **Triage at save** (November 5, 2026): when AI Job Assistant has an active profile, every saved job immediately gets the deterministic pre-evaluator triage. That is triage only, with no evaluation, admission or spend. The panel shows it on its own line:
+   - **Evaluate**: request evaluation when you want it;
+   - **Needs Review before evaluation**, with the reason: decide on the job's page;
+   - **Rejected before evaluation**, with the reason.
+
+   With no active profile the job is still saved, and the panel says triage was not run because no profile is active; no outcome is invented.
 6. **Open in AI Job Assistant** opens the opportunity in the app.
 
 ## Save jobs on this page (Mode B: bounded results-page ingestion)
@@ -35,7 +57,10 @@ The steps above are Mode A, the single-job capture. It stays unchanged and optio
    - **Reject:** stops with no evaluator work.
 
    Mode B decides none of these and never calls the evaluator itself.
-7. **Open progress in AI Job Assistant** opens **Jobs from results pages** (`/extension/jobs`). It shows each job as Getting details, Added (with its triage or evaluation state and a link to the opportunity), Already in AI Job Assistant, Awaiting details, No longer available or Dismissed.
+7. **Open progress in AI Job Assistant** opens **Captured Jobs** (`/extension/jobs`; formerly "Jobs from results pages"). It shows each job as Getting details, Added (with its triage or evaluation state and a link to the opportunity), Already in AI Job Assistant, Awaiting details, No longer available or Dismissed.
+   - Single-job captures are listed there too, one row per job.
+   - **Capture history** lists every results-page save; each can be opened with its own jobs (`/extension/jobs?session=…`).
+   - A batch job saved while no profile is active shows "Added; not triaged yet: no active profile". It is triaged once a profile is active and evaluation is requested.
 8. **Awaiting details** is a per-job fallback only. It is used when a job's page could not be read: no browser configured, an unreadable page, repeated failures, or a site whose automatic details are not verified yet. Such a job is never an opportunity and never evaluable. It offers **Retry**, **Dismiss** (and **Restore**) and **Open job ↗**, where Mode A's **Read this page** stays available.
 
 **Supported sites.** Mode B's V1 sites are LinkedIn and Welcome to the Jungle / Otta. Wellfound is not a Mode B site.
@@ -73,18 +98,20 @@ For a site whose job pages AI Job Assistant cannot read itself (Welcome to the J
    - A page that is not the saved job stops the batch.
    - A job that is gone (404 or 410) is marked No longer available, and an unreadable page is Awaiting details; the next job is read.
    - If you close one of the extension's tabs, that job is interrupted and never reopened.
-5. **Progress and Stop.** While a run is active, the popup shows its progress and a **Stop reading details** button. The job being read finishes; nothing more opens. If the browser closes, the run ends and is not resumed at the next start. Its jobs show as interrupted on `/extension/jobs` after an hour. For these jobs `/extension/jobs` offers no **Retry**: save the results page that shows them again.
+5. **Progress and Stop.** While a run is active, the side panel's Batch Capture shows its progress and a **Stop reading details** button. The job being read finishes; nothing more opens. If the browser closes, the run ends and is not resumed at the next start. Its jobs show as interrupted on `/extension/jobs` after an hour. For these jobs `/extension/jobs` offers no **Retry**: save the results page that shows them again.
 
 ## Permissions
 
 - `activeTab`, so it can read the current tab only after you click the toolbar icon;
 - `scripting`, to run the one-off page reader;
-- `storage`, for its two settings, and session storage (cleared when the browser closes) for a background-tab run in progress;
+- `storage`, for its two settings, the latest capture's identifier (so the panel can offer it at once), and session storage (cleared when the browser closes) for a background-tab run in progress;
+- `sidePanel`, for the side panel (it gives no access to any page; the toolbar button that opens it is the per-page activeTab grant);
 - `alarms`, only to continue a background-tab run if Chrome stops the service worker mid-run;
 - host access to `http://127.0.0.1/*` and `http://localhost/*` only, to reach your local AI Job Assistant;
 - **optional** host access to `https://www.welcometothejungle.com/*` and `https://app.welcometothejungle.com/*`, asked only inside **Save selected jobs** on a Welcome to the Jungle results page, for the background-tab detail reading above.
 
-It has no content scripts and no `tabs`, `cookies`, `webRequest` or all-sites access. Its service worker:
+It has no content scripts and no `tabs`, `cookies`, `webRequest` or all-sites access. It has no popup: the toolbar button opens the side panel. Its service worker:
+- opens the side panel from the toolbar button and tells it that it may read the page shown;
 - on installation and every browser start, restricts the extension's storage to the extension's own pages;
 - during a background-tab run only, opens, reads and closes its own background tabs;
 - accepts messages from the extension's own popup only.
@@ -97,7 +124,14 @@ It has no content scripts and no `tabs`, `cookies`, `webRequest` or all-sites ac
 - **Where the extension keeps it:** in `chrome.storage.local`, never in synced storage, with the app's address. Storage is restricted to the extension's own pages with `chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })` (Chrome 102 and later; the extension requires Chrome 120), so a script running in a web page cannot read it. In Chromium 141, a page-injected script reads `chrome.storage.local` by default but is refused ("Access to storage is not allowed from this context") once the restriction is set, and the extension's E2E test checks the restriction. The single-job page reader receives no arguments, and the results-page reader receives only its site's reader settings (plain selectors and patterns, no credential). Neither touches storage, so the credential never enters a web page.
 - **What it's used for:** the credential is sent only in the `Authorization` header, and only to the configured local app's `/api/extension/*` routes (captures, page captures, status, lookup, evaluation request and evaluation status). It is never logged and never shown again.
 - **What it can't do:** it authenticates no other route of the app. The pairing-management routes refuse it.
-- **Revoking:** revoke a pairing on the Extension page and the next request from that browser gets 401. **Forget pairing** in the extension's options removes the credential from the browser.
+- **Revoking:** on **Setup & Connection** (`/extension`), **Unpair / Revoke Access** on one pairing asks you to confirm, naming that pairing; then the next request from that browser gets 401. Other pairings, jobs already captured and capture history are kept. **Forget pairing** in the extension's options removes the credential from the browser. *(Before November 5, 2026 the button read "Revoke…" on the Extension page.)*
+- **Setup & Connection** (`/extension`) is the extension's management page:
+  - **Pair New Extension**, with its steps;
+  - the paired browsers, each with when its extension last reached the app and the version it reported (the extension sends its version with each request);
+  - connection troubleshooting (this app's address, what each extension error means);
+  - installation and update steps for the unpacked build;
+  - the supported sites and modes, derived from the app's own registry and settings.
+  The other destination is **Captured Jobs** (`/extension/jobs`).
 - **What is never in the extension:** provider credentials (OpenAI, Terra, Luna) and app-wide secrets.
 
 ## Build and load

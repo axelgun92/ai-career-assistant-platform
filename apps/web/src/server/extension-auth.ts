@@ -22,7 +22,7 @@ export function generatePairingCredential(): { credential: string; tokenHash: st
 
 export interface ExtensionPairingStore {
   findByHash(tokenHash: string): Promise<(ExtensionPairingRecord & { tokenHash: string }) | null>;
-  markUsed(id: string, at: Date): Promise<void>;
+  markUsed(id: string, at: Date, extensionVersion?: string): Promise<void>;
 }
 
 export const extensionErrorCodes = {
@@ -85,7 +85,10 @@ export async function requirePairing(request: Request, store: ExtensionPairingSt
   if (!pairing || !timingSafeEqual(Buffer.from(pairing.tokenHash, "hex"), Buffer.from(presented, "hex")) || pairing.revokedAt) {
     return invalid();
   }
-  await store.markUsed(pairing.id, now());
+  // The extension's own version, when it states a plain dotted one.
+  const version = request.headers.get("x-extension-version")?.trim() ?? "";
+  if (/^\d{1,4}(?:\.\d{1,5}){0,3}$/.test(version)) await store.markUsed(pairing.id, now(), version);
+  else await store.markUsed(pairing.id, now());
   const { id, label, tokenHint, createdAt, lastUsedAt, revokedAt } = pairing;
   return { ok: true, pairing: { id, label, tokenHint, createdAt, lastUsedAt, revokedAt } };
 }

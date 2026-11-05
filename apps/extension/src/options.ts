@@ -24,7 +24,7 @@ async function render() {
 async function test() {
   const settings = await readSettings();
   if (!settings.credential) return setStatus("Save a pairing credential first.", true);
-  const result = await createApiClient({ backendUrl: settings.backendUrl, credential: settings.credential }).status();
+  const result = await createApiClient({ backendUrl: settings.backendUrl, credential: settings.credential, extensionVersion: chrome.runtime.getManifest().version }).status();
   if (result.ok) setStatus(`Connected to AI Job Assistant as "${result.body.pairing.label}".`);
   else setStatus(result.error, true);
 }

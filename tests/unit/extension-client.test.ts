@@ -273,7 +273,12 @@ describe("the extension package", () => {
     expect(manifest.manifest_version).toBe(3);
     // alarms: only the backstop that resumes a background-tab detail run
     // (Mode B, P2) if Chrome stops the service worker mid-run.
-    expect(manifest.permissions).toEqual(["activeTab", "alarms", "scripting", "storage"]);
+    // sidePanel: the extension's main view (November 5, 2026), opened from
+    // the toolbar button; it adds no access to any page.
+    expect(manifest.permissions).toEqual(["activeTab", "alarms", "scripting", "sidePanel", "storage"]);
+    expect(manifest.side_panel).toEqual({ default_path: "popup.html" });
+    // No popup: the toolbar button opens the panel and is the activeTab grant.
+    expect(manifest.action).not.toHaveProperty("default_popup");
     expect(manifest.host_permissions).toEqual(["http://127.0.0.1/*", "http://localhost/*"]);
     // Optional, requested inside "Save selected jobs" only: the Welcome to
     // the Jungle job pages the background-tab reading opens, nothing else (no
@@ -309,6 +314,9 @@ describe("the extension package", () => {
     expect(source).toContain("chrome.tabs.create({ url, active: false })");
     expect([...source.matchAll(/func: (\w+)/g)].map((match) => match[1])).toEqual(["probeJobPage", "extractJobPosting"]);
     expect(source).toContain("sender.id !== chrome.runtime.id || sender.tab");
+    // The toolbar button only opens the side panel and tells it about the page.
+    expect(source).toContain("chrome.action.onClicked.addListener");
+    expect(source).toContain("chrome.sidePanel.open({ windowId: tab.windowId })");
   });
 
   it("calls fetch only from its API client and loads no inline or remote scripts", () => {

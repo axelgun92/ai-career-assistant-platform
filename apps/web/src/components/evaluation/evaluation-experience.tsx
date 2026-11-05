@@ -294,7 +294,12 @@ export function EvaluationExperience({
             poller.current?.start();
           }}
         />
-      ) : null}
+      ) : (
+        <p className="field-help pre-evaluator-triage-pending">
+          Pre-evaluator triage has not run for this job yet. It runs, with an active profile, when the job is saved from the browser
+          extension or when you request evaluation.
+        </p>
+      )}
       <section className="evaluation-controls" aria-labelledby="evaluation-status-title">
         <div>
           <p className="eyebrow">Evaluation status</p>

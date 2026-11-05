@@ -155,6 +155,8 @@ afterEach(async () => {
   const items = await database.pageCaptureItem.findMany({ where: { externalId: { in: itemExternalIds } }, select: { opportunityId: true } });
   const opportunityIds = [...new Set([...items.map((item) => item.opportunityId).filter((id): id is string => Boolean(id)), ...cleanup.opportunityIds])];
   await database.pageCaptureItem.deleteMany({ where: { externalId: { in: itemExternalIds.splice(0) } } });
+  // Capture-history sessions left with none of their jobs (November 5, 2026).
+  await database.$executeRaw`DELETE FROM "PageCaptureSession" s WHERE NOT EXISTS (SELECT 1 FROM "PageCaptureItem" i WHERE i."id" = ANY(s."itemIds"))`;
   for (;;) {
     const leaves = await database.sourceRecord.findMany({ where: { opportunityId: { in: opportunityIds }, laterObservations: { none: {} } }, select: { id: true } });
     if (!leaves.length) break;

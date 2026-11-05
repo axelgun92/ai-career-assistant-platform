@@ -12,84 +12,10 @@ import { ExternalLink } from "@/components/external-link";
 // a job that needs review before evaluation are made on its opportunity
 // page, in the pre-evaluator triage panel; nothing is decided here.
 
-export interface PageCaptureRowView {
-  id: string;
-  site: string;
-  siteName: string;
-  title: string;
-  company: string | null;
-  location: string | null;
-  postedText: string | null;
-  sourceUrl: string;
-  firstSeenAt: string;
-  status: string;
-  lastReason: string | null;
-  resolvedOpportunityId: string | null;
-  opportunityTitle: string | null;
-  triageOutcome: string | null;
-  triageManualDecision: string | null;
-  evaluationStatus: string | null;
-  recommendation: string | null;
-  handoffOutcome: string | null;
-  // False for a job read in the extension's background tabs: it is read
-  // again by saving the results page again, not by Retry.
-  retryable?: boolean;
-}
+import { captureMethodLabels, saveAgainHint, statusText, type PageCaptureRowView } from "./page-capture-labels";
+import { formatDateTime } from "@/components/budget/budget-format";
 
-export const reasonLabels: Record<string, string> = {
-  NOT_SUPPORTED: "Automatic details are not available for this site yet",
-  NO_BROWSER: "No browser is configured for reading job details (RETRIEVAL_BROWSER_EXECUTABLE)",
-  UNREADABLE: "The job's page could not be read",
-  ACCESS_STOPPED: "The site refused or challenged the request; it will not be contacted again for at least a day",
-  RATE_LIMITED: "The site asked us to slow down; it will not be contacted again for at least a day",
-  FAILED_REPEATEDLY: "Reading the job's page failed repeatedly",
-  NOT_INGESTED: "The job could not be added",
-  INTERRUPTED: "Reading the job's page was interrupted (its tab was closed, or the browser or extension stopped)",
-  IDENTITY_MISMATCH: "The page that opened was not this job, so reading stopped for this batch",
-  BATCH_STOPPED: "Reading stopped for this batch before this job",
-  USER_STOPPED: "You stopped reading the details",
-  PERMISSION_MISSING: "The extension no longer has permission to read this site's job pages",
-};
-
-// For a job read in background tabs, how to read it again.
-export const saveAgainHint = "Save the results page that shows it again to read its details.";
-
-// The opportunity's state after it was added, from its stored triage and
-// evaluation. "Needs Review before evaluation" is the pre-evaluator triage
-// outcome, distinct from the evaluator's final Review recommendation.
-export function addedStateText(row: Pick<PageCaptureRowView, "triageOutcome" | "triageManualDecision" | "evaluationStatus" | "recommendation" | "handoffOutcome">): string {
-  if (row.recommendation) return `Evaluated: ${row.recommendation}`;
-  if (row.evaluationStatus === "PENDING") return "Queued for evaluation";
-  if (row.evaluationStatus === "RUNNING") return "Evaluation in progress";
-  if (row.evaluationStatus === "FAILED") return "Evaluation failed";
-  const triage = row.triageManualDecision ?? row.triageOutcome;
-  if (triage === "NEEDS_REVIEW") return "Needs Review before evaluation";
-  if (triage === "REJECT") return "Rejected before evaluation";
-  if (row.handoffOutcome === "DEFERRED") return "Waiting: AI budget";
-  if (row.handoffOutcome?.startsWith("FAILED:")) return "Added; the evaluation request was not accepted";
-  if (triage === "EVALUATE") return "Queued for evaluation";
-  return "Added";
-}
-
-export function statusText(row: PageCaptureRowView): string {
-  switch (row.status) {
-    case "QUEUED":
-    case "ACQUIRING":
-      return "Getting details";
-    case "INGESTED":
-      return addedStateText(row);
-    case "ALREADY_SAVED":
-      return "Already in AI Job Assistant";
-    case "AWAITING_DETAILS":
-      return `Awaiting details: ${reasonLabels[row.lastReason ?? ""] ?? "not read yet"}`;
-    case "UNAVAILABLE":
-      return "No longer available";
-    case "DISMISSED":
-      return "Dismissed";
-    default:
-      return row.status;
-  }
-}
+export { addedStateText, captureMethodLabels, reasonLabels, saveAgainHint, statusText, type PageCaptureRowView } from "./page-capture-labels";
 
 async function act(id: string, action: "retry" | "dismiss" | "restore"): Promise<string | null> {
   try {
@@ -157,6 +83,7 @@ export function PageCaptureTable({ rows }: { rows: PageCaptureRowView[] }) {
             <th scope="col">Location</th>
             <th scope="col">Posted</th>
             <th scope="col">Site</th>
+            {rows.some((row) => row.method) ? <th scope="col">Captured</th> : null}
             <th scope="col">Status</th>
             <th scope="col">
               <span className="visually-hidden">Actions</span>
@@ -168,13 +95,28 @@ export function PageCaptureTable({ rows }: { rows: PageCaptureRowView[] }) {
             <tr key={row.id}>
               <td>
                 {row.resolvedOpportunityId ? <Link href={`/opportunities/${row.resolvedOpportunityId}`}>{row.opportunityTitle ?? row.title}</Link> : row.title}
-                <br />
-                <ExternalLink href={row.sourceUrl}>Open job ↗</ExternalLink>
+                {row.sourceUrl ? (
+                  <>
+                    <br />
+                    <ExternalLink href={row.sourceUrl}>Open job ↗</ExternalLink>
+                  </>
+                ) : null}
               </td>
               <td>{row.company ?? "—"}</td>
               <td>{row.location ?? "—"}</td>
               <td>{row.postedText ?? "—"}</td>
               <td>{row.siteName}</td>
+              {rows.some((candidate) => candidate.method) ? (
+                <td>
+                  {row.method ? captureMethodLabels[row.method] : "—"}
+                  {row.capturedAt ? (
+                    <>
+                      <br />
+                      <span className="muted">{formatDateTime(row.capturedAt)}</span>
+                    </>
+                  ) : null}
+                </td>
+              ) : null}
               <td>{statusText(row)}</td>
               <td>
                 <PageCaptureActions row={row} />

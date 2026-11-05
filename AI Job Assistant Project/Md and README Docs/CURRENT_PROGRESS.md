@@ -1,7 +1,7 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 4, 2026
+**Last updated:** November 5, 2026
 
 ## Codex E2E Cleanup — Grouped Verification Complete
 
@@ -30,6 +30,47 @@
   - the Next.js server measured the worktree filesystem at 6.9 seconds and reported cache compactions of 31.6–66 seconds. These trace-backed failures were environmental first-use compilation/stalled-server events, not product, API-contract or assertion defects.
 - No assertion was removed, no retry was added, no test was skipped, and no product behavior was changed to accommodate the environment. No live/provider/paid call was made. The normal and acceptance databases were untouched.
 - **Acceptance:** no additional uninterrupted run is required for this closeout. Report **grouped E2E verification complete** and state explicitly that an uninterrupted 59/59 run did not pass and was deliberately waived for this task.
+
+## Consolidated Mode B Acceptance Fixes — Workstreams A, C, D, E (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+
+Baseline: `integration/final-evaluator-product` at `8013226` (Codex's E2E stabilization, on top of `17d2a32` WTTJ P2). Decisions D1–D5 approved by Alex on November 5, 2026.
+
+- **Workstream A — diagnostic (complete).** Confirmed from code:
+  - LinkedIn FRICTION: the results reader treats any challenge-like element as friction, rendered or not.
+  - The old popup showed both modes on a results page, so Mode A read a results page as one job.
+  - Reopening returned to the first screen, but the capture work was not lost.
+  - Acceptance triage never ran: there was no active profile, so the hand-off stopped at USER_PROFILE_NOT_FOUND before triage, shown as "Added; the evaluation request was not accepted".
+  - "To triage" was a lifecycle view, not pre-evaluator triage.
+  - Ogury's "Denver, Denver, US" comes from a repeated locality and region.
+  - Not yet proven: WTTJ description and Apply-link losses (the likely cause is that only the JSON-LD `description` is read). They wait for evidence.
+- **Workstream B — capture correctness: waiting for evidence (not started).** Alex collects E1 (read-only acceptance-DB export), then E2 (WTTJ job-page exports) and E3 (LinkedIn friction exports). No extraction, Apply-link, normalization or LinkedIn friction change is made before that evidence.
+- **Workstream C — triage (D2, D5).**
+  - A single-job save now runs the deterministic pre-evaluator triage only (`EvaluationService.assessTriage`): the same profile resolution and triage gate as `requestEvaluation`, with no admission, budget, queue or provider call.
+  - With no active profile the job is saved and reported "not triaged: no active profile"; no outcome is invented.
+  - The batch hand-off is unchanged; its no-profile rows now read "Added; not triaged yet: no active profile".
+  - The dashboard view "To triage" is now **Not acted on** (URL unchanged). A **Needs Review before evaluation** count links to the existing Needs Review queue.
+  - The opportunity page says when triage has not run yet. Evaluate/Reject resolution is unchanged.
+- **Workstream D3 — capture history.** One additive table, `PageCaptureSession`: each results-page save with its staged item IDs, in page order, and its counts. A repeated batch is the same session, and no job record is copied. Migration `20261105090000_page_capture_session` also adds the nullable `ExtensionPairing.lastExtensionVersion`. Applied to `ai_career_assistant_test` only.
+- **Workstream D — extension 0.3.0 (D1).**
+  - The toolbar button opens a Chrome **side panel**; there is no more popup. The click is the activeTab grant for the page shown; no new host permission was added (the only new permission is `sidePanel`).
+  - Explicit **Single Job | Batch Capture** modes: Single Job never reads a results page; Batch Capture never shows the single-job fields.
+  - The panel follows the page you are on, and says to click the toolbar button when it cannot see a page.
+  - Batch Capture offers **View current capture** / **View results** / **Previous captures** and opens a session's jobs in the panel. A banner offers the latest capture on reopen.
+  - The panel opens Captured Jobs (the session, or all). Background capture execution is unchanged.
+- **Workstream E — app Extension pages.** Two destinations:
+  - **Setup & Connection** (`/extension`): Pair New Extension, paired browsers with last use and reported version, **Unpair / Revoke Access** with a confirmation that names the pairing (captured jobs kept), troubleshooting, installation/updates, and the supported sites and modes derived from the registry.
+  - **Captured Jobs** (`/extension/jobs`, reusing "Jobs from results pages"): single-job and results-page captures in one list, one row per job, with method, status, site and session filters, and capture history on the same page.
+- **Codex-owned E2E edits (necessary and explained):** four assertion lines in two specs, for the approved wording only:
+  - `extension.spec`: the h1 "Setup & Connection" and the two "Unpair / Revoke Access" clicks;
+  - `extension-page-capture.spec`: the h1 "Captured Jobs";
+  - `tests/support/e2e-page-capture-helper.ts`: one cleanup line for orphaned capture sessions.
+- **Verification** (test DB only; no live site, provider, paid or evaluator call; normal and acceptance databases not accessed):
+  - typecheck, lint, `prisma validate`, extension build and `git diff --check` pass; `db:verify-migrations` applied 27 migrations in order, with only the documented Recommendation drift;
+  - unit: 93 files passed, 1 skipped (2,158 passed, 6 skipped), including the new `extension-workflows` (14);
+  - integration: 48 files, 378 tests, including the new `captured-jobs` (5): sessions, the unified list, triage at save EVALUATE / NEEDS_REVIEW / REJECT with zero admissions or evaluations, no profile, pairing version;
+  - E2E: `extension` 8/8, `page-capture` 4/4, `dashboard` 4/4, `pre-evaluator-triage` 1/1;
+  - `next-env.d.ts` restored; the test database was left clean.
+- **Not yet verified live:** the side panel in Alex's Chrome (opening from the toolbar, tab changes, Incognito, activeTab after navigation). Chromium in E2E loads the manifest, but the tests open the panel page directly.
 
 ## Extension Mode B — Bounded Results-Page Ingestion
 

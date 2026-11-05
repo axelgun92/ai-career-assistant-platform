@@ -7,6 +7,7 @@ import { isTabMessage, pendingSaveKey, pendingSaveMaxAgeMs, type PendingSave, ty
 
 // The extension's service worker.
 //
+// - It opens the side panel from the toolbar button.
 // - It keeps the extension's storage (the backend address and the pairing
 //   credential) limited to the extension's own pages, from installation and
 //   every browser start, before any page is read.
@@ -21,6 +22,14 @@ import { isTabMessage, pendingSaveKey, pendingSaveMaxAgeMs, type PendingSave, ty
 const runAlarm = "page-capture-tab-run";
 
 chrome.runtime.onInstalled.addListener(() => void restrictStorage());
+
+// The toolbar button opens the side panel and gives it access to the page
+// shown (the click is the user's activeTab grant; no broad host permission
+// is asked). The open panel is told to read that page again.
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.windowId !== undefined) void chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => undefined);
+  void chrome.runtime.sendMessage({ type: "page-capture:page-access", tabId: tab.id ?? null }).catch(() => undefined);
+});
 chrome.runtime.onStartup.addListener(() => {
   void restrictStorage();
   void chrome.storage.session.remove([tabRunStorageKey, pendingSaveKey]).catch(() => undefined);
@@ -32,7 +41,7 @@ async function apiClient() {
   const settings = await readSettings();
   const origin = normalizeBackendUrl(settings.backendUrl);
   if (!origin || !settings.credential) return null;
-  return createApiClient({ backendUrl: origin, credential: settings.credential });
+  return createApiClient({ backendUrl: origin, credential: settings.credential, extensionVersion: chrome.runtime.getManifest().version });
 }
 
 // The client is made for each call from the stored settings, so a run uses

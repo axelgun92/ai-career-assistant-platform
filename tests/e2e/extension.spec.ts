@@ -229,7 +229,7 @@ test("pair, read, edit nothing, save, open in the app, request an evaluation, an
   // Pair through the app's Extension page; the credential is shown once.
   const app = await context.newPage();
   await app.goto(`${appUrl}/extension`);
-  await expect(app.getByRole("heading", { level: 1, name: "Browser extension" })).toBeVisible();
+  await expect(app.getByRole("heading", { level: 1, name: "Setup & Connection" })).toBeVisible();
   await app.getByLabel("Name (optional)").fill(pairingLabel);
   await app.getByRole("button", { name: "Create pairing" }).click();
   credential = (await app.getByTestId("pairing-credential").textContent())?.trim() ?? "";
@@ -503,8 +503,8 @@ test("the page reader in Chromium: a job's own sidebar and Apply link among othe
 test("revoking the pairing stops the extension at once", async () => {
   const app = await context.newPage();
   await app.goto(`${appUrl}/extension`);
-  await app.getByRole("region", { name: pairingLabel }).getByRole("button", { name: "Revoke…" }).click();
-  await app.getByRole("region", { name: pairingLabel }).getByRole("button", { name: "Revoke", exact: true }).click();
+  await app.getByRole("region", { name: pairingLabel }).getByRole("button", { name: "Unpair / Revoke Access" }).click();
+  await app.getByRole("group", { name: `Confirm unpairing ${pairingLabel}` }).getByRole("button", { name: "Unpair / Revoke Access" }).click();
   await expect(app.getByRole("region", { name: /Paired browsers/ })).not.toContainText(pairingLabel);
   const { tabId } = await openJobTab(paths.job);
   const { popup } = await openPopup(tabId);

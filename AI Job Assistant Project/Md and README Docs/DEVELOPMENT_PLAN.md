@@ -232,6 +232,10 @@ Current sequence (updated November 4, 2026):
    - **Welcome to the Jungle / Otta:** F0 done; P1 BLOCKED (HTTP 403); P3 unsupported. P2 — sequential background tabs triggered by the single Save action for up to 25 loaded jobs — is implemented and verified offline (November 4, 2026), awaiting review and commit approval. Next: live acceptance in Alex's Chrome, with separate authorization, on the acceptance database with `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`; then set `cardVerified`/`detailVerified` on the evidence. No separate proof-of-concept phase.
      - *(Earlier, November 4: "Its implementation needs separate approval, then live acceptance.")*
    - *(Earlier, November 3: "Next: F0 results-page fixtures and the bounded P1 detail experiment per site …, then each site's targeted live acceptance. … If P1 fails, another mechanism (P2: background tabs in Alex's Chrome) needs Alex's separate decision.")*
+   - **Consolidated acceptance fixes (November 5, 2026).**
+     - Workstreams A (diagnostic) and C–E are implemented and verified offline, awaiting review and commit approval: triage at single-job save, "Not acted on", the side panel with Single Job / Batch Capture, capture history, Captured Jobs, Setup & Connection.
+     - Next: Workstream B (WTTJ description completeness, Apply links, normalization, LinkedIn friction) from Alex's E1–E3 evidence, with real-markup regression fixtures.
+     - Then a live check of the side panel in Alex's Chrome, and the WTTJ and LinkedIn acceptance reruns, each separately authorized.
 6. Then: the final whole-product regression gate, the final evaluator live acceptance (D8, separately authorized), and the next formal PRD/TDD versions covering triage and the extension together, then the freeze.
 
 The final pass should:

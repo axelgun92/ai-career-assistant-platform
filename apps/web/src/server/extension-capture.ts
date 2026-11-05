@@ -301,6 +301,8 @@ export interface CaptureResult {
   probableDuplicate: boolean;
   outsideRoleFamilies: boolean;
   evaluation: EvaluationSummary | null;
+  // Present when triage at save is configured.
+  triage?: CaptureTriage;
 }
 
 export interface LookupResult {
@@ -320,9 +322,21 @@ export interface ExtensionCaptureDependencies {
   // The persisted evaluation state, read through the existing
   // latest-evaluation path; null when the opportunity has none.
   latestEvaluation(opportunityId: string): Promise<EvaluationSummary | null>;
+  // Pre-evaluator triage of the saved job (D2, November 5, 2026): triage
+  // only, never admission or evaluation. Optional: without it no triage runs
+  // at save, as before.
+  triage?: (opportunityId: string) => Promise<CaptureTriage>;
   discovery: DiscoveryConfiguration;
   now?: () => Date;
 }
+
+// The saved job's pre-evaluator triage, as the popup reports it: its outcome
+// and reasons, or why it could not be triaged (no active profile, or a safe
+// code). A save never fails because of triage.
+export type CaptureTriage =
+  | { status: "ASSESSED"; outcome: "EVALUATE" | "NEEDS_REVIEW" | "REJECT"; reasons: string[] }
+  | { status: "NO_PROFILE" }
+  | { status: "UNAVAILABLE"; reason: string };
 
 const opportunityUrl = (id: string) => `/opportunities/${id}`;
 const siteView = (site: CaptureSite) => ({ host: site.host, name: site.name, knownHost: site.knownHost });
@@ -360,6 +374,13 @@ export function createExtensionCaptureService(dependencies: ExtensionCaptureDepe
         outsideRoleFamilies: !keepTitle(raw.title),
         evaluation: await dependencies.latestEvaluation(ingested.opportunityId),
       };
+      if (dependencies.triage) {
+        try {
+          result.triage = await dependencies.triage(ingested.opportunityId);
+        } catch {
+          result.triage = { status: "UNAVAILABLE", reason: "TRIAGE_FAILED" };
+        }
+      }
       return { status: ingested.outcome === "CREATED" ? 201 : 200, result };
     },
 

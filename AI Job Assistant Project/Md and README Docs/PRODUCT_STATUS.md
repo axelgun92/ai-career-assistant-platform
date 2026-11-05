@@ -2,8 +2,8 @@
 
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
-**Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta P2 implemented offline (awaiting review and live acceptance; not complete)
-**Last updated:** November 4, 2026
+**Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta P2 committed (awaiting live acceptance; not complete); November 5 acceptance-fix workstreams C–E (side panel, Captured Jobs, Setup & Connection, triage at save) implemented offline and awaiting review; capture-correctness fixes (Workstream B) waiting for evidence
+**Last updated:** November 5, 2026
 
 ## Purpose
 
@@ -72,7 +72,15 @@ Supported results page (Alex's Chrome)
 → Evaluate: normal admission/backlog → evaluator → Apply / Review / Skip
 ```
 
-- **Per-job fallback:** a job whose page cannot be read waits as **Awaiting details**, with its reason and Retry, Dismiss and Open job. It is never an opportunity and never evaluable. Progress is on **Jobs from results pages** (`/extension/jobs`), linked from the Extension page.
+- **Per-job fallback:** a job whose page cannot be read waits as **Awaiting details**, with its reason and Retry, Dismiss and Open job. It is never an opportunity and never evaluable. Progress is on **Captured Jobs** (`/extension/jobs`; formerly "Jobs from results pages").
+- **Extension experience (November 5, 2026; implemented offline, awaiting review):**
+  - Chrome **side panel** with explicit **Single Job | Batch Capture** modes, current/latest/previous captures, and a session view of each capture's jobs. No new host permission: the toolbar button gives access to the page shown.
+  - In the app, two Extension destinations:
+    - **Setup & Connection**: Pair New Extension, paired browsers with last use and version, **Unpair / Revoke Access** with confirmation, troubleshooting, installation/updates, supported sites and modes;
+    - **Captured Jobs**: single-job and results-page captures in one list, plus capture history (additive `PageCaptureSession`).
+  - Single-job saves are triaged at save (triage only, with an active profile; otherwise reported not triaged).
+  - The dashboard lifecycle view "To triage" is now **Not acted on**, and a **Needs Review before evaluation** count links to the triage queue.
+  - Capture-correctness fixes from the November 4–5 acceptance (WTTJ descriptions and Apply links, normalization, LinkedIn friction) wait for Alex's E1–E3 evidence.
 - **Safety:** each read is open-only, sequential and paced (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops the site for at least a day, with no retry or workaround. No configured retrieval source is created. Analytics (Features 13 and 15–18) see batch jobs exactly as Mode A captures. The evaluator and the triage are unchanged; Mode B only hands jobs to the existing request.
 - **Site status (November 4, 2026):** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded.
   - **LinkedIn: enabled.** F0: 5/5 real cards read exactly. P1: PASS, 5/5 job pages read in a fresh logged-out browser. Its automatic detail mechanism is verified, but Mode B for LinkedIn is not complete until its targeted end-to-end acceptance (separately authorized).

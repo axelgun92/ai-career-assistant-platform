@@ -12,9 +12,11 @@ export interface ExtensionPairingRecord {
   createdAt: Date;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
+  // The extension version that last used the pairing, when it reported one.
+  lastExtensionVersion?: string | null;
 }
 
-const publicFields = { id: true, label: true, tokenHint: true, createdAt: true, lastUsedAt: true, revokedAt: true } as const;
+const publicFields = { id: true, label: true, tokenHint: true, createdAt: true, lastUsedAt: true, revokedAt: true, lastExtensionVersion: true } as const;
 
 export class PrismaExtensionPairingRepository {
   private readonly database = getDatabaseClient();
@@ -35,8 +37,11 @@ export class PrismaExtensionPairingRepository {
     return this.database.extensionPairing.findUnique({ where: { tokenHash }, select: { ...publicFields, tokenHash: true } });
   }
 
-  async markUsed(id: string, at: Date): Promise<void> {
-    await this.database.extensionPairing.updateMany({ where: { id, revokedAt: null }, data: { lastUsedAt: at } });
+  async markUsed(id: string, at: Date, extensionVersion?: string): Promise<void> {
+    await this.database.extensionPairing.updateMany({
+      where: { id, revokedAt: null },
+      data: { lastUsedAt: at, ...(extensionVersion ? { lastExtensionVersion: extensionVersion } : {}) },
+    });
   }
 
   // Revoking is final and idempotent: an already revoked pairing keeps its

@@ -239,7 +239,7 @@ test("pair, read the loaded cards of a results page, leave one out, and stage th
 
   const [progress] = await Promise.all([context.waitForEvent("page"), savePopup.getByRole("button", { name: "Open progress in AI Job Assistant" }).click()]);
   await progress.waitForURL(/\/extension\/jobs$/);
-  await expect(progress.getByRole("heading", { level: 1, name: "Jobs from results pages" })).toBeVisible();
+  await expect(progress.getByRole("heading", { level: 1, name: "Captured Jobs" })).toBeVisible();
   await expect(rowOf(progress, jobs.evaluate.title)).toContainText("Getting details");
   await progress.close();
   await savePopup.close();

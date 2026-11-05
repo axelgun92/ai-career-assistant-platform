@@ -10,6 +10,25 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
 
+### Extension Side Panel, Captured Jobs, Setup & Connection and Triage at Save (November 5, 2026; implemented and verified offline; awaiting review and commit approval)
+
+- **Side panel (extension 0.3.0):** the toolbar button opens a Chrome side panel (no popup).
+  - Explicit **Single Job | Batch Capture** modes: Single Job never reads a results page; Batch Capture never shows the single-job fields.
+  - It follows the page shown and asks for a toolbar click where it has no access. The only new permission is `sidePanel`; no new host permission.
+  - **View current capture** / **View results** / **Previous captures**, with each capture's jobs and links to the app.
+- **Capture history:** additive `PageCaptureSession` (each results-page save and its staged items, in page order, with counts; no job copied) and nullable `ExtensionPairing.lastExtensionVersion`, in migration `20261105090000_page_capture_session`.
+- **Captured Jobs** (`/extension/jobs`, formerly "Jobs from results pages"): single-job and results-page captures in one list, one row per job, with method, status, site and session filters, and capture history.
+- **Setup & Connection** (`/extension`): Pair New Extension; paired browsers with last use and reported version; **Unpair / Revoke Access** with a confirmation naming the pairing (captured jobs kept); troubleshooting; installation/updates; supported sites and modes from the registry.
+- **Triage at single-job save:** `EvaluationService.assessTriage`, triage only (no admission, budget, queue or provider call). With no active profile the job is saved and reported not triaged. Batch rows with no profile read "Added; not triaged yet: no active profile".
+- **Dashboard:** "To triage" is now **Not acted on** (URL unchanged); a **Needs Review before evaluation** count links to the triage queue; the opportunity page says when triage has not run.
+- **Diagnostic (Workstream A):** root causes recorded in CURRENT_PROGRESS. The WTTJ extraction, Apply-link, normalization and LinkedIn friction fixes (Workstream B) wait for evidence.
+- **E2E:** four Codex-owned assertion lines updated for the approved wording, and one helper cleanup line for orphaned sessions.
+- **Verified:** offline, on `ai_career_assistant_test` only.
+  - Unit: 93 files passed, 1 skipped (2,158 passed, 6 skipped).
+  - Integration: 48 files, 378 tests passed.
+  - E2E: `extension` 8/8, `page-capture` 4/4, `dashboard` 4/4, `pre-evaluator-triage` 1/1.
+  - 27 migrations verified in order.
+
 ### Codex E2E Cleanup — Grouped 59-Test Verification Complete (November 4, 2026; accepted for closeout)
 
 - Corrected four stale triage-era E2E fixtures and their deterministic helper data while preserving the production triage gate, evaluator contract, and exact Apply / Review / Skip expectations.

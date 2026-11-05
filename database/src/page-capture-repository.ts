@@ -64,6 +64,48 @@ export interface PageCaptureItemRecord {
   handedOffAt: Date | null;
 }
 
+export interface PageCaptureSessionRow {
+  id: string;
+  site: string;
+  pageUrl: string;
+  pageTitle: string | null;
+  receivedAt: Date;
+  counts: unknown;
+  jobs: number;
+  pending: number;
+  added: number;
+  awaiting: number;
+  unavailable: number;
+  dismissed: number;
+}
+
+// One row of Captured Jobs: a job saved from a results page (its staging
+// item, whatever its state) or a job saved alone with the single-job capture
+// (its opportunity, once, at its latest capture). A job saved both ways is
+// one batch row. Nothing here creates or copies a job record.
+export interface CapturedJobRow {
+  method: "batch" | "single";
+  id: string;
+  site: string;
+  host: string | null;
+  title: string;
+  company: string | null;
+  location: string | null;
+  postedText: string | null;
+  sourceUrl: string | null;
+  firstSeenAt: Date;
+  capturedAt: Date;
+  status: string;
+  lastReason: string | null;
+  handoffOutcome: string | null;
+  resolvedOpportunityId: string | null;
+  opportunityTitle: string | null;
+  triageOutcome: string | null;
+  triageManualDecision: string | null;
+  evaluationStatus: string | null;
+  recommendation: string | null;
+}
+
 export interface PageCaptureListRow extends PageCaptureItemRecord {
   // The opportunity the item resolves to: its own ingestion, or (read-time
   // resolution) the job already saved under the same listing identity.
@@ -121,6 +163,9 @@ export class PrismaPageCaptureRepository {
     // sites, whose waiting jobs keep their own retry rules.
     requeueAwaiting?: boolean;
     cards: StagedCardInput[];
+    // Capture history: the save, recorded once per batchId with the items it
+    // covered (in page order), in the same transaction.
+    session?: { pageTitle: string | null; counts: Record<string, number> };
   }): Promise<StagedResult[]> {
     return this.database.$transaction(async (transaction) => {
       const results: StagedResult[] = [];
@@ -187,8 +232,118 @@ export class PrismaPageCaptureRepository {
         });
         results.push({ externalId: card.externalId, outcome: saved ? "ALREADY_SAVED" : "QUEUED", opportunityId: saved, itemId: created.id, status: created.status });
       }
+      if (input.session) {
+        await transaction.pageCaptureSession.upsert({
+          where: { id: input.batchId },
+          create: {
+            id: input.batchId,
+            site: input.site,
+            pageUrl: input.resultsPageUrl,
+            pageTitle: input.session.pageTitle,
+            pairingId: input.pairingId,
+            receivedAt: input.receivedAt,
+            itemIds: results.map((result) => result.itemId),
+            counts: input.session.counts,
+          },
+          // A repeated batch is the same save.
+          update: {},
+        });
+      }
       return results;
     });
+  }
+
+  // Captured Jobs: batch and single-job captures in one list, newest capture
+  // first (a session's own jobs in page order).
+  async capturedJobs(input: {
+    method: "all" | "batch" | "single";
+    statuses: PageCaptureItemStatusValue[] | null;
+    site: string | null;
+    itemIds: string[] | null;
+    page: number;
+    pageSize: number;
+  }): Promise<{ rows: CapturedJobRow[]; total: number }> {
+    const itemFilter = input.itemIds ? Prisma.sql`AND i."id" = ANY(${input.itemIds}::uuid[])` : Prisma.empty;
+    const includeSingle = input.method !== "batch" && !input.itemIds;
+    const includeBatch = input.method !== "single";
+    const jobs = Prisma.sql`
+      SELECT * FROM (
+        SELECT 'batch'::text AS "method", i."id", i."site", i."host", i."title", i."company", i."location", i."postedText",
+              i."sourceUrl", i."firstSeenAt", i."lastSeenAt" AS "capturedAt", i."status"::text AS "status", i."lastReason", i."handoffOutcome",
+              COALESCE(i."opportunityId", (
+                SELECT sr."opportunityId" FROM "SourceRecord" sr
+                WHERE sr."opportunityId" IS NOT NULL
+                  AND ((sr."source" = 'browser-extension' AND sr."externalId" = i."externalId")
+                    OR (i."site" = 'linkedin' AND i."siteJobId" IS NOT NULL AND sr."source" = 'linkedin' AND sr."externalId" = i."siteJobId"))
+                ORDER BY sr."createdAt" ASC, sr."id" ASC LIMIT 1)) AS "resolvedOpportunityId",
+              ${input.itemIds ? Prisma.sql`array_position(${input.itemIds}::uuid[], i."id")` : Prisma.sql`NULL::int`} AS "position"
+            FROM "PageCaptureItem" i WHERE TRUE ${itemFilter} ${includeBatch ? Prisma.empty : Prisma.sql`AND FALSE`}
+        ${includeSingle
+          ? Prisma.sql`UNION ALL
+            SELECT * FROM (SELECT DISTINCT ON (sr."opportunityId") 'single'::text, sr."id", COALESCE(sr."sourceMetadata"->'capture'->>'site', ''),
+              sr."sourceMetadata"->'capture'->>'host', COALESCE(sr."rawTitle", o."title", 'Untitled job'), sr."rawCompany", sr."rawLocation", NULL::text,
+              sr."sourceUrl", sr."createdAt", sr."createdAt", 'INGESTED', NULL::text, NULL::text, sr."opportunityId", NULL::int
+            FROM "SourceRecord" sr JOIN "Opportunity" o ON o."id" = sr."opportunityId"
+            WHERE sr."source" = 'browser-extension'
+              AND NOT EXISTS (SELECT 1 FROM "PageCaptureItem" i WHERE i."externalId" = sr."externalId")
+            ORDER BY sr."opportunityId", sr."createdAt" DESC, sr."id" DESC) singles`
+          : Prisma.empty}
+      ) jobs
+      WHERE TRUE
+        ${input.statuses ? Prisma.sql`AND jobs."status" IN (${Prisma.join(input.statuses)})` : Prisma.empty}
+        ${input.site ? Prisma.sql`AND jobs."site" = ${input.site}` : Prisma.empty}`;
+    const [rows, total] = await Promise.all([
+      this.database.$queryRaw<CapturedJobRow[]>(Prisma.sql`
+        WITH page AS (
+          SELECT * FROM (${jobs}) filtered
+          ORDER BY ${input.itemIds ? Prisma.sql`filtered."position" ASC,` : Prisma.empty} filtered."capturedAt" DESC, filtered."id" DESC
+          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}
+        )
+        SELECT page."method", page."id", page."site", page."host", page."title", page."company", page."location", page."postedText",
+          page."sourceUrl", page."firstSeenAt", page."capturedAt", page."status", page."lastReason", page."handoffOutcome",
+          page."resolvedOpportunityId", o."title" AS "opportunityTitle",
+          t."outcome"::text AS "triageOutcome", t."manualDecision"::text AS "triageManualDecision",
+          e."status"::text AS "evaluationStatus", r."decision"::text AS "recommendation"
+        FROM page
+        LEFT JOIN "Opportunity" o ON o."id" = page."resolvedOpportunityId"
+        LEFT JOIN "PreEvaluatorTriage" t ON t."opportunityId" = page."resolvedOpportunityId"
+        LEFT JOIN LATERAL (
+          SELECT ev."id", ev."status" FROM "Evaluation" ev WHERE ev."opportunityId" = page."resolvedOpportunityId"
+          ORDER BY ev."createdAt" DESC, ev."id" DESC LIMIT 1) e ON TRUE
+        LEFT JOIN "Recommendation" r ON r."evaluationId" = e."id"
+        ORDER BY ${input.itemIds ? Prisma.sql`page."position" ASC,` : Prisma.empty} page."capturedAt" DESC, page."id" DESC`),
+      this.database.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*) AS count FROM (${jobs}) counted`),
+    ]);
+    return { rows, total: Number(total[0]?.count ?? 0) };
+  }
+
+  // Capture history (newest first), each save with its jobs' current state.
+  async listSessions(input: { site: string | null; page: number; pageSize: number; id?: string }): Promise<{ rows: PageCaptureSessionRow[]; total: number }> {
+    const where = Prisma.sql`WHERE TRUE
+      ${input.site ? Prisma.sql`AND s."site" = ${input.site}` : Prisma.empty}
+      ${input.id ? Prisma.sql`AND s."id" = ${input.id}::uuid` : Prisma.empty}`;
+    const [rows, total] = await Promise.all([
+      this.database.$queryRaw<PageCaptureSessionRow[]>(Prisma.sql`
+        SELECT s."id", s."site", s."pageUrl", s."pageTitle", s."receivedAt", s."counts",
+          COALESCE(cardinality(s."itemIds"), 0)::int AS "jobs",
+          COUNT(i."id") FILTER (WHERE i."status" IN ('QUEUED', 'ACQUIRING'))::int AS "pending",
+          COUNT(i."id") FILTER (WHERE i."status" IN ('INGESTED', 'ALREADY_SAVED'))::int AS "added",
+          COUNT(i."id") FILTER (WHERE i."status" = 'AWAITING_DETAILS')::int AS "awaiting",
+          COUNT(i."id") FILTER (WHERE i."status" = 'UNAVAILABLE')::int AS "unavailable",
+          COUNT(i."id") FILTER (WHERE i."status" = 'DISMISSED')::int AS "dismissed"
+        FROM "PageCaptureSession" s
+        LEFT JOIN "PageCaptureItem" i ON i."id" = ANY(s."itemIds")
+        ${where}
+        GROUP BY s."id"
+        ORDER BY s."receivedAt" DESC, s."id" DESC
+        LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`),
+      this.database.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*) AS count FROM "PageCaptureSession" s ${where}`),
+    ]);
+    return { rows, total: Number(total[0]?.count ?? 0) };
+  }
+
+  async findSession(id: string): Promise<{ id: string; site: string; pageUrl: string; pageTitle: string | null; receivedAt: Date; itemIds: string[]; counts: unknown } | null> {
+    return this.database.pageCaptureSession.findUnique({ where: { id } });
   }
 
   // When a site may next be contacted for details: after it stopped a pass

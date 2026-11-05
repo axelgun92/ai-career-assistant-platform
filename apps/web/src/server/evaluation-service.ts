@@ -37,6 +37,7 @@ import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-conf
 import {
   getPreEvaluatorTriageService,
   type EvaluationTriageGate,
+  type PreEvaluatorTriageView,
 } from "./pre-evaluator-triage-service";
 
 const evaluationRequestSchema = z
@@ -522,6 +523,30 @@ export function createEvaluationService(
       });
     },
 
+    // Pre-evaluator triage only, for a job just saved: the same profile
+    // resolution and the same deterministic triage gate requestEvaluation
+    // runs, without admission, budget reservation, queueing or any provider
+    // call. With no active profile nothing is triaged and no outcome is
+    // invented; the job stays saved.
+    async assessTriage(opportunityIdValue: string): Promise<TriageAssessment> {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      if (!triageGate) return { status: "UNAVAILABLE", reason: "TRIAGE_UNAVAILABLE" };
+      const opportunity = await loadEvaluableOpportunity(opportunityId);
+      const domain = opportunity.domain;
+      if (domain !== "customer-success") return { status: "UNAVAILABLE", reason: "DOMAIN_UNSUPPORTED" };
+      const profile = await dependencies.queries.resolveUserProfile(null, domain);
+      if (!profile) return { status: "NO_PROFILE" };
+      const subject = await dependencies.evaluations.loadSubject({ opportunityId, userProfileId: profile.id });
+      try {
+        validateCustomerSuccessProfile(subject);
+      } catch (error) {
+        if (error instanceof EvaluationApiError && error.code === "USER_PROFILE_NOT_FOUND") return { status: "NO_PROFILE" };
+        if (error instanceof EvaluationApiError) return { status: "UNAVAILABLE", reason: error.code };
+        throw error;
+      }
+      return { status: "ASSESSED", triage: await triageGate.assess({ opportunityId, domain, profile }) };
+    },
+
     async getTriage(opportunityIdValue: string) {
       const opportunityId = z.uuid().parse(opportunityIdValue);
       return triageGate ? triageGate.get(opportunityId) : null;
@@ -643,6 +668,13 @@ export function createEvaluationService(
 }
 
 export type EvaluationService = ReturnType<typeof createEvaluationService>;
+
+// The outcome of triaging a saved job (assessTriage): triaged, not triaged
+// for want of an active profile, or not available (with a safe code).
+export type TriageAssessment =
+  | { status: "ASSESSED"; triage: PreEvaluatorTriageView }
+  | { status: "NO_PROFILE" }
+  | { status: "UNAVAILABLE"; reason: string };
 
 let evaluationService: EvaluationService | undefined;
 let executionSettings: { semanticConfig: SemanticExecutorConfig; jobMaxAttempts: number } | undefined;

@@ -11,6 +11,8 @@ export interface PairingView {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  // The extension version that last used this pairing, as it reported it.
+  extensionVersion?: string | null;
 }
 
 // Same-origin requests to the pairing routes; they refuse anything else.
@@ -29,11 +31,12 @@ async function send(url: string, body: unknown): Promise<{ ok: true; payload: un
   }
 }
 
-function PairingCard({ pairing }: { pairing: PairingView }) {
+function PairingCard({ pairing, currentVersion }: { pairing: PairingView; currentVersion?: string | null }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
   const headingId = `pairing-${pairing.id}`;
 
   async function revoke() {
@@ -46,6 +49,7 @@ function PairingCard({ pairing }: { pairing: PairingView }) {
       return;
     }
     setConfirming(false);
+    setDone(true);
     router.refresh();
   }
 
@@ -57,28 +61,37 @@ function PairingCard({ pairing }: { pairing: PairingView }) {
       </div>
       <p className="source-meta">
         Credential ending <code>…{pairing.tokenHint}</code> · paired {formatDateTime(pairing.createdAt)} ·{" "}
-        {pairing.lastUsedAt ? `last used ${formatDateTime(pairing.lastUsedAt)}` : "not used yet"}
+        {pairing.lastUsedAt ? `last used by the extension ${formatDateTime(pairing.lastUsedAt)}` : "not used by the extension yet"}
+        {pairing.extensionVersion ? ` · extension version ${pairing.extensionVersion}` : ""}
         {pairing.revokedAt ? ` · revoked ${formatDateTime(pairing.revokedAt)}` : ""}
       </p>
+      {!pairing.revokedAt && pairing.extensionVersion && currentVersion && pairing.extensionVersion !== currentVersion ? (
+        <p className="field-help">
+          This browser last reported version {pairing.extensionVersion}; this app ships {currentVersion}. Rebuild the extension and reload it in{" "}
+          <code>chrome://extensions</code> (see Installation and updates).
+        </p>
+      ) : null}
       {pairing.revokedAt ? null : (
         <div className="source-actions">
           {confirming ? (
-            <span className="confirm-inline">
-              The extension in this browser stops working until you pair it again.{" "}
+            <span className="confirm-inline" role="group" aria-label={`Confirm unpairing ${pairing.label}`}>
+              Unpair <strong>{pairing.label}</strong> and revoke its access? The extension in that browser stops working until it is paired again.
+              Jobs already captured and your capture history are kept.{" "}
               <button type="button" className="danger-button" disabled={busy} onClick={revoke}>
-                Revoke
+                Unpair / Revoke Access
               </button>{" "}
               <button type="button" className="link-button" onClick={() => setConfirming(false)}>
-                Keep
+                Cancel
               </button>
             </span>
           ) : (
             <button type="button" className="secondary-button" onClick={() => setConfirming(true)}>
-              Revoke…
+              Unpair / Revoke Access
             </button>
           )}
         </div>
       )}
+      {done ? <p role="status">Access revoked. Jobs already captured are kept.</p> : null}
       {error ? (
         <p className="error-message" role="alert">
           {error}
@@ -125,11 +138,18 @@ function PairForm() {
 
   return (
     <form className="source-form" onSubmit={submit} aria-labelledby="pair-heading">
-      <h2 id="pair-heading">Pair a browser</h2>
+      <h2 id="pair-heading">Pair New Extension</h2>
       <p className="field-help">
-        Creates a pairing credential for one browser. It is shown once: paste it into the extension&apos;s options page,
-        then close this message. Only a hash of it is kept here.
+        Connects one Chrome installation or profile to this AI Job Assistant. The credential is shown once and only a hash of it is kept here.
       </p>
+      <ol className="field-help">
+        <li>Name the browser (for example &quot;Chrome — work profile&quot;) and press Create pairing.</li>
+        <li>Copy the credential.</li>
+        <li>
+          In Chrome, open the extension&apos;s Options (right-click the AI Job Assistant button → Options), enter this app&apos;s address and paste the
+          credential, then press Save. It confirms the connection.
+        </li>
+      </ol>
       <div className="form-grid">
         <label>
           Name (optional)
@@ -164,7 +184,7 @@ function PairForm() {
   );
 }
 
-export function PairingsManager({ pairings }: { pairings: PairingView[] }) {
+export function PairingsManager({ pairings, currentVersion = null }: { pairings: PairingView[]; currentVersion?: string | null }) {
   const active = pairings.filter((pairing) => !pairing.revokedAt);
   const revoked = pairings.filter((pairing) => pairing.revokedAt);
   return (
@@ -172,7 +192,7 @@ export function PairingsManager({ pairings }: { pairings: PairingView[] }) {
       <PairForm />
       <section className="source-list" aria-labelledby="pairings-heading">
         <h2 id="pairings-heading">Paired browsers ({active.length})</h2>
-        {active.length ? active.map((pairing) => <PairingCard key={pairing.id} pairing={pairing} />) : <p>No browser is paired yet.</p>}
+        {active.length ? active.map((pairing) => <PairingCard key={pairing.id} pairing={pairing} currentVersion={currentVersion} />) : <p>No browser is paired yet.</p>}
       </section>
       {revoked.length ? (
         <details className="source-details">

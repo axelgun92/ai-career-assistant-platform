@@ -15,6 +15,7 @@ import { OpportunityList } from "@/components/dashboard/opportunity-list";
 import { UsageTotals } from "@/components/dashboard/usage-totals";
 import { ActiveFilters } from "@/components/dashboard/active-filters";
 import { NeedsAttention, PipelineOverview } from "@/components/dashboard/dashboard-summary";
+import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-service";
 import { OpportunityFilters } from "@/components/dashboard/opportunity-filters";
 import { Pagination } from "@/components/dashboard/pagination";
 import { viewTabs } from "@/components/dashboard/labels";
@@ -69,7 +70,7 @@ export default async function HomePage({
     if (target) redirect(target);
   }
 
-  const [summary, filterOptions, usageTotals, budgetStatus] = await Promise.all([
+  const [summary, filterOptions, usageTotals, budgetStatus, needsReview] = await Promise.all([
     new PrismaOpportunityDashboardRepository().summarize().catch((error: unknown): DashboardSummary | null => {
       logFailure("Opportunity dashboard could not load the summary", error);
       return null;
@@ -86,6 +87,15 @@ export default async function HomePage({
       logFailure("Opportunity dashboard could not load the AI budget", error);
       return null;
     }),
+    // Jobs the pre-evaluator triage holds for a decision (its own queue,
+    // distinct from the "Not acted on" lifecycle view).
+    getPreEvaluatorTriageService()
+      .listNeedsReview()
+      .then((items) => items.length)
+      .catch((error: unknown): number | undefined => {
+        logFailure("Opportunity dashboard could not load the Needs Review queue", error);
+        return undefined;
+      }),
   ]);
   const companyNames = Object.fromEntries(
     filterOptions.companies.flatMap((company) => [
@@ -109,7 +119,7 @@ export default async function HomePage({
         </div>
       </div>
 
-      {summary ? <NeedsAttention summary={summary} /> : null}
+      {summary ? <NeedsAttention summary={summary} needsReview={needsReview} /> : null}
 
       <section aria-labelledby="opportunities-title">
         <h2 id="opportunities-title">Opportunities</h2>

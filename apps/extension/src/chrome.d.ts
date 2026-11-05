@@ -1,7 +1,7 @@
 // The few Chrome extension APIs the extension uses, declared here instead
 // of installing @types/chrome. Only what the manifest's permissions
-// (activeTab, scripting, storage, alarms, and the optional host permissions
-// for background-tab detail reading) allow is declared.
+// (activeTab, scripting, storage, alarms, sidePanel, and the optional host
+// permissions for background-tab detail reading) allow is declared.
 
 declare namespace chrome {
   namespace runtime {
@@ -29,6 +29,7 @@ declare namespace chrome {
       title?: string;
       status?: "loading" | "complete" | "unloaded";
       active?: boolean;
+      windowId?: number;
     }
     function query(queryInfo: { active: boolean; currentWindow: boolean }): Promise<Tab[]>;
     function get(tabId: number): Promise<Tab>;
@@ -40,6 +41,19 @@ declare namespace chrome {
     }
     const onUpdated: Listener<[tabId: number, changeInfo: { status?: string; url?: string }, tab: Tab]>;
     const onRemoved: Listener<[tabId: number, removeInfo: unknown]>;
+    const onActivated: Listener<[activeInfo: { tabId: number; windowId: number }]>;
+  }
+
+  namespace action {
+    // Fires on a toolbar-button click (the manifest sets no popup). The click
+    // is the user's invocation: it gives the extension access to that tab
+    // (activeTab) and opens the side panel.
+    const onClicked: { addListener(callback: (tab: tabs.Tab) => void): void };
+  }
+
+  namespace sidePanel {
+    function open(options: { windowId?: number; tabId?: number }): Promise<void>;
+    function setPanelBehavior(behavior: { openPanelOnActionClick: boolean }): Promise<void>;
   }
 
   namespace scripting {

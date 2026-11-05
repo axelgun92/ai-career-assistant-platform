@@ -63,6 +63,8 @@ try {
     process.stdout.write(JSON.stringify(items));
   } else if (command === "cleanup-items") {
     await database.pageCaptureItem.deleteMany({ where: ofRun });
+    // Capture-history sessions left with none of their jobs (November 5, 2026).
+    await database.$executeRaw`DELETE FROM "PageCaptureSession" s WHERE NOT EXISTS (SELECT 1 FROM "PageCaptureItem" i WHERE i."id" = ANY(s."itemIds"))`;
   } else {
     throw new Error("Unknown Mode B E2E helper command");
   }

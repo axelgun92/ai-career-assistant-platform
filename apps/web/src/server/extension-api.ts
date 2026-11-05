@@ -12,10 +12,11 @@ import { createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
 import { z } from "zod";
 import { EvaluationApiError } from "./evaluation-errors";
 import { handleProductionEvaluationGet, handleProductionEvaluationPost } from "./evaluation-api";
-import { getEvaluationService, type EvaluationService } from "./evaluation-service";
+import { getEvaluationService, type EvaluationService, type TriageAssessment } from "./evaluation-service";
 import {
   createExtensionCaptureService,
   ExtensionCaptureError,
+  type CaptureTriage,
   type EvaluationSummary,
   type ExtensionCaptureService,
 } from "./extension-capture";
@@ -31,6 +32,7 @@ import {
 import { createPageCaptureService, type PageCaptureService } from "./page-capture";
 import { createPageCaptureIngestor, evaluationHandoff } from "./page-capture-acquisition";
 import { createPageCaptureTabService, PageCaptureTabError, type PageCaptureTabService } from "./page-capture-tabs";
+import { extensionCaptureSession, extensionCaptureSessions } from "./page-capture-progress";
 
 // The browser extension companion's API (feature 14B). Two groups of
 // routes:
@@ -57,6 +59,11 @@ export interface ExtensionApiDependencies {
   pageCaptures?: PageCaptureService;
   // Mode B background-tab detail reading (P2), reported by the extension.
   pageCaptureTabs?: PageCaptureTabService;
+  // Capture history for the side panel.
+  captureHistory?: {
+    sessions(limit: number): Promise<unknown>;
+    session(id: string): Promise<unknown | null>;
+  };
   evaluation: {
     request(request: Request, opportunityId: string): Promise<Response>;
     status(request: Request, opportunityId: string): Promise<Response>;
@@ -76,6 +83,7 @@ export function pairingView(pairing: ExtensionPairingRecord) {
     createdAt: pairing.createdAt.toISOString(),
     lastUsedAt: pairing.lastUsedAt?.toISOString() ?? null,
     revokedAt: pairing.revokedAt?.toISOString() ?? null,
+    extensionVersion: pairing.lastExtensionVersion ?? null,
   };
 }
 
@@ -161,6 +169,31 @@ export function createExtensionApiHandlers(dependencies: ExtensionApiDependencie
     },
     async pageCaptureTabStop(request: Request) {
       return tabRoute(request, 8 * 1024, (body, tabs) => tabs.stop(body));
+    },
+
+    // Capture history for the extension's side panel: recent saves from
+    // results pages, and one save's jobs with their current state.
+    async pageCaptureSessions(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.captureHistory) return extensionJson({ sessions: [] });
+      const limit = Number.parseInt(new URL(request.url).searchParams.get("limit") ?? "10", 10);
+      try {
+        return extensionJson(await dependencies.captureHistory.sessions(Number.isFinite(limit) ? limit : 10));
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+    async pageCaptureSession(request: Request, id: string) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.captureHistory || !z.uuid().safeParse(id).success) return extensionError("NOT_FOUND", "Capture not found");
+      try {
+        const session = await dependencies.captureHistory.session(id);
+        return session ? extensionJson(session) : extensionError("NOT_FOUND", "Capture not found");
+      } catch (error) {
+        return captureFailure(error);
+      }
     },
 
     async lookup(request: Request) {
@@ -261,6 +294,13 @@ export function evaluationSummaryReader(
   };
 }
 
+// A saved job's triage as the extension shows it: the effective outcome
+// (a manual decision wins) with its reasons' messages.
+export function captureTriageFrom(assessment: TriageAssessment): CaptureTriage {
+  if (assessment.status !== "ASSESSED") return assessment;
+  return { status: "ASSESSED", outcome: assessment.triage.outcome, reasons: assessment.triage.reasons.map((reason) => reason.message) };
+}
+
 let handlers: ExtensionApiHandlers | undefined;
 
 export function getExtensionApi(): ExtensionApiHandlers {
@@ -280,6 +320,8 @@ export function getExtensionApi(): ExtensionApiHandlers {
       lookup: new PrismaExtensionLookupRepository(),
       latestEvaluation: (opportunityId) =>
         evaluationSummaryReader(getEvaluationService(), async (id) => (await findListingVersionHint(id)) !== null)(opportunityId),
+      // Triage only at save (D2): never admission or evaluation.
+      triage: async (opportunityId) => captureTriageFrom(await getEvaluationService().assessTriage(opportunityId)),
       discovery: customerSuccessDiscoveryConfiguration,
     }),
     pageCaptures,
@@ -293,6 +335,10 @@ export function getExtensionApi(): ExtensionApiHandlers {
       }),
       enabledSites: pageCaptures.enabledSites,
     }),
+    captureHistory: {
+      sessions: (limit) => extensionCaptureSessions(limit, pageCaptureRepository),
+      session: (id) => extensionCaptureSession(id, pageCaptureRepository),
+    },
     evaluation: { request: handleProductionEvaluationPost, status: handleProductionEvaluationGet },
   });
   return handlers;

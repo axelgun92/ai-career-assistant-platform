@@ -1759,3 +1759,53 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - Codex's triage; the evaluator; `extract.ts`, `envelope.ts`, `capturedListing()`, `capturedPageIdentity()`; the safeguards above; the manifest's permission set.
+
+### Handoff: Consolidated Mode B Acceptance Fixes — Workstreams A, C, D, E (Claude; shared-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, evidence E1–E3); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. Workstream B (capture correctness) waits for evidence.
+
+#### Completed
+
+- **A — diagnostic.** Root causes are in CURRENT_PROGRESS.md under "Consolidated Mode B Acceptance Fixes".
+- **C — triage.**
+  - Triage at single-job save via the new `EvaluationService.assessTriage(opportunityId)`: triage only, with no admission, budget, queue or provider call.
+  - The no-profile state is reported, never invented.
+  - The dashboard view "To triage" is renamed **Not acted on**; a Needs Review count links to `/budget#pre-evaluator-review`; the opportunity page notes when triage has not run.
+- **D3 — capture history.** Additive `PageCaptureSession` and nullable `ExtensionPairing.lastExtensionVersion`, in migration `20261105090000_page_capture_session`.
+- **D — extension 0.3.0.** Side panel (`sidePanel` permission, no popup; the toolbar button is the activeTab grant), Single Job / Batch Capture modes, current/latest/previous captures.
+- **E — app pages.** Setup & Connection (`/extension`) and Captured Jobs (`/extension/jobs`).
+
+#### Current Contract / Assumptions
+
+- `requestEvaluation`, `triageGate`, the triage rules and the persistence are unchanged; `assessTriage` reuses them.
+- Captured Jobs creates no job records: it lists `PageCaptureItem` rows and, once per opportunity, single-job `browser-extension` source records with no batch item.
+- The extension sends `X-Extension-Version`; the pairing stores it only when it is a plain dotted version.
+
+#### Files Changed in Codex-Owned Areas (necessary, minimal)
+
+- `tests/e2e/extension.spec.ts`: three assertion lines, for the approved wording: h1 "Setup & Connection"; "Unpair / Revoke Access", then its confirmation.
+- `tests/e2e/extension-page-capture.spec.ts`: one assertion line (h1 "Captured Jobs").
+- `tests/support/e2e-page-capture-helper.ts`: one cleanup line removing capture sessions left with none of their items.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md.
+- Unit 2,158 passed; integration 378 passed.
+- E2E: `extension` 8/8, `page-capture` 4/4, `dashboard` 4/4, `pre-evaluator-triage` 1/1.
+- 27 migrations verified; test DB clean.
+
+#### Known Issues / Blockers
+
+- The side panel is not yet checked live in Alex's Chrome. The E2E tests open its page directly; Chrome's real toolbar-to-panel flow, tab changes and Incognito need Alex's live check.
+- Workstream B is pending E1 (acceptance-DB export), then E2/E3 as E1 shows necessary.
+
+#### Next Task
+
+- Alex: run E1 and return its output. On approval of this change set: commit, push and closeout.
+
+#### Do Not Change Without Coordination
+
+- The triage gate and rules; `requestEvaluation`'s order; the capture identity; `PageCaptureSession` semantics (history only).

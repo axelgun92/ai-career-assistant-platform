@@ -1046,6 +1046,9 @@ model ExtensionPairing {
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
   lastUsedAt DateTime? @db.Timestamptz(3)
   revokedAt  DateTime? @db.Timestamptz(3)
+  // The extension version that last used this pairing, as the extension
+  // reported it (Setup & Connection, November 5, 2026). Null until then.
+  lastExtensionVersion String?
 }
 
 // A job card the browser extension read from a results page (Mode B, "Save
@@ -1090,6 +1093,27 @@ model PageCaptureItem {
   @@index([status, nextAttemptAt])
   @@index([site, lastAttemptAt])
   @@index([opportunityId])
+}
+
+// One "Save selected jobs" from a results page (Mode B), kept so that earlier
+// captures can be reopened (capture history, November 5, 2026). History only:
+// the jobs stay in PageCaptureItem (and, once added, Opportunity); a session
+// lists which staged items that save covered, in page order, with the counts
+// reported then. Its id is the batch's own batchId, so a repeated batch is
+// one session. Additive; nothing else reads or writes it.
+model PageCaptureSession {
+  id         String   @id @db.Uuid
+  site       String
+  pageUrl    String   @db.Text
+  pageTitle  String?
+  pairingId  String   @db.Uuid
+  receivedAt DateTime @db.Timestamptz(3)
+  itemIds    String[] @db.Uuid
+  counts     Json
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([receivedAt(sort: Desc)])
+  @@index([site, receivedAt])
 }
 
 enum PageCaptureItemStatus {

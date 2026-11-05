@@ -44,8 +44,15 @@ function Distribution({
   );
 }
 
-export function NeedsAttention({ summary }: { summary: Summary }) {
+// The pre-evaluator triage's Needs Review queue (jobs held before
+// evaluation for an Evaluate or Reject decision), on the AI Budget page.
+export const needsReviewLink = "/budget#pre-evaluator-review";
+
+export function NeedsAttention({ summary, needsReview }: { summary: Summary; needsReview?: number }) {
   const items = [
+    ...(needsReview === undefined
+      ? []
+      : [{ label: "Needs Review before evaluation", count: needsReview, href: needsReviewLink, help: "Held by pre-evaluator triage for your Evaluate or Reject decision" }]),
     { label: "Not evaluated", count: summary.activeNotEvaluated, href: attentionLinks.notEvaluated, help: "Active opportunities with no evaluation yet" },
     { label: "Recommended to apply", count: summary.triageRecommendedApply, href: attentionLinks.recommendedApply, help: "Not yet saved, applied, or dismissed" },
     { label: "Deferred for budget", count: summary.deferred, href: attentionLinks.deferred, help: "Waiting for AI budget" },

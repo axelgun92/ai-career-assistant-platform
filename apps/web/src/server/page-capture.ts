@@ -68,6 +68,9 @@ export interface PageCaptureOutcome {
 
 export interface PageCaptureResult {
   batchId: string;
+  // The capture-history session of this save (its batchId), or null when no
+  // card could be staged.
+  sessionId: string | null;
   site: { key: string; name: string; automaticDetails: boolean };
   counts: { queued: number; seenAgain: number; alreadySaved: number; rejected: number };
   outcomes: PageCaptureOutcome[];
@@ -175,6 +178,11 @@ export function createPageCaptureService(dependencies: {
             ...(stoppedUntil ? { awaitingReason: "ACCESS_STOPPED" } : {}),
             ...(tabs ? { requeueAwaiting: true } : {}),
             cards: staged.map(({ index: _index, ...card }) => card),
+            // Capture history: this save and the jobs it covered.
+            session: {
+              pageTitle: batch.pageTitle,
+              counts: { ...batch.counts, staged: staged.length, rejected: outcomes.filter((item) => item.outcome === "REJECTED").length },
+            },
           })
         : [];
       results.forEach((result, position) => {
@@ -184,6 +192,7 @@ export function createPageCaptureService(dependencies: {
       const count = (outcome: PageCaptureOutcome["outcome"]) => outcomes.filter((item) => item.outcome === outcome).length;
       return {
         batchId: batch.batchId,
+        sessionId: results.length ? batch.batchId : null,
         site: { key: site.key, name: site.name, automaticDetails },
         counts: { queued: count("QUEUED"), seenAgain: count("SEEN_AGAIN"), alreadySaved: count("ALREADY_SAVED"), rejected: count("REJECTED") },
         outcomes,
