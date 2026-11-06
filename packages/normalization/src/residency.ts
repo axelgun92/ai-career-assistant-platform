@@ -126,7 +126,12 @@ function readSentence(sentence: string): SentenceResult {
   for (const pattern of [residenceVerb, openTo, basedIn]) {
     const match = pattern.exec(sentence);
     if (!match) continue;
-    const after = sentence.slice(match.index + match[0].length);
+    let after = sentence.slice(match.index + match[0].length);
+    // "open to candidates in Austin, Texas or other cities in the United
+    // States" (AlertMedia, November 5, 2026): the places named first are
+    // examples within the country named last, which is where candidates may be.
+    const within = /^[^.;]{1,80}?\s+(?:or|and)\s+(?:any\s+)?(?:other|elsewhere)\s+(?:cities|locations|places|states|areas)?\s*(?:in|within|across|throughout)\s+(?:the\s+)?/i.exec(after);
+    if (within) after = after.slice(within[0].length);
     const reading = readGeographyList(after.replace(listLeadIn, ""));
     if (reading.ambiguous) ambiguous = true;
     else if (reading.codes.length) found.push(reading.codes);
@@ -191,8 +196,10 @@ const exclusionSubject =
   /\b(?:residents\s+of|(?:candidates|applicants|individuals|people|employees)\s+(?:who\s+)?(?:are\s+)?(?:residing|living|located|based|reside|live)\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
 const notEligible =
   /^\s*[,;:]?\s*(?:(?:are|is)\s+(?:not\s+(?:currently\s+)?(?:eligible|considered|able\s+to\s+be\s+considered)|ineligible)|(?:cannot|can\s*not|will\s+not)\s+be\s+(?:considered|hired|employed))\b/i;
+// "we currently do not hire candidates residing in the following states:
+// …" (AlertMedia, November 5, 2026) is the same statement.
 const unableToHire =
-  /\b(?:are|is)\s+(?:not\s+(?:currently\s+)?able|unable)\s+to\s+(?:hire|employ|consider|accept\s+applications\s+from)\s+(?:(?:candidates|applicants|residents|individuals|anyone|employees)\s+)?(?:(?:who\s+)?(?:reside|live|are\s+located|are\s+based)\s+)?(?:in|from|of|residing\s+in|located\s+in|based\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
+  /\b(?:(?:are|is)\s+(?:not\s+(?:currently\s+)?able|unable)\s+to|(?:do|does)\s+not\s+(?:currently\s+)?|don't\s+(?:currently\s+)?|(?:cannot|can\s*not|will\s+not)\s+(?:currently\s+)?)\s*(?:hire|employ|consider|accept\s+applications\s+from)\s+(?:(?:candidates|applicants|residents|individuals|anyone|employees)\s+)?(?:(?:who\s+)?(?:reside|live|are\s+located|are\s+based)\s+)?(?:in|from|of|residing\s+in|located\s+in|based\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
 const listItemSeparator = /\s*(?:,\s*(?:(?:or|and)\b)?|\/|&|;|\bor\b|\band\b)\s*/i;
 const contextualStates: Record<string, string> = { washington: "US-WA", georgia: "US-GA" };
 

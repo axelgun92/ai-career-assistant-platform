@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createRetrievalIngestionService } from "@ai-career/core";
+import { createRetrievalIngestionService, pageReaderRevision } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   getDatabaseClient,
@@ -15,7 +15,9 @@ import { ZodError } from "zod";
 import { getEvaluationService } from "./evaluation-service";
 import { enabledSitesFromEnvironment } from "./page-capture";
 import { createPageCaptureAcquisition, evaluationHandoff, type PageCaptureAcquisition } from "./page-capture-acquisition";
+import { createPageCaptureEvidence } from "./page-capture-evidence";
 import { createRetrievalWorker, runRetrievalWorkerLoop, type RetrievalWorker } from "./retrieval-worker";
+import { gitHead, workerDiagnosticsFromEnvironment, type WorkerDiagnostics } from "./worker-diagnostics";
 import { formatWorkerError } from "./worker-errors";
 
 // pnpm worker:retrieval [--once] — runs enabled retrieval sources on their
@@ -51,6 +53,29 @@ const log = {
   warn: (message: string) => console.warn(`[retrieval] ${message}`),
   error: (message: string) => console.error(`[retrieval] ${message}`),
 };
+
+// worker.crash / worker.exit: written synchronously, so an uncaught error or
+// an unexpected exit still leaves its last line in the diagnostics file.
+let activeDiagnostics: WorkerDiagnostics | null = null;
+function recordProcessEnd(diagnostics: WorkerDiagnostics) {
+  activeDiagnostics = diagnostics;
+  let ended = false;
+  process.on("uncaughtException", (error) => {
+    diagnostics.event("worker.crash", { kind: "uncaughtException", error });
+    ended = true;
+    log.error(`uncaught error; exiting ${formatWorkerError(error)}`);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    diagnostics.event("worker.crash", { kind: "unhandledRejection", error: reason });
+    ended = true;
+    log.error(`unhandled rejection; exiting ${formatWorkerError(reason)}`);
+    process.exit(1);
+  });
+  process.on("exit", (code) => {
+    if (!ended) diagnostics.event("worker.exit", { code });
+  });
+}
 
 function readConfiguration() {
   try {
@@ -104,6 +129,30 @@ async function main(): Promise<number> {
   process.on("SIGTERM", onSignal);
 
   log.info(`starting pollMs=${settings.RETRIEVAL_WORKER_POLL_MS}${once ? " once" : ""}`);
+  const diagnostics = workerDiagnosticsFromEnvironment(process.env, log.warn);
+  recordProcessEnd(diagnostics);
+  const evidenceDays = Number(process.env.PAGE_CAPTURE_EVIDENCE_RETENTION_DAYS ?? 7);
+  const evidence = createPageCaptureEvidence({
+    directory: process.env.PAGE_CAPTURE_EVIDENCE_DIR?.trim() || null,
+    sessionId: diagnostics.sessionId,
+    retentionDays: Number.isFinite(evidenceDays) && evidenceDays > 0 ? evidenceDays : 7,
+    warn: log.warn,
+  });
+  const head = gitHead();
+  diagnostics.event("worker.start", {
+    pollMs: settings.RETRIEVAL_WORKER_POLL_MS,
+    once,
+    gitSha: head.sha,
+    gitBranch: head.branch,
+    pageReaderRevision,
+    node: process.version,
+    platform: process.platform,
+    browserConfigured: Boolean(settings.RETRIEVAL_BROWSER_EXECUTABLE),
+    detailSites: enabledSitesFromEnvironment().details,
+    evidenceEnabled: Boolean(evidence.directory),
+  });
+  if (diagnostics.file) log.info(`diagnostics session=${diagnostics.sessionId} file=${diagnostics.file}`);
+  if (evidence.directory) log.warn(`page evidence is ON (may hold personal data): ${evidence.directory}`);
   const lock = new RetrievalWorkerLock();
   const sources = new PrismaRetrievalSourceRepository();
   const captureRepository = new PrismaManualOpportunityRepository();
@@ -121,6 +170,8 @@ async function main(): Promise<number> {
     probeCapture: () => captureRepository.probeCaptureLock(),
     ...(browser ? { browser } : {}),
     log,
+    diagnostics,
+    evidence,
   });
   const retrievalWorker = createRetrievalWorker({
     store: sources,
@@ -152,6 +203,7 @@ async function main(): Promise<number> {
       log,
       pollMs: settings.RETRIEVAL_WORKER_POLL_MS,
       once,
+      events: diagnostics,
     });
   } finally {
     await lock.release();
@@ -164,6 +216,7 @@ main()
   })
   .catch((error: unknown) => {
     log.error(`fatal error; exiting ${formatWorkerError(error)}`);
+    activeDiagnostics?.event("worker.fatal", { classification: "fatal", decision: "EXIT", stage: "main", error });
     process.exitCode = 1;
   })
   .finally(() => getDatabaseClient().$disconnect().catch(() => undefined));

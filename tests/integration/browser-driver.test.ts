@@ -68,6 +68,11 @@ describe("the Playwright browser driver", () => {
       expect(page).toMatchObject({ status: 200, finalUrl: `${origin}/set-cookie`, cookieNames: ["visitor"] });
       const job = await first.navigate(`${origin}/job`, { timeoutMs: 15_000 });
       expect(parseHtml(job.html, job.finalUrl).querySelector(".top-card-layout__title")?.textContent).toBe("Customer Success Manager");
+      // The page as the site sent it, before any script ran (November 6,
+      // 2026: LinkedIn's employer apply link is read from it when the
+      // rendered page no longer has it). No second request is made for it.
+      expect(job.servedHtml).toContain('<h1 class="top-card-layout__title">Customer Success Manager</h1>');
+      expect(requests.filter((request) => request.path === "/job")).toHaveLength(1);
     } finally {
       await first.close();
     }

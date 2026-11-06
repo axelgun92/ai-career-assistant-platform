@@ -1950,7 +1950,7 @@ When later extension work is explicitly authorized:
 **Date:** November 6, 2026
 **From:** Claude main-product workstream
 **To:** Alex (E4 evidence, then the source-specific fixes, one coordinated closeout, acceptance-DB migration and live round authorization); Codex (boundary awareness)
-**Status:** Structural work and every E4-independent gap from the November 6 completion audit implemented and verified offline on `ai_career_assistant_test`, on top of `144fa6c`; not committed. No production merge.
+**Status:** Structural work and every E4-independent gap from the November 6 completion audit implemented and verified offline on `ai_career_assistant_test`, on top of `144fa6c`; committed and pushed as `58ef504` (earlier: "not committed"). No production merge. Continued by the Rev 3 final review record below.
 
 #### Completed
 
@@ -1990,3 +1990,43 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The provisional accounting contract (an outage never counts an attempt; a job-specific failure counts once); the refresh eligibility rules and their registry values; the withdrawal rule (only explicit source statements clear a field); the application-link precedence.
+
+### Handoff: Mode B Rev 3 — Final Review, Persistent Diagnostics and Offline Acceptance (Claude; shared-boundary record)
+
+**Date:** November 6, 2026
+**From:** Claude main-product workstream
+**To:** Alex (approval and closeout; optional stored E4 texts; acceptance-DB migration and live round authorization); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `58ef504`; not committed. No production merge.
+
+#### Completed
+
+- E4/E4b conclusion recorded: TENEX.AI (LinkedIn 4372638963) was the sixth job, left ACQUIRING with no Opportunity or SourceRecord; the P2028's transaction is unproven; historical search closed.
+- Received-HTML LinkedIn apply link (approved precedence step 2): `BrowserPage.servedHtml` (`packages/discovery/src/browser.ts`, `packages/browser-retrieval/src/index.ts`), used in `page-capture-acquisition.ts` for LinkedIn only when the rendered page has a posting but no employer link.
+- Persistent diagnostics (`apps/web/src/server/worker-diagnostics.ts`), opt-in page evidence (`page-capture-evidence.ts`), wired in `retrieval-worker-cli.ts` and `runRetrievalWorkerLoop` (`events`); read-only failure evidence package (`diagnostics-package.ts`, `diagnostics-package-cli.ts`, `pnpm diagnostics:package`).
+- Hardening: `database/src/transaction-diagnostics.ts` (`namedTransaction`, `workerTransactionOptions`) for `claimNextRun`, `finishRun`, `recordListingObservations` and `stageBatch`; the capture repository uses the same naming helper.
+
+#### Current Contract / Assumptions
+
+- Diagnostics files hold ids, decisions, timings and sanitized error fields only; page evidence is never on by default; both refuse folders inside the repository. The evidence package reads only a database whose name says test or acceptance.
+- `DiagnosticsSink` and `PageCaptureEvidence` are optional dependencies of the acquisition pass; without them it behaves as at `58ef504`.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Mode B Rev 3 — Final E4/E4b Evidence …): unit 2,288, integration 416 (incl. `mode-b-tenex-diagnostics.test.ts`), E2E 60/60, 14B historical suites unchanged, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- Resolved in the final check: the Juniper Square, AlertMedia and Critical Start fixes now pass on their stored November 5 texts (`tests/unit/mode-b-e4-real-texts.test.ts`); the diagnostic artifacts were security-reviewed (Git-checkout refusal, owner-only files, broader redaction, `pnpm diagnostics:cleanup`).
+- The acceptance database needs the 28th migration (`residencyExclusions`) before the live round (authorization).
+
+#### Next Task
+
+- Alex: approve and close out; then the controlled live round with `RETRIEVAL_WORKER_LOG_DIR` default on and `PAGE_CAPTURE_EVIDENCE_DIR` set.
+
+#### Do Not Change Without Coordination
+
+- The diagnostics' content limits (no page content or secrets in the event file) and the evidence package's database restriction.

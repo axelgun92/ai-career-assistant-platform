@@ -714,13 +714,15 @@ function collectLocation(source: TextSource): { candidates: Array<TextFact<strin
 // "This role is fully remote." The modifiers, or null when the sentence has
 // none of these shapes or is negated.
 function modifierSentence(sentence: string): ModifierReading | null {
-  const text = collapse(sentence).replace(/[.!]$/, "");
+  // "Location: Position is fully remote and open to candidates in …"
+  // (AlertMedia, November 5, 2026): a location label before the statement.
+  const text = collapse(sentence).replace(/[.!]$/, "").replace(/^(?:job\s+|work\s+)?location\s*[:：]\s*/i, "");
   const thisIsA = /^this\s+is\s+(?:an?\s+)?(.{1,80}?)\s+(?:position|role|job|opportunity)\b/i.exec(text);
   if (thisIsA) {
     if (negation.test(thisIsA[1]!)) return null;
     return readModifiers(normalizedModifiers(thisIsA[1]!));
   }
-  const roleIs = /^(?:this|the)\s+(?:position|role|job|opportunity)\s+is\s+(.{1,60}?)(?=$|[,;:]|\s+(?:with|in|within|for|based|located|out|from|and\s+(?:you|we|will)|reporting|starting)\b)/i.exec(text);
+  const roleIs = /^(?:(?:this|the)\s+)?(?:position|role|job|opportunity)\s+is\s+(.{1,60}?)(?=$|[,;:]|\s+(?:with|in|within|for|based|located|out|from|and\s+(?:is\s+)?open|and\s+(?:you|we|will)|reporting|starting)\b)/i.exec(text);
   if (roleIs) {
     if (negation.test(roleIs[1]!)) return null;
     const reading = readModifiers(normalizedModifiers(roleIs[1]!));
@@ -1298,7 +1300,12 @@ export function relativePostedDate(text: string | null, observedAt: Date): Date 
 function collectDate(source: TextSource, labels: readonly string[], kind: string): Array<TextFact<Date>> {
   const candidates: Array<TextFact<Date>> = [];
   const alternatives = [...labels].sort((a, b) => b.length - a.length).map(escape).join("|");
-  const statement = new RegExp(`^(?:the\\s+)?(?:${alternatives})\\s*(?:[:：]|\\bis\\b|\\bwill be\\b)?\\s*(?:on\\s+|by\\s+)?`, "i");
+  // "The application deadline for this position is November 20, 2026."
+  // (Critical Start, November 5, 2026): the label may name what it is for.
+  const statement = new RegExp(
+    `^(?:the\\s+)?(?:${alternatives})(?:\\s+for\\s+(?:this|the)\\s+(?:position|role|job|posting|opening|vacancy|requisition))?\\s*(?:[:：]|\\bis\\b|\\bwill be\\b)?\\s*(?:on\\s+|by\\s+)?`,
+    "i",
+  );
   const seen = new Set<string>();
   const consider = (text: string, sourceText: string) => {
     const date = parseUnambiguousDate(text);

@@ -19,6 +19,11 @@ const countryOfLabel = (label: string): string | null => {
   return entry ? entry[0] : null;
 };
 const countryOf = (code: string) => code.split("-")[0]!;
+const countryAdjectives: Record<string, string> = {
+  Canadian: "CA", British: "GB", Mexican: "MX", Australian: "AU", Irish: "IE", German: "DE", French: "FR",
+  Dutch: "NL", Spanish: "ES", Indian: "IN", Brazilian: "BR",
+};
+const countryAdjective = new RegExp(`\\b(${Object.keys(countryAdjectives).join("|")})\\b`, "g");
 
 export interface PrimaryTier {
   index: number;
@@ -55,7 +60,10 @@ export function primaryCountryTier(input: {
     // The rest of the posting must not open another tier's country.
     let rest = input.description ?? "";
     for (const statement of input.tierStatements) rest = rest.split(statement).join(" ");
-    const named = new Set(scanGeography(rest).codes.map(countryOf));
+    // A country named by its adjective counts too: "teams … across 27 U.S.
+    // states, 2 Canadian Provinces, …" (Juniper Square, November 5, 2026)
+    // opens Canada, so the U.S. location alone does not pick the U.S. tier.
+    const named = new Set([...scanGeography(rest).codes.map(countryOf), ...[...rest.matchAll(countryAdjective)].map((match) => countryAdjectives[match[1]!]!)]);
     if (tierCountries.some((code) => code !== country && named.has(code!))) return null;
     evidence = input.location!;
   }

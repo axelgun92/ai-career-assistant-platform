@@ -21,6 +21,10 @@ export interface BrowserNavigation {
   // Where the browser ended up after any redirects.
   finalUrl: string;
   html: string;
+  // The main document exactly as the source sent it, before the page's own
+  // scripts ran (November 6, 2026: a page can remove an element, such as
+  // LinkedIn's apply link, after load). Absent when the driver cannot read it.
+  servedHtml?: string;
   // The names of the cookies the browser holds after the navigation.
   cookieNames: readonly string[];
   // A valid Retry-After the response carried, in seconds.
@@ -41,6 +45,10 @@ export interface BrowserPage {
   status: number;
   finalUrl: string;
   document: Document;
+  // The rendered page and, when available, the page as sent (both within the
+  // page-size limit), for a reader that needs both and for opt-in evidence.
+  html: string;
+  servedHtml?: string;
 }
 
 export interface BrowserSession {
@@ -139,7 +147,8 @@ export function createBrowserSession(driver: BrowserDriver, options: BrowserSess
     const page = { finalUrl: result.finalUrl, document };
     const friction = detectGenericFriction(page) ?? options.detectFriction?.(page) ?? null;
     if (friction) stop(new AdapterError("ACCESS_DENIED", `The source presented ${friction}; retrieval stopped`, { status, url }));
-    return { status, finalUrl: result.finalUrl, document };
+    const served = result.servedHtml !== undefined && result.servedHtml.length <= maxPageBytes ? { servedHtml: result.servedHtml } : {};
+    return { status, finalUrl: result.finalUrl, document, html: result.html, ...served };
   }
 
   return {

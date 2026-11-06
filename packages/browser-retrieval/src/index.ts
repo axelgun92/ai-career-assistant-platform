@@ -72,10 +72,13 @@ export async function launchBrowserDriver(options: BrowserLaunchOptions): Promis
           requested = false;
         }
         const retryAfterSeconds = parseRetryAfter((await response?.headerValue("retry-after")) ?? null, new Date());
+        // The document as sent, before page scripts changed it (best effort).
+        const servedHtml = response ? await response.text().catch(() => undefined) : undefined;
         return {
           status: response?.status() ?? null,
           finalUrl: page.url(),
           html: await documentHtml(page),
+          ...(servedHtml === undefined ? {} : { servedHtml }),
           cookieNames: (await context.cookies()).map((cookie) => cookie.name),
           ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
           ...(response ? { headers: diagnosticHeaders(await response.allHeaders()) } : {}),

@@ -19,6 +19,7 @@ export * from "./application-repository";
 export * from "./application-list-repository";
 export * from "./evaluation-worker-lock";
 export * from "./retrieval-source-repository";
+export * from "./transaction-diagnostics";
 export * from "./retrieval-worker-lock";
 export * from "./extension-pairing-repository";
 export * from "./extension-lookup-repository";

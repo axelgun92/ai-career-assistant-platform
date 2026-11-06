@@ -322,6 +322,35 @@ pnpm page-capture:verify welcome-to-the-jungle <up to 5 job URLs from its F0 car
 - BLOCKED or FAIL means stop and report. There is no further investigation of that site's server-side retrieval (no hidden endpoints, no logged-in access, no repeated probing) unless Alex explicitly authorizes more. Another mechanism (P2) is a separate decision.
 - Prior evidence: LinkedIn's first logged-out job-detail request answered HTTP 429 (October 20, 2026). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet; this path has not been tested either way.
 
+## Worker diagnostics and failure evidence (Alex, local runtime)
+
+Added November 6, 2026. Nothing here is uploaded anywhere.
+
+**Automatic: the worker's diagnostics file.** `pnpm worker:retrieval` appends one JSON line per event to `~/.ai-job-assistant/diagnostics/logs/retrieval-worker-<UTC date>.jsonl` (or under `RETRIEVAL_WORKER_LOG_DIR`). The folder is owner-only (0700), the files 0600; files older than `RETRIEVAL_WORKER_LOG_RETENTION_DAYS` (default 30) are deleted when the worker starts; `RETRIEVAL_WORKER_LOG_DIR=off` turns it off. It records ids (worker session, capture batch, job, listing, opportunity), the stage, decisions, attempts, next retry, timings, the Git commit and reader revision at start, crashes and exits, and for a database failure the Prisma code, which P2028 form it was (start-timeout or expired, with the timeout and elapsed ms), the transaction's name and settings and a sanitized message. It never holds page content, passwords, tokens, cookies or connection strings. The worker prints the file's path when it starts. To read it: `tail -n 50 ~/.ai-job-assistant/diagnostics/logs/retrieval-worker-$(date -u +%F).jsonl`, or filter one job with `grep '"itemId":"<id>"'`.
+
+**Opt-in: page evidence (controlled runs only).**
+```bash
+mkdir -p ~/aija-evidence && chmod 700 ~/aija-evidence
+PAGE_CAPTURE_EVIDENCE_DIR=~/aija-evidence pnpm worker:retrieval
+```
+Each job read leaves `<job id>.rendered.html`, `<job id>.served.html` (the page as the site sent it) and `<job id>.json` (status, timing, the apply-link evidence and which route the application link took, the fields read or missing, any error) in `~/aija-evidence/<worker session>/`. The folder must be outside the repository; files are 0600; session folders older than `PAGE_CAPTURE_EVIDENCE_RETENTION_DAYS` (default 7) are deleted when the worker starts. Pages can hold personal or session data: keep the folder local, never commit or upload it, and delete it after review. Leave the variable unset for normal use.
+
+**Cleanup at any time.** The worker prunes only when it starts (and page evidence only while `PAGE_CAPTURE_EVIDENCE_DIR` is set). To apply retention now, or to remove every page-evidence session:
+```bash
+pnpm diagnostics:cleanup --evidence-dir ~/aija-evidence            # logs > 30 days, evidence sessions > 7 days
+pnpm diagnostics:cleanup --evidence-dir ~/aija-evidence --all-evidence
+```
+It deletes only `retrieval-worker-<date>.jsonl` files and worker-session folders. Evidence packages are separate folders you delete yourself (`rm -rf ~/aija-failure-<time>`).
+
+**Where these files may live.** The diagnostics folder, the page-evidence folder and a package's `--out` folder are refused inside this repository or any other Git checkout (also through a symbolic link, and whichever folder you run the command from). Folders are owner-only (0700) and files 0600, also when they already existed. Every logged string has credentials, tokens, API keys and cookies removed, and logged page URLs carry no query string. Nothing is uploaded: there is no upload step anywhere in these tools.
+
+**After a failure: the evidence package.** Stop the worker, then:
+```bash
+DATABASE_URL=<the acceptance database URL> pnpm diagnostics:package --database ai_career_assistant_acceptance \
+  --latest --site linkedin --out ~/aija-failure-$(date -u +%Y%m%dT%H%M) [--evidence-dir ~/aija-evidence]
+```
+(or `--capture-session <id>` for a particular save). It writes a new owner-only folder with `manifest.json`, the capture session, its jobs, their source records (including any not linked to a job), the jobs saved and their triage outcome, a combined timeline, the worker's diagnostics for the window and the page evidence for those jobs. It reads in one read-only transaction, only from a database whose name says test or acceptance (never the normal database), and reruns nothing, contacts no site and calls no provider. Share the folder only as Alex decides; it may contain job and page data.
+
 ## Known limits
 
 - **LinkedIn:** the logged-in markup changes often. If the job-detail reader stops finding the job, select the description text and read again. The extension does not change or work around Feature 14A's automated LinkedIn adapter, which stays unverified and disabled after its HTTP 429.

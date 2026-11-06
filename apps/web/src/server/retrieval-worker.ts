@@ -287,8 +287,12 @@ export async function runRetrievalWorkerLoop(input: {
   pollMs: number;
   once?: boolean;
   maxBackoffMs?: number;
+  // Persistent diagnostics (worker-diagnostics.ts): the lock, recovery,
+  // transient back-offs and the fatal exit, as structured events.
+  events?: { event(name: string, fields?: Record<string, unknown>): void };
 }): Promise<number> {
   const maxBackoffMs = input.maxBackoffMs ?? 60_000;
+  const emit = (name: string, fields?: Record<string, unknown>) => input.events?.event(name, fields);
   let failures = 0;
   let recovered = false;
   while (!input.shouldStop()) {
@@ -296,13 +300,16 @@ export async function runRetrievalWorkerLoop(input: {
       if (!input.lock.isHeld()) {
         if (!(await input.lock.acquire())) {
           input.log.error("another retrieval worker is already running; exiting");
+          emit("worker.lock", { held: false, decision: "EXIT_ANOTHER_WORKER" });
           return 1;
         }
         input.log.info("holding the single retrieval-worker lock");
+        emit("worker.lock", { held: true });
       }
       if (!recovered) {
         const interrupted = await input.worker.recover();
         if (interrupted) input.log.warn(`closed ${interrupted} interrupted run(s) as FAILED`);
+        emit("worker.recovery", { interruptedRetrievalRuns: interrupted });
         recovered = true;
       }
       const outcome = await input.worker.runOnce();
@@ -312,6 +319,7 @@ export async function runRetrievalWorkerLoop(input: {
           `run finished runId=${outcome.runId} sourceId=${outcome.sourceId} status=${outcome.status} ` +
             `errorCode=${outcome.errorCode ?? "-"} counts=${JSON.stringify(outcome.counts)}`,
         );
+        emit("run.finished", { runId: outcome.runId, sourceId: outcome.sourceId, status: outcome.status, errorCode: outcome.errorCode, counts: outcome.counts });
         if (input.once) return 0;
         continue;
       }
@@ -320,11 +328,20 @@ export async function runRetrievalWorkerLoop(input: {
     } catch (error) {
       if (classifyRetrievalWorkerError(error) === "fatal") {
         input.log.error(`fatal error; exiting ${formatWorkerError(error)}`);
+        emit("worker.fatal", { classification: "fatal", decision: "EXIT", error });
         return 1;
       }
       failures += 1;
       const delay = Math.min(input.pollMs * 2 ** failures, maxBackoffMs);
       input.log.warn(`transient error (attempt ${failures}); retrying in ${delay}ms ${formatWorkerError(error)}`);
+      emit("worker.transient", {
+        classification: "transient",
+        attempt: failures,
+        delayMs: delay,
+        nextRetryAt: new Date(Date.now() + delay),
+        decision: "BACKOFF_KEEP_LOCK",
+        error,
+      });
       await input.sleep(delay);
     }
   }

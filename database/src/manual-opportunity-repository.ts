@@ -33,6 +33,7 @@ import {
 } from "@ai-career/deduplication";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { namedTransaction } from "./transaction-diagnostics";
 import {
   containsPattern,
   findDuplicateCandidates,
@@ -54,20 +55,15 @@ const captureLockKey = Prisma.sql`hashtext('ai-career:opportunity-capture')`;
 // transaction's own expiry (P2028).
 const captureTransactionOptions = { maxWait: 15_000, timeout: 30_000 } as const;
 const captureLockWaitMs = 20_000;
+// The capture-lock transactions' limits, as the worker's diagnostics report
+// them with a failure.
+export const captureTransactionSettings = { ...captureTransactionOptions, lockTimeoutMs: captureLockWaitMs } as const;
 async function takeCaptureLock(transaction: Transaction) {
   await transaction.$queryRaw`SELECT set_config('lock_timeout', ${`${captureLockWaitMs}ms`}, true)`;
   await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
 }
 // A capture transaction's failure names the transaction (logged by the
-// worker; no data).
-async function namedCapture<T>(name: string, work: () => Promise<T>): Promise<T> {
-  try {
-    return await work();
-  } catch (error) {
-    if (error && typeof error === "object") Object.assign(error, { captureTransaction: name });
-    throw error;
-  }
-}
+// worker; no data): see transaction-diagnostics.ts.
 // At most this many probable matches are recorded per capture.
 const recordedProbableMatches = 3;
 
@@ -402,7 +398,7 @@ export class PrismaManualOpportunityRepository
     provenance: FieldProvenanceInput[];
     duplicateResolution: DuplicateResolutionChoice | null;
   }): Promise<{ opportunityId: string; deduplication: DeduplicationOutcome }> {
-    return namedCapture("ingestManualOpportunity", () =>
+    return namedTransaction("ingestManualOpportunity", () =>
       this.database.$transaction(async (transaction) => {
         await takeCaptureLock(transaction);
         const captured = await this.capture(transaction, { ...input, recordedBy: "CAPTURE" });
@@ -429,7 +425,7 @@ export class PrismaManualOpportunityRepository
     const raw = input.rawOpportunity;
     const retrieval = raw.retrieval;
     if (!retrieval) throw new Error("A retrieved listing must carry retrieval provenance");
-    return namedCapture("ingestRetrievedListing", () => this.database.$transaction(
+    return namedTransaction("ingestRetrievedListing", () => this.database.$transaction(
       async (transaction) => {
         await takeCaptureLock(transaction);
         const previous = raw.externalId
@@ -521,7 +517,7 @@ export class PrismaManualOpportunityRepository
   // the Mode B worker to tell a job-specific failure from a database or lock
   // that is unavailable (November 5, 2026).
   async probeCaptureLock(): Promise<void> {
-    await namedCapture("probeCaptureLock", () =>
+    await namedTransaction("probeCaptureLock", () =>
       this.database.$transaction(async (transaction) => {
         await takeCaptureLock(transaction);
       }, captureTransactionOptions),
@@ -532,7 +528,7 @@ export class PrismaManualOpportunityRepository
   // same unnormalized content seen again only moves its last-observed time.
   async preserveUnnormalizedListing(rawOpportunity: RawOpportunity) {
     const hash = rawOpportunity.retrieval?.contentHash ?? null;
-    return namedCapture("preserveUnnormalizedListing", () => this.database.$transaction(async (transaction) => {
+    return namedTransaction("preserveUnnormalizedListing", () => this.database.$transaction(async (transaction) => {
       await takeCaptureLock(transaction);
       const existing =
         hash && rawOpportunity.externalId

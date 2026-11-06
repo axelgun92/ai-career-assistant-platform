@@ -13,6 +13,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { namedTransaction, workerTransactionOptions } from "./transaction-diagnostics";
 
 // Configured retrieval sources and their runs (feature 11). A source is
 // disabled when created. A source that produced runs or source records is
@@ -397,7 +398,7 @@ export class PrismaRetrievalSourceRepository {
     now = new Date(),
     leaseSeconds = 15 * 60,
   ): Promise<{ run: RetrievalRunRecord; source: RetrievalSourceRecord } | null> {
-    return this.database.$transaction(async (transaction) => {
+    return namedTransaction("claimNextRun", () => this.database.$transaction(async (transaction) => {
       for (;;) {
         const rows = await transaction.$queryRaw<Array<{ id: string }>>`
           SELECT "id" FROM "RetrievalRun" WHERE "status" = 'QUEUED'
@@ -439,7 +440,7 @@ export class PrismaRetrievalSourceRepository {
         });
         return { run: mapRun(run), source: mapSource(source) };
       }
-    });
+    }, workerTransactionOptions));
   }
 
   // Closes a run and, in the same transaction, sets the source's gate from
@@ -463,7 +464,7 @@ export class PrismaRetrievalSourceRepository {
       input.retryAfterSeconds !== undefined && Number.isFinite(input.retryAfterSeconds) && input.retryAfterSeconds > 0
         ? new Date(finishedAt.getTime() + input.retryAfterSeconds * 1000)
         : null;
-    return this.database.$transaction(async (transaction) => {
+    return namedTransaction("finishRun", () => this.database.$transaction(async (transaction) => {
       const run = await transaction.retrievalRun.update({
         where: { id: runId },
         data: {
@@ -503,7 +504,7 @@ export class PrismaRetrievalSourceRepository {
         }
       }
       return mapRun(run);
-    });
+    }, workerTransactionOptions));
   }
 
   // Runs left RUNNING by a worker that stopped mid-run are closed as
@@ -539,7 +540,7 @@ export class PrismaRetrievalSourceRepository {
   // ignored. SourceRecord.lastObservedAt (content observed) is not touched.
   async recordListingObservations(input: ListingObservationInput): Promise<ListingObservationOutcome> {
     const none: ListingObservationOutcome = { applied: false, observed: 0, missing: 0, removed: 0, reappeared: 0 };
-    return this.database.$transaction(async (transaction) => {
+    return namedTransaction("recordListingObservations", () => this.database.$transaction(async (transaction) => {
       if (input.coverageComplete !== null) {
         await transaction.retrievalRun.update({ where: { id: input.runId }, data: { listingCoverageComplete: input.coverageComplete } });
       }
@@ -642,7 +643,7 @@ export class PrismaRetrievalSourceRepository {
             AND "state" = 'LISTED' AND NOT ("externalId" = ANY(${seen}::text[]))`;
       }
       return { applied: true, observed: reappeared + listed, missing, removed, reappeared };
-    });
+    }, workerTransactionOptions));
   }
 
   // An opportunity's tracked listings, oldest first (feature 13).

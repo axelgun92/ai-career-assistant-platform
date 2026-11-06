@@ -1,6 +1,7 @@
 import { pageCaptureIncompleteRefreshes, pageCaptureRefreshReason, type PageCaptureRefreshPolicy } from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { namedTransaction, workerTransactionOptions } from "./transaction-diagnostics";
 
 // Staging for the browser extension's results-page capture (Mode B). A staged
 // card holds only what its results-page card stated; it is a work-queue item
@@ -273,7 +274,7 @@ export class PrismaPageCaptureRepository {
     // covered (in page order), in the same transaction.
     session?: { pageTitle: string | null; counts: Record<string, number> };
   }): Promise<StagedResult[]> {
-    return this.database.$transaction(async (transaction) => {
+    return namedTransaction("stageBatch", () => this.database.$transaction(async (transaction) => {
       const results: StagedResult[] = [];
       // The batch's lookups in two queries, not three per card (November 5,
       // 2026: 25 cards ran ~75 queries in one transaction).
@@ -402,7 +403,7 @@ export class PrismaPageCaptureRepository {
         });
       }
       return results;
-    }, { maxWait: 15_000, timeout: 30_000 });
+    }, workerTransactionOptions));
   }
 
   // Captured Jobs: batch and single-job captures in one list, newest capture
