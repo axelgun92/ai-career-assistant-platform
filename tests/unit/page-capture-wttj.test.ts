@@ -183,6 +183,8 @@ describe("the retrieval worker", () => {
       markFailed: vi.fn(),
       deferSite: vi.fn(),
       markHandedOff: vi.fn(),
+      releaseClaimed: vi.fn(async () => 0),
+      finalizeProvisionalFailure: vi.fn(async () => false),
     };
     const launch = vi.fn();
     const acquisition = createPageCaptureAcquisition({

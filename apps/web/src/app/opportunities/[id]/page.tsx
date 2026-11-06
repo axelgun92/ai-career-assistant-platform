@@ -32,6 +32,7 @@ import {
   formatSalary,
   formatWorkArrangements,
   formatResidency,
+  formatResidencyEligibility,
   formatWorkAuthorization,
   seniorityLabel,
   workArrangementLabel,
@@ -202,8 +203,8 @@ export default async function OpportunityPage({
     ["Work authorization", formatWorkAuthorization(detail.opportunity, geographyName)],
     // Where candidates must live, a separate fact from work authorization:
     // shown only when the posting states it.
-    ...(detail.opportunity.residencyRequirement
-      ? [["Location eligibility", formatResidency(detail.opportunity.residencyRequirement, detail.opportunity.residencyRegions)] as const]
+    ...(detail.opportunity.residencyRequirement || detail.opportunity.residencyExclusions.length
+      ? [["Location eligibility", formatResidencyEligibility(detail.opportunity.residencyRequirement, detail.opportunity.residencyRegions, detail.opportunity.residencyExclusions)] as const]
       : []),
     // The label as the posting states it, even when it names no single level.
     ["Seniority (as stated)", detail.opportunity.seniorityLabel ?? (detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null)],

@@ -2,8 +2,8 @@
 
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
-**Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta P2 committed (awaiting live acceptance; not complete); November 5 acceptance-fix workstreams C–E (side panel, Captured Jobs, Setup & Connection, triage at save) implemented offline and awaiting review; capture-correctness fixes (Workstream B) waiting for evidence
-**Last updated:** November 5, 2026
+**Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta P2 committed (awaiting live acceptance; not complete); workstreams C–E and Workstream B capture correctness committed; Workstream B Mode B live-round fixes (worker resilience, selective re-observation, evidence-based updates, LinkedIn listing fallback, residency exclusions, country salary tiers) and every E4-independent gap implemented and verified offline; E4 evidence, the source-specific fixes, one coordinated closeout and a controlled live round pending
+**Last updated:** November 6, 2026
 
 ## Purpose
 
@@ -87,7 +87,15 @@ Supported results page (Alex's Chrome)
     - WTTJ remote tags are normalized;
     - the LinkedIn false FRICTION (a hidden reCAPTCHA badge) is fixed; a shown sign-in modal over loaded cards no longer stops the read (the cards are read, the modal is left untouched and reported), and only a sign-in wall, a shown challenge or a prompt with no readable cards is FRICTION.
     - Live confirmation is still required.
-  - Capture-correctness fixes from the November 4–5 acceptance (WTTJ descriptions and Apply links, normalization, LinkedIn friction) wait for Alex's E1–E3 evidence.
+  - *(Earlier, before the E1–E3 evidence: "Capture-correctness fixes from the November 4–5 acceptance wait for Alex's E1–E3 evidence." Superseded: those fixes are committed in `144fa6c`, above.)*
+  - **Mode B live-round fixes (November 6, 2026; implemented and verified offline, including every E4-independent gap from the completion audit; not committed):** from the November 5 live round (the LinkedIn worker stopped after 5 of 25 jobs on a Prisma P2028).
+    - One job's database failure no longer ends the pass or the worker: lock contention requeues uncounted; a job's own refused data counts one attempt; a transient failure is provisional until the next job or a capture-lock probe proves it, so an outage never uses up any job's attempts. All capture-lock transactions share one set of options.
+    - A later save of the same page re-reads a saved job only when its last read is outdated, incomplete (after 24 h, at most 3 times) or 14 days old: same job, no second hand-off; a failed or unavailable refresh leaves the job untouched. This corrects the November 4–5 records on their next save.
+    - A re-read updates only what it states; unstated facts are kept; a partial salary never overwrites a saved one; only the posting's own explicit words withdraw a closing date, salary or work arrangement, never a "Not specified" label.
+    - A database failure during a re-read, or after a job was already saved, never charges the job or touches the saved job; a site restriction met while re-reading saved jobs keeps the site stopped; the evaluation worker's error handling is unchanged.
+    - LinkedIn jobs with no employer link found get "Apply on LinkedIn (listing page)", never a careers front page; an employer link always wins.
+    - Residency exclusions are kept (additive field; migration on the test database only), country-labelled salary tiers are read, and Captured Jobs shows the saved job's company and location.
+    - Verified offline: unit 2,260, integration 411, E2E 60/60. Wording-specific fixes and the P2028 root cause wait for Alex's read-only E4 evidence; the acceptance-database migration and the live round need authorization.
 - **Safety:** each read is open-only, sequential and paced (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. Any refusal, sign-in wall, challenge or rate limit stops the site for at least a day, with no retry or workaround. No configured retrieval source is created. Analytics (Features 13 and 15–18) see batch jobs exactly as Mode A captures. The evaluator and the triage are unchanged; Mode B only hands jobs to the existing request.
 - **Site status (November 4, 2026):** the V1 sites are LinkedIn and Welcome to the Jungle / Otta; Wellfound is excluded.
   - **LinkedIn: enabled.** F0: 5/5 real cards read exactly. P1: PASS, 5/5 job pages read in a fresh logged-out browser. Its automatic detail mechanism is verified, but Mode B for LinkedIn is not complete until its targeted end-to-end acceptance (separately authorized).

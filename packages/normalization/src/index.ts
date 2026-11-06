@@ -12,7 +12,8 @@ import {
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
 import { onTargetStatementFor, readJobTextFacts, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
-import { compensationTier } from "./retrieved";
+import { compensationTier, primaryTierSourceField } from "./retrieved";
+import { primaryCountryTier } from "./salary-tiers";
 import {
   seniorityFromTitle,
   standardizeEmploymentType,
@@ -40,6 +41,7 @@ export {
 export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 export { decodeHtmlEntities, htmlToText, markdownToText } from "./html-text";
 export { createRetrievedOpportunityNormalizer, structuredCompensationApplies } from "./retrieved";
+export { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, withdrawalSourceFields } from "./withdrawal";
 export { parseResidency, residencySourceFields, type ParsedResidency, type ResidencyStatement } from "./residency";
 
 function normalizeOptionalText(value: string | null): string | null {
@@ -199,7 +201,20 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       // The job text may call the same range on-target earnings (OTE takes
       // precedence over a basis the salary text left open or gave as base).
       const onTarget = compensation.basis === "OTE" ? null : onTargetStatementFor(rawOpportunity.description, compensation);
-      const compensationBasis = onTarget?.value ?? compensation.basis;
+      // A country tier is also the role's range only when the posting's own
+      // eligibility evidence names that one country (salary-tiers.ts).
+      const primary = tiers && compensationTiers.length
+        ? primaryCountryTier({
+            tiers: compensationTiers,
+            tierStatements: tiers.tiers.map((tier) => tier.statement),
+            residency: { requirement: residencyRequirement, regions: residencyRegions, statements: parsedResidency?.statements ?? [] },
+            location,
+            description: rawOpportunity.description,
+          })
+        : null;
+      const primaryStatement = primary ? tiers!.tiers[primary.index]!.statement : null;
+      const primaryCompensation = primaryStatement ? parseCompensation(primaryStatement) : null;
+      const compensationBasis = primaryCompensation ? primaryCompensation.basis : onTarget?.value ?? compensation.basis;
 
       const opportunity: NormalizedOpportunity = normalizedOpportunitySchema.parse({
         domain,
@@ -229,19 +244,20 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
         timeZoneRequirements,
         residencyRequirement,
         residencyRegions,
+        residencyExclusions: parsedResidency?.exclusions ?? [],
         workAuthorizationRequirement: workAuthorization?.value.requirement ?? null,
         workAuthorizationRegions: workAuthorization?.value.regions ?? [],
         visaSponsorship,
         relocationSupport,
         employerOfRecordRegions: employerOfRecord?.value ?? [],
-        salaryMin: compensation.minimum,
-        salaryMax: compensation.maximum,
+        salaryMin: primaryCompensation?.minimum ?? compensation.minimum,
+        salaryMax: primaryCompensation?.maximum ?? compensation.maximum,
         salaryText,
         compensationBasis,
         compensationTiers,
         bonus,
         equity: null,
-        currency: compensation.currency,
+        currency: primaryCompensation?.currency ?? compensation.currency,
         compensationNotes: null,
         postingDate,
         closingDate,
@@ -415,6 +431,13 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
           derived("compensationBasis", compensationField, "DETERMINISTIC", compensation.basis, salaryText);
         }
       }
+      if (primary && primaryCompensation && primaryStatement) {
+        const evidenceText = `${primaryStatement}\n${primary.evidence}`;
+        if (primaryCompensation.minimum !== null) derived("salaryMin", primaryTierSourceField, "DETERMINISTIC", primaryCompensation.minimum, evidenceText);
+        if (primaryCompensation.maximum !== null) derived("salaryMax", primaryTierSourceField, "DETERMINISTIC", primaryCompensation.maximum, evidenceText);
+        if (primaryCompensation.currency !== null) derived("currency", primaryTierSourceField, "DETERMINISTIC", primaryCompensation.currency, evidenceText);
+        if (primaryCompensation.basis !== null) derived("compensationBasis", primaryTierSourceField, "DETERMINISTIC", primaryCompensation.basis, evidenceText);
+      }
       if (workAuthorization) {
         derived("workAuthorizationRequirement", workAuthorization.sourceField, "DETERMINISTIC", workAuthorization.value.requirement, workAuthorization.sourceText);
         derived("workAuthorizationRegions", workAuthorization.sourceField, "DETERMINISTIC", workAuthorization.value.regions, workAuthorization.sourceText);
@@ -454,6 +477,17 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
             collectedAt: rawOpportunity.discoveredAt,
           });
         }
+      }
+      if (parsedResidency?.exclusions.length) {
+        provenance.push({
+          fieldName: "residencyExclusions",
+          sourceField: residencySourceFields.exclusion,
+          kind: "DETERMINISTIC",
+          normalizedValue: parsedResidency.exclusions,
+          sourceReference: "manual-submission",
+          sourceText: parsedResidency.exclusionStatements.join("\n"),
+          collectedAt: rawOpportunity.discoveredAt,
+        });
       }
       if (compensation.currency !== null) {
         if (compensation.currencyBasis === "SELECTED") {

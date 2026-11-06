@@ -9,6 +9,12 @@ import { z } from "zod";
 // Imports nothing but zod: the extension bundles this file.
 
 export const extensionCaptureSchemaVersion = 1;
+// The capture's own reader revision: raised with every extraction fix that
+// changes what a read keeps (1: November 5, 2026 — WTTJ posting sections,
+// rendered tab reads, LinkedIn apply route). Captures without one are 0.
+// Selective re-observation reads a saved job again when its latest read is
+// older than its site's minimum (page-capture.ts).
+export const pageReaderRevision = 1;
 export const extensionCaptureMaxBytes = 128 * 1024;
 export const extensionCaptureLimits = {
   url: 2048,
@@ -150,6 +156,9 @@ export const extensionCaptureSchema = z
     // sent from LinkedIn.
     pageText: z.string().trim().min(1).max(extensionCaptureLimits.pageText).nullable().default(null),
     notes: z.array(z.string().trim().min(1).max(extensionCaptureLimits.shortText)).max(extensionCaptureLimits.notes).default([]),
+    // The reader's revision (pageReaderRevision): which extraction fixes the
+    // read includes. Absent from older companions: revision 0.
+    readerRevision: z.number().int().min(0).max(10_000).optional(),
     editedFields: z
       .array(z.enum(extensionEditableFieldValues))
       .max(extensionEditableFieldValues.length)

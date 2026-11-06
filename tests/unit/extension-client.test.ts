@@ -64,7 +64,7 @@ describe("the capture envelope", () => {
       fields: { title: "Customer Success Manager", siteJobId: "REQ-1" },
       pageTitle: "Customer Success Manager at Example",
     });
-    expect(Object.keys(built.envelope).sort()).toEqual(["capturedAt", "editedFields", "extensionVersion", "extractor", "fields", "notes", "pageText", "pageTitle", "pageUrl", "schemaVersion"]);
+    expect(Object.keys(built.envelope).sort()).toEqual(["capturedAt", "editedFields", "extensionVersion", "extractor", "fields", "notes", "pageText", "pageTitle", "pageUrl", "readerRevision", "schemaVersion"]);
     expect(built.envelope.pageText).toBe("Customer Success Manager\nRemote Type: Hybrid\nOwn onboarding and renewals.");
     // The page title is neutral context, sent as read; an envelope without
     // one (an older extension) is still valid.

@@ -40,16 +40,25 @@ export function applicationLinkPrecedence(category: SourceCategory | null | unde
 // Whether a retrieved source's application link should replace the current
 // canonical one. A link the user entered manually is never replaced, and an
 // existing link is replaced only by a strictly higher-precedence source.
+// The provenance marker of a LinkedIn-listing fallback application link.
+export const listingPageFallbackSourceField = "listing:apply-on-site";
+
 export function shouldReplaceApplicationLink(input: {
   currentUrl: string | null;
   currentIsManual: boolean;
   currentCategory: SourceCategory | null;
   candidateUrl: string | null;
   candidateCategory: SourceCategory;
+  // A listing-page fallback (LISTING_PAGE_FALLBACK) is the weakest link:
+  // it never replaces a link, and any real link replaces it.
+  currentIsFallback?: boolean;
+  candidateIsFallback?: boolean;
 }): boolean {
   if (!input.candidateUrl) return false;
   if (!input.currentUrl) return true;
   if (input.currentIsManual) return false;
+  if (input.candidateIsFallback) return false;
+  if (input.currentIsFallback) return true;
   return applicationLinkPrecedence(input.candidateCategory) > applicationLinkPrecedence(input.currentCategory);
 }
 
@@ -104,6 +113,13 @@ export type RetrievedStructuredFields = z.infer<typeof retrievedStructuredFields
 //                            links on to the employer: not an application
 //                            destination, so no application URL is stored
 //                            (the listing's content hash still covers it)
+//   LISTING_PAGE_FALLBACK    (browser-extension LinkedIn captures only, Nov 5,
+//                            2026) no employer or ATS link could be recovered
+//                            from the job's LinkedIn page, so the job's own
+//                            LinkedIn listing is stored as where the apply
+//                            route starts ("Apply on LinkedIn"). Never a
+//                            verified employer application: any employer or
+//                            ATS link replaces it, and it never replaces one.
 //
 // Also: the places a source says a remote role may be done from
 // (remoteLocations): schema.org applicantLocationRequirements on a job page,
@@ -119,6 +135,7 @@ export const applicationUrlBasisValues = [
   "PAGE_APPLY_LINK",
   "PAGE_APPLICATION_FORM",
   "STRUCTURED_DIRECT_APPLY",
+  "LISTING_PAGE_FALLBACK",
 ] as const;
 export type ApplicationUrlBasis = (typeof applicationUrlBasisValues)[number];
 
@@ -140,6 +157,8 @@ export function applicationUrlProvenance(basis: ApplicationUrlBasis | null | und
       return { sourceField: "page:application-form", kind: "DETERMINISTIC" };
     case "STRUCTURED_DIRECT_APPLY":
       return { sourceField: "structured.directApply", kind: "DETERMINISTIC" };
+    case "LISTING_PAGE_FALLBACK":
+      return { sourceField: listingPageFallbackSourceField, kind: "DETERMINISTIC" };
     default:
       return { sourceField: "applicationUrl", kind: "DIRECT" };
   }

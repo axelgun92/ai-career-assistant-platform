@@ -27,6 +27,12 @@ export interface ParsedResidency {
   regions: string[];
   statements: ResidencyStatement[];
   unknownReason: "CONFLICTING_STATEMENTS" | "QUALIFIED_STATEMENT" | null;
+  // Places the posting explicitly excludes from hiring ("candidates residing
+  // in Alaska, California, … are not eligible"), with the sentences that
+  // state them (November 5, 2026). A qualification of the residency rule,
+  // never work authorization. Empty when none is stated.
+  exclusions: string[];
+  exclusionStatements: string[];
 }
 
 // Provenance markers for deterministically read residency facts.
@@ -39,6 +45,8 @@ export const residencySourceFields = {
   // A page's own labelled region or country ("Region: Anywhere in the
   // World"), read like a posting statement.
   pageContext: "pageContext:explicit-residency-statement",
+  // Places a posting explicitly excludes from hiring.
+  exclusion: "rawText:explicit-residency-exclusion",
 } as const;
 
 const residenceVerb =
@@ -167,14 +175,86 @@ function readLocation(location: string): string[] | null {
   return parseGeographyList(rest);
 }
 
+// Explicit hiring exclusions (November 5, 2026), in three forms:
+//   "… except (for) / excluding / with the exception of / other than
+//     [residents of | candidates residing in | the following states:] <list>"
+//   "Residents of / Candidates residing in <list> are not eligible / cannot
+//     be considered / are ineligible"
+//   "We are unable / not able to hire (candidates) in / from <list>"
+// The list must read completely as geography. In such a list, "Washington"
+// and "Georgia" (otherwise ambiguous) are the U.S. states when every other
+// item is a U.S. state; anything else unreadable leaves the sentence as it
+// was (not read).
+const exclusionLead =
+  /\b(?:except(?:\s+for)?|excluding|with\s+the\s+exception\s+of|other\s+than)\s+(?:(?:candidates|applicants|residents|individuals|people|those)\s+(?:who\s+)?(?:are\s+)?(?:residing|living|located|based|reside|live)\s+in\s+|residents\s+of\s+)?(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|territories|countries|locations)(?:\s+of)?\s*:?\s*)?/i;
+const exclusionSubject =
+  /\b(?:residents\s+of|(?:candidates|applicants|individuals|people|employees)\s+(?:who\s+)?(?:are\s+)?(?:residing|living|located|based|reside|live)\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
+const notEligible =
+  /^\s*[,;:]?\s*(?:(?:are|is)\s+(?:not\s+(?:currently\s+)?(?:eligible|considered|able\s+to\s+be\s+considered)|ineligible)|(?:cannot|can\s*not|will\s+not)\s+be\s+(?:considered|hired|employed))\b/i;
+const unableToHire =
+  /\b(?:are|is)\s+(?:not\s+(?:currently\s+)?able|unable)\s+to\s+(?:hire|employ|consider|accept\s+applications\s+from)\s+(?:(?:candidates|applicants|residents|individuals|anyone|employees)\s+)?(?:(?:who\s+)?(?:reside|live|are\s+located|are\s+based)\s+)?(?:in|from|of|residing\s+in|located\s+in|based\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
+const listItemSeparator = /\s*(?:,\s*(?:(?:or|and)\b)?|\/|&|;|\bor\b|\band\b)\s*/i;
+const contextualStates: Record<string, string> = { washington: "US-WA", georgia: "US-GA" };
+
+// The places a list names, read to its end ("…, and Wyoming."), or null.
+function readExclusionList(text: string): { regions: string[]; consumed: number } | null {
+  const end = /[.;!?)]|\s+(?:are|is|cannot|can\s*not|will|may|due|because|as)\b/i.exec(text);
+  const listText = end ? text.slice(0, end.index) : text;
+  const items = listText.split(listItemSeparator).map((item) => item.replace(/^(?:the\s+)?states?\s+of\s+/i, "").trim()).filter(Boolean);
+  if (!items.length) return null;
+  const read = items.map((item) => parseGeographyList(item) ?? (contextualStates[item.toLowerCase()] ? null : undefined));
+  if (read.some((codes) => codes === undefined)) return null;
+  const known = read.filter((codes): codes is string[] => codes !== null).flat();
+  // An ambiguous state name counts only among other U.S. states.
+  if (read.some((codes) => codes === null) && (known.length < 2 || !known.every((code) => code.startsWith("US-")))) return null;
+  const regions = items.map((item, index) => read[index] ?? [contextualStates[item.toLowerCase()]!]).flat();
+  return { regions: [...new Set(regions)], consumed: listText.length };
+}
+
+// One sentence's exclusion, and what remains of it for the residency reader.
+function readExclusion(sentence: string): { regions: string[]; remainder: string } | null {
+  const unable = unableToHire.exec(sentence);
+  if (unable) {
+    const list = readExclusionList(sentence.slice(unable.index + unable[0].length));
+    return list ? { regions: list.regions, remainder: "" } : null;
+  }
+  const subject = exclusionSubject.exec(sentence);
+  if (subject) {
+    const start = subject.index + subject[0].length;
+    const list = readExclusionList(sentence.slice(start));
+    if (list && notEligible.test(sentence.slice(start + list.consumed))) return { regions: list.regions, remainder: sentence.slice(0, subject.index) };
+  }
+  const lead = exclusionLead.exec(sentence);
+  if (lead) {
+    const start = lead.index + lead[0].length;
+    const list = readExclusionList(sentence.slice(start));
+    if (list) {
+      const remainder = `${sentence.slice(0, lead.index)}${sentence.slice(start + list.consumed)}`.replace(/[\s,(–—-]+$/, "").replace(/\(\s*\)/g, "");
+      return { regions: list.regions, remainder };
+    }
+  }
+  return null;
+}
+
 export function parseResidency(input: { location: string | null; rawText: string | null; remote?: boolean; pageStatements?: readonly string[] }): ParsedResidency {
   const statements: ResidencyStatement[] = [];
+  const exclusions: string[] = [];
+  const exclusionStatements: string[] = [];
   let qualified = false;
   if (input.location) {
     const regions = readLocation(input.location);
     if (regions) statements.push({ source: "location", sentence: input.location, regions });
   }
-  for (const sentence of sentences(input.rawText ?? "")) {
+  for (const original of sentences(input.rawText ?? "")) {
+    // An explicit exclusion is read on its own; what remains of the sentence
+    // is read as before (an unread exclusion still qualifies it).
+    const exclusion = readExclusion(original);
+    if (exclusion) {
+      exclusions.push(...exclusion.regions);
+      exclusionStatements.push(original);
+    }
+    const sentence = exclusion ? exclusion.remainder : original;
+    if (!sentence.trim()) continue;
     const result = readSentence(sentence);
     if (result === "QUALIFIED") qualified = true;
     else if (result) statements.push({ source: "rawText", sentence, regions: result.regions });
@@ -188,11 +268,13 @@ export function parseResidency(input: { location: string | null; rawText: string
     if (result === "QUALIFIED") qualified = true;
     else if (result) statements.push({ source: "pageContext", sentence, regions: result.regions });
   }
+  const excluded = { exclusions: [...new Set(exclusions)], exclusionStatements };
   const unknown = (reason: ParsedResidency["unknownReason"]): ParsedResidency => ({
     requirement: null,
     regions: [],
     statements,
     unknownReason: reason,
+    ...excluded,
   });
   if (qualified) return unknown("QUALIFIED_STATEMENT");
   // Where the role is based is the broadest reading: an explicit statement
@@ -205,5 +287,5 @@ export function parseResidency(input: { location: string | null; rawText: string
   const requirements = new Set(statements.map((statement) => residencyRequirementFor(statement.regions)));
   if (requirements.size > 1) return unknown("CONFLICTING_STATEMENTS");
   const regions = [...new Set(statements.flatMap((statement) => statement.regions))];
-  return { requirement: residencyRequirementFor(regions), regions, statements, unknownReason: null };
+  return { requirement: residencyRequirementFor(regions), regions, statements, unknownReason: null, ...excluded };
 }

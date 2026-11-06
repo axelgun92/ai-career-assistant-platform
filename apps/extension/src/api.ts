@@ -69,7 +69,7 @@ export interface CaptureSessionSummary {
 
 export interface CaptureSessionDetail {
   session: CaptureSessionSummary | null;
-  jobs: Array<{ id: string; title: string; company: string | null; status: string; statusText: string; savedBefore?: boolean; opportunityPath: string | null; sourceUrl: string | null }>;
+  jobs: Array<{ id: string; title: string; company: string | null; location?: string | null; status: string; statusText: string; savedBefore?: boolean; opportunityPath: string | null; sourceUrl: string | null }>;
 }
 
 export type TabStartResponse =

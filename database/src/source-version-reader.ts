@@ -74,6 +74,7 @@ const storedFactsSelect = {
   timeZoneRequirements: true,
   residencyRequirement: true,
   residencyRegions: true,
+  residencyExclusions: true,
   workAuthorizationRequirement: true,
   workAuthorizationRegions: true,
   visaSponsorship: true,

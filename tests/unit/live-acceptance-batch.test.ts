@@ -324,12 +324,18 @@ describe("LinkedIn (Serrala): the posted age and the employer's apply link", () 
     expect(opportunity).toMatchObject({ companyName: "Serrala", location: "Canada" });
   });
 
-  it("Easy Apply stays on LinkedIn: no application URL is invented", async () => {
+  it("Easy Apply stays on LinkedIn: no employer link is invented; the job's own LinkedIn listing is the labelled fallback", async () => {
+    // Until November 5, 2026 no application URL was stored here. Alex's
+    // decision: when no employer or ATS link can be recovered, the job's own
+    // LinkedIn listing is stored as "Apply on LinkedIn (listing page)",
+    // never the Easy Apply flow's own URL and never a careers page.
     const html = page("", `<main><div class="job-details-jobs-unified-top-card">
         <div class="job-details-jobs-unified-top-card__job-title"><h1>Scaled Customer Success Manager, NA</h1></div>
         <div class="jobs-apply-button--top-card"><a class="jobs-apply-button" href="https://www.linkedin.com/jobs/view/4300000002/apply/">Easy Apply</a></div></div>
         <div id="job-details">${description}</div></main>`);
-    expect((await capture(html, url)).opportunity.applicationUrl).toBeNull();
+    const { opportunity, provenance } = await capture(html, url);
+    expect(opportunity.applicationUrl).toBe("https://www.linkedin.com/jobs/view/4300000002");
+    expect(provenance.find((row) => row.fieldName === "applicationUrl")?.sourceField).toBe("listing:apply-on-site");
   });
 });
 

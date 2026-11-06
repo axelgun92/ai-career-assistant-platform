@@ -79,9 +79,67 @@ export interface PageCaptureSiteSpec {
   // tab at a time (extension-tabs, P2), started by the same "Save selected
   // jobs" action; the server never fetches that site's pages.
   tabAcquisition?: PageCaptureTabAcquisitionSpec;
+  // When a job already saved is read again in a later save (selective
+  // re-observation, November 5, 2026).
+  refresh: PageCaptureRefreshPolicy;
   // True only for the synthetic test site, enabled by the server's explicit
   // test setting; never matches a real host.
   testOnly: boolean;
+}
+
+// Selective re-observation (Workstream B, November 5, 2026). Mode B stays one
+// action over at most 25 loaded jobs; a job already saved is read again only
+// when one of these holds, never on every save:
+// - its latest read is older than the site's reader revision (an extraction
+//   fix shipped since: the November 4–5 records are corrected this way, once);
+// - its latest read was incomplete (no page context, or no application route
+//   or description) and was at least incompleteRefreshAfterHours ago, at most
+//   maxIncompleteRefreshes times in a row (render and timing failures clear
+//   within hours; a page that genuinely lacks a field is not re-fetched on
+//   every save);
+// - its latest read is at least staleAfterDays old (older than any posting
+//   age the cards still show as current).
+export interface PageCaptureRefreshPolicy {
+  minReaderRevision: number;
+  incompleteRefreshAfterHours: number;
+  maxIncompleteRefreshes: number;
+  staleAfterDays: number;
+}
+const defaultRefreshPolicy: PageCaptureRefreshPolicy = { minReaderRevision: 1, incompleteRefreshAfterHours: 24, maxIncompleteRefreshes: 3, staleAfterDays: 14 };
+
+export type PageCaptureRefreshReason = "OUTDATED_READER" | "INCOMPLETE" | "STALE";
+
+// Whether a saved job seen in a new save is read again, and why.
+export function pageCaptureRefreshReason(input: {
+  policy: PageCaptureRefreshPolicy;
+  latestRead: { readerRevision: number; readQuality: "COMPLETE" | "PARTIAL" | null; lastReadAt: Date };
+  hasApplicationRoute: boolean;
+  hasDescription: boolean;
+  incompleteRefreshes: number;
+  now: Date;
+}): PageCaptureRefreshReason | null {
+  const { policy, latestRead } = input;
+  if (latestRead.readerRevision < policy.minReaderRevision) return "OUTDATED_READER";
+  const age = input.now.getTime() - latestRead.lastReadAt.getTime();
+  const incomplete = latestRead.readQuality === "PARTIAL" || !input.hasApplicationRoute || !input.hasDescription;
+  if (incomplete && input.incompleteRefreshes < policy.maxIncompleteRefreshes && age >= policy.incompleteRefreshAfterHours * 3_600_000) return "INCOMPLETE";
+  if (age >= policy.staleAfterDays * 86_400_000) return "STALE";
+  return null;
+}
+
+// A job's refresh state lives in its lastReason (no schema change):
+//   REFRESH:<n>                    queued to be read again
+//   REFRESHED:<CHANGED|UNCHANGED|…>:<n>   read again
+//   REFRESH_<UNAVAILABLE|DEFERRED|FAILED|STOPPED>:<n>   not read again; the
+//                                  saved job is untouched
+// where <n> counts the incomplete refreshes in a row.
+export const pageCaptureRefreshMarker = /^REFRESH:(\d+)$/;
+export function pageCaptureIncompleteRefreshes(lastReason: string | null | undefined): number {
+  const match = /^(?:REFRESH|REFRESHED:[A-Z_]+|REFRESH_[A-Z]+):(\d+)$/.exec(lastReason ?? "");
+  return match ? Number(match[1]) : 0;
+}
+export function isPageCaptureRefresh(lastReason: string | null | undefined): boolean {
+  return pageCaptureRefreshMarker.test(lastReason ?? "");
 }
 
 // How the extension reads a site's job pages in background tabs (P2).
@@ -142,6 +200,7 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     cardVerified: true,
     detailVerified: true,
     detail: { minIntervalMs: 5_000, authCookieNames: ["li_at"] },
+    refresh: defaultRefreshPolicy,
     testOnly: false,
   },
   {
@@ -179,6 +238,7 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     cardVerified: false,
     detailVerified: false,
     detail: { minIntervalMs: 12_000, authCookieNames: [] },
+    refresh: defaultRefreshPolicy,
     tabAcquisition: {
       hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
       loadTimeoutMs: 30_000,
@@ -212,6 +272,7 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     cardVerified: true,
     detailVerified: true,
     detail: { minIntervalMs: 0, authCookieNames: [] },
+    refresh: defaultRefreshPolicy,
     testOnly: true,
   },
 ];

@@ -63,8 +63,8 @@ export function arrangeSessions(sessions: readonly CaptureSessionSummary[]): {
 }
 
 // One job of a capture, as the panel lists it.
-export function sessionJobDetail(job: { company: string | null; statusText: string; savedBefore?: boolean }): string {
-  return `${job.company ? ` · ${job.company}` : ""} — ${job.statusText}${job.savedBefore ? " · already saved before this capture" : ""}`;
+export function sessionJobDetail(job: { company: string | null; location?: string | null; statusText: string; savedBefore?: boolean }): string {
+  return `${job.company ? ` · ${job.company}` : ""}${job.location ? ` · ${job.location}` : ""} — ${job.statusText}${job.savedBefore ? " · already saved before this capture" : ""}`;
 }
 
 // The app's Captured Jobs page, for one capture session or all of them.

@@ -106,8 +106,9 @@ async function main(): Promise<number> {
   log.info(`starting pollMs=${settings.RETRIEVAL_WORKER_POLL_MS}${once ? " once" : ""}`);
   const lock = new RetrievalWorkerLock();
   const sources = new PrismaRetrievalSourceRepository();
+  const captureRepository = new PrismaManualOpportunityRepository();
   const ingestion = createRetrievalIngestionService({
-    repository: new PrismaManualOpportunityRepository(),
+    repository: captureRepository,
     normalizer: createRetrievedOpportunityNormalizer(),
   });
   const browser = settings.RETRIEVAL_BROWSER_EXECUTABLE ? browserLauncher(settings.RETRIEVAL_BROWSER_EXECUTABLE) : null;
@@ -117,6 +118,7 @@ async function main(): Promise<number> {
     handoff: evaluationHandoff(getEvaluationService()),
     discovery: customerSuccessDiscoveryConfiguration,
     detailSites: () => enabledSitesFromEnvironment().details,
+    probeCapture: () => captureRepository.probeCaptureLock(),
     ...(browser ? { browser } : {}),
     log,
   });

@@ -215,7 +215,7 @@ function matchOne(text: string): Match | null {
   return null;
 }
 
-const connector = /^\s*(?:,\s*(?:or|and)?|\/|&|\+|\bor\b|\band\b)\s*/i;
+const connector = /^\s*(?:,\s*(?:(?:or|and)\b)?|\/|&|\+|\bor\b|\band\b)\s*/i;
 // "or", "and", "/", "&", "+" always join list items; a plain comma may end
 // the list ("in Texas, Monday to Friday").
 const joinsItems = (separator: string) => !/^\s*,\s*$/.test(separator);

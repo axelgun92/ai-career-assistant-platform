@@ -1015,7 +1015,29 @@ const wholeSalary =
 
 // Ranges stated for different places or zones, each with its own label.
 const tierLabel = /\b(?:zones?|tiers?|bands?|regions?|areas?|markets?|metros?|locations?|geograph(?:y|ies|ic))\b/i;
-const namesItsTier = (text: string) => tierLabel.test(text) || scanGeography(text).codes.length > 0;
+// A country named by its adjective ("Canadian base salary", November 5,
+// 2026): the tier is that country's.
+const countryAdjectives: Record<string, string> = {
+  canadian: "CA", british: "GB", mexican: "MX", australian: "AU", irish: "IE", german: "DE", french: "FR",
+  dutch: "NL", spanish: "ES", indian: "IN", brazilian: "BR", "new zealand": "NZ",
+};
+const countryAdjective = new RegExp(`\\b(${Object.keys(countryAdjectives).map((name) => name[0]!.toUpperCase() + name.slice(1)).join("|")})\\b`);
+function adjectiveCountries(text: string): string[] {
+  const match = countryAdjective.exec(text);
+  return match ? [countryAdjectives[match[1]!.toLowerCase()]!] : [];
+}
+const namesItsTier = (text: string) => tierLabel.test(text) || scanGeography(text).codes.length > 0 || adjectiveCountries(text).length > 0;
+// Countries named as the labels of several ranges in one statement ("$86,000
+// – $95,000 USD in the U.S. and $77,000 – $85,000 CAD in Canada"; "U.S. base
+// salary: … Canadian base salary: …"). Written forms only, case-sensitive.
+const countryTierLabel =
+  /\b(United States(?: of America)?|U\.S\.A\.?|U\.S\.|USA|US|Canada|Canadian|United Kingdom|U\.K\.|UK|British|Mexico|Mexican|Australia|Australian|Ireland|Irish|Germany|German|France|French|the Netherlands|Netherlands|Dutch|Spain|Spanish|India|Indian|Brazil|Brazilian)(?![A-Za-z])/g;
+const countryTierCode: Record<string, string> = {
+  "United States": "US", "United States of America": "US", "U.S.A.": "US", "U.S.A": "US", "U.S.": "US", USA: "US", US: "US",
+  Canada: "CA", Canadian: "CA", "United Kingdom": "GB", "U.K.": "GB", UK: "GB", British: "GB", Mexico: "MX", Mexican: "MX",
+  Australia: "AU", Australian: "AU", Ireland: "IE", Irish: "IE", Germany: "DE", German: "DE", France: "FR", French: "FR",
+  "the Netherlands": "NL", Netherlands: "NL", Dutch: "NL", Spain: "ES", Spanish: "ES", India: "IN", Indian: "IN", Brazil: "BR", Brazilian: "BR",
+};
 // A zone, tier or band named with its number or letter ("Zone 1", "US Zone
 // 2", "Tier B"), with the places it covers when they follow in parentheses.
 // (A parenthetical holding the tier's amounts is not part of its label.)
@@ -1042,7 +1064,15 @@ const amountPattern =
   /(?:[$€£₹]|\b(?:USD|CAD|AUD|NZD|EUR|GBP|CHF|SEK|NOK|DKK|PLN|INR|SGD|JPY|MXN|BRL|ZAR)\s?)\s?\d{1,3}(?:[,.]\d{3})+(?:\.\d+)?|(?:[$€£₹]\s?)\d{2,3}(?:\.\d+)?\s?[kK]\b/g;
 function tiersInStatement(text: string): Array<{ label: string; statement: string }> | null {
   numberedTier.lastIndex = 0;
-  const labels = [...text.matchAll(numberedTier)].map((match) => ({ start: match.index, end: match.index + match[0].length, label: collapse(match[0]) }));
+  let labels = [...text.matchAll(numberedTier)].map((match) => ({ start: match.index, end: match.index + match[0].length, label: collapse(match[0]) }));
+  // No zone labels: the countries the statement names, each once (a country
+  // named twice, or a range without one, reads as no tiers).
+  if (labels.length < 2) {
+    countryTierLabel.lastIndex = 0;
+    const countries = [...text.matchAll(countryTierLabel)].map((match) => ({ start: match.index, end: match.index + match[0].length, label: geographyName(countryTierCode[match[1]!]!) }));
+    countryTierLabel.lastIndex = 0;
+    if (new Set(countries.map((country) => country.label)).size === countries.length) labels = countries;
+  }
   // A range starts with an amount that does not end one ("$X - $Y").
   const starts = [...text.matchAll(amountPattern)]
     .filter((match) => !/(?:[-–—~]|\bto)\s*$/i.test(text.slice(0, match.index)))
@@ -1131,6 +1161,8 @@ function tierName(statement: string): string | null {
   if (!tierLabel.test(prefix)) {
     const places = scanGeography(prefix);
     if (!places.ambiguous && places.codes.length) return places.codes.map(geographyName).join(", ");
+    const adjective = adjectiveCountries(prefix);
+    if (adjective.length) return adjective.map(geographyName).join(", ");
   }
   const name = collapse(prefix.replace(tierFiller, " ").replace(/\(\s*\)/g, " ")).replace(/^[\s:：,;–—-]+|[\s:：,;(–—-]+$/g, "");
   return name && name.length <= 80 ? name : null;

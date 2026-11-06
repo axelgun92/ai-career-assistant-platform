@@ -13,6 +13,8 @@ export interface PageCaptureRowView {
   firstSeenAt: string;
   status: string;
   lastReason: string | null;
+  // When the job's page was last opened to be read (ISO), if recorded.
+  lastAttemptAt?: string | null;
   resolvedOpportunityId: string | null;
   opportunityTitle: string | null;
   triageOutcome: string | null;
@@ -83,15 +85,38 @@ export function addedStateText(row: Pick<PageCaptureRowView, "triageOutcome" | "
   return "Added";
 }
 
+// A saved job read again by a later save (selective re-observation,
+// November 5, 2026): how its refresh went. The saved job is never changed by
+// a refresh that did not read the page.
+// readAt: when the page was opened for that read, as recorded (never
+// guessed; without it the outcome is shown undated).
+export function refreshText(lastReason: string | null, readAt: string | null = null): string | null {
+  const reason = lastReason ?? "";
+  if (/^REFRESH:\d+$/.test(reason)) return "Reading again to update";
+  const read = /^REFRESHED:([A-Z_]+):\d+$/.exec(reason);
+  if (read) return read[1] === "CHANGED" ? "Updated from a new read" : "Read again: no change";
+  if (/^REFRESH_UNAVAILABLE:/.test(reason)) {
+    const day = readAt && !Number.isNaN(Date.parse(readAt)) ? new Date(readAt).toISOString().slice(0, 10) : null;
+    return day
+      ? `Read again on ${day}: the listing was no longer available; the saved job is unchanged`
+      : "Read again: the listing is no longer available; the saved job is unchanged";
+  }
+  if (/^REFRESH_DEFERRED:/.test(reason)) return "Not read again: the site restricted access; the saved job is unchanged";
+  if (/^REFRESH_STOPPED:/.test(reason)) return "Not read again: reading was stopped; the saved job is unchanged";
+  if (/^REFRESH_FAILED:/.test(reason)) return "Could not be read again; the saved job is unchanged";
+  return null;
+}
+
 export function statusText(row: PageCaptureRowView): string {
+  const refresh = refreshText(row.lastReason, row.lastAttemptAt ?? null);
   switch (row.status) {
     case "QUEUED":
     case "ACQUIRING":
-      return "Getting details";
+      return refresh ?? "Getting details";
     case "INGESTED":
-      return addedStateText(row);
+      return refresh ? `${addedStateText(row)} · ${refresh}` : addedStateText(row);
     case "ALREADY_SAVED":
-      return "Already in AI Job Assistant";
+      return refresh ? `Already in AI Job Assistant · ${refresh}` : "Already in AI Job Assistant";
     case "AWAITING_DETAILS":
       return `Awaiting details: ${reasonLabels[row.lastReason ?? ""] ?? "not read yet"}`;
     case "UNAVAILABLE":

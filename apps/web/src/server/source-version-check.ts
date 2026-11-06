@@ -13,6 +13,7 @@ import { createManualOpportunityNormalizer, createRetrievedOpportunityNormalizer
 import {
   employmentTypeLabel,
   formatResidency,
+  formatResidencyEligibility,
   formatSalary,
   formatWorkArrangements,
   formatWorkAuthorization,
@@ -104,6 +105,7 @@ type Facts = {
   timeZoneRequirements: string | null;
   residencyRequirement: string | null;
   residencyRegions: string[];
+  residencyExclusions: string[];
   workAuthorizationRequirement: string | null;
   workAuthorizationRegions: string[];
   visaSponsorship: string | null;
@@ -164,7 +166,7 @@ const rows: Array<{ label: string; show: (facts: Facts) => string | null; proven
   { label: "Seniority", show: (f) => (f.seniority ? seniorityLabel(f.seniority) : null), provenance: ["seniority"] },
   { label: "Seniority label (as stated)", show: (f) => f.seniorityLabel, provenance: ["seniorityLabel"] },
   { label: "Time zone", show: (f) => f.timeZoneRequirements, provenance: ["timeZoneRequirements"] },
-  { label: "Location eligibility", show: (f) => (f.residencyRequirement ? formatResidency(f.residencyRequirement, f.residencyRegions) : null), provenance: ["residencyRequirement", "residencyRegions"] },
+  { label: "Location eligibility", show: (f) => formatResidencyEligibility(f.residencyRequirement, f.residencyRegions, f.residencyExclusions), provenance: ["residencyRequirement", "residencyRegions", "residencyExclusions"] },
   { label: "Work authorization", show: (f) => formatWorkAuthorization(f, geographyName), provenance: ["workAuthorizationRequirement", "workAuthorizationRegions", "visaSponsorship", "relocationSupport", "employerOfRecordRegions"] },
   { label: "Salary (as shown)", show: (f) => formatSalary(f), provenance: ["salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers"] },
   { label: "Salary minimum", show: (f) => (f.salaryMin === null ? null : String(f.salaryMin)), provenance: ["salaryMin"] },

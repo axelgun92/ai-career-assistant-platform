@@ -16,6 +16,12 @@ import {
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
 import { onTargetStatementFor, readJobTextFacts, relativePostedDate, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
+import { primaryCountryTier } from "./salary-tiers";
+import { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, withdrawalSourceFields } from "./withdrawal";
+
+// A country tier chosen as the role's range by the posting's eligibility
+// evidence (November 5, 2026).
+export const primaryTierSourceField = "rawText:compensation-tier-primary";
 import { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
 // Normalization of listings produced by automated retrieval and the browser
@@ -204,6 +210,13 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       const sourceClosingDate = sourceDate(sourceFacts.closingDate);
       if (sourceClosingDate) record("closingDate", "source.closingDate", "DETERMINISTIC", sourceClosingDate.toISOString(), sourceFacts.closingDate);
       const closingDate = sourceClosingDate ?? fallback("closingDate", facts.closingDate, (date) => date.toISOString());
+      // The posting states it has no deadline: an explicit withdrawal of any
+      // earlier closing date (only these explicit forms; a page that merely
+      // shows none is not one). November 5, 2026.
+      if (!closingDate) {
+        const noDeadline = explicitNoDeadline(rawOpportunity.description);
+        if (noDeadline) record("closingDate", withdrawalSourceFields.closingDate, "DETERMINISTIC", null, noDeadline);
+      }
 
       // Work arrangement: the source's own workplace field, else an explicit
       // word in the source's location (as the source stated it, also when a
@@ -227,6 +240,12 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
       // when the source names no single one.
       const offeredArrangements = remoteStatus ? null : fallback("workArrangements", facts.workArrangements);
       const workArrangements = remoteStatus ? [remoteStatus] : offeredArrangements ?? [];
+      // The posting says its arrangement is not decided: an explicit
+      // withdrawal of any earlier one (only when this read states none).
+      if (!remoteStatus && !workArrangements.length) {
+        const open = explicitArrangementOpen(rawOpportunity.description);
+        if (open) record("remoteStatus", withdrawalSourceFields.workArrangement, "DETERMINISTIC", null, open);
+      }
 
       const employmentSource = structured.employmentType ?? text(rawOpportunity.employmentType);
       const sourceEmploymentType = standardizeEmploymentType(employmentSource);
@@ -296,6 +315,9 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
           record("residencyRequirement", sourceField, "DETERMINISTIC", residency.requirement, statement.sentence);
           record("residencyRegions", sourceField, "DETERMINISTIC", statement.regions, statement.sentence);
         }
+      }
+      if (residency.exclusions.length) {
+        record("residencyExclusions", residencySourceFields.exclusion, "DETERMINISTIC", residency.exclusions, residency.exclusionStatements.join("\n"));
       }
 
       // Compensation: stated annual amounts and a recognized currency from
@@ -388,6 +410,35 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         if (currency) record("currency", tiers.sourceField, "DETERMINISTIC", currency, tiers.sourceText);
         compensationTiers = tiers.tiers.map(compensationTier);
         record("compensationTiers", tiers.sourceField, "DETERMINISTIC", compensationTiers, tiers.sourceText);
+        // A country tier is also the role's range only when the posting's own
+        // eligibility evidence names that one country (salary-tiers.ts).
+        const primary = primaryCountryTier({
+          tiers: compensationTiers,
+          tierStatements: tiers.tiers.map((tier) => tier.statement),
+          residency,
+          location: remoteLocation ?? location,
+          description: rawOpportunity.description,
+        });
+        if (primary) {
+          const statement = tiers.tiers[primary.index]!.statement;
+          const parsed = parseCompensation(statement);
+          const evidenceText = `${statement}\n${primary.evidence}`;
+          salaryMin = parsed.minimum;
+          salaryMax = parsed.maximum;
+          currency = knownCurrency(parsed.currency);
+          compensationBasis = parsed.basis;
+          for (let index = provenance.length - 1; index >= 0; index -= 1) if (provenance[index]!.fieldName === "currency") provenance.splice(index, 1);
+          if (salaryMin !== null) record("salaryMin", primaryTierSourceField, "DETERMINISTIC", salaryMin, evidenceText);
+          if (salaryMax !== null) record("salaryMax", primaryTierSourceField, "DETERMINISTIC", salaryMax, evidenceText);
+          if (currency) record("currency", primaryTierSourceField, "DETERMINISTIC", currency, evidenceText);
+          if (compensationBasis !== null) record("compensationBasis", primaryTierSourceField, "DETERMINISTIC", compensationBasis, evidenceText);
+        }
+      }
+      // The posting says it does not disclose pay: an explicit withdrawal of
+      // any earlier salary (only when this read states no range or tiers).
+      if (salaryMin === null && salaryMax === null && !compensationTiers.length) {
+        const withheld = explicitSalaryWithheld(rawOpportunity.description);
+        if (withheld) record("salaryMin", withdrawalSourceFields.salary, "DETERMINISTIC", null, withheld);
       }
       // Variable pay the posting states on its own (never the salary range).
       const bonus = fallback("bonus", facts.bonus);
@@ -420,6 +471,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         timeZoneRequirements,
         residencyRequirement: residency.requirement,
         residencyRegions: residency.regions,
+        residencyExclusions: residency.exclusions,
         workAuthorizationRequirement: workAuthorization?.value.requirement ?? null,
         workAuthorizationRegions: workAuthorization?.value.regions ?? [],
         visaSponsorship,

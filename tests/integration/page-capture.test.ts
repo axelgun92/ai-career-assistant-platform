@@ -9,7 +9,7 @@
 // opportunity, and no configured source or listing ledger row is created.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { createRetrievalIngestionService, extensionCaptureSchemaVersion } from "@ai-career/core";
+import { createRetrievalIngestionService, extensionCaptureSchemaVersion, pageReaderRevision } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   PrismaEvaluationQueryRepository,
@@ -183,7 +183,7 @@ describe("Mode B on the test database", () => {
     const id = randomUUID();
     const first = await intake.capture(batch(["evaluate", "review"], id), pairing);
     await track(first);
-    expect(first.counts).toEqual({ queued: 2, seenAgain: 0, alreadySaved: 0, rejected: 0 });
+    expect(first.counts).toEqual({ queued: 2, seenAgain: 0, alreadySaved: 0, refreshing: 0, rejected: 0 });
     expect(await tableCounts()).toEqual(before);
 
     const repeat = await intake.capture(batch(["evaluate", "review"], id), pairing);
@@ -263,6 +263,8 @@ describe("Mode B on the test database", () => {
         extractor: "structured-data",
         capturedAt: clock.now.toISOString(),
         extensionVersion: "0.2.0",
+        // The current companion's reader (a record without one is re-read).
+        readerRevision: pageReaderRevision,
         fields: {
           title: "Customer Success Manager evaluate",
           company: `Batch evaluate ${run}`,

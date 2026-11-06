@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { createRetrievalIngestionService, extensionCaptureSchemaVersion } from "@ai-career/core";
+import { createRetrievalIngestionService, extensionCaptureSchemaVersion, pageReaderRevision } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   PrismaEvaluationQueryRepository,
@@ -252,6 +252,8 @@ describe("LinkedIn Mode B on the test database", () => {
         extractor: "site:linkedin",
         capturedAt: clock.now.toISOString(),
         extensionVersion: "0.2.0",
+        // The current companion's reader (a record without one is re-read).
+        readerRevision: pageReaderRevision,
         fields: { title: "Customer Success Manager", company: `Company ${jobs.evaluate.id}`, location: "United States", description: "Customer Success Manager for a workflow SaaS platform." },
       },
       { ...pairing, tokenHint: "test" },

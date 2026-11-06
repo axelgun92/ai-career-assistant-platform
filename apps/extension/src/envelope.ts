@@ -3,6 +3,7 @@ import {
   extensionCaptureSchema,
   extensionCaptureSchemaVersion,
   extensionEditableFieldValues,
+  pageReaderRevision,
   type ExtensionCapture,
   type ExtensionEditableField,
 } from "../../../packages/core/src/extension-capture";
@@ -107,6 +108,7 @@ export function buildCaptureEnvelope(
     pageText,
     notes: extraction.notes.slice(0, 5),
     editedFields,
+    readerRevision: pageReaderRevision,
   };
   // The context is optional: it is left out rather than making the capture
   // too large to send.

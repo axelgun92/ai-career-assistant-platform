@@ -12,7 +12,7 @@ import {
 import type { PageCaptureItemRecord, PrismaPageCaptureRepository } from "@ai-career/database";
 import { z } from "zod";
 import { capturedPageIdentity, ExtensionCaptureError, parseCapture } from "./extension-capture";
-import type { PageCaptureIngestor } from "./page-capture-acquisition";
+import { PageCaptureSavedError, type PageCaptureIngestor } from "./page-capture-acquisition";
 
 // Background-tab detail reading for the browser extension's results-page
 // capture (Mode B, mechanism P2, Welcome to the Jungle / Otta). After "Save
@@ -207,7 +207,14 @@ export function createPageCaptureTabService(dependencies: PageCaptureTabDependen
           await repository.settleTabItem(item.id, { status: "AWAITING_DETAILS", reason: "UNREADABLE", nextAttemptAt: null });
           return view(await current(item), "UNREADABLE");
         }
-        throw error;
+        // Saved and marked; only recording the hand-off failed: the job is in.
+        if (error instanceof PageCaptureSavedError && error.stage === "handoff") {
+          return view(await current(item), "INGESTED", { opportunityId: error.opportunityId });
+        }
+        // Saved, but its item could not be marked (the database is failing):
+        // the item stays queued, uncounted, and a later read lands on the
+        // same saved job.
+        throw error instanceof PageCaptureSavedError ? error.cause : error;
       }
     },
 

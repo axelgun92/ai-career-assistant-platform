@@ -100,7 +100,7 @@ describe("the page-capture batch envelope", () => {
     const built = buildPageCaptureBatch(reading, [true, false], { site: "e2e-results", batchId, extensionVersion: "0.2.0", capturedAt: now });
     expect(built.ok && built.batch.cards.map((card) => card.title)).toEqual(["CSM One"]);
     expect(buildPageCaptureBatch(reading, [false, false], { site: "e2e-results", batchId, extensionVersion: "0.2.0", capturedAt: now })).toMatchObject({ ok: false });
-    expect(readingSummary(reading)).toBe("2 jobs read from this page. 1 not loaded yet was skipped. Scroll the page and save again for more.");
+    expect(readingSummary(reading)).toBe("2 jobs read from this page. 1 not loaded yet was skipped. Scroll the page and save again for more. Locations are read with each job's details.");
     expect(
       pageCaptureMessage({
         batchId,
@@ -118,7 +118,7 @@ describe("the page-capture intake", () => {
     const stageBatch = vi.fn(async (input: { cards: Array<{ externalId: string }> }) =>
       input.cards.map((card, index) => ({ externalId: card.externalId, outcome: "QUEUED" as const, opportunityId: null, itemId: `item-${index}` })),
     );
-    const service = createPageCaptureService({ repository: { stageBatch } as never, enabledSites: () => enabled, now: () => now });
+    const service = createPageCaptureService({ repository: { stageBatch, siteStoppedUntil: async () => null } as never, enabledSites: () => enabled, now: () => now });
     return { service, stageBatch };
   };
 
@@ -155,7 +155,7 @@ describe("the page-capture intake", () => {
       ]),
       pairing,
     );
-    expect(result.counts).toEqual({ queued: 1, seenAgain: 0, alreadySaved: 0, rejected: 2 });
+    expect(result.counts).toEqual({ queued: 1, seenAgain: 0, alreadySaved: 0, refreshing: 0, rejected: 2 });
     expect((stageBatch.mock.calls[0]![0] as { cards: unknown[] }).cards).toHaveLength(1);
   });
 
@@ -184,7 +184,7 @@ describe("the page-capture API handler", () => {
         latestEvaluation: vi.fn(async () => null),
         discovery: customerSuccessDiscoveryConfiguration,
       }),
-      pageCaptures: createPageCaptureService({ repository: { stageBatch } as never, enabledSites: () => ({ cards: ["e2e-results"], details: ["e2e-results"] }) }),
+      pageCaptures: createPageCaptureService({ repository: { stageBatch, siteStoppedUntil: async () => null } as never, enabledSites: () => ({ cards: ["e2e-results"], details: ["e2e-results"] }) }),
       evaluation: { request: vi.fn(), status: vi.fn() },
       now: () => now,
     });
@@ -210,7 +210,7 @@ describe("the page-capture API handler", () => {
         latestEvaluation: vi.fn(async () => null),
         discovery: customerSuccessDiscoveryConfiguration,
       }),
-      pageCaptures: createPageCaptureService({ repository: { stageBatch } as never, enabledSites: () => ({ cards: [], details: [] }) }),
+      pageCaptures: createPageCaptureService({ repository: { stageBatch, siteStoppedUntil: async () => null } as never, enabledSites: () => ({ cards: [], details: [] }) }),
       evaluation: { request: vi.fn(), status: vi.fn() },
       now: () => now,
     });
@@ -259,6 +259,8 @@ function acquisitionSetup(options: { items?: PageCaptureItemRecord[]; pages?: Re
     markFailed: vi.fn(async () => undefined),
     deferSite: vi.fn(async () => undefined),
     markHandedOff: vi.fn(async () => undefined),
+    releaseClaimed: vi.fn(async () => 0),
+    finalizeProvisionalFailure: vi.fn(async () => true),
   };
   const navigated: string[] = [];
   const pages = options.pages ?? Object.fromEntries(items.map((entry) => [entry.sourceUrl, { status: 200, html: testSiteJobPage({ id: entry.id }) }]));

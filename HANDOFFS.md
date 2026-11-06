@@ -1944,3 +1944,49 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The friction contract (fail closed on a sign-in wall, a shown challenge or a prompt with no readable cards; a prompt over loaded cards is read through and reported; never dismiss); the capture identity; `PageCaptureSession` semantics.
+
+### Handoff: Workstream B — Mode B Live-Round Fixes (Claude; shared-boundary record)
+
+**Date:** November 6, 2026
+**From:** Claude main-product workstream
+**To:** Alex (E4 evidence, then the source-specific fixes, one coordinated closeout, acceptance-DB migration and live round authorization); Codex (boundary awareness)
+**Status:** Structural work and every E4-independent gap from the November 6 completion audit implemented and verified offline on `ai_career_assistant_test`, on top of `144fa6c`; not committed. No production merge.
+
+#### Completed
+
+- Worker resilience in the Mode B acquisition pass (`page-capture-acquisition.ts`, `worker-errors.ts`): per-job database failure classes (contention, permanent, transient, unknown); provisional `DB_PENDING` accounting finalized by the next ingestion or a capture-lock probe (`probeCaptureLock`); best-effort writes with the existing interrupted-job recovery as the fallback; P2028 and 55P03 transient for the retrieval worker loop only (`classifyRetrievalWorkerError`; the evaluation worker's `classifyWorkerError` is unchanged from `144fa6c`); whitelisted P2028 diagnostics; stage-named logs; post-save failures (`PageCaptureSavedError`) never charged; refresh failures requeued as refreshes (`requeueUncounted`).
+- Capture-lock transactions (`manual-opportunity-repository.ts`): one set of options (15 s / 30 s), a 20 s `lock_timeout` on the global capture lock, transaction names on errors; `stageBatch` lookups batched.
+- Selective re-observation (`packages/core/src/page-capture.ts` refresh policy; `page-capture-repository.ts` `refreshReasons`, `restoreRefreshes`, `markIngested` refresh outcome): R1 outdated reader revision, R2 incomplete read after 24 h (max 3 in a row), R3 14 days; refresh state lives in `lastReason` (no schema change); no hand-off on refresh.
+- Evidence-based re-projection for browser-extension reads by field group; a partial salary never overwrites saved amounts; explicit withdrawal via provenance `explicit-withdrawal:<closingDate|salary|workArrangement>` from the posting's own description (`packages/normalization/src/withdrawal.ts`).
+- Restriction durability: a deferred refresh keeps the stop (`nextAttemptAt`), read by `siteStoppedUntil`; refresh timing uses the read's own capture time and `sourceMetadata.lastRead` from unchanged re-reads.
+- LinkedIn listing fallback (`LISTING_PAGE_FALLBACK`, sourceField `listing:apply-on-site`, "Apply on LinkedIn (listing page)") with precedence below any employer/ATS link; careers-front-page guard.
+- `Opportunity.residencyExclusions` (additive; migration `20261106090000_opportunity_residency_exclusions`, test DB only) with parsing, display and source-version plumbing.
+- Country salary tiers and an evidence-supported primary (`packages/normalization/src/salary-tiers.ts`); geography list-connector fix.
+- Captured Jobs / history / panel hydrate company and location from the saved job.
+
+#### Current Contract / Assumptions
+
+- The capture envelope gains optional `readerRevision` (absent = 0). Bump `pageReaderRevision` and a site's `refresh.minReaderRevision` only when an extraction fix for that site ships.
+- Page-capture counts gain `refreshing`; outcomes gain `REFRESHING`. Both additive.
+- Triage and the evaluator are unchanged. Exclusions are not yet consumed by triage (needs a user residence field).
+
+#### Files Changed in Codex-Owned Areas
+
+- None. (`evaluation-repository.ts` only passes `residencyExclusions` through to the opportunity view.)
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Workstream B — Mode B Live-Round Fixes): unit 2,260, integration 411, E2E 60/60, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- The P2028 root cause (H1–H3), the logged-out LinkedIn apply link (H4), AlertMedia (H5), Critical Start (H6), Juniper Square's eligibility and the FourKites trace on the real records wait for Alex's read-only E4 evidence (revision-2 pack; runs from the `144fa6c` checkout, compatible with the unmigrated acceptance database).
+- The acceptance database needs the `residencyExclusions` migration (authorization) before the next round.
+
+#### Next Task
+
+- Alex: E4; then the source-specific fixes, full verification and one coordinated closeout commit; then the controlled live round (recovery of the 20 LinkedIn jobs first, then the LinkedIn and WTTJ refresh saves, then repeat saves).
+
+#### Do Not Change Without Coordination
+
+- The provisional accounting contract (an outage never counts an attempt; a job-specific failure counts once); the refresh eligibility rules and their registry values; the withdrawal rule (only explicit source statements clear a field); the application-link precedence.

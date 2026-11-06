@@ -110,6 +110,7 @@ function mapOpportunityFields(
     timeZoneRequirements: record.timeZoneRequirements,
     residencyRequirement: residencyRequirement(record.residencyRequirement),
     residencyRegions: record.residencyRegions,
+    residencyExclusions: record.residencyExclusions ?? [],
     ...storedEligibilityFacts(record),
     salaryMin: record.salaryMin?.toNumber() ?? null,
     salaryMax: record.salaryMax?.toNumber() ?? null,

@@ -133,7 +133,23 @@ function capturedApplication(
     return { applicationUrl: capturedPageUrl, applicationUrlBasis: fields.applicationUrlBasis };
   }
   const link = fields.applicationUrl ? cleanPageUrl(fields.applicationUrl) : null;
-  return link ? { applicationUrl: link, applicationUrlBasis: "PAGE_APPLY_LINK" } : { applicationUrl: null, applicationUrlBasis: null };
+  // A careers site's front page names no job: it is never an application
+  // link (November 5, 2026).
+  return link && !genericCareersPage(link) ? { applicationUrl: link, applicationUrlBasis: "PAGE_APPLY_LINK" } : { applicationUrl: null, applicationUrlBasis: null };
+}
+
+// A careers site's root or index ("/careers", "/jobs/", "/join-us", or a
+// careers subdomain's front page), with no job in its path.
+const careersIndexPath = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:company\/|about\/)?(?:careers?|jobs|join(?:-us)?|work-with-us|opportunities|open-positions|vacancies)?\/?$/i;
+export function genericCareersPage(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (!careersIndexPath.test(url.pathname)) return false;
+    // The bare root is generic only on a careers or jobs host.
+    return url.pathname.replace(/\/+$/, "") !== "" || /^(?:careers?|jobs|join)\./i.test(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function capturedListing(
@@ -208,7 +224,7 @@ export function capturedListing(
     ...(validated.remoteLocations.length ? { remoteLocations: validated.remoteLocations } : {}),
     ...(validated.seniority ? { seniority: validated.seniority } : {}),
   };
-  const raw = buildRetrievedListing(
+  const built = buildRetrievedListing(
     {
       key: extensionSourceKey,
       name: `${identity.site.name} (browser extension)`,
@@ -265,6 +281,11 @@ export function capturedListing(
           extractor: capture.extractor,
           capturedAt: capture.capturedAt,
           extensionVersion: capture.extensionVersion,
+          // Selective re-observation (November 5, 2026): which reader made
+          // this read, and whether it read the rendered page (page context,
+          // or LinkedIn's own job page) with a description.
+          readerRevision: capture.readerRevision ?? 0,
+          readQuality: (capture.pageText !== null || identity.site.key === "linkedin") && validated.description ? "COMPLETE" : "PARTIAL",
           pageUrl: cleanPageUrl(capture.pageUrl),
           host: identity.site.host,
           site: identity.site.key,
@@ -281,6 +302,22 @@ export function capturedListing(
     },
     { domain: context.domain, discoveredAt: context.receivedAt },
   );
+  // LinkedIn (single-job or results-page capture alike): when the page
+  // names no employer or ATS link, the job's own LinkedIn listing is where
+  // the apply route starts (November 5, 2026 decision). It is set after the
+  // content hash, which already covers the listing's identity, so it never
+  // reads as a changed listing; precedence makes it the weakest link.
+  const raw =
+    linkedIn && !built.applicationUrl
+      ? {
+          ...built,
+          applicationUrl: identity.sourceUrl,
+          sourceMetadata: {
+            ...built.sourceMetadata,
+            sourceFacts: { ...((built.sourceMetadata?.sourceFacts as Record<string, unknown> | undefined) ?? {}), applicationUrlBasis: "LISTING_PAGE_FALLBACK" },
+          },
+        }
+      : built;
   return { raw, identity };
 }
 

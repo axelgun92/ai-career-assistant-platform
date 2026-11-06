@@ -34,7 +34,7 @@ import { createEvaluationService } from "../../apps/web/src/server/evaluation-se
 import { capturedPageIdentity, createExtensionCaptureService } from "../../apps/web/src/server/extension-capture";
 import { createPageCaptureService, enabledSitesFromEnvironment } from "../../apps/web/src/server/page-capture";
 import { createPageCaptureAcquisition, createPageCaptureIngestor, evaluationHandoff } from "../../apps/web/src/server/page-capture-acquisition";
-import { pageCaptureProgress } from "../../apps/web/src/server/page-capture-progress";
+import { handlePageCaptureAction, pageCaptureProgress } from "../../apps/web/src/server/page-capture-progress";
 import { createPageCaptureTabService, PageCaptureTabError } from "../../apps/web/src/server/page-capture-tabs";
 import { createPreEvaluatorTriageService } from "../../apps/web/src/server/pre-evaluator-triage-service";
 import { createCleanup, createProfile, database, semanticConfig } from "../support/budget-integration";
@@ -280,9 +280,62 @@ describe("Welcome to the Jungle Mode B (background tabs) on the test database", 
 
     // Only Alex's next save reads them again.
     const resumed = await saveAndRead();
-    expect(resumed.staged.acquisition?.items.map((item) => item.url)).toEqual(wttjF0Urls.slice(1));
+    // The job saved before the stop is read again too (Workstream B, November
+    // 6, 2026): its fixture page names no Apply link and it was read more
+    // than a day ago, so the incomplete-read refresh (R2) applies, once.
+    expect(resumed.staged.counts).toMatchObject({ queued: 4, refreshing: 1 });
+    expect(resumed.staged.acquisition?.items.map((item) => item.url)).toEqual(wttjF0Urls);
     expect(resumed.state?.finished?.reason).toBe("COMPLETED");
     expect((await items()).every((item) => item.status === "INGESTED")).toBe(true);
+    expect((await items())[0]).toMatchObject({ lastReason: "REFRESHED:UNCHANGED:1" });
+    expect(await tableCounts()).toEqual({ ...before, opportunities: before.opportunities + 5 });
+  });
+
+  it("a restriction met while reading saved jobs again still stops the site; nothing but your next save after the wait reads them, and Retry is refused", async () => {
+    // Five saved jobs, read by an older reader (the November 4 records).
+    await saveAndRead();
+    for (const item of await items()) {
+      expect(item.status).toBe("INGESTED");
+      await database.$executeRaw`
+        UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set("sourceMetadata", '{capture}', ("sourceMetadata"->'capture') - 'readerRevision')
+        WHERE "opportunityId" = ${item.opportunityId}::uuid AND "source" = 'browser-extension'`;
+    }
+    clock.now = new Date(clock.now.getTime() + 60 * 60 * 1000);
+    const before = await tableCounts();
+    // Every queued job is a refresh, and the first page is refused.
+    const blocked = await saveAndRead(() => ({ status: 403, html: "<h1>Forbidden</h1>" }));
+    expect(blocked.staged.counts).toMatchObject({ refreshing: 5, queued: 0 });
+    expect(blocked.state?.finished?.reason).toBe("BLOCKED");
+    expect(blocked.fake.log.opened).toHaveLength(1);
+    const stoppedUntil = await repository.siteStoppedUntil("welcome-to-the-jungle", clock.now);
+    expect(stoppedUntil!.getTime() - clock.now.getTime()).toBe(day);
+    for (const item of await items()) expect(item).toMatchObject({ status: "INGESTED", lastReason: "REFRESH_DEFERRED:0" });
+    expect(await tableCounts()).toEqual(before);
+
+    // A new save during the stop opens nothing and queues no refresh.
+    clock.now = new Date(clock.now.getTime() + 60 * 60 * 1000);
+    const during = await saveAndRead();
+    expect(during.staged.counts).toMatchObject({ refreshing: 0 });
+    expect(during.staged.acquisition).toMatchObject({ items: [], stoppedUntil: stoppedUntil!.toISOString() });
+    expect(during.fake.log.opened).toEqual([]);
+    // Retry is not how a background-tab site is read again.
+    const first = (await items())[0]!;
+    const retry = await handlePageCaptureAction(new Request(`http://127.0.0.1:3000/api/extension/page-captures/${first.id}`, {
+      method: "POST",
+      body: JSON.stringify({ action: "retry" }),
+      headers: { "content-type": "application/json", "sec-fetch-site": "same-origin", origin: "http://127.0.0.1:3000", host: "127.0.0.1:3000" },
+    }), first.id, repository);
+    expect(retry.status).toBe(400);
+    expect(await retry.text()).toContain("Save the results page that shows this job again");
+
+    // The wait ends: nothing resumes by itself; your next save reads them again.
+    clock.now = new Date(stoppedUntil!.getTime() + 60 * 1000);
+    expect(await repository.siteStoppedUntil("welcome-to-the-jungle", clock.now)).toBeNull();
+    const resumed = await saveAndRead();
+    expect(resumed.staged.counts).toMatchObject({ refreshing: 5 });
+    expect(resumed.state?.finished?.reason).toBe("COMPLETED");
+    for (const item of await items()) expect(item).toMatchObject({ status: "INGESTED", lastReason: expect.stringMatching(/^REFRESHED:/) });
+    expect(await tableCounts()).toEqual(before);
   });
 
   it("stops the batch when a page that opens is not the staged job, recording it", async () => {

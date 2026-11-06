@@ -1,5 +1,6 @@
 import {
   applicationUrlBasisOf,
+  listingPageFallbackSourceField,
   applicationUrlProvenance,
   compensationBasisValues,
   compensationTierSchema,
@@ -45,6 +46,28 @@ import {
 // it leads to happen as one step, so two simultaneous captures of the same
 // listing (or a new company) cannot both create a record.
 const captureLockKey = Prisma.sql`hashtext('ai-career:opportunity-capture')`;
+// Every transaction that takes the capture lock uses the same options
+// (November 5, 2026: two of them ran on Prisma's 2 s / 5 s defaults while
+// waiting on the same lock). The lock itself is waited for at most
+// captureLockWaitMs, inside the transaction's timeout, so a busy lock is
+// reported as such (SQLSTATE 55P03, lock_not_available) instead of as the
+// transaction's own expiry (P2028).
+const captureTransactionOptions = { maxWait: 15_000, timeout: 30_000 } as const;
+const captureLockWaitMs = 20_000;
+async function takeCaptureLock(transaction: Transaction) {
+  await transaction.$queryRaw`SELECT set_config('lock_timeout', ${`${captureLockWaitMs}ms`}, true)`;
+  await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+}
+// A capture transaction's failure names the transaction (logged by the
+// worker; no data).
+async function namedCapture<T>(name: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error && typeof error === "object") Object.assign(error, { captureTransaction: name });
+    throw error;
+  }
+}
 // At most this many probable matches are recorded per capture.
 const recordedProbableMatches = 3;
 
@@ -72,6 +95,20 @@ function summaries(decision: DuplicateDecisionResult, labels: CandidateDetails["
 // The company an opportunity links to: the oldest Company whose normalized
 // name matches (including companies not yet backfilled, compared here
 // without being changed), or a new one. Stored names are never rewritten.
+// A browser-extension read's own time, reader revision and completeness, as
+// its capture metadata states them (null for any other source).
+function extensionReadOf(raw: RawOpportunity): { at: string; readerRevision: number; readQuality: string | null } | null {
+  if (raw.sourceType !== "BROWSER_EXTENSION") return null;
+  const capture = raw.sourceMetadata?.capture as Record<string, unknown> | undefined;
+  if (!capture || typeof capture !== "object") return null;
+  const at = typeof capture.capturedAt === "string" && !Number.isNaN(Date.parse(capture.capturedAt)) ? capture.capturedAt : raw.discoveredAt.toISOString();
+  return {
+    at,
+    readerRevision: typeof capture.readerRevision === "number" ? capture.readerRevision : 0,
+    readQuality: typeof capture.readQuality === "string" ? capture.readQuality : null,
+  };
+}
+
 export async function resolveCompanyId(transaction: Transaction, name: string | null): Promise<string | null> {
   if (!name) return null;
   const key = normalizeCompanyName(name);
@@ -167,11 +204,21 @@ function provenanceView(provenance: OpportunityDetailRecord["fieldProvenance"][n
 // not part of it.
 const projectedFields = [
   "title", "company.name", "location", "remoteStatus", "workArrangements", "employmentType", "seniority", "seniorityLabel", "department",
-  "timeZoneRequirements", "residencyRequirement", "residencyRegions", "workAuthorizationRequirement",
+  "timeZoneRequirements", "residencyRequirement", "residencyRegions", "residencyExclusions", "workAuthorizationRequirement",
   "workAuthorizationRegions", "visaSponsorship", "relocationSupport", "employerOfRecordRegions", "salaryText",
   "salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers", "bonus", "postingDate", "closingDate", "jobDescription",
 ] as const;
 type ProjectedField = (typeof projectedFields)[number];
+// Facts that change together on a re-read (November 5, 2026): a salary is its
+// bounds, currency, basis, tiers and text; an arrangement its status and
+// options; residency its rule, places and exclusions; work authorization its
+// rule and places. Any other field is a group of its own.
+const projectionGroups: ReadonlyArray<readonly ProjectedField[]> = [
+  ["salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers", "salaryText"],
+  ["remoteStatus", "workArrangements"],
+  ["residencyRequirement", "residencyRegions", "residencyExclusions"],
+  ["workAuthorizationRequirement", "workAuthorizationRegions"],
+];
 
 // Fields the browser extension lets the user correct, by provenance name.
 const userCorrectableFields: Record<string, ProjectedField> = {
@@ -234,6 +281,7 @@ function mapOpportunityDetail(
       timeZoneRequirements: record.timeZoneRequirements,
       residencyRequirement: residencyRequirement(record.residencyRequirement),
       residencyRegions: record.residencyRegions,
+      residencyExclusions: record.residencyExclusions ?? [],
       ...storedEligibilityFacts(record),
       salaryMin: record.salaryMin?.toNumber() ?? null,
       salaryMax: record.salaryMax?.toNumber() ?? null,
@@ -354,13 +402,12 @@ export class PrismaManualOpportunityRepository
     provenance: FieldProvenanceInput[];
     duplicateResolution: DuplicateResolutionChoice | null;
   }): Promise<{ opportunityId: string; deduplication: DeduplicationOutcome }> {
-    return this.database.$transaction(
-      async (transaction) => {
-        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+    return namedCapture("ingestManualOpportunity", () =>
+      this.database.$transaction(async (transaction) => {
+        await takeCaptureLock(transaction);
         const captured = await this.capture(transaction, { ...input, recordedBy: "CAPTURE" });
         return { opportunityId: captured.opportunityId, deduplication: captured.deduplication };
-      },
-      { maxWait: 15_000, timeout: 30_000 },
+      }, captureTransactionOptions),
     );
   }
 
@@ -382,9 +429,9 @@ export class PrismaManualOpportunityRepository
     const raw = input.rawOpportunity;
     const retrieval = raw.retrieval;
     if (!retrieval) throw new Error("A retrieved listing must carry retrieval provenance");
-    return this.database.$transaction(
+    return namedCapture("ingestRetrievedListing", () => this.database.$transaction(
       async (transaction) => {
-        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+        await takeCaptureLock(transaction);
         const previous = raw.externalId
           ? await transaction.sourceRecord.findFirst({
               where: { source: raw.source, externalId: raw.externalId, opportunityId: { not: null }, contentHash: { not: null } },
@@ -400,6 +447,18 @@ export class PrismaManualOpportunityRepository
               UPDATE "SourceRecord" SET "lastObservedAt" = GREATEST("lastObservedAt", ${raw.discoveredAt}::timestamptz), "updatedAt" = now()
               WHERE "id" = ${previous.id}::uuid
             `;
+            // A browser-extension read that found this same version records
+            // when it read it, with which reader and how completely
+            // ("lastRead", additive; the stored evidence is unchanged), so
+            // selective re-observation does not read it again on every save
+            // (November 6, 2026).
+            const lastRead = extensionReadOf(raw);
+            if (lastRead) {
+              await transaction.$executeRaw`
+                UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set(COALESCE("sourceMetadata", '{}'::jsonb), '{lastRead}', ${JSON.stringify(lastRead)}::jsonb)
+                WHERE "id" = ${previous.id}::uuid
+              `;
+            }
           } else {
             const created = await transaction.sourceRecord.create({
               data: {
@@ -453,7 +512,19 @@ export class PrismaManualOpportunityRepository
           decision: captured.deduplication.decision,
         };
       },
-      { maxWait: 15_000, timeout: 30_000 },
+      captureTransactionOptions,
+    ));
+  }
+
+  // The capture path's health, without capturing anything: one transaction
+  // that takes the capture lock with the same options and commits. Used by
+  // the Mode B worker to tell a job-specific failure from a database or lock
+  // that is unavailable (November 5, 2026).
+  async probeCaptureLock(): Promise<void> {
+    await namedCapture("probeCaptureLock", () =>
+      this.database.$transaction(async (transaction) => {
+        await takeCaptureLock(transaction);
+      }, captureTransactionOptions),
     );
   }
 
@@ -461,8 +532,8 @@ export class PrismaManualOpportunityRepository
   // same unnormalized content seen again only moves its last-observed time.
   async preserveUnnormalizedListing(rawOpportunity: RawOpportunity) {
     const hash = rawOpportunity.retrieval?.contentHash ?? null;
-    return this.database.$transaction(async (transaction) => {
-      await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+    return namedCapture("preserveUnnormalizedListing", () => this.database.$transaction(async (transaction) => {
+      await takeCaptureLock(transaction);
       const existing =
         hash && rawOpportunity.externalId
           ? await transaction.sourceRecord.findFirst({
@@ -482,7 +553,7 @@ export class PrismaManualOpportunityRepository
         data: this.sourceRecordData(rawOpportunity),
         select: { id: true, discoveredAt: true },
       });
-    });
+    }, captureTransactionOptions));
   }
 
   // The capture path shared by manual capture and retrieval, inside the
@@ -601,7 +672,7 @@ export class PrismaManualOpportunityRepository
       ? await transaction.fieldProvenance.findFirst({
           where: { opportunityId: input.opportunityId, fieldName: "applicationUrl" },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          select: { sourceRecord: { select: { sourceType: true, sourceCategory: true } } },
+          select: { sourceField: true, sourceRecord: { select: { sourceType: true, sourceCategory: true } } },
         })
       : null;
     const replace = shouldReplaceApplicationLink({
@@ -610,6 +681,8 @@ export class PrismaManualOpportunityRepository
       currentCategory: current?.sourceRecord?.sourceCategory ?? null,
       candidateUrl,
       candidateCategory,
+      currentIsFallback: current?.sourceField === listingPageFallbackSourceField,
+      candidateIsFallback: applicationUrlBasisOf(input.rawOpportunity.sourceMetadata) === "LISTING_PAGE_FALLBACK",
     });
     if (!replace) return;
     await transaction.opportunity.update({
@@ -646,13 +719,19 @@ export class PrismaManualOpportunityRepository
     if (!opportunity) return;
     const next = input.rawOpportunity.applicationUrl;
     if (next === opportunity.applicationUrl) return;
+    // A browser-extension re-read that found no link never clears one (a
+    // read can miss it); a LinkedIn-listing fallback never replaces a real
+    // link (November 5, 2026).
+    if (!next && input.rawOpportunity.sourceType === "BROWSER_EXTENSION") return;
+    const nextIsFallback = applicationUrlBasisOf(input.rawOpportunity.sourceMetadata) === "LISTING_PAGE_FALLBACK";
     if (opportunity.applicationUrl) {
       const current = await transaction.fieldProvenance.findFirst({
         where: { opportunityId: input.opportunityId, fieldName: "applicationUrl", supersededAt: null },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: { sourceRecord: { select: { source: true, sourceType: true } } },
+        select: { sourceField: true, sourceRecord: { select: { source: true, sourceType: true } } },
       });
       if (!current?.sourceRecord || current.sourceRecord.sourceType === "MANUAL" || current.sourceRecord.source !== input.originSource) return;
+      if (nextIsFallback && current.sourceField !== listingPageFallbackSourceField) return;
     }
     await transaction.opportunity.update({ where: { id: input.opportunityId }, data: { applicationUrl: next } });
     await transaction.fieldProvenance.updateMany({
@@ -709,9 +788,45 @@ export class PrismaManualOpportunityRepository
         .filter((row) => row.sourceField.startsWith("userCorrected:") && !correctedNow.has(row.fieldName as ProjectedField))
         .map((row) => row.fieldName),
     );
-    const fields = projectedFields.filter((field) => !protectedFields.has(field));
-    if (!fields.length) return;
     const next = input.opportunity;
+    // Browser-extension re-reads (Mode A and B alike; November 5, 2026): a
+    // read's completeness varies with rendering and timing, so only evidence
+    // changes a saved fact. Per field group, a value the new read states
+    // replaces the group; a group it does not state keeps its value and
+    // provenance (a complete page alone is never evidence of withdrawal); a
+    // group is cleared only on an explicit withdrawal the normalizer
+    // recognized in the posting's own words ("explicit-withdrawal:<field>").
+    // Groups change as a unit, never mixing old and new values. API sources
+    // keep the earlier re-projection, which replaces every field.
+    const evidenceOnly = input.rawOpportunity.sourceType === "BROWSER_EXTENSION";
+    const withdrawn = new Set(input.provenance.filter((row) => row.sourceField.startsWith("explicit-withdrawal:")).map((row) => row.fieldName));
+    const stated = (field: ProjectedField): boolean => {
+      const value = field === "company.name" ? next.companyName : (next as Record<string, unknown>)[field];
+      return Array.isArray(value) ? value.length > 0 : value !== null && value !== undefined && value !== "";
+    };
+    const groupOf = (field: ProjectedField): readonly ProjectedField[] => projectionGroups.find((group) => group.includes(field)) ?? [field];
+    // A salary replaces a saved one only as a complete statement: a range
+    // with its currency, or tiers. A read that states only part of a salary
+    // (a currency, a sentence with no amounts, amounts with no currency)
+    // never overwrites saved amounts, currency, basis or tiers (November 6,
+    // 2026); it may fill a salary group that holds no amounts yet.
+    const salaryGroup = projectionGroups[0]!;
+    const completeSalary = (((next.salaryMin ?? null) !== null || (next.salaryMax ?? null) !== null) && Boolean(next.currency)) || (next.compensationTiers?.length ?? 0) > 0;
+    let keepSavedSalary = false;
+    if (evidenceOnly && !completeSalary && !salaryGroup.some((member) => withdrawn.has(member)) && salaryGroup.some(stated)) {
+      const saved = await transaction.opportunity.findUnique({
+        where: { id: input.opportunityId },
+        select: { salaryMin: true, salaryMax: true, compensationTiers: true },
+      });
+      keepSavedSalary = Boolean(saved && (saved.salaryMin !== null || saved.salaryMax !== null || (Array.isArray(saved.compensationTiers) && saved.compensationTiers.length > 0)));
+    }
+    const fields = projectedFields.filter(
+      (field) =>
+        !protectedFields.has(field) &&
+        !(keepSavedSalary && salaryGroup.includes(field)) &&
+        (!evidenceOnly || groupOf(field).some(stated) || groupOf(field).some((member) => withdrawn.has(member))),
+    );
+    if (!fields.length) return;
     const values: Record<ProjectedField, () => Promise<Prisma.OpportunityUpdateInput>> = {
       title: async () => ({ title: next.title }),
       "company.name": async () => {
@@ -728,6 +843,7 @@ export class PrismaManualOpportunityRepository
       timeZoneRequirements: async () => ({ timeZoneRequirements: next.timeZoneRequirements }),
       residencyRequirement: async () => ({ residencyRequirement: next.residencyRequirement ?? null }),
       residencyRegions: async () => ({ residencyRegions: next.residencyRegions ?? [] }),
+      residencyExclusions: async () => ({ residencyExclusions: next.residencyExclusions ?? [] }),
       workAuthorizationRequirement: async () => ({ workAuthorizationRequirement: next.workAuthorizationRequirement ?? null }),
       workAuthorizationRegions: async () => ({ workAuthorizationRegions: next.workAuthorizationRegions ?? [] }),
       visaSponsorship: async () => ({ visaSponsorship: next.visaSponsorship ?? null }),
@@ -806,6 +922,7 @@ export class PrismaManualOpportunityRepository
         timeZoneRequirements: input.opportunity.timeZoneRequirements,
         residencyRequirement: input.opportunity.residencyRequirement ?? null,
         residencyRegions: input.opportunity.residencyRegions ?? [],
+        residencyExclusions: input.opportunity.residencyExclusions ?? [],
         workAuthorizationRequirement: input.opportunity.workAuthorizationRequirement ?? null,
         workAuthorizationRegions: input.opportunity.workAuthorizationRegions ?? [],
         visaSponsorship: input.opportunity.visaSponsorship ?? null,

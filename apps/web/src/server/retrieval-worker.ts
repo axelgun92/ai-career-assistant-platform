@@ -18,7 +18,7 @@ import {
   type BrowserSession,
   type RetrievalTransport,
 } from "@ai-career/discovery";
-import { classifyWorkerError, formatWorkerError } from "./worker-errors";
+import { classifyRetrievalWorkerError, formatWorkerError } from "./worker-errors";
 
 // The retrieval worker (feature 11). Each iteration queues scheduled runs
 // that are due, claims one queued run, executes its source's adapter and
@@ -318,7 +318,7 @@ export async function runRetrievalWorkerLoop(input: {
       if (input.once) return 0;
       await input.sleep(input.pollMs);
     } catch (error) {
-      if (classifyWorkerError(error) === "fatal") {
+      if (classifyRetrievalWorkerError(error) === "fatal") {
         input.log.error(`fatal error; exiting ${formatWorkerError(error)}`);
         return 1;
       }

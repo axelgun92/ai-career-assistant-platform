@@ -56,6 +56,9 @@ export function readingSummary(reading: ResultCardsReading): string {
   if (reading.counts.overCap) parts.push(`${reading.counts.overCap} more loaded job${reading.counts.overCap === 1 ? " was" : "s were"} not included (limit ${pageCaptureMaxCards}).`);
   if (reading.counts.skippedUnloaded) parts.push(`${reading.counts.skippedUnloaded} not loaded yet ${reading.counts.skippedUnloaded === 1 ? "was" : "were"} skipped.`);
   if (reading.counts.overCap || reading.counts.skippedUnloaded) parts.push("Scroll the page and save again for more.");
+  // A site whose cards state no location (Welcome to the Jungle): it is read
+  // with each job's details, never guessed here (November 5, 2026).
+  if (reading.cards.length && reading.cards.every((card) => !card.location)) parts.push("Locations are read with each job's details.");
   if (reading.notice === "SIGN_IN_PROMPT_SHOWN") parts.push("The page shows a sign-in prompt; the jobs already loaded behind it were read, and the prompt was left as it is.");
   return parts.join(" ");
 }
@@ -68,8 +71,10 @@ export interface PageCaptureResponse {
   // The capture-history session of this save (null when nothing was staged).
   sessionId?: string | null;
   site: { key: string; name: string; automaticDetails: boolean };
-  counts: { queued: number; seenAgain: number; alreadySaved: number; rejected: number };
-  outcomes: Array<{ url: string; title: string; outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REJECTED"; reason: string | null; opportunityId: string | null }>;
+  // refreshing: jobs already saved that this save reads again (absent from
+  // older servers).
+  counts: { queued: number; seenAgain: number; alreadySaved: number; refreshing?: number; rejected: number };
+  outcomes: Array<{ url: string; title: string; outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REFRESHING" | "REJECTED"; reason: string | null; opportunityId: string | null }>;
   progressUrl: string;
   // Sites whose details the extension reads in background tabs.
   acquisition?: {
@@ -84,15 +89,16 @@ export interface PageCaptureResponse {
 
 export function pageCaptureMessage(response: PageCaptureResponse): string {
   const { queued, seenAgain, alreadySaved, rejected } = response.counts;
+  const refreshing = response.counts.refreshing ?? 0;
   const parts: string[] = [];
   const tabs = response.acquisition;
   if (tabs?.stoppedUntil) {
     parts.push(
       `${queued + seenAgain} saved; ${response.site.name} restricted access earlier, so no job page is opened before ${new Date(tabs.stoppedUntil).toLocaleString()}. Save this page again after that`,
     );
-  } else if (tabs && queued) {
+  } else if (tabs && (queued || refreshing)) {
     parts.push(
-      `${queued} queued; their details are read one at a time in background tabs, at least ${Math.round(tabs.minIntervalMs / 1000)} seconds apart. You can keep browsing`,
+      `${queued ? `${queued} queued` : ""}${queued && refreshing ? " and " : ""}${refreshing ? `${refreshing} to read again` : ""}; their details are read one at a time in background tabs, at least ${Math.round(tabs.minIntervalMs / 1000)} seconds apart. You can keep browsing`,
     );
   } else if (queued) {
     parts.push(
@@ -102,6 +108,7 @@ export function pageCaptureMessage(response: PageCaptureResponse): string {
     );
   }
   if (seenAgain && !tabs?.stoppedUntil) parts.push(`${seenAgain} already in progress`);
+  if (refreshing) parts.push(`${refreshing} already in AI Job Assistant, read again to update ${refreshing === 1 ? "it" : "them"}`);
   if (alreadySaved) parts.push(`${alreadySaved} already in AI Job Assistant`);
   if (rejected) parts.push(`${rejected} not saved`);
   return `${parts.join(" · ") || "Nothing was saved"}.`;

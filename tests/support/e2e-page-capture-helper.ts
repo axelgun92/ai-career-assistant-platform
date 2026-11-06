@@ -8,6 +8,9 @@
 //
 //   acquire <run> [no-browser]   one or more passes until nothing is due
 //   items <run>                  the staged jobs of this run, as JSON
+//   outdate <run>                mark this run's saved reads as made by an
+//                                older reader (as the November 4–5 records
+//                                are), so the next save reads them again
 //   cleanup-items <run>          delete the staged jobs of this run
 import "dotenv/config";
 import { createRetrievalIngestionService } from "../../packages/core/src/index";
@@ -57,10 +60,18 @@ try {
   } else if (command === "items") {
     const items = await database.pageCaptureItem.findMany({
       where: ofRun,
-      select: { id: true, title: true, status: true, lastReason: true, opportunityId: true, handoffOutcome: true, firstSeenAt: true, sightings: true },
+      select: {
+        id: true, title: true, status: true, lastReason: true, opportunityId: true, handoffOutcome: true, firstSeenAt: true, sightings: true,
+        opportunity: { select: { location: true, company: { select: { name: true } } } },
+      },
       orderBy: { title: "asc" },
     });
     process.stdout.write(JSON.stringify(items));
+  } else if (command === "outdate") {
+    const updated = await database.$executeRaw`
+      UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set("sourceMetadata", '{capture}', ("sourceMetadata"->'capture') - 'readerRevision') - 'lastRead'
+      WHERE "source" = 'browser-extension' AND "externalId" LIKE ${`%${run}%`} AND "sourceMetadata" ? 'capture'`;
+    process.stdout.write(JSON.stringify({ updated }));
   } else if (command === "cleanup-items") {
     await database.pageCaptureItem.deleteMany({ where: ofRun });
     // Capture-history sessions left with none of their jobs (November 5, 2026).

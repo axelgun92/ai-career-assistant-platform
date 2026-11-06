@@ -71,7 +71,7 @@ describe("LinkedIn Mode B on the real F0 cards", () => {
     const stageBatch = vi.fn(async (input: { cards: Array<{ externalId: string }> }) =>
       input.cards.map((card, index) => ({ externalId: card.externalId, outcome: "QUEUED" as const, opportunityId: null, itemId: `item-${index}` })),
     );
-    const service = createPageCaptureService({ repository: { stageBatch } as never, enabledSites: () => enabledSitesFromEnvironment({}) });
+    const service = createPageCaptureService({ repository: { stageBatch, siteStoppedUntil: async () => null } as never, enabledSites: () => enabledSitesFromEnvironment({}) });
     const result = await service.capture(built.batch, pairing);
     expect(result).toMatchObject({ site: { key: "linkedin", automaticDetails: true }, counts: { queued: 4, seenAgain: 0, alreadySaved: 0, rejected: 0 } });
     const staged = stageBatch.mock.calls[0]![0] as { site: string; detailsAvailable: boolean; cards: Array<{ externalId: string; sourceUrl: string; siteJobId: string }> };

@@ -10,7 +10,7 @@
 // The detail pages come from a fixture browser: no site is contacted.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { createRetrievalIngestionService, extensionCaptureSchemaVersion } from "@ai-career/core";
+import { createRetrievalIngestionService, extensionCaptureSchemaVersion, pageReaderRevision } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   PrismaEvaluationQueryRepository,
@@ -107,6 +107,8 @@ const singleCapture = (name: string) => ({
   extractor: "structured-data",
   capturedAt: clock.now.toISOString(),
   extensionVersion: "0.3.0",
+  // The current companion's reader (a record without one is re-read).
+  readerRevision: pageReaderRevision,
   fields: {
     title: title(name),
     company: company(name),
@@ -186,7 +188,7 @@ describe("overlapping captures on the test database", () => {
     const batchA = await intake.capture(batch(aNames), pairing);
     sessionIds.push(batchA.sessionId!);
     await remember();
-    expect(batchA.counts).toEqual({ queued: 10, seenAgain: 0, alreadySaved: 0, rejected: 0 });
+    expect(batchA.counts).toEqual({ queued: 10, seenAgain: 0, alreadySaved: 0, refreshing: 0, rejected: 0 });
     expect(await acquisition.runOnce()).toMatchObject({ claimed: 10, ingested: 10 });
     expect(await opportunityCount()).toBe(before + 10);
 
@@ -196,7 +198,7 @@ describe("overlapping captures on the test database", () => {
     sessionIds.push(batchB.sessionId!);
     await remember();
     // The 3 shared jobs are reported as already saved, with their opportunity.
-    expect(batchB.counts).toEqual({ queued: 7, seenAgain: 0, alreadySaved: 3, rejected: 0 });
+    expect(batchB.counts).toEqual({ queued: 7, seenAgain: 0, alreadySaved: 3, refreshing: 0, rejected: 0 });
     const shared = batchB.outcomes.filter((outcome) => outcome.outcome === "ALREADY_SAVED");
     expect(shared.map((outcome) => outcome.url).sort()).toEqual(aNames.slice(7).map(jobUrl).sort());
     expect(shared.every((outcome) => outcome.opportunityId)).toBe(true);
@@ -249,7 +251,7 @@ describe("overlapping captures on the test database", () => {
 
     // Saving B again (the same batch) changes nothing.
     const repeat = await intake.capture(batch(bNames, batchB.sessionId!), pairing);
-    expect(repeat.counts).toEqual({ queued: 0, seenAgain: 0, alreadySaved: 10, rejected: 0 });
+    expect(repeat.counts).toEqual({ queued: 0, seenAgain: 0, alreadySaved: 10, refreshing: 0, rejected: 0 });
     expect(await opportunityCount()).toBe(before + 17);
     expect(await database.pageCaptureSession.count({ where: { id: { in: [batchA.sessionId!, batchB.sessionId!] } } })).toBe(2);
   });
@@ -263,7 +265,7 @@ describe("overlapping captures on the test database", () => {
     const saved = await intake.capture(batch(["s0", "s1"]), pairing);
     sessionIds.push(saved.sessionId!);
     await remember();
-    expect(saved.counts).toEqual({ queued: 1, seenAgain: 0, alreadySaved: 1, rejected: 0 });
+    expect(saved.counts).toEqual({ queued: 1, seenAgain: 0, alreadySaved: 1, refreshing: 0, rejected: 0 });
     expect(saved.outcomes.find((outcome) => outcome.url === jobUrl("s0"))).toMatchObject({ outcome: "ALREADY_SAVED", opportunityId: single.result.opportunityId });
     await acquisition.runOnce();
     // The single-saved job's page was not read again.

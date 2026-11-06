@@ -52,6 +52,10 @@ describe("worker error classification", () => {
     ["an invariant violation", Object.assign(new Error("Stage completion rejected"), { name: "InvariantError" })],
     ["an unknown Prisma request error", prismaError("P2025")],
     ["a constraint violation", prismaError("P2010", { kind: "postgres", code: "23514" })],
+    // Unchanged for the evaluation worker (November 6, 2026): only the
+    // retrieval worker retries these (classifyRetrievalWorkerError).
+    ["a P2028 transaction timeout", prismaError("P2028")],
+    ["a lock timeout (SQLSTATE 55P03)", prismaError("P2010", { kind: "postgres", code: "55P03" })],
     ["a non-Error value", "boom"],
     ["undefined", undefined],
   ])("%s is fatal", (_name, error) => {

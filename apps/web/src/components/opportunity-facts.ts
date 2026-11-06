@@ -74,6 +74,21 @@ export function formatResidency(
   return `${label} (${regions.map(geographyName).join(", ")})`;
 }
 
+// The residency rule with the places the posting excludes from hiring
+// (November 5, 2026): "U.S. residence required, excluding: Alaska,
+// California". Exclusions alone are shown as such; none stated: the rule as
+// before.
+export function formatResidencyEligibility(
+  requirement: string | null | undefined,
+  regions: readonly string[] | null | undefined,
+  exclusions: readonly string[] | null | undefined,
+): string | null {
+  const excluded = exclusions?.length ? exclusions.map(geographyName).join(", ") : null;
+  if (!requirement) return excluded ? `Not eligible: ${excluded}` : null;
+  const rule = formatResidency(requirement, regions);
+  return excluded ? `${rule}, excluding: ${excluded}` : rule;
+}
+
 // The stated range with what it is, when the posting says ("OTE", "base").
 export function formatCompensationRange(
   minimum: number | null | undefined,
@@ -148,4 +163,6 @@ export const applicationUrlBasisNotes: Record<string, string> = {
   "page:application-form": "the captured page, which holds the application form",
   "structured.directApply": "the posting page, which its job data says is applied to directly",
   "page:apply-link": "the apply link on the captured page",
+  // November 5, 2026: no employer or ATS link was found on the LinkedIn page.
+  "listing:apply-on-site": "Apply on LinkedIn (listing page): no direct employer application link was found",
 };

@@ -218,6 +218,23 @@ describe("retrieval worker", () => {
     const lock = { isHeld: () => held, acquire: async () => (held = true) };
     expect(await runRetrievalWorkerLoop({ ...base, lock, once: true })).toBe(0);
   });
+
+  it("loop: a P2028 or a capture-lock timeout backs off and retries (retrieval worker only); a programming error still exits", async () => {
+    const p2028 = Object.assign(new Error("Transaction API error: Unable to start a transaction in the given time."), { name: "PrismaClientKnownRequestError", code: "P2028" });
+    const lockTimeout = Object.assign(new Error("lock timeout"), { name: "PrismaClientKnownRequestError", code: "P2010", meta: { driverAdapterError: { cause: { kind: "postgres", code: "55P03" } } } });
+    const failing = { recover: vi.fn(async () => 0), runOnce: vi.fn() };
+    failing.runOnce.mockRejectedValueOnce(p2028).mockRejectedValueOnce(lockTimeout).mockResolvedValueOnce(null);
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    let held = false;
+    const lock = { isHeld: () => held, acquire: async () => (held = true) };
+    const base = { worker: failing as never, lock, sleep: async () => undefined, shouldStop: () => false, log, pollMs: 1000, once: true };
+    expect(await runRetrievalWorkerLoop(base)).toBe(0);
+    expect(failing.runOnce).toHaveBeenCalledTimes(3);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("transient error (attempt 1)"));
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("transactionError=start-timeout"));
+    const broken = { recover: vi.fn(async () => 0), runOnce: vi.fn(async () => { throw new TypeError("bug"); }) };
+    expect(await runRetrievalWorkerLoop({ ...base, worker: broken as never })).toBe(1);
+  });
 });
 
 function fakeSourceStore(initial: RetrievalSourceRecord[] = []) {

@@ -227,7 +227,7 @@ test("pair, read the loaded cards of a results page, leave one out, and stage th
 
   const { popup: savePopup, requests: saveRequests } = await openPopup(tabId);
   const saved = await readAndSave(savePopup, [jobs.reject.title]);
-  expect(saved.counts).toEqual({ queued: 3, seenAgain: 0, alreadySaved: 0, rejected: 0 });
+  expect(saved.counts).toEqual({ queued: 3, seenAgain: 0, alreadySaved: 0, refreshing: 0, rejected: 0 });
   await expect(savePopup.locator("#jobs-result-message")).toHaveText("3 queued to get their details.");
   expect(saveRequests.filter((entry) => entry === "POST /api/extension/page-captures")).toHaveLength(1);
   expect(requests.filter((entry) => entry.startsWith("POST"))).toEqual([]);
@@ -282,7 +282,7 @@ test("saving again adds the left-out job; details are read automatically and eac
   const { tabId } = await openTab(e2eResultsUrl);
   const { popup } = await openPopup(tabId);
   const saved = await readAndSave(popup, []);
-  expect(saved.counts).toEqual({ queued: 1, seenAgain: 3, alreadySaved: 0, rejected: 0 });
+  expect(saved.counts).toEqual({ queued: 1, seenAgain: 3, alreadySaved: 0, refreshing: 0, rejected: 0 });
   await expect(popup.locator("#jobs-result-message")).toHaveText("1 queued to get their details · 3 already in progress.");
   await popup.close();
 
@@ -360,4 +360,41 @@ test("Mode A still works on its own, and on a batch job it re-observes the same 
   expect((await rejectPopup.request.get(`${appUrl}/api/opportunities/${items.reject!.opportunityId}/evaluation`)).status()).toBe(404);
   await rejectPopup.close();
   await rejected.page.close();
+});
+
+test("saving the page again reads only saved jobs whose last read was by an older reader; no second triage; Captured Jobs shows the update and each saved job's location", async () => {
+  const before = await stagedItems();
+  const outdated = JSON.parse(await runPageCaptureHelper("outdate", run)) as { updated: number };
+  expect(outdated.updated).toBeGreaterThanOrEqual(3);
+  const { tabId } = await openTab(e2eResultsUrl);
+  const { popup } = await openPopup(tabId);
+  const saved = await readAndSave(popup, []);
+  expect(saved.counts).toMatchObject({ queued: 0, refreshing: 3 });
+  await expect(popup.locator("#jobs-result-message")).toContainText("3 already in AI Job Assistant, read again to update them");
+  await popup.close();
+
+  const result = JSON.parse(await runPageCaptureHelper("acquire", run)) as { passes: Array<{ ingested: number }>; navigated: string[] };
+  expect([...result.navigated].sort()).toEqual([jobs.evaluate.url, jobs.reject.url, jobs.review.url].sort());
+  const items = await stagedItems();
+  for (const name of ["evaluate", "review", "reject"] as const) {
+    expect(items[name], name).toMatchObject({ status: "INGESTED", opportunityId: before[name]!.opportunityId, handoffOutcome: before[name]!.handoffOutcome });
+    expect(items[name]!.lastReason, name).toMatch(/^REFRESHED:/);
+  }
+
+  const app = await context.newPage();
+  // Still no evaluation for the rejected job: the refresh was not handed off.
+  expect((await app.request.get(`${appUrl}/api/opportunities/${items.reject!.opportunityId}/evaluation`)).status()).toBe(404);
+  await app.goto(`${appUrl}/extension/jobs?status=added`);
+  const row = rowOf(app, jobs.evaluate.title);
+  await expect(row).toContainText(/Updated from a new read|Read again: no change/);
+  // The saved job's own location once saved, else the card's.
+  const location = (items.evaluate as unknown as { opportunity: { location: string | null } }).opportunity.location;
+  await expect(row).toContainText(location ?? "Remote, United States");
+  await app.close();
+
+  // The same page again reads nothing.
+  const { tabId: again } = await openTab(e2eResultsUrl);
+  const { popup: repeat } = await openPopup(again);
+  expect((await readAndSave(repeat, [])).counts).toMatchObject({ refreshing: 0, queued: 0 });
+  await repeat.close();
 });

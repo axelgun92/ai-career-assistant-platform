@@ -141,6 +141,9 @@ model Opportunity {
   // (ISO 3166-1 alpha-2 or named regions), empty when not stated.
   residencyRequirement String?
   residencyRegions     String[] @default([])
+  // Places the posting explicitly excludes from hiring (November 5, 2026): a
+  // qualification of the residency rule, never work authorization.
+  residencyExclusions  String[] @default([])
   // Explicit work authorization (a separate concept from residency):
   // RIGHT_TO_WORK or CITIZENSHIP and the countries it names; whether visa
   // sponsorship and relocation support are AVAILABLE or NOT_AVAILABLE; the

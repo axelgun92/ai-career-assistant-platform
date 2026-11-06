@@ -61,7 +61,9 @@ export const tabAcquisitionSites = (details: readonly string[]) =>
 export interface PageCaptureOutcome {
   url: string;
   title: string;
-  outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REJECTED";
+  // REFRESHING: already saved, and read again by this save (selective
+  // re-observation, November 5, 2026).
+  outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REFRESHING" | "REJECTED";
   reason: string | null;
   opportunityId: string | null;
 }
@@ -72,7 +74,7 @@ export interface PageCaptureResult {
   // card could be staged.
   sessionId: string | null;
   site: { key: string; name: string; automaticDetails: boolean };
-  counts: { queued: number; seenAgain: number; alreadySaved: number; rejected: number };
+  counts: { queued: number; seenAgain: number; alreadySaved: number; refreshing: number; rejected: number };
   outcomes: PageCaptureOutcome[];
   progressUrl: string;
   // Background-tab sites only: the jobs the extension now reads, in order,
@@ -132,6 +134,9 @@ export function createPageCaptureService(dependencies: {
         // wait ends: the jobs are kept, awaiting details, and nothing is read.
         stoppedUntil = await dependencies.repository.siteStoppedUntil(site.key, at);
       }
+      // A saved job is never queued to be read again while its site is
+      // stopped (either mechanism).
+      const siteStopped = stoppedUntil !== null || (automaticDetails && (await dependencies.repository.siteStoppedUntil(site.key, at)) !== null);
       const outcomes: PageCaptureOutcome[] = [];
       const staged: Array<StagedCardInput & { index: number }> = [];
       const seen = new Set<string>();
@@ -177,6 +182,7 @@ export function createPageCaptureService(dependencies: {
             detailsAvailable: automaticDetails && !stoppedUntil,
             ...(stoppedUntil ? { awaitingReason: "ACCESS_STOPPED" } : {}),
             ...(tabs ? { requeueAwaiting: true } : {}),
+            refresh: { policy: site.refresh, siteStopped },
             cards: staged.map(({ index: _index, ...card }) => card),
             // Capture history: this save and the jobs it covered.
             session: {
@@ -194,7 +200,7 @@ export function createPageCaptureService(dependencies: {
         batchId: batch.batchId,
         sessionId: results.length ? batch.batchId : null,
         site: { key: site.key, name: site.name, automaticDetails },
-        counts: { queued: count("QUEUED"), seenAgain: count("SEEN_AGAIN"), alreadySaved: count("ALREADY_SAVED"), rejected: count("REJECTED") },
+        counts: { queued: count("QUEUED"), seenAgain: count("SEEN_AGAIN"), alreadySaved: count("ALREADY_SAVED"), refreshing: count("REFRESHING"), rejected: count("REJECTED") },
         outcomes,
         progressUrl: "/extension/jobs",
         ...(tabs

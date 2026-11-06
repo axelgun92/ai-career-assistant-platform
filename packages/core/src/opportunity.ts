@@ -148,6 +148,10 @@ export const normalizedOpportunitySchema = z.object({
   // on input so existing producers stay valid; Unknown is null / [].
   residencyRequirement: z.enum(residencyRequirementValues).nullable().default(null),
   residencyRegions: z.array(z.string().trim().min(1)).default([]),
+  // Places the posting explicitly excludes from hiring (November 5, 2026):
+  // a qualification of the residency rule, never work authorization.
+  // Optional on input; none stated is [].
+  residencyExclusions: z.array(z.string().trim().min(1)).optional().default([]),
   // Explicit work authorization, sponsorship, relocation and employer-of-
   // record facts. A separate concept from residency: never derived from it,
   // never used for it. Optional on input; Unknown is null / [].
