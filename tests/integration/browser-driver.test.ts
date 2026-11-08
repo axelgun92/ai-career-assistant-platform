@@ -35,6 +35,22 @@ function respond(request: IncomingMessage) {
       body: `<html><head><meta http-equiv="refresh" content="0;url=/home"><script>window.onload = function () { document.cookie = "ccookie=1"; location.search = "?again=1"; };</script></head><body></body></html>`,
     };
   }
+  // LinkedIn Option A: a job page with every kind of subresource, whose
+  // scripts would change the page and fetch more if they ran.
+  if (path === "/app.js") return { status: 200, type: "text/javascript", body: 'document.querySelector("h1").textContent = "Changed by script"; fetch("/xhr");' };
+  if (path === "/style.css") return { status: 200, type: "text/css", body: "h1 { color: red; }" };
+  if (path === "/xhr" || path === "/frame") return { status: 200, type: "text/html", body: "<html><body>more</body></html>" };
+  if (path === "/moved") return { status: 301, type: "text/html", body: "", headers: { location: "/rich-job" } };
+  if (path === "/rich-job") {
+    return {
+      status: 200,
+      type: "text/html",
+      body: `<html><head><title>Job</title><link rel="stylesheet" href="/style.css"><link rel="preload" href="/font.woff2" as="font" crossorigin>
+        <script src="/app.js"></script><script>document.documentElement.setAttribute("data-inline-script", "ran");</script></head>
+        <body><h1 class="top-card-layout__title">Customer Success Manager</h1><div class="show-more-less-html__markup"><p>The full job description.</p></div>
+        <img src="/pixel.png"><iframe src="/frame"></iframe></body></html>`,
+    };
+  }
   if (path.startsWith("/authwall")) return { status: 200, type: "text/html", body: '<html><body><form class="join-form"><input name="email"></form></body></html>' };
   return {
     status: 200,
@@ -127,6 +143,95 @@ describe("the Playwright browser driver", () => {
       await expect(session.open(`${origin}/to-authwall`)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
       await expect(session.open(`${origin}/job`)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
       expect(requests.map((request) => request.path)).toEqual(["/to-authwall", "/authwall?trk=x"]);
+    } finally {
+      await driver.close();
+    }
+  });
+});
+
+describe("the Playwright browser driver without page scripts (LinkedIn Option A)", () => {
+  const paths = () => requests.map((request) => request.path);
+
+  it("requests only the job page's document: no script runs, every subresource is refused, and the counts say so", async () => {
+    requests.length = 0;
+    const driver = await launchBrowserDriver({ executablePath, pageScripts: "skip" });
+    try {
+      const page = await driver.navigate(`${origin}/rich-job`, { timeoutMs: 15_000 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(paths()).toEqual(["/rich-job"]);
+      const document = parseHtml(page.html, page.finalUrl);
+      // The document as sent: no script changed it.
+      expect(document.querySelector("h1")?.textContent).toBe("Customer Success Manager");
+      expect(document.documentElement.getAttribute("data-inline-script")).toBeNull();
+      expect(document.querySelector(".show-more-less-html__markup")?.textContent).toBe("The full job description.");
+      expect(page.servedHtml).toContain("The full job description.");
+      expect(page.requests).toMatchObject({ pageScripts: "skip", documentRequests: 1, redirects: 0, sentRequests: 1 });
+      // With JavaScript off the browser does not even ask for the script
+      // file; the stylesheet, preloaded font, image and frame are refused.
+      expect(page.requests!.blockedByType).toEqual({ stylesheet: 1, font: 1, image: 1, document: 1 });
+      expect(page.requests!.blockedRequests).toBe(4);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  it("the same page with scripts on (the restored setting) runs them and fetches their requests, as before", async () => {
+    requests.length = 0;
+    const driver = await launchBrowserDriver({ executablePath });
+    try {
+      const page = await driver.navigate(`${origin}/rich-job`, { timeoutMs: 15_000 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(paths()).toEqual(expect.arrayContaining(["/rich-job", "/app.js", "/style.css", "/frame"]));
+      expect(paths().some((path) => path.startsWith("/pixel.png") || path.startsWith("/font.woff2"))).toBe(false);
+      expect(parseHtml(page.html, page.finalUrl).documentElement.getAttribute("data-inline-script")).toBe("ran");
+      expect(page.requests).toMatchObject({ pageScripts: "run", documentRequests: 1, redirects: 0 });
+      expect(page.requests!.sentRequests).toBeGreaterThan(1);
+      expect(page.requests!.blockedByType).toMatchObject({ image: 1 });
+    } finally {
+      await driver.close();
+    }
+  });
+
+  it("follows the document's own redirects (each hop counted), and still refuses a page navigating by itself", async () => {
+    requests.length = 0;
+    const driver = await launchBrowserDriver({ executablePath, pageScripts: "skip" });
+    try {
+      const moved = await driver.navigate(`${origin}/moved`, { timeoutMs: 15_000 });
+      expect(moved).toMatchObject({ status: 200, finalUrl: `${origin}/rich-job` });
+      expect(moved.requests).toMatchObject({ documentRequests: 2, redirects: 1, sentRequests: 2 });
+      expect(paths()).toEqual(["/moved", "/rich-job"]);
+      requests.length = 0;
+      const reload = await driver.navigate(`${origin}/self-reload`, { timeoutMs: 15_000 });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      expect(reload.status).toBe(429);
+      expect(paths()).toEqual(["/self-reload"]);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  it("a stop carries the navigation's counts: a 429, a redirect to a sign-in wall, and a failed load", async () => {
+    requests.length = 0;
+    const driver = await launchBrowserDriver({ executablePath, pageScripts: "skip" });
+    try {
+      const options = { minIntervalMs: 10, maxNavigations: 5, authCookieNames: ["li_at"], detectFriction: detectLinkedInFriction, parse: parseHtml };
+      await expect(createBrowserSession(driver, options).open(`${origin}/limited`)).rejects.toMatchObject({
+        code: "RATE_LIMITED",
+        details: { status: 429, requests: { pageScripts: "skip", documentRequests: 1, sentRequests: 1 } },
+      });
+      await expect(createBrowserSession(driver, options).open(`${origin}/to-authwall`)).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+        details: { requests: { documentRequests: 2, redirects: 1 } },
+      });
+      const closed = createServer();
+      await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
+      const port = (closed.address() as AddressInfo).port;
+      await new Promise<void>((resolve) => closed.close(() => resolve()));
+      await expect(createBrowserSession(driver, options).open(`http://127.0.0.1:${port}/job`)).rejects.toMatchObject({
+        code: "NETWORK",
+        details: { requests: { pageScripts: "skip", blockedRequests: 0 } },
+      });
+      expect(paths()).toEqual(["/limited", "/to-authwall", "/authwall?trk=x"]);
     } finally {
       await driver.close();
     }

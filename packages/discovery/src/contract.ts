@@ -1,3 +1,4 @@
+import type { BrowserRequestCounts } from "./browser";
 import type {
   DiscoveryConfiguration,
   OpportunitySourceType,
@@ -54,6 +55,8 @@ export interface AdapterErrorDetails {
   // A valid, future Retry-After the source sent with a 429 or 503, in
   // seconds from when the response arrived.
   retryAfterSeconds?: number;
+  // A browser navigation's requests, when the driver counted them.
+  requests?: BrowserRequestCounts;
 }
 
 export class AdapterError extends Error {

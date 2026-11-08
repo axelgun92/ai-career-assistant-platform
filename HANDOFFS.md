@@ -2036,7 +2036,7 @@ When later extension work is explicitly authorized:
 **Date:** November 8, 2026
 **From:** Claude main-product workstream
 **To:** Alex (approval and closeout; the controlled LinkedIn live round); Codex (boundary awareness)
-**Status:** Implemented, verified offline on `ai_career_assistant_test` and approved by Alex on November 8, on top of `4847751`. WTTJ Mode B Rev 3 accepted by Alex on November 7; LinkedIn Mode B not yet accepted.
+**Status:** Implemented, verified offline on `ai_career_assistant_test` and approved by Alex on November 8, on top of `4847751`; committed and pushed as `ddf5937`. WTTJ Mode B Rev 3 accepted by Alex on November 7; LinkedIn Mode B not yet accepted.
 
 #### Completed
 
@@ -2072,3 +2072,44 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The restriction handling (a 429 or a challenge stops the site for at least a day; nothing counted); the batch-only contract (no per-job manual step).
+
+### Handoff: LinkedIn Mode B — Option A, Script-Disabled Job Pages (Claude; shared-boundary record)
+
+**Date:** November 8, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review and closeout; the controlled LinkedIn live test); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `ddf5937`; approved by Alex for repository closeout on November 8 (not LinkedIn acceptance; no live test authorized). No live LinkedIn or WTTJ request was made.
+
+#### Completed
+
+- Site setting `detail.pageScripts` ("run" | "skip"; LinkedIn "skip") and the server override `PAGE_CAPTURE_<SITE>_PAGE_SCRIPTS` (`packages/core/src/page-capture.ts` `pageCaptureDetailPageScripts`).
+- Driver mode (`packages/browser-retrieval`): `launchBrowserDriver({ pageScripts: "skip" })` turns JavaScript off and lets only the requested main-frame document (and its redirects) leave the browser. Per-navigation `BrowserRequestCounts` (`packages/discovery/src/browser.ts`), carried on pages and stop errors.
+- Acquisition (`page-capture-acquisition.ts`): launches with the site's mode, records the counts per job and per pass, and refuses incomplete scriptless pages (`scriptlessPageIncomplete`; `INCOMPLETE_PAGE`).
+- Evidence package `retrieval-summary.json` (`diagnostics-package.ts` `retrievalSummary`).
+- Reduced real-page fixture `tests/fixtures/real-captures/linkedin-nov7-job-pages.json`, plus the scripted-versus-scriptless comparison tests.
+
+#### Current Contract / Assumptions
+
+- A scriptless read is saved only with a title and a description of at least 200 characters (a heuristic: an unusually short legitimate posting is a possible false positive, shown with its reason and Retry). A lone incomplete page is that job's counted attempt; two in a row defer the site's queued jobs one hour with `lastReason` `INCOMPLETE_PAGE`, uncounted.
+- `INCOMPLETE_PAGE` is a non-restriction deferral (not in the repository's friction list): `siteStoppedUntil` ignores it; the jobs' own `nextAttemptAt` holds them.
+- Feature 14's browser sources launch with scripts on (default), and WTTJ is read in the user's Chrome: neither is affected.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (LinkedIn Mode B — Option A): unit 2,317, integration 427, E2E 60/60, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- Whether LinkedIn's logged-out limit counts subresource requests is unknown. Offline work proves extraction parity and one request per job, not avoidance of HTTP 429.
+
+#### Next Task
+
+- The controlled LinkedIn live test, separately authorized. It measures extraction correctness and retrieval reliability: jobs completed before any restriction, total page requests, failed attempts, automatic recovery and elapsed time. It keeps the one-action, up-to-25-job workflow; multi-day recovery alone is not acceptable performance.
+
+#### Do Not Change Without Coordination
+
+- The incomplete-page guard (no scriptless page is saved as a full read without a complete posting), and the default `skip` for LinkedIn with its `run` override.

@@ -211,7 +211,7 @@ const tenexPage = (withApplyCode: boolean) =>
     title: "Customer Success Manager",
     company: "TENEX.AI",
     location: "United States",
-    descriptionHtml: "<p>Customer Success Manager for a security operations platform.</p><p>Own onboarding, adoption and renewals for enterprise customers.</p>",
+    descriptionHtml: "<p>Customer Success Manager for a security operations platform.</p><p>Own onboarding, adoption and renewals for enterprise customers.</p><p>You will run business reviews, lead adoption plans with each customer's stakeholders, partner with Sales on expansion, and turn product feedback into clear requests for the product team.</p>",
   }).replace("</main>", `${withApplyCode ? applyCode : ""}<button class="sign-up-modal__outlet top-card-layout__cta" data-tracking-control-name="public_jobs_apply-link-offsite_sign-up-modal">Apply</button></main>`);
 
 describe("page evidence (opt-in)", () => {
@@ -415,7 +415,7 @@ describe("LinkedIn's employer apply link from the page as sent (approved precede
       title: "Customer Success Manager",
       company: "TENEX.AI",
       location: "United States",
-      descriptionHtml: "<p>Customer Success Manager for a security operations platform.</p><p>Own onboarding, adoption and renewals for enterprise customers.</p>",
+      descriptionHtml: "<p>Customer Success Manager for a security operations platform.</p><p>Own onboarding, adoption and renewals for enterprise customers.</p><p>You will run business reviews, lead adoption plans with each customer's stakeholders, partner with Sales on expansion, and turn product feedback into clear requests for the product team.</p>",
     }).replace(
       '<h1 class="top-card-layout__title">',
       `<button class="sign-up-modal__outlet top-card-layout__cta top-card-layout__cta--primary btn-md btn-primary" data-tracking-control-name="public_jobs_contextual-sign-in-modal_ssr-ui-lib-outlet-button" data-modal="job-details-subnav-apply-modal" id="topbar-apply">Apply</button><a class="apply-button" href="${signUp}" data-tracking-control-name="public_jobs_apply-link-offsite_contextual-sign-in-modal_join-link">Apply</a><h1 class="top-card-layout__title">`,
@@ -433,7 +433,7 @@ describe("LinkedIn's employer apply link from the page as sent (approved precede
 const batchIds = Array.from({ length: 25 }, (_, index) => (index === 5 ? tenex : String(4372600000 + index)));
 const page = (id: string) => ({
   status: 200,
-  html: linkedInGuestJobPage({ id, title: "Customer Success Manager", company: id === tenex ? "TENEX.AI" : `Company ${id}`, location: "United States", descriptionHtml: "<p>Customer Success Manager for a SaaS platform; own onboarding, adoption and renewals.</p>" }),
+  html: linkedInGuestJobPage({ id, title: "Customer Success Manager", company: id === tenex ? "TENEX.AI" : `Company ${id}`, location: "United States", descriptionHtml: "<p>Customer Success Manager for a SaaS platform; own onboarding, adoption and renewals.</p><p>You will run business reviews, lead adoption plans with each customer's stakeholders, partner with Sales on expansion, and turn product feedback into clear requests for the product team.</p>" }),
 });
 
 describe("the diagnostics a failed batch leaves (the TENEX.AI case)", () => {

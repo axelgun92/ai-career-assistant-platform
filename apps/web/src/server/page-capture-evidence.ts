@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { BrowserRequestCounts } from "@ai-career/discovery";
 import { diagnosticsDirectoryProblem, removeEvidenceSessions } from "./worker-diagnostics";
 
 // Opt-in page evidence for Mode B detail reads (November 6, 2026). The
@@ -71,6 +72,10 @@ export interface PageEvidenceRecord {
   servedHtml?: string | null;
   apply?: { rendered: ApplyEvidence | null; served: ApplyEvidence | null; route: "EMPLOYER_LINK_RENDERED" | "EMPLOYER_LINK_SERVED" | "LISTING_FALLBACK" | "NONE" | null; applicationUrl: string | null };
   fields?: { observed: string[]; missing: string[] };
+  // Whether the page's scripts ran, and what the navigation requested
+  // (counts only; LinkedIn Option A, November 8, 2026).
+  pageScripts?: "run" | "skip";
+  requests?: BrowserRequestCounts | null;
   outcome?: string;
   error?: Record<string, unknown> | null;
 }

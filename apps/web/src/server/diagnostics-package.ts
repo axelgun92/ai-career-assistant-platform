@@ -14,6 +14,10 @@ import { diagnosticLogPattern, diagnosticsDirectoryProblem } from "./worker-diag
 //   opportunities.json     the jobs they produced and their triage outcome
 //   timeline.json          every timestamped step, in order
 //   worker-log.jsonl       the retrieval worker's diagnostics in the window
+//   retrieval-summary.json the passes' reliability, from those diagnostics:
+//                          jobs saved before any restriction, page and
+//                          request totals, failed attempts, automatic
+//                          recovery and elapsed time (November 8, 2026)
 //   page-evidence/         the opt-in page evidence for these jobs, if any
 // The database is read in one READ ONLY transaction on a read-only session,
 // only a database whose name says test or acceptance (never the normal
@@ -36,6 +40,121 @@ export interface PackageArguments {
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The reliability of the worker's passes, from its diagnostics events (LinkedIn
+// Option A, November 8, 2026): what the controlled live test records. Passes
+// run one at a time, so each pass.start pairs with the next pass.end.
+export interface RetrievalSummary {
+  passes: Array<{
+    site: unknown;
+    startedAt: string | null;
+    endedAt: string | null;
+    elapsedMs: number | null;
+    pageScripts: unknown;
+    claimed: unknown;
+    ingested: unknown;
+    incomplete: unknown;
+    awaitingDetails: unknown;
+    unavailable: unknown;
+    stopped: unknown;
+    requests: unknown;
+  }>;
+  totals: {
+    passes: number;
+    jobsIngested: number;
+    pagesOpened: number;
+    documentRequests: number;
+    sentRequests: number;
+    blockedRequests: number;
+    failedAttemptsCounted: number;
+    incompletePages: number;
+    restrictions: Array<{ at: string | null; site: unknown; reason: unknown; until: unknown }>;
+    jobsIngestedBeforeFirstRestriction: number;
+    passesStartedAfterFirstRestriction: number;
+    interruptedJobsRecovered: number;
+    firstPassStartedAt: string | null;
+    lastPassEndedAt: string | null;
+    elapsedMs: number | null;
+  };
+}
+
+export function retrievalSummary(events: ReadonlyArray<Record<string, unknown>>): RetrievalSummary {
+  const stamp = (value: unknown) => (typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null);
+  const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const passes: RetrievalSummary["passes"] = [];
+  let open: Record<string, unknown> | null = null;
+  const restrictions: RetrievalSummary["totals"]["restrictions"] = [];
+  let ingested = 0;
+  let ingestedBeforeRestriction: number | null = null;
+  let failed = 0;
+  let recovered = 0;
+  let passesAfterRestriction = 0;
+  for (const event of events) {
+    switch (event.event) {
+      case "pass.start":
+        open = event;
+        if (restrictions.length) passesAfterRestriction += 1;
+        break;
+      case "pass.end": {
+        const startedAt = stamp(open?.at);
+        const endedAt = stamp(event.at);
+        passes.push({
+          site: event.site,
+          startedAt,
+          endedAt,
+          elapsedMs: startedAt && endedAt ? Date.parse(endedAt) - Date.parse(startedAt) : null,
+          pageScripts: event.pageScripts ?? open?.pageScripts ?? null,
+          claimed: event.claimed,
+          ingested: event.ingested,
+          incomplete: event.incomplete ?? null,
+          awaitingDetails: event.awaitingDetails,
+          unavailable: event.unavailable,
+          stopped: event.stopped ?? null,
+          requests: event.requests ?? null,
+        });
+        open = null;
+        break;
+      }
+      case "job.ingested":
+        ingested += 1;
+        break;
+      case "job.decision":
+        if (event.decision === "ATTEMPT_COUNTED" || event.decision === "PROVISIONAL_FAILURE_COUNTED") failed += 1;
+        break;
+      case "site.stopped":
+        if (ingestedBeforeRestriction === null) ingestedBeforeRestriction = ingested;
+        restrictions.push({ at: stamp(event.at), site: event.site, reason: event.reason, until: event.until ?? null });
+        break;
+      case "recovery":
+        recovered += count(event.interruptedJobsQueuedAgain);
+        break;
+    }
+  }
+  const sum = (key: "pages" | "documentRequests" | "sentRequests" | "blockedRequests") =>
+    passes.reduce((total, pass) => total + count((pass.requests as Record<string, unknown> | null)?.[key]), 0);
+  const firstPassStartedAt = passes.find((pass) => pass.startedAt)?.startedAt ?? null;
+  const lastPassEndedAt = [...passes].reverse().find((pass) => pass.endedAt)?.endedAt ?? null;
+  return {
+    passes,
+    totals: {
+      passes: passes.length,
+      jobsIngested: ingested,
+      pagesOpened: sum("pages"),
+      documentRequests: sum("documentRequests"),
+      sentRequests: sum("sentRequests"),
+      blockedRequests: sum("blockedRequests"),
+      failedAttemptsCounted: failed,
+      incompletePages: passes.reduce((total, pass) => total + count(pass.incomplete), 0),
+      restrictions,
+      jobsIngestedBeforeFirstRestriction: ingestedBeforeRestriction ?? ingested,
+      passesStartedAfterFirstRestriction: passesAfterRestriction,
+      interruptedJobsRecovered: recovered,
+      firstPassStartedAt,
+      lastPassEndedAt,
+      elapsedMs: firstPassStartedAt && lastPassEndedAt ? Date.parse(lastPassEndedAt) - Date.parse(firstPassStartedAt) : null,
+    },
+  };
+}
 
 // Which databases a package may read: the isolated test database or the
 // preserved acceptance database, and only the one DATABASE_URL names.
@@ -225,8 +344,12 @@ export async function assembleDiagnosticsPackage(
     }
     write("worker-log.jsonl", logEvents.map((event) => JSON.stringify(event)).join("\n") + (logEvents.length ? "\n" : ""));
     files["worker-log.jsonl"] = { present: logEvents.length > 0, count: logEvents.length, ...(logEvents.length ? {} : { note: "no diagnostics events in the window" }) };
+    const summary = retrievalSummary(logEvents);
+    write("retrieval-summary.json", json(summary));
+    files["retrieval-summary.json"] = { present: summary.passes.length > 0, count: summary.passes.length, ...(summary.passes.length ? {} : { note: "no worker pass in the window" }) };
   } else {
     files["worker-log.jsonl"] = { present: false, note: logsRoot ? `no diagnostics found under ${logsRoot}` : "diagnostics directory not given (RETRIEVAL_WORKER_LOG_DIR or --logs-dir)" };
+    files["retrieval-summary.json"] = { present: false, note: "no worker diagnostics to summarize" };
   }
 
   // Page evidence files for these jobs, from any worker session folder.

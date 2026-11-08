@@ -54,7 +54,7 @@ describe("LinkedIn Mode B on the real F0 cards", () => {
     }
     expect(pageCaptureOffer("https://www.welcometothejungle.com/en/jobs?query=csm", enabled.cards)).toMatchObject({ offered: false, reason: "NOT_VERIFIED" });
     // The verified safeguards are unchanged.
-    expect(pageCaptureSiteByKey("linkedin")!.detail).toEqual({ minIntervalMs: 5_000, authCookieNames: ["li_at"] });
+    expect(pageCaptureSiteByKey("linkedin")!.detail).toEqual({ minIntervalMs: 5_000, authCookieNames: ["li_at"], pageScripts: "skip" });
     expect(pageCaptureMaxCards).toBe(25);
   });
 

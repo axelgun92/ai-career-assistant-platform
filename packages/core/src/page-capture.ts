@@ -72,6 +72,17 @@ export interface PageCaptureSiteSpec {
     minIntervalMs: number;
     // Cookies whose appearance means an account session (stop).
     authCookieNames: string[];
+    // Whether the worker's server browser runs the job page's own scripts
+    // (server-browser sites only; a site read in background tabs is read in
+    // the user's Chrome as it is). "skip" (LinkedIn Option A, November 8,
+    // 2026): JavaScript is off and only the job page's own document is
+    // requested (its redirects followed); every script, stylesheet, image,
+    // font, frame and other subresource is refused before it leaves the
+    // browser, so one job costs one page request instead of the page plus
+    // its subresources. A scriptless page must also pass a completeness
+    // check, or it is never saved as a full read. The server setting
+    // PAGE_CAPTURE_<SITE>_PAGE_SCRIPTS=run|skip overrides this.
+    pageScripts: PageCapturePageScripts;
   };
   // The detail mechanism. Absent: the retrieval worker reads each job's page
   // in a fresh logged-out headless browser (server-browser, P1). Present: the
@@ -157,6 +168,40 @@ export interface PageCaptureTabAcquisitionSpec {
 
 export type PageCaptureDetailMechanism = "server-browser" | "extension-tabs";
 
+export type PageCapturePageScripts = "run" | "skip";
+
+// A scriptless read (pageScripts "skip") is saved only when the page held a
+// complete posting: a title, and a description of at least this length from
+// the job's own description area or its structured data. Anything less is an
+// incomplete page, never a successful read (the shortest of the real logged-
+// out LinkedIn descriptions read so far is 1,731 characters).
+export const pageCaptureScriptlessMinDescriptionChars = 200;
+
+// The server setting that overrides a server-browser site's pageScripts:
+// PAGE_CAPTURE_<SITE KEY, upper case, "-" as "_">_PAGE_SCRIPTS=run|skip
+// (for LinkedIn, PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS). Any other value is
+// ignored (the registry's value applies) and reported as invalid.
+export const pageCapturePageScriptsSettingName = (siteKey: string) => `PAGE_CAPTURE_${siteKey.toUpperCase().replace(/-/g, "_")}_PAGE_SCRIPTS`;
+
+export interface PageCapturePageScriptsSetting {
+  mode: PageCapturePageScripts;
+  source: "registry" | "setting" | "invalid-setting";
+}
+
+// How the worker's server browser treats a site's page scripts. A site read
+// in the extension's background tabs always reads the page as the user's
+// Chrome shows it ("run"); the setting has no effect there.
+export function pageCaptureDetailPageScripts(
+  site: Pick<PageCaptureSiteSpec, "key" | "detail" | "tabAcquisition">,
+  environment: Readonly<Record<string, string | undefined>> = {},
+): PageCapturePageScriptsSetting {
+  if (pageCaptureDetailMechanism(site) !== "server-browser") return { mode: "run", source: "registry" };
+  const value = environment[pageCapturePageScriptsSettingName(site.key)]?.trim().toLowerCase();
+  if (!value) return { mode: site.detail.pageScripts, source: "registry" };
+  if (value === "run" || value === "skip") return { mode: value, source: "setting" };
+  return { mode: site.detail.pageScripts, source: "invalid-setting" };
+}
+
 export const pageCaptureDetailMechanism = (site: Pick<PageCaptureSiteSpec, "tabAcquisition">): PageCaptureDetailMechanism =>
   site.tabAcquisition ? "extension-tabs" : "server-browser";
 
@@ -199,7 +244,12 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     // LinkedIn stays incomplete until its targeted end-to-end acceptance.
     cardVerified: true,
     detailVerified: true,
-    detail: { minIntervalMs: 5_000, authCookieNames: ["li_at"] },
+    // pageScripts "skip" (Option A, approved November 8, 2026): the November
+    // 7 evidence showed the page LinkedIn sends already holds the full job
+    // description, identical to the rendered page, so the page's scripts and
+    // subresources are not requested. PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run
+    // restores the earlier script-enabled reading.
+    detail: { minIntervalMs: 5_000, authCookieNames: ["li_at"], pageScripts: "skip" },
     refresh: defaultRefreshPolicy,
     testOnly: false,
   },
@@ -237,7 +287,7 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     // explicit acceptance setting (PAGE_CAPTURE_ACCEPTANCE_SITES).
     cardVerified: false,
     detailVerified: false,
-    detail: { minIntervalMs: 12_000, authCookieNames: [] },
+    detail: { minIntervalMs: 12_000, authCookieNames: [], pageScripts: "run" },
     refresh: defaultRefreshPolicy,
     tabAcquisition: {
       hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
@@ -271,7 +321,7 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     },
     cardVerified: true,
     detailVerified: true,
-    detail: { minIntervalMs: 0, authCookieNames: [] },
+    detail: { minIntervalMs: 0, authCookieNames: [], pageScripts: "run" },
     refresh: defaultRefreshPolicy,
     testOnly: true,
   },

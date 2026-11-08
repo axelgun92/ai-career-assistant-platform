@@ -202,7 +202,10 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   (received-HTML apply link, persistent worker diagnostics, opt-in page evidence, read-only failure
   evidence package) committed at 4847751; WTTJ Mode B Rev 3 accepted in the November 7 live round;
   LinkedIn not yet accepted (LinkedIn HTTP 429 after three jobs); the November 7 follow-up fixes
-  verified offline and approved November 8, 2026 (repairs only)
+  verified offline, approved November 8, 2026 (repairs only) and committed at ddf5937; LinkedIn
+  Option A (job pages read with JavaScript off, document only, request counts, incomplete-page
+  guard; PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run reverts) verified offline and approved for closeout
+  November 8, 2026 (not LinkedIn acceptance; no live test authorized)
 → current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

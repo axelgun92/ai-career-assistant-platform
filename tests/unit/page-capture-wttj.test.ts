@@ -78,11 +78,11 @@ describe("Welcome to the Jungle Mode B on the real F0 cards", () => {
 describe("the registry for background-tab reading", () => {
   it("keeps LinkedIn on the worker's server browser, unchanged, and reads Welcome to the Jungle in background tabs", () => {
     expect(pageCaptureDetailMechanism(pageCaptureSiteByKey("linkedin")!)).toBe("server-browser");
-    expect(pageCaptureSiteByKey("linkedin")!.detail).toEqual({ minIntervalMs: 5_000, authCookieNames: ["li_at"] });
+    expect(pageCaptureSiteByKey("linkedin")!.detail).toEqual({ minIntervalMs: 5_000, authCookieNames: ["li_at"], pageScripts: "skip" });
     expect(pageCaptureSiteByKey("linkedin")).not.toHaveProperty("tabAcquisition");
     expect(pageCaptureDetailMechanism(pageCaptureSiteByKey("e2e-results")!)).toBe("server-browser");
     expect(pageCaptureDetailMechanism(site)).toBe("extension-tabs");
-    expect(site).toMatchObject({ cardVerified: false, detailVerified: false, detail: { minIntervalMs: 12_000 } });
+    expect(site).toMatchObject({ cardVerified: false, detailVerified: false, detail: { minIntervalMs: 12_000, authCookieNames: [], pageScripts: "run" } });
     expect(site.tabAcquisition).toEqual({
       hostPermissions: ["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"],
       loadTimeoutMs: 30_000,

@@ -32,6 +32,28 @@ export interface BrowserNavigation {
   // The main document's response headers, for diagnosis; Set-Cookie keeps
   // only the cookie names, never their values.
   headers?: Readonly<Record<string, string>>;
+  // What this navigation asked of the network, from its start until its page
+  // was read (absent from a driver that does not count).
+  requests?: BrowserRequestCounts;
+}
+
+// One navigation's requests (LinkedIn Option A, November 8, 2026), for
+// diagnosis and for the controlled acceptance's request totals.
+export interface BrowserRequestCounts {
+  // Whether the page's own scripts ran ("skip": JavaScript off, only the job
+  // page's document requested).
+  pageScripts: "run" | "skip";
+  // Main-document requests sent, each redirect hop counted.
+  documentRequests: number;
+  // Redirects the main document followed.
+  redirects: number;
+  // Every request that left the browser, the documents included.
+  sentRequests: number;
+  // Requests refused before they left the browser, in all and by type
+  // (script, stylesheet, image, font, media, xhr, fetch, document for a frame
+  // or an unrequested navigation, …).
+  blockedRequests: number;
+  blockedByType: Readonly<Record<string, number>>;
 }
 
 // What drives the browser. The production driver is Playwright with
@@ -49,6 +71,7 @@ export interface BrowserPage {
   // page-size limit), for a reader that needs both and for opt-in evidence.
   html: string;
   servedHtml?: string;
+  requests?: BrowserRequestCounts;
 }
 
 export interface BrowserSession {
@@ -120,6 +143,7 @@ export function createBrowserSession(driver: BrowserDriver, options: BrowserSess
     }
     navigations += 1;
     let result: BrowserNavigation;
+    let requests: { requests: BrowserRequestCounts } | Record<string, never> = {};
     try {
       const navigation = driver.navigate(url, { timeoutMs });
       // Start the next interval only after the driver has accepted this
@@ -129,26 +153,29 @@ export function createBrowserSession(driver: BrowserDriver, options: BrowserSess
       result = await navigation;
     } catch (error) {
       if (error instanceof AdapterError) return stop(error);
-      // A timeout or a failed load stops the run like an HTTP network error.
-      return stop(new AdapterError("NETWORK", "The page could not be loaded", { url }));
+      // A timeout or a failed load stops the run like an HTTP network error
+      // (with the requests it made, when the driver counted them).
+      const counted = (error as { requests?: BrowserRequestCounts } | null)?.requests;
+      return stop(new AdapterError("NETWORK", "The page could not be loaded", { url, ...(counted ? { requests: counted } : {}) }));
     }
+    if (result.requests) requests = { requests: result.requests };
     const status = result.status ?? 0;
     const retryAfter = result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds };
-    if (status === 429) stop(new AdapterError("RATE_LIMITED", "The source rate-limited the request (HTTP 429)", { status, url, ...retryAfter }));
+    if (status === 429) stop(new AdapterError("RATE_LIMITED", "The source rate-limited the request (HTTP 429)", { status, url, ...retryAfter, ...requests }));
     if (status === 401 || status === 403 || status === 999) {
-      stop(new AdapterError("ACCESS_DENIED", `The source refused access (HTTP ${status})`, { status, url }));
+      stop(new AdapterError("ACCESS_DENIED", `The source refused access (HTTP ${status})`, { status, url, ...requests }));
     }
-    if (status >= 500) stop(new AdapterError("SERVER_ERROR", `The source had a server error (HTTP ${status})`, { status, url, ...retryAfter }));
+    if (status >= 500) stop(new AdapterError("SERVER_ERROR", `The source had a server error (HTTP ${status})`, { status, url, ...retryAfter, ...requests }));
     if (options.authCookieNames?.some((name) => result.cookieNames.includes(name))) {
-      stop(new AdapterError("ACCESS_DENIED", "An account session cookie appeared; browser retrieval is logged-out only", { url }));
+      stop(new AdapterError("ACCESS_DENIED", "An account session cookie appeared; browser retrieval is logged-out only", { url, ...requests }));
     }
-    if (result.html.length > maxPageBytes) stop(new AdapterError("RESPONSE_TOO_LARGE", "The page was larger than allowed", { url }));
+    if (result.html.length > maxPageBytes) stop(new AdapterError("RESPONSE_TOO_LARGE", "The page was larger than allowed", { url, ...requests }));
     const document = options.parse(result.html, result.finalUrl);
     const page = { finalUrl: result.finalUrl, document };
     const friction = detectGenericFriction(page) ?? options.detectFriction?.(page) ?? null;
-    if (friction) stop(new AdapterError("ACCESS_DENIED", `The source presented ${friction}; retrieval stopped`, { status, url }));
+    if (friction) stop(new AdapterError("ACCESS_DENIED", `The source presented ${friction}; retrieval stopped`, { status, url, ...requests }));
     const served = result.servedHtml !== undefined && result.servedHtml.length <= maxPageBytes ? { servedHtml: result.servedHtml } : {};
-    return { status, finalUrl: result.finalUrl, document, html: result.html, ...served };
+    return { status, finalUrl: result.finalUrl, document, html: result.html, ...served, ...requests };
   }
 
   return {

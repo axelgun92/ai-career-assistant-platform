@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createRetrievalIngestionService, pageReaderRevision } from "@ai-career/core";
+import { createRetrievalIngestionService, pageCaptureDetailPageScripts, pageCaptureSiteByKey, pageReaderRevision, type PageCapturePageScripts } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import {
   getDatabaseClient,
@@ -40,7 +40,8 @@ function withPageCaptureAcquisition(worker: RetrievalWorker, acquisition: PageCa
       if (pass) {
         log.info(
           `page capture site=${pass.site} claimed=${pass.claimed} ingested=${pass.ingested} awaitingDetails=${pass.awaitingDetails} ` +
-            `unavailable=${pass.unavailable} stopped=${pass.stopped ?? "-"}`,
+            `unavailable=${pass.unavailable} incomplete=${pass.incomplete} stopped=${pass.stopped ?? "-"} pageScripts=${pass.pageScripts} ` +
+            `pages=${pass.requests.pages} documentRequests=${pass.requests.documentRequests} sentRequests=${pass.requests.sentRequests} blockedRequests=${pass.requests.blockedRequests}`,
         );
       }
       return null;
@@ -92,15 +93,17 @@ function readConfiguration() {
 }
 
 // Feature 14: browser-assisted sources get a fresh logged-out Chromium per
-// run. The browser package loads only when a browser is configured.
+// run. The browser package loads only when a browser is configured. Mode B
+// passes the site's pageScripts (LinkedIn Option A); feature 14's sources
+// launch with the page's scripts on, as before.
 function browserLauncher(executablePath: string) {
   const loaded = import("@ai-career/browser-retrieval");
   let parse: ((html: string, url: string) => Document) | null = null;
   return {
-    async launch() {
+    async launch(options: { pageScripts?: PageCapturePageScripts } = {}) {
       const browser = await loaded;
       parse = browser.parseHtml;
-      return browser.launchBrowserDriver({ executablePath });
+      return browser.launchBrowserDriver({ executablePath, ...(options.pageScripts ? { pageScripts: options.pageScripts } : {}) });
     },
     parse(html: string, url: string) {
       if (!parse) throw new Error("The browser has not been launched");
@@ -139,6 +142,11 @@ async function main(): Promise<number> {
     warn: log.warn,
   });
   const head = gitHead();
+  // The effective page-scripts setting of each server-browser detail site.
+  const pageScripts = (siteKey: string) => {
+    const site = pageCaptureSiteByKey(siteKey);
+    return site ? pageCaptureDetailPageScripts(site, process.env) : { mode: "run" as const, source: "registry" as const };
+  };
   diagnostics.event("worker.start", {
     pollMs: settings.RETRIEVAL_WORKER_POLL_MS,
     once,
@@ -149,8 +157,16 @@ async function main(): Promise<number> {
     platform: process.platform,
     browserConfigured: Boolean(settings.RETRIEVAL_BROWSER_EXECUTABLE),
     detailSites: enabledSitesFromEnvironment().details,
+    detailPageScripts: Object.fromEntries(enabledSitesFromEnvironment().details.map((key) => [key, pageScripts(key)])),
     evidenceEnabled: Boolean(evidence.directory),
   });
+  for (const key of enabledSitesFromEnvironment().details) {
+    const site = pageCaptureSiteByKey(key);
+    if (!site || site.tabAcquisition) continue;
+    const setting = pageScripts(key);
+    if (setting.source === "invalid-setting") log.warn(`page capture ${key}: the page-scripts setting is not "run" or "skip"; the default (${setting.mode}) applies`);
+    else log.info(`page capture ${key}: pageScripts=${setting.mode} (${setting.source === "setting" ? "server setting" : "default"})`);
+  }
   if (diagnostics.file) log.info(`diagnostics session=${diagnostics.sessionId} file=${diagnostics.file}`);
   if (evidence.directory) log.warn(`page evidence is ON (may hold personal data): ${evidence.directory}`);
   const lock = new RetrievalWorkerLock();
@@ -168,6 +184,7 @@ async function main(): Promise<number> {
     discovery: customerSuccessDiscoveryConfiguration,
     detailSites: () => enabledSitesFromEnvironment().details,
     probeCapture: () => captureRepository.probeCaptureLock(),
+    pageScripts,
     ...(browser ? { browser } : {}),
     log,
     diagnostics,

@@ -4,15 +4,20 @@ import {
   pageCaptureFrictionBackoffMs,
   pageCaptureMaxAttempts,
   pageCaptureDetailMechanism,
+  pageCaptureDetailPageScripts,
+  pageCapturePageScriptsSettingName,
+  pageCaptureScriptlessMinDescriptionChars,
   pageCaptureSiteByKey,
   RetrievedListingNormalizationError,
   type DiscoveryConfiguration,
   type ExtensionCapture,
+  type PageCapturePageScripts,
+  type PageCapturePageScriptsSetting,
   type RetrievalIngestionService,
   type RetrievedListingOutcome,
 } from "@ai-career/core";
 import { captureTransactionSettings, type PageCaptureItemRecord, type PrismaPageCaptureRepository } from "@ai-career/database";
-import { AdapterError, createBrowserSession, detectLinkedInFriction, type BrowserDriver } from "@ai-career/discovery";
+import { AdapterError, createBrowserSession, detectLinkedInFriction, type BrowserDriver, type BrowserRequestCounts } from "@ai-career/discovery";
 import { JSDOM } from "jsdom";
 import { buildCaptureEnvelope } from "../../../extension/src/envelope";
 import { extractJobPosting, type PageExtraction } from "../../../extension/src/extract";
@@ -102,7 +107,11 @@ export interface PageCaptureAcquisitionDependencies {
   // The site keys whose details may be fetched (verified, or the test site).
   detailSites: () => string[];
   // A fresh logged-out browser per pass; absent when none is configured.
-  browser?: { launch(): Promise<BrowserDriver> };
+  // pageScripts is the site's (LinkedIn Option A).
+  browser?: { launch(options?: { pageScripts?: PageCapturePageScripts }): Promise<BrowserDriver> };
+  // The effective pageScripts of a site (the registry's, or the server
+  // setting PAGE_CAPTURE_<SITE>_PAGE_SCRIPTS). Absent: the registry's.
+  pageScripts?: (siteKey: string) => PageCapturePageScriptsSetting;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
   log?: { info(message: string): void; warn(message: string): void };
@@ -118,6 +127,13 @@ export interface AcquisitionPassResult {
   awaitingDetails: number;
   unavailable: number;
   stopped: string | null;
+  // Whether the pass ran the pages' scripts, how many scriptless pages were
+  // incomplete (never saved), and the pass's request totals (LinkedIn Option
+  // A, November 8, 2026): pages opened, main-document requests (redirect
+  // hops included), every request sent, and requests refused in the browser.
+  pageScripts: PageCapturePageScripts;
+  incomplete: number;
+  requests: { pages: number; documentRequests: number; sentRequests: number; blockedRequests: number };
 }
 
 // How long a counted failed attempt waits before the job is read again (the
@@ -145,6 +161,30 @@ export function readJobPage(document: Document): PageExtraction | null {
 }
 
 const parseRunnable = (html: string, url: string) => new JSDOM(html, { url, runScripts: "outside-only" }).window.document;
+
+// Why a scriptless page (pageScripts "skip") cannot be saved as a full read
+// (LinkedIn Option A, November 8, 2026), or null when it can. With the page's
+// scripts and subresources refused, a page that would have filled its
+// posting in by script arrives without it. Such a page is never saved:
+// - NO_POSTING: no title and description could be read at all;
+// - NO_TITLE: no job title;
+// - SHORT_DESCRIPTION: a description under
+//   pageCaptureScriptlessMinDescriptionChars (a placeholder, a teaser, or the
+//   start of a description loaded in pieces).
+export type ScriptlessIncompleteReason = "NO_POSTING" | "NO_TITLE" | "SHORT_DESCRIPTION";
+export function scriptlessPageIncomplete(extraction: PageExtraction | null): ScriptlessIncompleteReason | null {
+  const posting = extraction?.posting;
+  if (!posting) return "NO_POSTING";
+  if (!posting.title?.trim()) return "NO_TITLE";
+  if ((posting.description?.trim().length ?? 0) < pageCaptureScriptlessMinDescriptionChars) return "SHORT_DESCRIPTION";
+  return null;
+}
+
+// How a server-browser site's pages are read when no setting is supplied.
+const registryPageScripts = (siteKey: string): PageCapturePageScriptsSetting => {
+  const site = pageCaptureSiteByKey(siteKey);
+  return site ? pageCaptureDetailPageScripts(site) : { mode: "run", source: "registry" };
+};
 
 // A site's own access-friction checks beyond the generic ones: the same the
 // browser-assisted adapter uses for that site (LinkedIn's login wall standing
@@ -251,15 +291,16 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
   const ingestor = createPageCaptureIngestor(dependencies);
   let recovered = false;
   const noBrowserWarned = new Set<string>();
+  const invalidSettingWarned = new Set<string>();
   const ids = (item: PageCaptureItemRecord) => ({ site: item.site, itemId: item.id, listingId: item.siteJobId, batchId: item.lastBatchId });
 
-  async function failOne(item: PageCaptureItemRecord, reason: "UNREADABLE" | "NOT_INGESTED") {
+  async function failOne(item: PageCaptureItemRecord, reason: "UNREADABLE" | "NOT_INGESTED" | "INCOMPLETE_PAGE") {
     const attempts = item.attempts + 1;
     const finalAttempt = attempts >= pageCaptureMaxAttempts;
     const nextAttemptAt = finalAttempt ? null : new Date(now().getTime() + pageCaptureRetryAfterMs);
     await dependencies.repository.markFailed(item.id, {
       status: finalAttempt ? "AWAITING_DETAILS" : "QUEUED",
-      reason: finalAttempt && reason === "UNREADABLE" ? "UNREADABLE" : finalAttempt ? "FAILED_REPEATEDLY" : reason,
+      reason: finalAttempt && (reason === "UNREADABLE" || reason === "INCOMPLETE_PAGE") ? reason : finalAttempt ? "FAILED_REPEATEDLY" : reason,
       nextAttemptAt,
       countAttempt: true,
     });
@@ -317,9 +358,33 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
         }
         const items = await dependencies.repository.claimQueued(siteKey, at, pageCaptureDetailsPerPass);
         if (!items.length) continue;
-        const result: AcquisitionPassResult = { site: siteKey, claimed: items.length, ingested: 0, awaitingDetails: 0, unavailable: 0, stopped: null };
+        const scripts = (dependencies.pageScripts ?? registryPageScripts)(siteKey);
+        if (scripts.source === "invalid-setting" && !invalidSettingWarned.has(siteKey)) {
+          invalidSettingWarned.add(siteKey);
+          log.warn(`page capture: ${site.name}: the page-scripts setting is not "run" or "skip"; the default (${scripts.mode}) applies`);
+        }
+        const result: AcquisitionPassResult = {
+          site: siteKey,
+          claimed: items.length,
+          ingested: 0,
+          awaitingDetails: 0,
+          unavailable: 0,
+          stopped: null,
+          pageScripts: scripts.mode,
+          incomplete: 0,
+          requests: { pages: 0, documentRequests: 0, sentRequests: 0, blockedRequests: 0 },
+        };
+        const countRequests = (requests: BrowserRequestCounts | undefined) => {
+          if (!requests) return;
+          result.requests.pages += 1;
+          result.requests.documentRequests += requests.documentRequests;
+          result.requests.sentRequests += requests.sentRequests;
+          result.requests.blockedRequests += requests.blockedRequests;
+        };
         diagnostics.event("pass.start", {
           site: siteKey,
+          pageScripts: scripts.mode,
+          pageScriptsSource: scripts.source,
           claimed: items.length,
           jobs: items.map((item) => ({ itemId: item.id, listingId: item.siteJobId, batchId: item.lastBatchId, attempts: item.attempts, refresh: isPageCaptureRefresh(item.lastReason) })),
         });
@@ -327,7 +392,7 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
         const browser = dependencies.browser;
         let driver: BrowserDriver | null = null;
         try {
-          driver = await browser.launch();
+          driver = await browser.launch({ pageScripts: scripts.mode });
           const session = createBrowserSession(driver, {
             minIntervalMs: site.detail.minIntervalMs,
             maxNavigations: pageCaptureDetailsPerPass,
@@ -387,6 +452,19 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
             passEnd(reason);
             return result;
           };
+          // A scriptless page that was incomplete, waiting for the next read to
+          // say whose it was: a complete read after it proves the page was
+          // that job's own (one attempt counted, INCOMPLETE_PAGE); a second
+          // incomplete page in a row means scriptless reading does not work
+          // for the site now, and nothing is counted (see below).
+          let incompleteHeld: PageCaptureItemRecord | null = null;
+          const settleHeldIncomplete = async () => {
+            const held = incompleteHeld;
+            incompleteHeld = null;
+            if (!held) return;
+            const finalAttempt = await failOne(held, "INCOMPLETE_PAGE");
+            if (finalAttempt) result.awaitingDetails += 1;
+          };
           try {
             for (const item of items) {
               let page;
@@ -395,9 +473,19 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 page = await session.open(item.sourceUrl);
               } catch (error) {
                 log.warn(`page capture: job ${item.id} stage=navigate ${error instanceof AdapterError ? `code=${error.code}` : "code=NETWORK"}`);
-                const failure = { ...ids(item), stage: "navigate", code: error instanceof AdapterError ? error.code : "NETWORK", status: error instanceof AdapterError ? (error.details?.status ?? null) : null, elapsedMs: Date.now() - navigationStarted };
+                const requests = error instanceof AdapterError ? error.details?.requests : undefined;
+                countRequests(requests);
+                const failure = {
+                  ...ids(item),
+                  stage: "navigate",
+                  code: error instanceof AdapterError ? error.code : "NETWORK",
+                  status: error instanceof AdapterError ? (error.details?.status ?? null) : null,
+                  elapsedMs: Date.now() - navigationStarted,
+                  pageScripts: scripts.mode,
+                  requests: requests ?? null,
+                };
                 diagnostics.event("job.navigate.failed", failure);
-                dependencies.evidence?.record({ ...ids(item), url: item.sourceUrl, outcome: `NAVIGATE_${failure.code}`, elapsedMs: failure.elapsedMs, status: failure.status as number | null, error: diagnosticError(error) });
+                dependencies.evidence?.record({ ...ids(item), url: item.sourceUrl, outcome: `NAVIGATE_${failure.code}`, elapsedMs: failure.elapsedMs, status: failure.status as number | null, requests: requests ?? null, error: diagnosticError(error) });
                 if (error instanceof AdapterError && ["RATE_LIMITED", "ACCESS_DENIED"].includes(error.code)) {
                   const retryAfterSeconds = Number(error.details?.retryAfterSeconds ?? 0);
                   const until = new Date(Math.max(now().getTime() + pageCaptureFrictionBackoffMs, now().getTime() + retryAfterSeconds * 1000));
@@ -418,10 +506,11 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 return result;
               }
               const navigationMs = Date.now() - navigationStarted;
+              countRequests(page.requests);
               if (page.status === 404 || page.status === 410) {
                 log.info(`page capture: job ${item.id} stage=navigate status=${page.status} (no longer available)`);
-                diagnostics.event("job.decision", { ...ids(item), stage: "navigate", decision: "UNAVAILABLE", status: page.status, elapsedMs: navigationMs });
-                dependencies.evidence?.record({ ...ids(item), url: item.sourceUrl, status: page.status, finalUrl: page.finalUrl, elapsedMs: navigationMs, html: page.html, servedHtml: page.servedHtml ?? null, outcome: "UNAVAILABLE" });
+                diagnostics.event("job.decision", { ...ids(item), stage: "navigate", decision: "UNAVAILABLE", status: page.status, elapsedMs: navigationMs, pageScripts: scripts.mode, requests: page.requests ?? null });
+                dependencies.evidence?.record({ ...ids(item), url: item.sourceUrl, status: page.status, finalUrl: page.finalUrl, elapsedMs: navigationMs, html: page.html, servedHtml: page.servedHtml ?? null, requests: page.requests ?? null, outcome: "UNAVAILABLE" });
                 await dependencies.repository.markFailed(item.id, { status: "UNAVAILABLE", reason: "NOT_INGESTED", nextAttemptAt: null, countAttempt: true });
                 result.unavailable += 1;
                 continue;
@@ -448,6 +537,9 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 ? buildCaptureEnvelope({ ...extraction, pageUrl: item.sourceUrl }, "page", { extensionVersion: pageCaptureAcquisitionVersion, capturedAt: now() })
                 : null;
               const posting = extraction?.posting ?? null;
+              // Never saved as a full read when the page's scripts were not
+              // run and the page did not hold a complete posting.
+              const incomplete = scripts.mode === "skip" ? scriptlessPageIncomplete(extraction) : null;
               const fieldNames = ["title", "company", "location", "description", "salaryText", "employmentType", "postedAt", "closingDate", "applicationUrl", "seniority"] as const;
               const fields = posting
                 ? {
@@ -465,6 +557,9 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 applicationRoute,
                 servedHtmlAvailable: Boolean(page.servedHtml),
                 fieldsMissing: fields.missing,
+                pageScripts: scripts.mode,
+                incomplete,
+                requests: page.requests ?? null,
               });
               dependencies.evidence?.record({
                 ...ids(item),
@@ -476,8 +571,40 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 servedHtml: page.servedHtml ?? null,
                 apply: { rendered: renderedApply, served: servedApply, route: posting ? applicationRoute : null, applicationUrl: posting?.applicationUrl ?? null },
                 fields,
-                outcome: built?.ok ? "READ" : "UNREADABLE",
+                pageScripts: scripts.mode,
+                requests: page.requests ?? null,
+                outcome: incomplete ? `INCOMPLETE_${incomplete}` : built?.ok ? "READ" : "UNREADABLE",
               });
+              if (incomplete) {
+                result.incomplete += 1;
+                log.warn(`page capture: job ${item.id} stage=read incomplete scriptless page (${incomplete}); not saved`);
+                if (incompleteHeld) {
+                  // Two incomplete scriptless pages in a row: the site's pages
+                  // need their scripts now, not these jobs. Nothing is
+                  // counted; every queued job of the site (these two and the
+                  // unread rest) waits an hour, uncounted, and the operator is
+                  // told how to restore script-enabled reading.
+                  const until = new Date(now().getTime() + pageCaptureRetryAfterMs);
+                  diagnostics.event("job.decision", { ...ids(item), decision: "INCOMPLETE_PAGE_SECOND_IN_A_ROW", reason: incomplete });
+                  diagnostics.event("job.decision", { ...ids(incompleteHeld), decision: "INCOMPLETE_PAGE_NOT_COUNTED" });
+                  incompleteHeld = null;
+                  await dependencies.repository.deferSite(siteKey, until, "INCOMPLETE_PAGE");
+                  result.stopped = "INCOMPLETE_PAGE";
+                  log.warn(
+                    `page capture: ${site.name} pages read without their scripts were incomplete twice in a row; nothing was saved or counted, and the site's jobs wait until ${until.toISOString()}. ` +
+                      `If this continues, set ${pageCapturePageScriptsSettingName(siteKey)}=run and restart the worker.`,
+                  );
+                  diagnostics.event("site.deferred", { site: siteKey, reason: "INCOMPLETE_PAGE", until, pageScripts: scripts.mode });
+                  passEnd("INCOMPLETE_PAGE");
+                  return result;
+                }
+                incompleteHeld = item;
+                diagnostics.event("job.decision", { ...ids(item), decision: "INCOMPLETE_PAGE_HELD", reason: incomplete });
+                continue;
+              }
+              // A complete page after an incomplete one: that one was its
+              // job's own page.
+              await settleHeldIncomplete();
               if (!built?.ok) {
                 log.warn(`page capture: job ${item.id} stage=read (no posting could be read from the page)`);
                 if (await failOne(item, "UNREADABLE")) result.awaitingDetails += 1;
@@ -551,6 +678,9 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 pending.push({ job: item, count: true });
               }
             }
+            // A lone incomplete page at the end of the pass: no sign the
+            // site's pages need their scripts, so it is the job's own page.
+            await settleHeldIncomplete();
             if (pending.length && dependencies.probeCapture) {
               try {
                 await dependencies.probeCapture();

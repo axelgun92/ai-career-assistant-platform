@@ -58,11 +58,12 @@ export const reasonLabels: Record<string, string> = {
   BATCH_STOPPED: "Reading stopped for this batch before this job",
   USER_STOPPED: "You stopped reading the details",
   PERMISSION_MISSING: "The extension no longer has permission to read this site's job pages",
+  INCOMPLETE_PAGE: "The job's page arrived without its full posting, so nothing was saved from it",
 };
 
-// Reasons a queued job waits that are not its turn: a site stop or a worker
-// with no browser.
-const waitingReasons = new Set(["NO_BROWSER", "RATE_LIMITED", "ACCESS_STOPPED"]);
+// Reasons a queued job waits that are not its turn: a site stop, a worker
+// with no browser, or job pages arriving incomplete (read again in an hour).
+const waitingReasons = new Set(["NO_BROWSER", "RATE_LIMITED", "ACCESS_STOPPED", "INCOMPLETE_PAGE"]);
 
 // For a job read in background tabs, how to read it again.
 export const saveAgainHint = "Save the results page that shows it again to read its details.";
