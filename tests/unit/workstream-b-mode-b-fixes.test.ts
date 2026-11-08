@@ -149,7 +149,7 @@ describe("country salary tiers and the primary range", () => {
     const both = await normalized(testPage(`<p>We hire across the United States and Canada.</p><p>${juniper}</p>`, "Denver, CO, United States"), "https://careers.example.test/jobs/2");
     expect(both.opportunity).toMatchObject({ salaryMin: null, salaryMax: null });
     expect(both.opportunity.compensationTiers).toHaveLength(2);
-    expect(formatSalary(both.opportunity)).toBe("United States: 86,000–95,000 USD · Canada: 77,000–85,000 CAD");
+    expect(formatSalary(both.opportunity)).toBe("United States: $86,000–$95,000 USD · Canada: $77,000–$85,000 CAD");
   });
 
   it("reads 'Canadian base salary' as Canada's tier", async () => {

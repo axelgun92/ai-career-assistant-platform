@@ -339,6 +339,45 @@ function mapOpportunityDetail(
   };
 }
 
+// Whether a saved fact already equals what the current normalization states
+// (D1): compared as values, so a repeat re-read writes nothing. Amounts as
+// numbers, dates by instant, lists and tiers by content, the company by its
+// normalized name.
+const canonicalJson = (value: unknown): string =>
+  JSON.stringify(value, (_key, item) =>
+    item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item as Record<string, unknown>).filter(([, entry]) => entry !== undefined).sort(([a], [b]) => a.localeCompare(b))) : item,
+  );
+function sameFact(
+  field: ProjectedField,
+  saved: Prisma.OpportunityGetPayload<{ include: { company: { select: { name: true } } } }>,
+  next: NormalizedOpportunity,
+): boolean {
+  const stated = next as unknown as Record<string, unknown>;
+  switch (field) {
+    case "company.name": {
+      const left = saved.company?.name ?? null;
+      const right = next.companyName ?? null;
+      return left === right || (left !== null && right !== null && normalizeCompanyName(left) === normalizeCompanyName(right));
+    }
+    case "salaryMin":
+    case "salaryMax":
+      return (saved[field]?.toNumber() ?? null) === ((stated[field] as number | null | undefined) ?? null);
+    case "postingDate":
+    case "closingDate": {
+      const right = stated[field] as Date | string | null | undefined;
+      return (saved[field]?.getTime() ?? null) === (right ? new Date(right).getTime() : null);
+    }
+    case "compensationTiers":
+      return canonicalJson(storedCompensationTiers(saved.compensationTiers)) === canonicalJson(next.compensationTiers ?? []);
+    default: {
+      const left = (saved as unknown as Record<string, unknown>)[field];
+      const right = stated[field];
+      if (Array.isArray(left) || Array.isArray(right)) return canonicalJson(left ?? []) === canonicalJson(right ?? []);
+      return (left ?? null) === (right ?? null);
+    }
+  }
+}
+
 export class PrismaManualOpportunityRepository
   implements ManualOpportunityRepository, RetrievalIngestionRepository
 {
@@ -438,6 +477,7 @@ export class PrismaManualOpportunityRepository
         if (previous?.opportunityId) {
           const opportunityId = previous.opportunityId;
           let sourceRecordId = previous.id;
+          let normalizationCorrected: string[] = [];
           if (previous.contentHash === retrieval.contentHash) {
             await transaction.$executeRaw`
               UPDATE "SourceRecord" SET "lastObservedAt" = GREATEST("lastObservedAt", ${raw.discoveredAt}::timestamptz), "updatedAt" = now()
@@ -454,6 +494,43 @@ export class PrismaManualOpportunityRepository
                 UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set(COALESCE("sourceMetadata", '{}'::jsonb), '{lastRead}', ${JSON.stringify(lastRead)}::jsonb)
                 WHERE "id" = ${previous.id}::uuid
               `;
+              // D1 (approved November 8, 2026): a browser-extension re-read
+              // (Single Capture or a Mode B refresh) of the listing that
+              // created the opportunity is normalized again by the current
+              // rules even though the posting is unchanged. Saved facts the
+              // current reading of the same evidence states differently are
+              // corrected, from the same source version (no new version),
+              // under the same evidence rules as a changed posting: only
+              // stated values, user corrections and other sources' evidence
+              // kept, nothing cleared for not being read. Facts that already
+              // agree are not written again, so a repeat re-read changes
+              // nothing. Nothing is evaluated.
+              const origin = await originatingVersion(transaction, opportunityId);
+              if (origin && origin.origin.sourceType !== "MANUAL" && origin.origin.source === raw.source && origin.origin.externalId === raw.externalId && origin.currentId === previous.id) {
+                normalizationCorrected = await this.reprojectCurrentFacts(transaction, {
+                  opportunityId,
+                  sourceRecordId: previous.id,
+                  rawOpportunity: raw,
+                  opportunity: input.opportunity,
+                  provenance: input.provenance,
+                  correction: true,
+                });
+                if (await this.reprojectApplicationLink(transaction, { opportunityId, sourceRecordId: previous.id, rawOpportunity: raw, originSource: origin.origin.source })) {
+                  normalizationCorrected.push("applicationUrl");
+                }
+                if (normalizationCorrected.length) {
+                  // The correction event, on the version whose evidence it
+                  // re-read (additive; the stored evidence is unchanged).
+                  const event = { at: new Date().toISOString(), observedAt: raw.discoveredAt.toISOString(), readerRevision: lastRead.readerRevision, fields: normalizationCorrected };
+                  await transaction.$executeRaw`
+                    UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set(
+                      "sourceMetadata", '{normalizationCorrections}',
+                      COALESCE("sourceMetadata"->'normalizationCorrections', '[]'::jsonb) || ${JSON.stringify([event])}::jsonb
+                    ), "normalizedAt" = now()
+                    WHERE "id" = ${previous.id}::uuid
+                  `;
+                }
+              }
             }
           } else {
             const created = await transaction.sourceRecord.create({
@@ -490,6 +567,7 @@ export class PrismaManualOpportunityRepository
             opportunityId,
             sourceRecordId,
             decision: null,
+            ...(normalizationCorrected.length ? { normalizationCorrected } : {}),
           };
         }
 
@@ -710,15 +788,15 @@ export class PrismaManualOpportunityRepository
   private async reprojectApplicationLink(
     transaction: Transaction,
     input: { opportunityId: string; sourceRecordId: string; rawOpportunity: RawOpportunity; originSource: string },
-  ) {
+  ): Promise<boolean> {
     const opportunity = await transaction.opportunity.findUnique({ where: { id: input.opportunityId }, select: { applicationUrl: true } });
-    if (!opportunity) return;
+    if (!opportunity) return false;
     const next = input.rawOpportunity.applicationUrl;
-    if (next === opportunity.applicationUrl) return;
+    if (next === opportunity.applicationUrl) return false;
     // A browser-extension re-read that found no link never clears one (a
     // read can miss it); a LinkedIn-listing fallback never replaces a real
     // link (November 5, 2026).
-    if (!next && input.rawOpportunity.sourceType === "BROWSER_EXTENSION") return;
+    if (!next && input.rawOpportunity.sourceType === "BROWSER_EXTENSION") return false;
     const nextIsFallback = applicationUrlBasisOf(input.rawOpportunity.sourceMetadata) === "LISTING_PAGE_FALLBACK";
     if (opportunity.applicationUrl) {
       const current = await transaction.fieldProvenance.findFirst({
@@ -726,8 +804,8 @@ export class PrismaManualOpportunityRepository
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { sourceField: true, sourceRecord: { select: { source: true, sourceType: true } } },
       });
-      if (!current?.sourceRecord || current.sourceRecord.sourceType === "MANUAL" || current.sourceRecord.source !== input.originSource) return;
-      if (nextIsFallback && current.sourceField !== listingPageFallbackSourceField) return;
+      if (!current?.sourceRecord || current.sourceRecord.sourceType === "MANUAL" || current.sourceRecord.source !== input.originSource) return false;
+      if (nextIsFallback && current.sourceField !== listingPageFallbackSourceField) return false;
     }
     await transaction.opportunity.update({ where: { id: input.opportunityId }, data: { applicationUrl: next } });
     await transaction.fieldProvenance.updateMany({
@@ -748,6 +826,7 @@ export class PrismaManualOpportunityRepository
         },
       });
     }
+    return true;
   }
 
   // Current-version projection (Core TDD §51, v1.15): the newest version of
@@ -768,11 +847,15 @@ export class PrismaManualOpportunityRepository
       rawOpportunity: RawOpportunity;
       opportunity: NormalizedOpportunity;
       provenance: FieldProvenanceInput[];
+      // D1: the same source version normalized again; only fact groups whose
+      // value differs from the saved one are written, and a fact currently
+      // backed by another source's evidence is kept.
+      correction?: boolean;
     },
-  ) {
+  ): Promise<string[]> {
     const current = await transaction.fieldProvenance.findMany({
       where: { opportunityId: input.opportunityId, supersededAt: null },
-      select: { fieldName: true, sourceField: true },
+      select: { fieldName: true, sourceField: true, sourceRecord: { select: { source: true, externalId: true, sourceType: true } } },
     });
     const correctedNow = new Set(
       (Array.isArray(input.rawOpportunity.sourceMetadata?.userCorrectedFields) ? input.rawOpportunity.sourceMetadata!.userCorrectedFields : [])
@@ -816,13 +899,30 @@ export class PrismaManualOpportunityRepository
       });
       keepSavedSalary = Boolean(saved && (saved.salaryMin !== null || saved.salaryMax !== null || (Array.isArray(saved.compensationTiers) && saved.compensationTiers.length > 0)));
     }
-    const fields = projectedFields.filter(
+    let fields: ProjectedField[] = projectedFields.filter(
       (field) =>
         !protectedFields.has(field) &&
         !(keepSavedSalary && salaryGroup.includes(field)) &&
         (!evidenceOnly || groupOf(field).some(stated) || groupOf(field).some((member) => withdrawn.has(member))),
     );
-    if (!fields.length) return;
+    if (input.correction) {
+      // Another source's evidence (a fact whose current provenance cites a
+      // different listing) is never replaced by a re-reading of this one.
+      const otherSource = new Set(
+        current
+          .filter((row) => row.sourceRecord && (row.sourceRecord.source !== input.rawOpportunity.source || row.sourceRecord.externalId !== input.rawOpportunity.externalId))
+          .map((row) => row.fieldName),
+      );
+      const saved = await transaction.opportunity.findUnique({ where: { id: input.opportunityId }, include: { company: { select: { name: true } } } });
+      if (!saved) return [];
+      // A posting date computed from a stated age ("2 weeks ago") depends on
+      // when the page was read, not on how it is read: a later re-read of the
+      // same posting never corrects it (the first read's date stays).
+      if (input.provenance.some((row) => row.fieldName === "postingDate" && row.sourceField.endsWith("relative-posted-age"))) otherSource.add("postingDate");
+      const differs = (field: ProjectedField) => !sameFact(field, saved, next);
+      fields = fields.filter((field) => !groupOf(field).some((member) => otherSource.has(member) || protectedFields.has(member)) && groupOf(field).some(differs));
+    }
+    if (!fields.length) return [];
     const values: Record<ProjectedField, () => Promise<Prisma.OpportunityUpdateInput>> = {
       title: async () => ({ title: next.title }),
       "company.name": async () => {
@@ -879,6 +979,7 @@ export class PrismaManualOpportunityRepository
         })),
       });
     }
+    return [...fields];
   }
 
   // Creates the opportunity in DISCOVERED, its field provenance and the

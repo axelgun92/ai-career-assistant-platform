@@ -1,6 +1,7 @@
 import {
   cleanCapturedText,
   cleanPageUrl,
+  correctedFactLabels,
   extensionCaptureSchema,
   knownSiteForHost,
   normalizedSiteHost,
@@ -333,6 +334,10 @@ export interface EvaluationSummary {
 
 export interface CaptureResult {
   outcome: RetrievedListingOutcome;
+  // UNCHANGED only (D1): the saved facts the current reading rules corrected
+  // from the same, unchanged posting, as the product names them ("Salary",
+  // "Work arrangement"); absent when nothing needed correcting.
+  normalizationCorrected?: string[];
   decision: string | null;
   opportunityId: string;
   sourceRecordId: string;
@@ -405,6 +410,7 @@ export function createExtensionCaptureService(dependencies: ExtensionCaptureDepe
       }
       const result: CaptureResult = {
         outcome: ingested.outcome,
+        ...(ingested.normalizationCorrected?.length ? { normalizationCorrected: correctedFactLabels(ingested.normalizationCorrected) } : {}),
         decision: ingested.decision,
         opportunityId: ingested.opportunityId,
         sourceRecordId: ingested.sourceRecordId,

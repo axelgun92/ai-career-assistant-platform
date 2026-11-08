@@ -3,7 +3,88 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 8, 2026
 
-## LinkedIn Mode B — Option A: Script-Disabled Job-Page Retrieval (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved by Alex for repository closeout and committed with it; not LinkedIn acceptance; no live request made)
+## Final Pre-Live Corrections — D1, Salary Accuracy and Capture Parity (November 8, 2026; implemented and verified offline on top of `42a647c`; approved by Alex for repository closeout and committed with this change; no live request made; live acceptance pending)
+
+Status vocabulary for this section:
+- **implemented and verified offline**: on the isolated test database only;
+- **awaiting live acceptance**: nothing here was tried on a live site;
+- **approved contract change**: D1, approved by Alex on November 8, 2026;
+- **adopted contract**: Core Platform TDD v1.20, Section 51, approved by Alex on November 8, 2026. It carries amendments A–C plus two clarifications: Paragraph B states the unchanged-content hash as the material-field hash of Paragraph A, and no provisional wording remains. v1.19 is archived unchanged.
+
+- **Salary field (implemented and verified offline).** One Salary field; no Compensation field, category or row; no schema change. Displays:
+  - Base salary of $80,000–$100,000 → "$80,000–$100,000 USD (Base salary)".
+  - Base salary of $70,000 plus commission → "$70,000 USD base + commission".
+  - $90,000–$120,000 including bonuses → "$90,000–$120,000 USD (Includes bonuses)".
+  - Target total cash compensation of $106,400–$197,600 including base salary and target incentives → "$106,400–$197,600 USD (Target total cash: base + incentives)" (Thomson Reuters).
+  - An explicit OTE of $120,000 → "$120,000 USD (OTE)" (Dataminr: "$94,588–$139,412 USD (OTE)").
+  - Rules:
+    - "OTE" only when the employer says OTE or on-target.
+    - Target total cash is shown in the employer's terms, never relabelled OTE.
+    - Additional compensation the statement names (commission, bonus, incentives, equity) stays in the same field.
+    - A base amount is never derived from a combined range.
+    - "Pay equity", "internal equity" and negated variable pay ("does not include bonus") add nothing.
+    - Amounts, currencies, tiers, the evidence-based primary range, Unknown and the employer's wording (salary text and its provenance) are kept.
+  - **Internal basis.** The evaluator's input stays BASE, OTE or Unknown. Every variable-inclusive total (explicit OTE, target total, "including bonuses") is recorded internally with the OTE basis, so the salary policy returns Unknown (`OTE_NOT_CONFIRMED_BASE`) and never treats it as base salary.
+    - The two user-visible reason sentences for that code (triage and the hard-filter explanation) now say "includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary", so a non-OTE total is never called OTE. The reason code, policy and evaluator logic are unchanged.
+  - **Structured range and description wording (correction after Alex's review).** When the amounts come from structured page data, a salary field or a source compensation text, the description's wording applies only through a statement of exactly that range (both bounds, compatible currency). That statement becomes the Salary text, with its provenance; the source's own text stays in the source record.
+    - Explicit OTE → "(OTE)"; target total → its own terms; base → "(Base salary)"; base with components → "base + …".
+    - OTE, bonuses or commission mentioned elsewhere are never applied to the range.
+    - Disagreeing statements, or a statement contradicting the source's own salary text, show no label. Internally the range is not confirmed base when any of them says it includes variable pay.
+    - A stored OTE basis with no wording in its text no longer shows "(Includes variable pay)": it shows no label.
+  - **Base plus named components.** An explicit sentence right after a base salary statement ("In addition to base salary, this position is eligible for bonus and incentive compensation … stock option program") stays with it. FourKites (LinkedIn) therefore shows "$100,000–$125,000 USD base + bonus + incentives + equity".
+  - **Thomson Reuters.** The sentence that defines a target total ("Target total cash compensation ranges are inclusive of both base pay and any target sales incentive"), or a "This range includes …" sentence right after a pay statement, is now part of the stored compensation statement (`job-text-facts.ts`).
+  - **Shared reading.** `packages/core/src/compensation-arrangement.ts` serves every view: list, job page, evaluation summary and source-version check.
+- **D1: normalization correction on an unchanged recapture (approved contract change; implemented and verified offline).**
+  - *When it applies:* a browser-extension re-read (Mode A Single Capture, or a Mode B refresh the existing eligibility rules selected) of the listing that created the job, whose content hash is unchanged.
+  - *What it does:*
+    - Re-runs the current normalization on that same evidence and compares it with the saved facts, field group by group.
+    - Updates only groups the current reading states (or explicitly withdraws) that differ from the saved values. It never clears a fact for not being read.
+    - User-corrected facts, facts backed by another listing's evidence, the application-link precedence and posting dates computed from a stated age are kept.
+    - No new source version is created. The corrected facts' provenance cites the same source record, and the replaced rows are superseded (kept as history).
+    - The event is recorded on that record (`sourceMetadata.normalizationCorrections`: time, observation time, reader revision, fields).
+    - A repeat writes nothing; nothing is evaluated or requested.
+  - *Scope:* automated adapters, attached copies and manual jobs are excluded. There is no manual command, no global backfill, and Mode B eligibility is unchanged. Changed postings still add a version.
+  - **Three events, distinguished:**
+    - *Ingestion result:* `UNCHANGED` + `normalizationCorrected`; `reobservationEvent()` returns `UNCHANGED_OBSERVATION`, `NORMALIZATION_CORRECTION` or `SOURCE_CONTENT_CHANGE`.
+    - *Mode B status:* "Read again: no change" / "Read again: the posting is unchanged; saved details corrected by the current reading rules" (`REFRESHED:CORRECTED`) / "Updated from a new read".
+    - *Popup:* "The posting has not changed; its saved details were corrected by the current reading rules (Salary, …). No new version was recorded."
+    - *Job page:* the source panel shows "Read again on …: the posting was unchanged; saved details corrected…", and each corrected provenance row is marked.
+    - *Evaluation hint:* informational, when an evaluation predates a correction.
+    - *Worker diagnostics:* `job.ingested` carries `reobservation` and `corrected`.
+  - **Real saved evidence** (the facts the acceptance database held, from the November 6–7 source-version checks):
+    - All 9 stored LinkedIn/WTTJ versions reproduce their stored content hash, so D1 is the path they take.
+    - Corrections on recapture:
+      - TENEX.AI → Hybrid (remote only by exception);
+      - Nearmap → Remote and continental U.S. residence;
+      - Thomson Reuters → "(Target total cash: base + incentives)";
+      - Critical Start → closing date 2026-11-20 and the labelled LinkedIn listing link;
+      - AlertMedia → Remote and residency with its exclusions, plus the link;
+      - Juniper Square → U.S./Canada tiers, plus the link;
+      - Dataminr → the link;
+      - FourKites (LinkedIn) → "base + bonus + incentives + equity", plus the link;
+      - FourKites (WTTJ) → nothing (already correct).
+    - Each was corrected once, with one version and zero evaluations, identically in Mode A, Mode B LinkedIn and the WTTJ background-tab path (Beam's arrangement is corrected there too).
+- **Parity and duplicates (verified offline through the real capture-to-persistence paths).**
+  - Both modes:
+    - apply D1;
+    - reach the same corrected facts, provenance and displays;
+    - keep the job's identity and every valid fact;
+    - add no version, are idempotent, respect user corrections and cross-source evidence, and make no evaluation request.
+  - Exact matches are reused with their history; a repeat recapture does not repeat the correction.
+  - Possible duplicates (the FourKites 67% case) stay flagged and unmerged, with their duplicate references unchanged by recaptures.
+  - Different listings at the same company stay separate.
+  - Historical storage is not expanded.
+- **Also in this change:** a U.S. residence requirement and an "unable to hire in …" exclusion in one sentence now keep both (`residency.ts`).
+- **Verified (offline; `ai_career_assistant_test` only; normal and acceptance databases untouched; no live site, paid call, evaluation worker or profile activation):**
+  - Static checks: typecheck, lint, Prisma validate, `db:verify-migrations` (28), extension build and `git diff --check` all pass.
+  - Unit: 2,353 passed / 6 skipped (106 files), including `salary-display-contract` 26/26.
+  - Integration: 471/471 (55 files), including `mode-a-mode-b-parity` 44/44 and `source-version-check` 6/6.
+  - E2E: 60/60.
+- **Correction of an earlier statement.** The earlier Rev 3 review said the saved November 5 records "are re-read … on the next save of their page, which applies these fixes to them". Before D1 that held only when the re-read evidence differed: an unchanged re-read changed nothing. With D1, an eligible re-read now also applies normalization fixes to the same version.
+- **Open:**
+  - Local acceptance (the Phase 1 runbook against the new commit, each live step separately authorized).
+
+## LinkedIn Mode B — Option A: Script-Disabled Job-Page Retrieval (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved by Alex for repository closeout and committed as `42a647c`; not LinkedIn acceptance; no live request made)
 
 Approved by Alex on November 8 as a separate, targeted LinkedIn improvement. The November 7 evidence showed the page LinkedIn sends already holds the full job description, identical to the rendered page, so running its scripts adds requests and no content.
 
@@ -91,7 +172,7 @@ WTTJ Mode B Rev 3 was accepted by Alex in the November 7 live round. LinkedIn Mo
   - The other six E4 records (Dataminr OTE, both FourKites, both ServiceTitan, Beam) normalize identically before and after.
   - Regression: `tests/unit/mode-b-e4-real-texts.test.ts` (4) on `tests/fixtures/real-captures/mode-b-e4-linkedin-nov5.json`: the three public descriptions and listing identity only (capture metadata removed, one recruiting e-mail address redacted).
   - E4 also shows that the five November 3 logged-out LinkedIn pages carried no `code#applyUrl`: Apply was a sign-up modal button, and the "Apply" links went to LinkedIn sign-up. A new test with that markup confirms a sign-up link is never taken as the application link; the labelled listing fallback is used. On logged-out reads the fallback is therefore the expected outcome; the received-HTML step helps only if LinkedIn sends the link.
-  - The saved November 5 records are re-read (reader revision 0 < 1) on the next save of their page, which applies these fixes to them.
+  - The saved November 5 records are re-read (reader revision 0 < 1) on the next save of their page, which applies these fixes to them. *(Correction, November 8, 2026: before D1 this held only when the re-read evidence differed from the stored version, because an unchanged re-read changed nothing, and these records' stored content hashes are reproduced exactly today. With the approved D1, an eligible unchanged re-read now also applies normalization fixes to the same version. See "Final Pre-Live Corrections" above.)*
 - **Diagnostic security review (final check, November 6).** Gaps found and fixed:
   - Folders were refused only inside the working directory, without resolving links. Now any folder inside any Git checkout is refused (logs, page evidence, package output), resolved through symbolic links, whatever folder the command starts from.
   - A pre-existing log file or package folder kept wider permissions. Now each log file is made 0600 on first write; the package folder 0700 even when it already existed; copied page evidence 0600.

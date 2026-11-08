@@ -225,7 +225,7 @@ test("normalized details from manual entry drive work-arrangement and salary fil
   await page.getByText("Normalized opportunity and source details").click();
   const normalized = page.locator("section", { has: page.getByRole("heading", { name: "Normalized Opportunity" }) });
   // Salary only: no separate Compensation row (October 26, 2026).
-  await expect(normalized).toContainText(/Salary\s*60,000–70,000 EUR/);
+  await expect(normalized).toContainText(/Salary\s*€60,000–€70,000 EUR/);
   await expect(normalized).not.toContainText(/Compensation\s/);
   await expect(normalized).toContainText(/Work arrangement\s*Hybrid/);
   await expect(normalized).toContainText(/Seniority \(as stated\)\s*Senior/);
@@ -294,10 +294,10 @@ test("labelled regional pay ranges show side by side as the Salary, and a labell
   opportunityIds.push(page.url().split("/").pop()!);
   await page.getByText("Normalized opportunity and source details").click();
   const normalized = page.locator("section", { has: page.getByRole("heading", { name: "Normalized Opportunity" }) });
-  await expect(normalized).toContainText(/Salary\s*Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD/);
+  await expect(normalized).toContainText(/Salary\s*Zone 1: \$92,600–\$139,000 USD · Zone 2: \$86,600–\$129,800 USD/);
   await expect(normalized).toContainText(/Requisition ID\s*JR115657/);
 
   await page.goto(`/?q=${token}`);
   await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first()).toContainText(/Salary\s*Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD/);
+  await expect(rows(page).first()).toContainText(/Salary\s*Zone 1: \$92,600–\$139,000 USD · Zone 2: \$86,600–\$129,800 USD/);
 });

@@ -280,7 +280,7 @@ describe("We Work Remotely: the sidebar's job items, and the posting's own facts
       { label: "US Zone 2", minimum: 120000, maximum: 160000, currency: "USD" },
       { label: "US Zone 3", minimum: 108000, maximum: 144000, currency: "USD" },
     ]);
-    expect(formatSalary(opportunity)).toBe("US Zone 2: 120,000–160,000 USD · US Zone 3: 108,000–144,000 USD");
+    expect(formatSalary(opportunity)).toBe("US Zone 2: $120,000–$160,000 USD · US Zone 3: $108,000–$144,000 USD");
   });
 
   it("hourly pay without an annual equivalent is still not a salary", () => {
@@ -368,7 +368,7 @@ describe("Workday: the posting's own title, requisition ID, dates and zone bands
     expect(opportunity.title).toBe("Customer Success Manager");
     expect(opportunity.atsRequisitionId).toBe("JR115657");
     expect(opportunity).toMatchObject({ salaryMin: null, salaryMax: null });
-    expect(formatSalary(opportunity)).toBe("Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD");
+    expect(formatSalary(opportunity)).toBe("Zone 1: $92,600–$139,000 USD · Zone 2: $86,600–$129,800 USD");
     expect(opportunity.timeZoneRequirements).toBe("Able to work PST/MST hours.");
   });
 
@@ -393,7 +393,7 @@ describe("LinkedIn (Serrala) and Welcome to the Jungle (AlphaSense): stated sala
       { label: "United States", minimum: 63000, maximum: 75000, currency: "USD" },
       { label: "Canada", minimum: 88000, maximum: 110000, currency: "CAD" },
     ]);
-    expect(formatSalary(opportunity)).toBe("United States: 63,000–75,000 USD · Canada: 88,000–110,000 CAD");
+    expect(formatSalary(opportunity)).toBe("United States: $63,000–$75,000 USD · Canada: $88,000–$110,000 CAD");
     expect(opportunity).toMatchObject({ salaryMin: null, salaryMax: null, currency: null, workArrangements: ["ONSITE", "REMOTE"] });
   });
 

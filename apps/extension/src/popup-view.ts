@@ -41,7 +41,12 @@ export function captureMessage(capture: CaptureResponse): string {
     UNCHANGED: "Already saved. Nothing changed.",
     CHANGED: "Already saved. The posting changed, so the new version was recorded.",
   };
-  const parts = [base[capture.outcome]];
+  const corrected = capture.outcome === "UNCHANGED" ? capture.normalizationCorrected ?? [] : [];
+  const parts = [
+    corrected.length
+      ? `Already saved. The posting has not changed; its saved details were corrected by the current reading rules (${corrected.join(", ")}). No new version was recorded.`
+      : base[capture.outcome],
+  ];
   if (capture.probableDuplicate) parts.push("It may duplicate an opportunity you already have; review it in AI Job Assistant.");
   if (capture.outsideRoleFamilies) parts.push("Its title is outside your Customer Success role families.");
   if (!capture.site.knownHost) parts.push("It came from an unrecognised site, so it is kept as a lower-priority source.");

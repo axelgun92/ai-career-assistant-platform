@@ -206,7 +206,7 @@ describe("Customer Success domain foundation", () => {
         "salary-compensation-basis",
       ]),
     });
-    expect(hardFilters.salary.explanation).toContain("explicitly OTE");
+    expect(hardFilters.salary.explanation).toContain("includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary");
     expect(
       result.evaluation.evidenceRecords.find(
         (item) => item.referenceId === "salary-compensation-basis",

@@ -1,4 +1,4 @@
-import { compensationCurrencyCodes, type CompensationBasis, type CompensationCurrency } from "@ai-career/core";
+import { compensationCurrencyCodes, rangeIncludesVariablePay, type CompensationBasis, type CompensationCurrency } from "@ai-career/core";
 
 // Deterministic compensation parsing. Only explicit statements become
 // numbers or a currency; anything ambiguous stays null (Unknown). The
@@ -24,6 +24,9 @@ export interface ParsedCompensation {
     | "NON_ANNUAL_PERIOD"
     | "AMBIGUOUS_AMOUNTS"
     | "INVERTED_RANGE"
+    // Only variable pay is stated ("Commission: $20,000", "Bonus of up to
+    // $15,000"): never a salary.
+    | "VARIABLE_ONLY"
     | null;
   // Why the currency is Unknown although one was indicated, if so.
   currencyUnknownReason: "CONFLICTING_CURRENCIES" | null;
@@ -81,14 +84,37 @@ const nonAnnualPeriod =
 // commission)", "60/40 base to variable"). Base salary only without it.
 // Target total cash ("target total cash compensation, inclusive of base
 // salary and any target sales incentive"; Thomson Reuters, November 7, 2026)
-// is the same: base plus target variable pay, never base salary alone.
+// is the same: base plus target variable pay, never base salary alone. OTE
+// needs the posting to call the earnings on-target or a target (Salary
+// display contract, November 8, 2026): a total that merely includes bonuses
+// is not OTE.
 const onTargetEarnings =
-  /\bOTE\b|\bon[- ]target\b|\btarget(?:ed)?\s+total\s+(?:cash|compensation|pay|earnings)\b|\btotal\s+target(?:ed)?\s+(?:cash|compensation|pay|earnings)\b|\btarget\s+cash\s+(?:compensation|pay)\b|\btotal\s+cash\s+compensation\b[^.]*\binclusive\s+of\s+base\b[^.]*\b(?:incentive|commission|bonus|variable)\b/i;
+  /\bOTE\b|\bon[- ]target\b|\btarget(?:ed)?\s+total\s+(?:cash|compensation|pay|earnings)\b|\btotal\s+target(?:ed)?\s+(?:cash|compensation|pay|earnings)\b|\btarget\s+cash\s+(?:compensation|pay)\b/i;
 const baseSalary = /\bbase\b/i;
 
+// A range that includes bonuses, commission or other variable pay ("$90,000–
+// $120,000 including base salary and bonuses") is not base salary, even when
+// it names base salary as a part. Internally it is recorded with the OTE
+// basis (base plus variable pay), so the salary policy never reads it as
+// base salary (final pre-live corrections, November 8, 2026); what the
+// Salary shows is read from the employer's own wording
+// (compensationArrangement in @ai-career/core), which calls a range OTE only
+// when the employer does.
 function resolveBasis(text: string): CompensationBasis | null {
   if (onTargetEarnings.test(text)) return "OTE";
+  if (rangeIncludesVariablePay(text)) return "OTE";
   return baseSalary.test(text) ? "BASE" : null;
+}
+
+// A statement that names variable pay before any amount and never names a
+// salary, base, pay range or on-target earnings: variable pay only.
+const variablePayWord = /\b(?:bonus(?:es)?|commissions?|incentives?|variable(?:\s+(?:pay|compensation|component))?|equity|stock|RSUs?|profit[- ]sharing|spiffs?)\b/i;
+const salaryWord = /\b(?:salary|salaries|base|wages?|OTE|on[- ]target|target\s+(?:total|cash)|total\s+(?:target|cash|compensation)|pay\s+range|hiring\s+range|compensation\s+range)\b/i;
+function variablePayOnly(text: string): boolean {
+  const variable = variablePayWord.exec(text);
+  if (!variable || salaryWord.test(text)) return false;
+  const first = /\d/.exec(text);
+  return !first || variable.index < first.index;
 }
 
 interface AmountToken {
@@ -252,6 +278,9 @@ export function parseCompensation(text: string | null, selectedCurrency: Compens
       amountsUnknownReason: null,
       currencyUnknownReason: null,
     };
+  }
+  if (variablePayOnly(text)) {
+    return { minimum: null, maximum: null, basis: null, amountsUnknownReason: "VARIABLE_ONLY", ...resolveCurrency(text, selectedCurrency) };
   }
   const amounts = resolveAmounts(text);
   const stated = amounts.minimum !== null || amounts.maximum !== null;

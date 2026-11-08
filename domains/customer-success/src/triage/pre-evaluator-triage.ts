@@ -144,7 +144,7 @@ function salaryReasons(
     UNKNOWN_SALARY: "Base salary is Unknown.",
     UNKNOWN_CURRENCY: "Salary currency is Unknown or unsupported.",
     UNKNOWN_RESIDENCY: "Salary compatibility depends on an unresolved residency requirement.",
-    OTE_NOT_CONFIRMED_BASE: "The disclosed compensation is OTE, not confirmed base salary.",
+    OTE_NOT_CONFIRMED_BASE: "The disclosed compensation includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary.",
     CONFLICTING_SALARY: "The normalized salary bounds conflict.",
     CONFLICTING_RESIDENCY: "The structured residency evidence conflicts.",
     US_THRESHOLD: "The definite base-salary ceiling is below the U.S. hard minimum.",

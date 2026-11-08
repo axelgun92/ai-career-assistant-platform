@@ -8,7 +8,7 @@ import { ExternalLink, safeExternalUrl } from "@/components/external-link";
 import { OpportunityActions } from "@/components/opportunity-actions";
 import { OpportunityProvenance } from "@/components/opportunity-provenance";
 import { PostingHistory, toPostingHistoryListing } from "@/components/posting-history";
-import { isNoLongerListed } from "@ai-career/core";
+import { isNoLongerListed, normalizationCorrectionsOf } from "@ai-career/core";
 import { getListingHistory } from "@/server/retrieval-service";
 import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
@@ -91,6 +91,17 @@ export default async function OpportunityPage({
   if (!detail) {
     notFound();
   }
+  // D1: when a current fact's provenance was written by a normalization
+  // correction of the same, unchanged source version (its row was written
+  // with that correction event), that correction's date.
+  const corrections = new Map(detail.sourceRecords.map((record) => [record.id, normalizationCorrectionsOf(record.sourceMetadata)]));
+  const correctionOf = (item: (typeof detail.fieldProvenance)[number]): Date | null => {
+    const created = new Date(item.createdAt).getTime();
+    const event = (corrections.get(item.sourceRecordId ?? "") ?? []).find(
+      (correction) => correction.fields.includes(item.fieldName) && Math.abs(correction.at.getTime() - created) < 60_000,
+    );
+    return event?.at ?? null;
+  };
   const lifecycle = await getOpportunityLifecyclePresentation(detail.opportunity.id).catch(
     (error: unknown) => {
       console.error("Opportunity lifecycle could not be loaded", {
@@ -379,6 +390,7 @@ export default async function OpportunityPage({
               <br />
               <span>
                 Source field: {item.sourceField}; method: {item.kind}
+                {correctionOf(item) ? `; corrected ${correctionOf(item)!.toISOString().slice(0, 10)} by the current reading rules (posting unchanged)` : ""}
               </span>
             </li>
           ))}
@@ -386,7 +398,10 @@ export default async function OpportunityPage({
         {detail.supersededProvenance?.length ? (
           <>
             <h3>Earlier provenance</h3>
-            <p>Evidence from earlier versions of the listing, replaced by a newer version. Kept for history.</p>
+            <p>
+              Evidence from earlier versions of the listing, or from an earlier reading of the same version, replaced by a newer version or by
+              a correction under the current reading rules. Kept for history.
+            </p>
             <ul className="provenance-list provenance-superseded">
               {detail.supersededProvenance.map((item) => (
                 <li key={item.id}>

@@ -98,6 +98,9 @@ export interface EvaluationSummary {
 
 export interface CaptureResponse {
   outcome: "CREATED" | "ATTACHED" | "UNCHANGED" | "CHANGED";
+  // UNCHANGED only: saved details the current reading rules corrected from
+  // the same posting (no new version was recorded).
+  normalizationCorrected?: string[];
   decision: string | null;
   opportunityId: string;
   opportunityUrl: string;

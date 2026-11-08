@@ -319,7 +319,12 @@ export function getExtensionApi(): ExtensionApiHandlers {
       ingestion,
       lookup: new PrismaExtensionLookupRepository(),
       latestEvaluation: (opportunityId) =>
-        evaluationSummaryReader(getEvaluationService(), async (id) => (await findListingVersionHint(id)) !== null)(opportunityId),
+        evaluationSummaryReader(getEvaluationService(), async (id) => {
+          // A changed posting only; a correction of the same posting's saved
+          // details is reported by the capture itself (D1).
+          const hint = await findListingVersionHint(id);
+          return hint !== null && !("correctedAt" in hint);
+        })(opportunityId),
       // Triage only at save (D2): never admission or evaluation.
       triage: async (opportunityId) => captureTriageFrom(await getEvaluationService().assessTriage(opportunityId)),
       discovery: customerSuccessDiscoveryConfiguration,

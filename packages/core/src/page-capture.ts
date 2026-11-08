@@ -140,7 +140,9 @@ export function pageCaptureRefreshReason(input: {
 
 // A job's refresh state lives in its lastReason (no schema change):
 //   REFRESH:<n>                    queued to be read again
-//   REFRESHED:<CHANGED|UNCHANGED|…>:<n>   read again
+//   REFRESHED:<CHANGED|UNCHANGED|CORRECTED|…>:<n>   read again (CORRECTED:
+//                                  unchanged posting, saved facts corrected
+//                                  by the current normalization; D1)
 //   REFRESH_<UNAVAILABLE|DEFERRED|FAILED|STOPPED>:<n>   not read again; the
 //                                  saved job is untouched
 // where <n> counts the incomplete refreshes in a row.

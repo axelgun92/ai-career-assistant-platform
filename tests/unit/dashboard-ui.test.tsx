@@ -144,7 +144,7 @@ describe("opportunity rows", () => {
     expect(visible).toContain("Evaluation deferred");
     expect(visible).toContain("Application page");
     // The normalized salary, not the raw compensation text.
-    expect(visible).toContain("Salary 90,000 USD");
+    expect(visible).toContain("Salary $90,000 USD");
     expect(visible).toContain("Acme · Remote");
   });
 
@@ -322,9 +322,9 @@ describe("normalized facts on the dashboard (Task 7 completion)", () => {
   });
 
   it("formats salary ranges without assuming a currency", () => {
-    expect(formatSalaryRange(72000, 88000, "USD")).toBe("72,000–88,000 USD");
-    expect(formatSalaryRange(80000, 80000, "GBP")).toBe("80,000 GBP");
-    expect(formatSalaryRange(70000, null, "USD")).toBe("At least 70,000 USD");
+    expect(formatSalaryRange(72000, 88000, "USD")).toBe("$72,000–$88,000 USD");
+    expect(formatSalaryRange(80000, 80000, "GBP")).toBe("£80,000 GBP");
+    expect(formatSalaryRange(70000, null, "USD")).toBe("At least $70,000 USD");
     expect(formatSalaryRange(null, 90000, null)).toBe("Up to 90,000 (currency unknown)");
     expect(formatSalaryRange(null, null, "USD")).toBeNull();
     expect(workArrangementLabel(null)).toBe("Unknown");

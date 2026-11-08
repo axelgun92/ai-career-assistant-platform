@@ -301,6 +301,23 @@ describe("retrieval provenance and dashboard", () => {
     expect(html).not.toContain("latest change found 2026-11-04");
   });
 
+  it("tells a normalization correction of the same version (D1) apart from a changed version", () => {
+    const html = renderToStaticMarkup(
+      <OpportunityProvenance
+        opportunity={{ source: "browser-extension", sourceType: "BROWSER_EXTENSION", firstSeenAt: new Date("2026-11-05T20:14:00Z"), lastSeenAt: new Date("2026-11-08T11:00:00Z"), sourceUpdatedAt: null }}
+        sourceRecords={[
+          record({
+            discoveredAt: new Date("2026-11-05T20:14:00Z"),
+            createdAt: new Date("2026-11-05T20:15:00Z"),
+            sourceMetadata: { capture: { readerRevision: 1 }, normalizationCorrections: [{ at: "2026-11-08T11:00:00.000Z", fields: ["compensationBasis", "salaryText", "applicationUrl"] }] },
+          }),
+        ]}
+      />,
+    );
+    expect(html).toContain("Read again on 2026-11-08 11:00 UTC: the posting was unchanged; saved details corrected by the current reading rules (Salary, Application link). No new version was recorded.");
+    expect(html).not.toContain("A changed version of this listing");
+  });
+
   it("hints that the latest evaluation used an earlier listing version, and shows nothing otherwise", () => {
     const html = renderToStaticMarkup(
       <ListingVersionHint hint={{ evaluatedAt: new Date("2026-10-19T12:00:00Z"), evaluatedVersionSeenAt: new Date("2026-10-18T09:00:00Z"), currentVersionSeenAt: new Date("2026-10-21T09:30:00Z") }} />,

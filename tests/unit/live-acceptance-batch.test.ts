@@ -176,7 +176,7 @@ describe("We Work Remotely: the job's sidebar, the zone tiers and the page-title
       { label: "US Zone 2", minimum: 142700, maximum: 193100, currency: "USD" },
       { label: "US Zone 3", minimum: 126800, maximum: 171600, currency: "USD" },
     ]);
-    expect(formatSalary(opportunity)).toBe("US Zone 2: 142,700–193,100 USD · US Zone 3: 126,800–171,600 USD");
+    expect(formatSalary(opportunity)).toBe("US Zone 2: $142,700–$193,100 USD · US Zone 3: $126,800–$171,600 USD");
     expect(markers(provenance, "location")).toEqual(["pageContext:labelled-location"]);
   });
 
@@ -261,7 +261,7 @@ describe("Workday (ServiceTitan): two zones stated in one statement", () => {
       { label: "Zone 1 (CA, CT, DC, MD, MA, NJ, NY, VA, WA)", minimum: 76900, maximum: 115300, currency: "USD" },
       { label: "Zone 2 (All other U.S. locations)", minimum: 71800, maximum: 107800, currency: "USD" },
     ]);
-    expect(formatSalary(opportunity)).toBe("Zone 1 (CA, CT, DC, MD, MA, NJ, NY, VA, WA): 76,900–115,300 USD · Zone 2 (All other U.S. locations): 71,800–107,800 USD");
+    expect(formatSalary(opportunity)).toBe("Zone 1 (CA, CT, DC, MD, MA, NJ, NY, VA, WA): $76,900–$115,300 USD · Zone 2 (All other U.S. locations): $71,800–$107,800 USD");
   });
 
   it("the ranges may also come before their zones", () => {

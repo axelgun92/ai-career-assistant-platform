@@ -955,6 +955,51 @@ function collectBonus(source: TextSource): Array<TextFact<string>> {
   });
 }
 
+// A target total named by a pay statement ("the target total cash
+// compensation range for this role is $106,400 USD - $197,600 USD") is often
+// defined a sentence or two later, without amounts ("Target total cash
+// compensation ranges are inclusive of both base pay and any target sales
+// incentive."; Thomson Reuters, November 7, 2026). That definition is part of
+// the statement: it says what the range is made of (final pre-live
+// corrections, November 8, 2026). Only a sentence that names the same kind
+// of total, states no amount and says what it includes or consists of; or,
+// for any pay statement, the very next sentence when it defines "this range"
+// ("Target total cash compensation range: $106,400 - $197,600 USD. This range
+// is inclusive of base salary and any target sales incentive.").
+const thisRange = /^(?:this|the|that|these)\s+(?:salary\s+|pay\s+|compensation\s+)?(?:range|ranges|amount|amounts|figure|figures|compensation|pay)\b/i;
+const targetTotalTerm = /\btarget(?:ed)?\s+total\s+(?:cash|compensation|pay|earnings)\b|\btotal\s+target(?:ed)?\s+(?:cash|compensation|pay|earnings)\b|\btarget\s+cash\s+(?:compensation|pay)\b/i;
+const totalDefinition = /\b(?:inclusive\s+of|includ(?:es|e|ing)|consists?\s+of|comprises?|(?:is|are)\s+made\s+up\s+of)\b/i;
+// A base salary statement followed (within the next sentences, with no
+// other amount between) by the employer's own statement that variable pay
+// comes in addition to that base ("In addition to base salary, this position
+// is eligible for bonus and incentive compensation …"; FourKites, November
+// 5, 2026) or that the role is also eligible for it: what the pay is made of
+// (final pre-live Salary correction, November 8, 2026). Never an on-target or
+// target-total statement (those name their own parts), never a negation, and
+// never a sentence elsewhere in the posting.
+const baseAddendum =
+  /\bin\s+addition\s+to\s+(?:the\s+|your\s+|their\s+)?base\s+(?:salary|pay|compensation)\b|^(?:this|the)\s+(?:role|position|job|opportunity)\s+(?:is\s+)?(?:also\s+)?eligible\s+for\b/i;
+const negatedEligibility = /\bnot\s+(?:be\s+)?eligible\b|\bineligible\b|\bno\s+(?:bonus|commission|incentive|equity)/i;
+const onTargetOrTotal = /\bOTE\b|\bon[- ]target\b/i;
+function definingStatement(all: string[], index: number): string | null {
+  const following = all[index + 1];
+  if (following && following.length <= 200 && thisRange.test(following) && totalDefinition.test(following) && variablePay.test(following) && !salaryAmount.test(following)) {
+    return following;
+  }
+  if (/\bbase\b/i.test(all[index]!) && !onTargetOrTotal.test(all[index]!) && !targetTotalTerm.test(all[index]!)) {
+    for (const next of all.slice(index + 1, index + 3)) {
+      if (salaryAmount.test(next)) break;
+      if (next.length <= 250 && baseAddendum.test(next) && variablePay.test(next) && !negatedEligibility.test(next)) return next;
+    }
+  }
+  if (!targetTotalTerm.test(all[index]!)) return null;
+  for (const next of all.slice(index + 1, index + 4)) {
+    if (salaryAmount.test(next)) return null;
+    if (next.length <= 200 && targetTotalTerm.test(next) && totalDefinition.test(next) && variablePay.test(next)) return next;
+  }
+  return null;
+}
+
 function collectPayStatements(source: TextSource): Array<TextFact<string>> {
   const candidates: Array<TextFact<string>> = [];
   const usable = (text: string) => text.length <= maxStatementLength && salaryAmount.test(text) && !notCompensation.test(text);
@@ -966,9 +1011,12 @@ function collectPayStatements(source: TextSource): Array<TextFact<string>> {
       }
     }
   } else {
-    for (const sentence of source.sentences) {
-      if (compensationCue.test(sentence) && usable(sentence)) candidates.push({ value: sentence, sourceField: field, sourceText: sentence });
-    }
+    source.sentences.forEach((sentence, index) => {
+      if (!compensationCue.test(sentence) || !usable(sentence)) return;
+      const defined = definingStatement(source.sentences, index);
+      const statement = defined ? `${sentence} ${defined}` : sentence;
+      candidates.push({ value: statement, sourceField: field, sourceText: statement });
+    });
   }
   // A heading such as "Annual Salary Range" followed by the amounts: every
   // amount line under it (regional tiers are listed one per line).
@@ -1262,6 +1310,27 @@ export function onTargetStatementFor(
     return { value: "OTE", sourceField: candidate.sourceField, sourceText: candidate.sourceText };
   }
   return null;
+}
+
+// The compensation statements in the posting's own text that state exactly
+// the given range (both bounds, including an open end, in no other currency),
+// with their own reading of it: they say what a range the source stated
+// elsewhere (structured amounts, a salary field) is. Only the description
+// counts, never page context; a statement about some other figure, or one
+// naming several figures (ambiguous), says nothing about this range (final
+// pre-live Salary correction, November 8, 2026).
+export function statementsForRange(
+  text: string | null,
+  range: { minimum: number | null; maximum: number | null; currency: string | null },
+): Array<TextFact<string> & { basis: "BASE" | "OTE" | null }> {
+  if (range.minimum === null && range.maximum === null) return [];
+  return collectCompensation(textSource(text, "rawText")).flatMap((candidate) => {
+    const parsed = parseCompensation(candidate.value);
+    if (parsed.minimum !== range.minimum || parsed.maximum !== range.maximum) return [];
+    if (parsed.currencyUnknownReason === "CONFLICTING_CURRENCIES") return [];
+    if (parsed.currency !== null && range.currency !== null && parsed.currency !== range.currency) return [];
+    return [{ ...candidate, basis: parsed.basis }];
+  });
 }
 
 // Several statements must say the same thing (the same amounts, reading and

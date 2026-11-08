@@ -57,7 +57,7 @@ function salaryResult(
     UNKNOWN_RESIDENCY:
       "Residency eligibility is Unknown, so the U.S. or non-U.S. salary policy cannot be selected.",
     OTE_NOT_CONFIRMED_BASE:
-      "The disclosed range is explicitly OTE, not confirmed base salary, so base-salary eligibility remains Unknown.",
+      "The disclosed range includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary, so base-salary eligibility remains Unknown.",
     CONFLICTING_SALARY:
       "The normalized salary bounds conflict, so salary eligibility remains Unknown.",
     CONFLICTING_RESIDENCY:

@@ -96,7 +96,19 @@ Supported results page (Alex's Chrome)
     - LinkedIn jobs with no employer link found get "Apply on LinkedIn (listing page)", never a careers front page; an employer link always wins.
     - Residency exclusions are kept (additive field; migration on the test database only), country-labelled salary tiers are read, and Captured Jobs shows the saved job's company and location.
     - Verified offline: unit 2,260, integration 411, E2E 60/60. Wording-specific fixes and the P2028 root cause wait for Alex's read-only E4 evidence; the acceptance-database migration and the live round need authorization.
-  - **LinkedIn Mode B Option A (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved by Alex for closeout; not LinkedIn acceptance):**
+  - **Final pre-live corrections (November 8, 2026; implemented and verified offline on top of `42a647c`; approved by Alex and committed; live acceptance pending):**
+    - Salary: one field, in the employer's terms.
+      - Displays: "(Base salary)", "base + commission", "(Includes bonuses)", "(Target total cash: base + incentives)" (Thomson Reuters), and "(OTE)" only when the employer says OTE or on-target (Dataminr).
+      - Every variable-inclusive total is internally not base salary, so the salary policy returns Unknown for it.
+      - A structured salary range takes the description's wording only from a statement of exactly that range. Unconnected or conflicting wording shows no label and never confirms base.
+    - D1 (approved contract change):
+      - An unchanged recapture (Single Capture or an eligible Mode B refresh) re-normalizes the same evidence and corrects only genuinely different, stated facts. It creates no new version and keeps user corrections and other sources' evidence.
+      - It is idempotent and triggers no evaluation.
+      - The three events (unchanged, corrected, changed) are shown distinctly.
+      - Proven on the real saved November 5–7 facts in both modes.
+    - The D1 contract is adopted in Core Platform TDD v1.20, Section 51 (approved November 8, 2026; v1.19 archived unchanged).
+    - Verified offline: unit 2,353, integration 471, E2E 60/60.
+  - **LinkedIn Mode B Option A (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved by Alex and committed as `42a647c`; not LinkedIn acceptance):**
     - The worker reads LinkedIn job pages with JavaScript off and requests only the job page's document, following its redirects. Every other subresource is refused in the browser. `PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run` restores script-enabled reading. WTTJ is unchanged.
     - Each read records its requests (documents, redirects, sent, refused by type). The evidence package summarizes jobs saved before any restriction, request totals, attempts counted, recovery and elapsed time.
     - A scriptless page without a complete posting (title, and a description of at least 200 characters) is never saved: one is the job's attempt; two in a row are the site's, with nothing counted and a one-hour wait. The 200-character minimum is a heuristic: an unusually short legitimate posting could be refused (a false positive), shown with its reason and Retry.

@@ -11,7 +11,7 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
 1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.18.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.19.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.20.docx`
 3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.16.docx`
 4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.16.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
@@ -29,7 +29,7 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 | --- | --- |
 | Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.18.docx` |
 | Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.16.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.19.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.20.docx` |
 | Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.16.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
@@ -205,7 +205,11 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   verified offline, approved November 8, 2026 (repairs only) and committed at ddf5937; LinkedIn
   Option A (job pages read with JavaScript off, document only, request counts, incomplete-page
   guard; PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run reverts) verified offline and approved for closeout
-  November 8, 2026 (not LinkedIn acceptance; no live test authorized)
+  November 8, 2026, committed at 42a647c (not LinkedIn acceptance); the final pre-live corrections
+  (Salary in the employer's terms, D1 normalization correction on unchanged recapture as approved,
+  Mode A/Mode B parity and duplicates verified on the saved November 5-7 facts) verified offline on
+  top of 42a647c, approved by Alex on November 8, 2026 and committed; the D1 contract is adopted in
+  Core Platform TDD v1.20 (Section 51; v1.19 archived unchanged); no live test authorized
 → current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

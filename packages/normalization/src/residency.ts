@@ -223,7 +223,11 @@ function readExclusion(sentence: string): { regions: string[]; remainder: string
   const unable = unableToHire.exec(sentence);
   if (unable) {
     const list = readExclusionList(sentence.slice(unable.index + unable[0].length));
-    return list ? { regions: list.regions, remainder: "" } : null;
+    // What the sentence states before the exclusion is still read
+    // ("Candidates must reside in the United States; we are unable to hire in
+    // Alaska, …": U.S. residence, with the exclusions; November 8, 2026).
+    const before = sentence.slice(0, unable.index).replace(/(?:[\s,;:–—-]|\b(?:and|but|however|although|though|that|we|currently|please\s+note)\b)+$/i, "");
+    return list ? { regions: list.regions, remainder: before } : null;
   }
   const subject = exclusionSubject.exec(sentence);
   if (subject) {

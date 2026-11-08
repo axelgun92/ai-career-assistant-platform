@@ -1,7 +1,7 @@
 // Readable labels for normalized position and compensation facts. Display
 // only: stored values are shown as recorded and null always reads Unknown.
 
-import { geographyName } from "@ai-career/core";
+import { compensationArrangement, compensationArrangementLabel, currencySign, geographyName } from "@ai-career/core";
 
 export const workArrangementChoices = [
   ["REMOTE", "Remote"],
@@ -38,21 +38,25 @@ export const employmentTypeLabel = lookup(employmentTypeChoices);
 
 const amount = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-// "72,000–88,000 USD", "At least 70,000 USD", "Up to 90,000 USD". Null when
-// no amount was stated; an unknown currency is said, never assumed.
+// "$72,000–$88,000 USD", "€50,000 EUR", "At least $70,000 USD", "Up to
+// $90,000 USD" (Salary display contract, November 8, 2026: each amount with
+// its currency's sign, the code after). Null when no amount was stated; an
+// unknown currency is said, never assumed, and no sign is guessed for it.
 export function formatSalaryRange(
   minimum: number | null | undefined,
   maximum: number | null | undefined,
   currency: string | null | undefined,
 ): string | null {
   const unit = currency ? ` ${currency}` : " (currency unknown)";
+  const sign = currencySign(currency);
+  const money = (value: number) => `${sign}${amount(value)}`;
   const min = minimum ?? null;
   const max = maximum ?? null;
   if (min === null && max === null) return null;
   if (min !== null && max !== null) {
-    return min === max ? `${amount(min)}${unit}` : `${amount(min)}–${amount(max)}${unit}`;
+    return min === max ? `${money(min)}${unit}` : `${money(min)}–${money(max)}${unit}`;
   }
-  return min !== null ? `At least ${amount(min)}${unit}` : `Up to ${amount(max!)}${unit}`;
+  return min !== null ? `At least ${money(min)}${unit}` : `Up to ${money(max!)}${unit}`;
 }
 
 export const residencyChoices = [
@@ -93,18 +97,33 @@ export function formatResidencyEligibility(
   return excluded ? `${rule}, excluding: ${excluded}` : rule;
 }
 
-// The stated range with what it is, when the posting says ("OTE", "base").
+// The stated range with what it is, when the posting establishes it, in the
+// Salary's standard wording (compensationArrangement, shared with the
+// normalizers): "$80,000–$100,000 USD (Base salary)", "$70,000 USD base +
+// commission", "$90,000–$120,000 USD (Includes bonuses)", "$106,400–$197,600
+// USD (Target total cash: base + incentives)", "$120,000 USD (OTE)". The statement is the posting's
+// own compensation text (salaryText); nothing it does not say is added.
 export function formatCompensationRange(
   minimum: number | null | undefined,
   maximum: number | null | undefined,
   currency: string | null | undefined,
   basis: string | null | undefined,
+  statement?: string | null,
 ): string | null {
   const range = formatSalaryRange(minimum, maximum, currency);
   if (!range) return null;
-  // On-target pay says what it includes (November 7, 2026: "OTE" alone did
-  // not tell a target-total-cash range from base salary).
-  return basis === "OTE" ? `${range} (OTE: base salary plus target variable pay)` : basis === "BASE" ? `${range} (base salary)` : range;
+  const label = compensationArrangementLabel(compensationArrangement(basis, statement));
+  return label ? `${range} ${label}` : range;
+}
+
+// What regional tiers are, when their statements say so ("The U.S. base
+// salary range … and the Canadian base salary range …"): the tiers have no
+// single stored basis (no range is the role's), so their own wording decides
+// (display only).
+function tierBasis(statement: string | null | undefined): "BASE" | "OTE" | null {
+  if (!statement) return null;
+  if (/\bOTE\b|\bon[- ]target\b/i.test(statement)) return "OTE";
+  return /\bbase\b/i.test(statement) ? "BASE" : null;
 }
 
 // The opportunity's salary, as shown everywhere in the product: the range
@@ -121,7 +140,7 @@ export function formatSalary(facts: {
   salaryText?: string | null;
   compensationTiers?: ReadonlyArray<{ label: string; minimum: number | null; maximum: number | null; currency: string | null }> | null;
 }): string | null {
-  const range = formatCompensationRange(facts.salaryMin, facts.salaryMax, facts.currency, facts.compensationBasis);
+  const range = formatCompensationRange(facts.salaryMin, facts.salaryMax, facts.currency, facts.compensationBasis, facts.salaryText);
   if (range) return range;
   const tiers = (facts.compensationTiers ?? [])
     .map((tier) => {
@@ -129,7 +148,9 @@ export function formatSalary(facts: {
       return amount ? `${tier.label}: ${amount}` : null;
     })
     .filter((tier): tier is string => tier !== null);
-  return tiers.length ? tiers.join(" · ") : null;
+  if (!tiers.length) return null;
+  const label = compensationArrangementLabel(compensationArrangement(tierBasis(facts.salaryText), facts.salaryText));
+  return label ? `${tiers.join(" · ")} ${label}` : tiers.join(" · ");
 }
 
 // The work arrangement as stated: one arrangement, or every option the

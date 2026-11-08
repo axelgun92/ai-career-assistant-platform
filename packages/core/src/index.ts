@@ -5,6 +5,7 @@ export * from "./geography";
 export * from "./manual-opportunity";
 export * from "./manual-opportunity-service";
 export * from "./opportunity";
+export * from "./compensation-arrangement";
 export * from "./platform";
 export * from "./raw-opportunity";
 export * from "./retrieval";

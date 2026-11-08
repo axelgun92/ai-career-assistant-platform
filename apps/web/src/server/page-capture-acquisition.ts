@@ -9,6 +9,7 @@ import {
   pageCaptureScriptlessMinDescriptionChars,
   pageCaptureSiteByKey,
   RetrievedListingNormalizationError,
+  reobservationEvent,
   type DiscoveryConfiguration,
   type ExtensionCapture,
   type PageCapturePageScripts,
@@ -263,7 +264,9 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
           item.id,
           ingested.opportunityId,
           now(),
-          refresh ? { outcome: ingested.outcome, incomplete: captureMetadata.readQuality !== "COMPLETE" || !raw.applicationUrl } : undefined,
+          // A refresh that found the posting unchanged but corrected saved
+          // facts by the current reading rules (D1) says so ("CORRECTED").
+          refresh ? { outcome: ingested.normalizationCorrected?.length ? "CORRECTED" : ingested.outcome, incomplete: captureMetadata.readQuality !== "COMPLETE" || !raw.applicationUrl } : undefined,
         );
       } catch (error) {
         throw new PageCaptureSavedError("mark", ingested.opportunityId, error);
@@ -614,7 +617,15 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
               try {
                 const ingested = await ingestor.ingest(item, built.envelope);
                 result.ingested += 1;
-                diagnostics.event("job.ingested", { ...ids(item), opportunityId: ingested.opportunityId, outcome: ingested.outcome, refresh: isPageCaptureRefresh(item.lastReason), elapsedMs: Date.now() - ingestStarted });
+                diagnostics.event("job.ingested", {
+                  ...ids(item),
+                  opportunityId: ingested.opportunityId,
+                  outcome: ingested.outcome,
+                  reobservation: reobservationEvent(ingested),
+                  corrected: ingested.normalizationCorrected ?? [],
+                  refresh: isPageCaptureRefresh(item.lastReason),
+                  elapsedMs: Date.now() - ingestStarted,
+                });
                 // The capture path works: earlier provisional failures were
                 // those jobs' own.
                 await finalizePending();

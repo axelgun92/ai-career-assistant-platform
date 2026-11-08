@@ -121,7 +121,7 @@ describe("the live round's corrections, persisted", () => {
     const captured = await capture(credential, html, `https://weworkremotely.com/remote-jobs/dropbox-customer-success-manager-${token}`);
     const detail = (await repository.findOpportunityDetail(captured.opportunityId))!;
     expect(detail.opportunity).toMatchObject({ location: "USA Only", remoteStatus: "REMOTE", employmentType: "FULL_TIME", salaryMin: null, salaryMax: null });
-    expect(formatSalary(detail.opportunity)).toBe("US Zone 2: 142,700–193,100 USD · US Zone 3: 126,800–171,600 USD");
+    expect(formatSalary(detail.opportunity)).toBe("US Zone 2: $142,700–$193,100 USD · US Zone 3: $126,800–$171,600 USD");
   });
 
   it("Remote OK: the job's own apply link, stored on the source version and the opportunity; Welcome to the Jungle: no rolling closing date", async () => {

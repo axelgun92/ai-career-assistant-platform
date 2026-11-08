@@ -99,7 +99,13 @@ export function refreshText(lastReason: string | null, readAt: string | null = n
   const reason = lastReason ?? "";
   if (/^REFRESH:\d+$/.test(reason)) return "Reading again to update";
   const read = /^REFRESHED:([A-Z_]+):\d+$/.exec(reason);
-  if (read) return read[1] === "CHANGED" ? "Updated from a new read" : "Read again: no change";
+  if (read) {
+    if (read[1] === "CHANGED") return "Updated from a new read";
+    // D1: the same posting, whose saved details the current reading rules
+    // corrected (no new version of the posting).
+    if (read[1] === "CORRECTED") return "Read again: the posting is unchanged; saved details corrected by the current reading rules";
+    return "Read again: no change";
+  }
   if (/^REFRESH_UNAVAILABLE:/.test(reason)) {
     const day = readAt && !Number.isNaN(Date.parse(readAt)) ? new Date(readAt).toISOString().slice(0, 10) : null;
     return day

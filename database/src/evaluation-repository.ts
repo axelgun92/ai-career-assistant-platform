@@ -1,5 +1,5 @@
 import { originatingVersion, residencyRequirement, storedCompensationTiers, storedEligibilityFacts, storedWorkArrangements } from "./manual-opportunity-repository";
-import type { NormalizedOpportunity } from "@ai-career/core";
+import { correctedFactLabels, normalizationCorrectionsOf, type NormalizedOpportunity } from "@ai-career/core";
 import {
   evaluationSnapshotSchema,
   persistedStageResultSchema,
@@ -689,14 +689,28 @@ export async function findListingVersionHint(opportunityId: string) {
   if (!version) return null;
   // Before the binding existed, an evaluation evaluated the first record.
   const evaluatedId = evaluation.sourceRecordId ?? evaluation.semanticOperations[0]?.sourceRecordId ?? version.origin.id;
-  if (evaluatedId === version.currentId) return null;
+  const evaluatedAt = evaluation.completedAt ?? evaluation.createdAt;
+  if (evaluatedId === version.currentId) {
+    // D1: the same version, whose saved facts a normalization correction
+    // changed after this evaluation (informational; nothing is reevaluated).
+    const current = await database.sourceRecord.findUnique({ where: { id: version.currentId }, select: { sourceMetadata: true, createdAt: true } });
+    const later = normalizationCorrectionsOf(current?.sourceMetadata).filter((correction) => correction.at > evaluatedAt);
+    if (!later.length) return null;
+    return {
+      evaluatedAt,
+      evaluatedVersionSeenAt: current?.createdAt ?? null,
+      currentVersionSeenAt: current?.createdAt ?? null,
+      correctedAt: later.at(-1)!.at,
+      correctedFacts: correctedFactLabels(later.flatMap((correction) => correction.fields)),
+    };
+  }
   const records = await database.sourceRecord.findMany({
     where: { id: { in: [evaluatedId, version.currentId] } },
     select: { id: true, createdAt: true },
   });
   const seen = (id: string) => records.find((record) => record.id === id)?.createdAt ?? null;
   return {
-    evaluatedAt: evaluation.completedAt ?? evaluation.createdAt,
+    evaluatedAt,
     evaluatedVersionSeenAt: seen(evaluatedId),
     currentVersionSeenAt: seen(version.currentId),
   };

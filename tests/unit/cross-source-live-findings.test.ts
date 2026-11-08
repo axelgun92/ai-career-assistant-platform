@@ -254,7 +254,7 @@ describe("Workday (ServiceTitan): the labelled requisition ID, and geographic sa
     // Each tier keeps the zone it is for; the Salary field shows them side by
     // side, never merged (October 27, 2026; previously Unknown).
     expect(opportunity.salaryText).toBe("Zone 1: $92,600 - $139,000 USD / Zone 2: $86,600 - $129,800 USD");
-    expect(formatSalary(opportunity)).toBe("Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD");
+    expect(formatSalary(opportunity)).toBe("Zone 1: $92,600–$139,000 USD · Zone 2: $86,600–$129,800 USD");
   });
 });
 
@@ -352,7 +352,7 @@ describe("LinkedIn (Serrala): the public job page's own facts, and regional pay 
     // Each tier keeps its region and currency; the Salary field shows them
     // side by side, never merged (October 27, 2026; previously Unknown).
     expect(opportunity.salaryText).toBe("U.S.: USD 63,000 - 75,000 / Canada: CAD 88,000 - 110,000");
-    expect(formatSalary(opportunity)).toBe("United States: 63,000–75,000 USD · Canada: 88,000–110,000 CAD");
+    expect(formatSalary(opportunity)).toBe("United States: $63,000–$75,000 USD · Canada: $88,000–$110,000 CAD");
     expect(formatWorkArrangements(opportunity)).toBe("On-site / Remote");
     expect(markers(provenance, "location")).toEqual(["rawText:labelled-location"]);
   });
@@ -490,7 +490,7 @@ describe("negative cases: the corrections never spread", () => {
 
   it("the Salary field shows only a normalized amount or range", () => {
     expect(formatSalary({ salaryMin: null, salaryMax: null, currency: null, compensationBasis: null, salaryText: "Competitive, plus equity" })).toBeNull();
-    expect(formatSalary({ salaryMin: 80000, salaryMax: 95000, currency: "USD", compensationBasis: null, salaryText: "$80K – $95K" })).toBe("80,000–95,000 USD");
+    expect(formatSalary({ salaryMin: 80000, salaryMax: 95000, currency: "USD", compensationBasis: null, salaryText: "$80K – $95K" })).toBe("$80,000–$95,000 USD");
   });
 
   it("a job board's listing link is never an application URL without evidence", async () => {

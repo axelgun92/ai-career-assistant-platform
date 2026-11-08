@@ -98,7 +98,7 @@ describe("ServiceTitan (Workday): the two zones as separate tiers, default and h
         ["Zone 1", 76900, 115300, "USD"],
         ["Zone 2", 71800, 107800, "USD"],
       ]);
-      expect(formatSalary(opportunity), name).toBe("Zone 1: 76,900–115,300 USD · Zone 2: 71,800–107,800 USD");
+      expect(formatSalary(opportunity), name).toBe("Zone 1: $76,900–$115,300 USD · Zone 2: $71,800–$107,800 USD");
     }
   });
 
@@ -136,7 +136,7 @@ describe("We Work Remotely: the stored default captures (header only) still name
 
   it("the highlighted captures: the zone tiers, and the Pacific Time overlap", async () => {
     const dropbox = (await normalizer.normalize(stored("wwr-dropbox-highlighted"))).opportunity;
-    expect(formatSalary(dropbox)).toBe("US Zone 2: 142,700–193,100 USD · US Zone 3: 126,800–171,600 USD");
+    expect(formatSalary(dropbox)).toBe("US Zone 2: $142,700–$193,100 USD · US Zone 3: $126,800–$171,600 USD");
     expect(formatWorkArrangements(dropbox)).toBe("Remote");
     const nlbm = (await normalizer.normalize(stored("wwr-nlbm-highlighted"))).opportunity;
     expect(nlbm).toMatchObject({ companyName: "New Law Business Model", remoteStatus: "REMOTE", employmentType: "FULL_TIME" });
@@ -194,7 +194,7 @@ describe("We Work Remotely (rendered): the default capture reads the whole posti
     expect(extraction.posting!.description).toContain("US Zone 2");
     expect(extraction.posting!.description).not.toContain("Related Jobs");
     expect(opportunity).toMatchObject({ companyName: "Dropbox", location: "United States of America", remoteStatus: "REMOTE", employmentType: "FULL_TIME", salaryMin: null, salaryMax: null });
-    expect(formatSalary(opportunity)).toBe("US Zone 2: 142,700–193,100 USD · US Zone 3: 126,800–171,600 USD");
+    expect(formatSalary(opportunity)).toBe("US Zone 2: $142,700–$193,100 USD · US Zone 3: $126,800–$171,600 USD");
   });
 
   it("New Law Business Model: company, the annualized range over the sidebar's bucket, and the Pacific overlap", async () => {

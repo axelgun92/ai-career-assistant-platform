@@ -80,7 +80,9 @@ describe("Thomson Reuters: target total cash compensation", () => {
       expect(opportunity).toMatchObject({ salaryMin: 106_400, salaryMax: 197_600, currency: "USD", compensationBasis: "OTE" });
       // Eight weeks a year from anywhere is a benefit: no arrangement.
       expect(opportunity).toMatchObject({ remoteStatus: null, workArrangements: [] });
-      expect(formatCompensationRange(106_400, 197_600, "USD", "OTE")).toBe("106,400–197,600 USD (OTE: base salary plus target variable pay)");
+      // Shown in the employer's own terms, with what it is made of; never
+      // relabelled OTE (final pre-live corrections, November 8, 2026).
+      expect(formatCompensationRange(106_400, 197_600, "USD", "OTE", opportunity.salaryText as string)).toBe("$106,400–$197,600 USD (Target total cash: base + incentives)");
     });
   }
 

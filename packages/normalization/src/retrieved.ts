@@ -1,10 +1,12 @@
 import {
   applicationUrlProvenance,
+  compensationArrangement,
   compensationCurrencyCodes,
   normalizedOpportunitySchema,
   retrievedSourceFactsSchema,
   retrievedStructuredFieldsSchema,
   scanGeography,
+  type CompensationBasis,
   type CompensationCurrency,
   type CompensationTier,
   type FieldProvenanceInput,
@@ -14,7 +16,7 @@ import {
   type RetrievedStructuredFields,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
-import { onTargetStatementFor, readJobTextFacts, relativePostedDate, remoteByExceptionValue, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
+import { readJobTextFacts, statementsForRange, relativePostedDate, remoteByExceptionValue, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
 import { primaryCountryTier } from "./salary-tiers";
 import { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, withdrawalSourceFields } from "./withdrawal";
@@ -352,7 +354,7 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         const original = sourceSalaryText ? rawOpportunity.salaryText : sourceFacts.compensationText;
         record("salaryText", salaryField!, statedSalaryText === original ? "DIRECT" : "DETERMINISTIC", statedSalaryText, original);
       }
-      const salaryText = statedSalaryText ?? (structuredAmounts ? null : fallback("salaryText", facts.compensation));
+      let salaryText = statedSalaryText ?? (structuredAmounts ? null : fallback("salaryText", facts.compensation));
       // Structured amounts state no basis; the source's own salary text may,
       // when it states the same range.
       if (structuredAmounts && statedSalaryText) {
@@ -385,12 +387,43 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
           );
         }
       }
-      // The description may call the same range on-target earnings: OTE
-      // takes precedence over a basis the source left open or gave as base.
-      const onTarget = compensationBasis === "OTE" ? null : onTargetStatementFor(rawOpportunity.description, { minimum: salaryMin, maximum: salaryMax, currency });
-      if (onTarget) {
-        compensationBasis = onTarget.value;
-        basisEvidence = onTarget;
+      // What the range is, when the salary text does not say: the employer's
+      // own statement of the same amounts in the description (structured
+      // amounts, a salary field or a source compensation text state the
+      // numbers only). Only a statement of exactly this range counts, never
+      // variable pay mentioned elsewhere. One reading: it becomes the
+      // salary text (shown, with its provenance; the source's own text stays
+      // in the source record) and its basis applies. Statements that
+      // disagree, with each other or with the salary text's own reading,
+      // establish nothing but caution: if any says the range includes
+      // variable pay it is not confirmed base salary (OTE basis internally),
+      // and the salary text is kept, so nothing unsupported is shown (final
+      // pre-live Salary correction, November 8, 2026).
+      const readingOf = (basis: CompensationBasis | null, statement: string) => {
+        const arrangement = compensationArrangement(basis, statement);
+        return arrangement || basis ? `${basis ?? ""}|${arrangement?.kind ?? ""}|${arrangement?.components.join(",") ?? ""}` : null;
+      };
+      const ownReading = salaryText ? readingOf(compensationBasis, salaryText) : null;
+      const described = statementsForRange(rawOpportunity.description, { minimum: salaryMin, maximum: salaryMax, currency })
+        .filter((statement) => statement.value !== salaryText)
+        .map((statement) => ({ ...statement, reading: readingOf(statement.basis, statement.value) }))
+        .filter((statement): statement is typeof statement & { reading: string } => statement.reading !== null);
+      const readings = new Set([...(ownReading ? [ownReading] : []), ...described.map((statement) => statement.reading)]);
+      if (described.length && readings.size === 1 && !ownReading) {
+        const statement = described[0]!;
+        for (let index = provenance.length - 1; index >= 0; index -= 1) if (provenance[index]!.fieldName === "salaryText") provenance.splice(index, 1);
+        salaryText = statement.value;
+        record("salaryText", statement.sourceField, "DETERMINISTIC", statement.value, statement.sourceText);
+        if (statement.basis) {
+          compensationBasis = statement.basis;
+          basisEvidence = statement;
+        }
+      } else if (described.length && readings.size > 1 && compensationBasis !== "OTE") {
+        const variable = described.find((statement) => statement.basis === "OTE");
+        if (variable) {
+          compensationBasis = "OTE";
+          basisEvidence = variable;
+        }
       }
       if (compensationBasis !== null && basisEvidence) {
         record("compensationBasis", basisEvidence.sourceField, "DETERMINISTIC", compensationBasis, basisEvidence.sourceText);

@@ -156,23 +156,30 @@ describe("source-version check: the production normalization path", () => {
     expect(comparable(result.provenance)).toEqual(comparable(await database.fieldProvenance.findMany({ where: { sourceRecordId: ingested.sourceRecordId } })));
   });
 
-  it("shows where a record stored by older normalization differs, and picks the version a 'Nothing changed' recapture observed", async () => {
+  it("shows where a record stored by older normalization differs; an unchanged recapture then corrects it on the same version (D1)", async () => {
     const pageUrl = `https://job-boards.greenhouse.io/healthie-stale-${randomUUID().slice(0, 8)}/jobs/4425790009`;
     const captured = await capturePage(pageUrl);
     // Test setup only: make the stored record look like one normalized
     // before v7 (OTE bounds dropped, no basis).
     await database.opportunity.update({ where: { id: captured.opportunityId }, data: { salaryMin: null, salaryMax: null, compensationBasis: null } });
-    expect((await capturePage(pageUrl)).outcome).toBe("UNCHANGED");
 
     const read = (await readStoredSourceVersion(readOnly, { opportunityId: captured.opportunityId }))!;
     const result = await renormalizeStoredSourceVersion(read.version);
     const differing = compareWithStoredFacts(read.opportunity, result).filter((row) => row.differs);
     expect(differing.map((row) => row.label)).toEqual(["Salary (as shown)", "Salary minimum", "Salary maximum", "Compensation basis"]);
-    expect(differing[0]).toMatchObject({ stored: "Unknown", current: "105,000–155,000 USD (OTE: base salary plus target variable pay)" });
+    expect(differing[0]).toMatchObject({ stored: "Unknown", current: "$105,000–$155,000 USD (OTE)" });
     const report = formatSourceVersionCheck({ database: databaseName, read, result });
     expect(report).toContain("* Salary (as shown)");
     expect(report).toContain("4 fact(s) marked * differ");
     expect(report).toContain("Nothing in the database was changed.");
+
+    // The same page captured again ("Nothing changed" in the posting): the
+    // current normalization corrects the saved facts from the same version,
+    // and the check then finds nothing to differ.
+    expect(await capturePage(pageUrl)).toMatchObject({ outcome: "UNCHANGED", normalizationCorrected: ["Salary"] });
+    const reread = (await readStoredSourceVersion(readOnly, { opportunityId: captured.opportunityId }))!;
+    expect(reread.version.id).toBe(read.version.id);
+    expect(compareWithStoredFacts(reread.opportunity, await renormalizeStoredSourceVersion(reread.version)).filter((row) => row.differs)).toEqual([]);
   });
 });
 

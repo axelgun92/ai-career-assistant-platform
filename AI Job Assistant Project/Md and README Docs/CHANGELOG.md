@@ -10,7 +10,31 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
 
-### LinkedIn Mode B — Option A, Script-Disabled Job Pages (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved for closeout; not LinkedIn acceptance)
+### Final Pre-Live Corrections — D1, Salary Accuracy and Capture Parity (November 8, 2026; verified offline on top of `42a647c`; approved and committed; live acceptance pending)
+
+- **Salary field (one field, in the employer's terms).** Each amount carries its currency sign and code. What the range is follows the amounts:
+  - "(Base salary)";
+  - "base + commission";
+  - "+ bonus";
+  - "(Includes bonuses)";
+  - "(Target total cash: base + incentives)";
+  - "(OTE)", only when the employer says OTE or on-target.
+
+  Target total cash is never relabelled OTE. A target total's defining sentence (Thomson Reuters) is kept with its statement. "Pay equity", "internal equity" and negated variable pay add nothing. A shared Core reading (`compensation-arrangement.ts`) serves every Salary view.
+- **Structured salary and job-description wording.** A structured range (or a source salary field) takes the description's wording only from a statement of exactly that range, which becomes the Salary text; the source's own text stays in the source record. Wording elsewhere is never applied. Conflicting statements show no label and are not confirmed base. A base salary statement keeps the employer's explicit "in addition to base salary … eligible for …" sentence: FourKites shows "base + bonus + incentives + equity".
+- **Compensation basis (internal).** Every variable-inclusive total (OTE, target total, "including bonuses") is recorded as OTE internally, so the salary policy never treats it as base salary. The two user-visible reason sentences now say "includes variable pay (such as OTE, target total cash or bonuses)". Variable pay alone is never a salary.
+- **D1: normalization correction on an unchanged recapture (approved November 8, 2026).** It applies to Single Capture and eligible Mode B refreshes of the originating browser-extension listing.
+  - The same evidence is re-normalized, and only stated, genuinely different fact groups are updated, from the same source version (no new version), with superseded provenance kept.
+  - User corrections, other sources' evidence, application-link precedence and age-derived posting dates are kept. Nothing is cleared for being unread.
+  - It is idempotent and makes no evaluation request.
+  - The event is recorded on the source record, and the three events are shown distinctly in the popup, the Mode B status, the job page, the evaluation hint and the worker diagnostics.
+  - Automated adapters, attached copies and manual jobs are unchanged, and there is no backfill.
+- **Specs:** Core Platform TDD v1.20 adopts D1 in Section 51 (approved by Alex on November 8, 2026). It carries amendments A–C, the clarified unchanged-content hash and no provisional wording. v1.19 is archived unchanged.
+- **Mode A / Mode B parity** is proven through the real paths, with D1, on real LinkedIn and WTTJ pages and the saved November 5–7 facts. Duplicates: exact matches are reused, possible duplicates stay flagged and unmerged, and different listings stay separate.
+- **Residency:** a U.S. requirement and an "unable to hire in …" exclusion in one sentence now keep both.
+- Verified offline: unit 2,353, integration 471, E2E 60/60.
+
+### LinkedIn Mode B — Option A, Script-Disabled Job Pages (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved and committed as `42a647c`; not LinkedIn acceptance)
 
 - **LinkedIn job pages are read without their scripts:** JavaScript off, and only the job page's own document is requested, its redirects followed. Every stylesheet, image, font, frame and other subresource is refused in the browser. Reversible with `PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run`. WTTJ (background tabs) and feature 14's browser sources are unchanged.
 - **Per-job request counts** (document requests, redirects, requests sent, requests refused by type) in the worker's diagnostics, page evidence, pass results and log line. The evidence package gains `retrieval-summary.json`: jobs saved before any restriction, request totals, attempts counted, recovery and elapsed time.

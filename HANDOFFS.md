@@ -2078,7 +2078,7 @@ When later extension work is explicitly authorized:
 **Date:** November 8, 2026
 **From:** Claude main-product workstream
 **To:** Alex (review and closeout; the controlled LinkedIn live test); Codex (boundary awareness)
-**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `ddf5937`; approved by Alex for repository closeout on November 8 (not LinkedIn acceptance; no live test authorized). No live LinkedIn or WTTJ request was made.
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `ddf5937`; approved by Alex on November 8 and committed as `42a647c` (not LinkedIn acceptance; no live test authorized). No live LinkedIn or WTTJ request was made.
 
 #### Completed
 
@@ -2113,3 +2113,170 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The incomplete-page guard (no scriptless page is saved as a full read without a complete posting), and the default `skip` for LinkedIn with its `run` override.
+
+### Handoff: Final Pre-Live Corrections — D1, Salary Accuracy and Capture Parity (Claude; shared-boundary record)
+
+**Date:** November 8, 2026
+**From:** Claude main-product workstream
+**To:**
+- Alex: review and closeout, separate review of the proposed TDD amendment below, and the local acceptance sequence.
+- Codex: boundary awareness.
+
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `42a647c`. Approved by Alex on November 8, 2026 for repository closeout and committed with this record. The D1 contract is adopted in Core Platform TDD v1.20 (Section 51; v1.19 archived unchanged). No live request and no paid call were made. Live acceptance is pending.
+
+#### Completed
+
+- **Salary, in the employer's terms.**
+  - `packages/core/src/compensation-arrangement.ts` holds the shared reading and labels: OTE only for explicit wording, target total in its own terms, base, base plus named variable pay, and includes variable pay. The formatters are in `apps/web/src/components/opportunity-facts.ts`.
+  - `packages/normalization/src/compensation.ts`: every variable-inclusive total is internally basis OTE; variable-only statements are not a salary.
+  - `job-text-facts.ts` keeps a target total's defining sentence (or a following "This range includes …" sentence) with its statement, and keeps an explicit "in addition to base salary … eligible for …" sentence with its base statement.
+  - Structured ranges (correction after Alex's review): `statementsForRange` links the description's wording to the range only through a statement of exactly that range. Unconnected wording is ignored; conflicting wording shows no label and is not confirmed base.
+- **D1** (approved November 8, 2026), in `database/src/manual-opportunity-repository.ts`: an unchanged browser-extension re-observation of the originating, current version re-normalizes the same evidence and corrects only stated, differing fact groups.
+  - It keeps user corrections, other listings' evidence, application-link precedence and age-derived posting dates.
+  - Its provenance cites the same source record.
+  - It records `sourceMetadata.normalizationCorrections` and returns `normalizationCorrected`.
+  - It is idempotent and makes no evaluation request.
+- **The three events** come from Core `reobservationEvent()` / `correctedFactLabels()` / `normalizationCorrectionsOf()` and are shown in:
+  - the Mode B status (`REFRESHED:CORRECTED`);
+  - the popup message;
+  - the job page source panel and provenance rows;
+  - the evaluation hint (`findListingVersionHint` `correctedAt`);
+  - the worker diagnostics (`reobservation`, `corrected`).
+- Residency: a U.S. requirement and an exclusion in one sentence now keep both (`residency.ts`).
+- Tests:
+  - `tests/integration/mode-a-mode-b-parity.test.ts` (44 tests, including structured-salary parity: parity, duplicates, D1 synthetic contract cases, D1 on the saved November 5–7 facts in Mode A, Mode B LinkedIn and the WTTJ tabs);
+  - `tests/unit/salary-display-contract.test.tsx` (26);
+  - `tests/unit/d1-reobservation-events.test.tsx` (6);
+  - updated `source-version-check` and display-string tests.
+
+#### Current Contract / Assumptions
+
+- `compensationBasis` keeps its vocabulary (BASE, OTE or null). Its meaning widened: OTE now means "includes variable pay, not confirmed base salary" (explicit OTE, target total or including bonuses). The display reads the employer's wording, never the basis alone.
+- Mode A and Mode B share one reader, envelope builder, capture mapping, normalizer and repository, so D1 and any normalization change reach both.
+- D1 is limited to browser-extension re-observations of the originating listing. Automated adapters, attached copies and manual jobs are unchanged, and there is no backfill.
+
+#### Files Changed in Codex-Owned Areas
+
+- `domains/customer-success/src/triage/pre-evaluator-triage.ts` and `domains/customer-success/src/evaluation/hard-filters.ts`: only the user-visible sentence for `OTE_NOT_CONFIRMED_BASE`. It now reads "includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary", so a non-OTE total is never called OTE.
+- The reason code, the policy, the evaluator stages, models, prompts, routing and schemas are unchanged.
+- `tests/unit/customer-success.test.ts`: one expectation updated for that sentence.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Final Pre-Live Corrections): unit 2,353, integration 471, E2E 60/60; the gate and migration check are clean.
+- A temporary probe on the unredacted stored versions (private evidence, test database, deleted afterwards) gave, for every record:
+  - the stored hash reproduced;
+  - one correction;
+  - one version;
+  - zero evaluations.
+
+#### Known Issues / Blockers
+
+- Nothing is live-verified.
+- WTTJ November 4 record gaps are extraction gaps: they arrive as changed postings (new versions), not as D1 corrections.
+
+#### Next Task
+
+- The Phase 1 runbook against the new commit, with each live step separately authorized by Alex.
+
+#### Do Not Change Without Coordination
+
+- The Salary wording and shared reading.
+- The BASE/OTE/null vocabulary of `compensationBasis` and its widened OTE meaning.
+- The D1 rules: evidence-only, no new version, idempotent, no evaluation.
+
+#### AMENDMENT RECORD — Core Platform TDD v1.19 → v1.20, Section 51 (D1)
+
+Status: APPROVED by Alex on November 8, 2026 and adopted as Core Platform TDD v1.20, with v1.19 archived unchanged. The adopted text below was proposed; v1.20 differs from it in two approved clarifications:
+- Paragraph B says "the same content hash: the hash over the listing's material fields defined above, which page noise such as layout, navigation or widget changes does not alter". The implementation uses one content hash.
+- Paragraph C says "Version 1.20 records D1", with no "(proposed)".
+Behaviour: D1 was approved on November 8, 2026 and is implemented on integration/final-evaluator-product (uncommitted). It is verified offline only; live acceptance is pending.
+Scope: Section 51, Automated Retrieval (Feature 11A): the re-observation paragraph, the current-version projection paragraph and its "History of this rule" paragraph. No other section, and not the Core AI Framework PRD v1.18, which does not state this rule.
+
+##### A. Re-observation paragraph
+
+Old (v1.19, verbatim):
+> "Unchanged content (the same hash over the listing's material fields, which excludes volatile metadata such as fetch times, counters, tracking parameters and source update stamps) moves only the last-seen times."
+
+Replacement:
+> "Unchanged content (the same hash over the listing's material fields, which excludes volatile metadata such as fetch times, counters, tracking parameters and source update stamps) moves the last-seen times. It never adds a source record.
+>
+> Normalization correction (D1, approved November 8, 2026). This applies to a browser-extension re-observation: a Single Capture, or a Mode B refresh that the selective re-observation rules made eligible. The re-observation must be of the listing the opportunity was found from, and its stored version must be the listing's current one.
+>
+> The stored evidence is then normalized again by the current shared normalizer and compared with the opportunity's current facts, field group by field group. A group is replaced only when all of the following hold:
+>
+> - the current reading states a value for it, or recognizes an explicit withdrawal;
+> - that value differs from the saved one;
+> - no fact in the group is user-corrected;
+> - no fact in the group is currently backed by another listing's evidence.
+>
+> A posting date computed from a stated age is never corrected, and a fact the current reading does not state is never cleared. The application link keeps its precedence rules.
+>
+> Corrected facts cite the same source record. The rows they replace are marked superseded, and the correction is recorded on that source record as a normalization-correction event (its time and the facts it changed).
+>
+> A repeat re-observation of the same evidence corrects nothing and writes no fact or provenance. Nothing is evaluated or requested.
+>
+> Automated adapters, attached copies from other sources and manual opportunities are not corrected this way, and there is no global backfill. The three events (an unchanged observation, a normalization correction and a source-content change) are distinguished in persistence, provenance, diagnostics and the user interface."
+
+##### B. Current-version projection paragraph, last sentence
+
+Old (v1.19, verbatim):
+> "Unchanged re-observations (the same content hash, including page noise) change nothing."
+
+Replacement:
+> "Unchanged re-observations (the same content hash, including page noise) never add a version. They change the opportunity's facts only as a normalization correction (above). Any other unchanged re-observation changes nothing."
+
+##### C. History of this rule, last sentence
+
+Old (v1.19, verbatim):
+> "Opportunities saved earlier keep their facts until their originating listing is next observed as changed; nothing is backfilled."
+
+Replacement:
+> "Opportunities saved earlier keep their facts until their originating listing is next observed, either changed (a new version) or, for a browser-extension listing, unchanged (a normalization correction of the same version). Nothing is backfilled globally. Version 1.20 (proposed) records D1: the November 5–7 acceptance records showed that the rule 'unchanged changes nothing' kept facts an earlier normalizer had misread, even after the user captured the same posting again."
+
+##### D. Rationale
+
+1. **The evidence.** All 14 saved records from November 5–7 reproduce their stored content hash exactly today. So under v1.19, capturing them again would be UNCHANGED, and they would keep their misread facts for as long as the employer leaves the posting untouched:
+   - TENEX.AI: arrangement "Unknown", which should be Hybrid with remote only by exception;
+   - Nearmap: arrangement and residency;
+   - Thomson Reuters: no compensation basis, and its target total cash range shown without its terms;
+   - Critical Start: closing date;
+   - AlertMedia: arrangement and residency exclusions;
+   - Juniper Square: tiers;
+   - several application links.
+
+   The user's own re-capture, the natural corrective action, did nothing.
+2. **Bounded and user-initiated.**
+   - Only a capture the user performs, or a Mode B refresh the existing eligibility rules already select, re-reads a job. There is no sweep, schedule or global backfill.
+   - Mode B eligibility is unchanged.
+   - Automated adapters are excluded, so routine feed runs never rewrite facts.
+3. **Evidence-safe.**
+   - The same evidence rules as a changed version apply:
+     - only stated values;
+     - groups changed as a unit;
+     - never clearing for absence;
+     - user corrections kept;
+     - another source's evidence kept.
+   - Two further protections apply:
+     - only genuinely different values are written, so the correction is idempotent and makes no needless writes;
+     - observation-time-dependent dates are excluded.
+4. **History and evidence preserved.**
+   - No source record is added or altered, apart from the additive correction event and its normalized time.
+   - Superseded provenance stays queryable.
+   - Duplicate relationships, first-discovered data and evaluation bindings are untouched.
+   - An evaluation made before a correction is flagged on the job page (informational only).
+5. **Changed-page versioning is unchanged.** A changed posting still adds a linked version and re-projects from it.
+
+##### E. Verification (offline only)
+
+- Isolated test database `ai_career_assistant_test`:
+  - Mode A (the real capture route and service);
+  - Mode B LinkedIn (results-page save, worker pass, scriptless reader);
+  - Mode B WTTJ (background-tab ingestor).
+- Real saved facts for: TENEX.AI, Nearmap, Thomson Reuters, Critical Start, AlertMedia, Juniper Square, Dataminr, FourKites (LinkedIn and WTTJ) and Beam.
+- A probe on the unredacted stored versions:
+  - every stored hash was reproduced;
+  - each record was corrected once;
+  - one version each;
+  - zero evaluations.
+- No live site and no other database was used. Live acceptance remains pending.

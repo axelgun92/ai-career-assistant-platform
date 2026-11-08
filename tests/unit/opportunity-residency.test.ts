@@ -310,3 +310,22 @@ describe("dashboard query and display", () => {
     expect(Object.values(residencyOptions).filter((value) => value !== "UNKNOWN")).toEqual([...residencyRequirementValues]);
   });
 });
+
+// November 8, 2026 (pre-live audit): an "unable to hire / do not hire in …"
+// exclusion in the same sentence as the residence requirement dropped the
+// requirement (the whole sentence was consumed); the job showed only "Not
+// eligible: …". What the sentence states before the exclusion is read.
+describe("a residence requirement and its exclusions in one sentence", () => {
+  it.each([
+    "Candidates must reside in the United States; we are unable to hire in Alaska, Hawaii or Montana.",
+    "Candidates must reside in the United States, but we do not hire candidates residing in the following states: Alaska, Hawaii, Montana.",
+  ])("%s", (rawText) => {
+    const parsed = parseResidency({ location: null, rawText, remote: true });
+    expect(parsed).toMatchObject({ requirement: "US_REQUIRED", regions: ["US"], exclusions: ["US-AK", "US-HI", "US-MT"] });
+  });
+
+  it("an exclusion with nothing stated before it still adds no requirement", () => {
+    const parsed = parseResidency({ location: null, rawText: "Please note that we currently do not hire candidates residing in the following states: Alaska, Hawaii, Montana.", remote: true });
+    expect(parsed).toMatchObject({ requirement: null, exclusions: ["US-AK", "US-HI", "US-MT"] });
+  });
+});

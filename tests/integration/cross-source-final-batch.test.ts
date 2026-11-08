@@ -80,10 +80,10 @@ describe("labelled pay tiers and variable pay, persisted", () => {
     ]);
 
     const detail = (await repository.findOpportunityDetail(first.opportunityId))!;
-    expect(formatSalary(detail.opportunity)).toBe("Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD");
+    expect(formatSalary(detail.opportunity)).toBe("Zone 1: $92,600–$139,000 USD · Zone 2: $86,600–$129,800 USD");
     const listed = await new PrismaOpportunityListRepository().listPage({ filters: { searchTerms: [token] }, sort: "newest", page: 1, pageSize: 25 });
     const row = listed.items.find((item) => item.id === first.opportunityId)!;
-    expect(formatSalary(row)).toBe("Zone 1: 92,600–139,000 USD · Zone 2: 86,600–129,800 USD");
+    expect(formatSalary(row)).toBe("Zone 1: $92,600–$139,000 USD · Zone 2: $86,600–$129,800 USD");
 
     const subject = (await evaluations.loadSubject({ opportunityId: first.opportunityId, userProfileId: null }))!;
     expect(fieldsWithheldFromEvaluator).toEqual(expect.arrayContaining(["compensationTiers", "bonus"]));

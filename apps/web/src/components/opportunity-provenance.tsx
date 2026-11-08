@@ -1,4 +1,4 @@
-import type { ManualOpportunityDetail } from "@ai-career/core";
+import { correctedFactLabels, normalizationCorrectionsOf, type ManualOpportunityDetail } from "@ai-career/core";
 import { describeMatchedOn } from "./duplicate-labels";
 import { ExternalLink } from "./external-link";
 import { retrievalSummary } from "./sources/source-labels";
@@ -144,6 +144,14 @@ export function OpportunityProvenance({
                   (source record <code>{record.previousSourceRecordId}</code>).
                 </p>
               ) : null}
+              {normalizationCorrectionsOf(record.sourceMetadata).map((correction, index) => (
+                // D1: the same version read again and its saved facts
+                // corrected by the current reading rules (no new version).
+                <p key={`correction-${index}`} className="source-record-duplicate">
+                  Read again on {timestamp(correction.at)}: the posting was unchanged; saved details corrected by the current reading
+                  rules ({correctedFactLabels(correction.fields).join(", ")}). No new version was recorded.
+                </p>
+              ))}
               {record.duplicateDecision === "MATCH" ? (
                 <p className="source-record-duplicate">
                   Added as another source on {timestamp(record.discoveredAt)}: an exact duplicate of this opportunity

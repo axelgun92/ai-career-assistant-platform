@@ -262,8 +262,12 @@ describe("compensation basis: the job description may say a source-stated range 
     const { opportunity, provenance } = await normalizer.normalize(
       listing("Compensation: OTE $120,000 - $150,000 (50/50 base and variable).", { structured: {}, salaryText: "$120,000 - $150,000" }),
     );
-    expect(opportunity).toMatchObject({ salaryText: "$120,000 - $150,000", salaryMin: 120000, salaryMax: 150000, currency: "USD", compensationBasis: "OTE" });
+    // The employer's statement of that range is the Salary's text (so it
+    // shows "(OTE)"); the source's own text stays in its source record
+    // (final pre-live Salary correction, November 8, 2026).
+    expect(opportunity).toMatchObject({ salaryText: "Compensation: OTE $120,000 - $150,000 (50/50 base and variable).", salaryMin: 120000, salaryMax: 150000, currency: "USD", compensationBasis: "OTE" });
     expect(basisRows(provenance).map((row) => row.sourceField)).toEqual(["rawText:explicit-compensation-statement"]);
+    expect(provenance.filter((row) => row.fieldName === "salaryText").map((row) => row.sourceField)).toEqual(["rawText:explicit-compensation-statement"]);
   });
 
   it("OTE takes precedence over a base reading of that same range", async () => {
