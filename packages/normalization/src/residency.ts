@@ -243,10 +243,27 @@ function readExclusion(sentence: string): { regions: string[]; remainder: string
   return null;
 }
 
+// The continental (contiguous) United States, stated as where the role may
+// be done or where candidates must be: the lower 48 states and D.C., so U.S.
+// residence excluding Alaska and Hawaii (November 7, 2026: "Fully remote
+// within the continental United States" read as the whole U.S.).
+const continentalUs = /\b(?:continental|contiguous)\s+(?:united\s+states|u\.?s\.?a?\.?)(?![a-z])|\blower\s+48\b/i;
+const placeStatement = /\b(?:remote(?:ly)?|reside|resident|residing|live|living|based|located|location|candidates?|applicants?|eligible|work\s+from|hire|hiring)\b/i;
+const continentalExclusions = ["US-AK", "US-HI"];
+
 export function parseResidency(input: { location: string | null; rawText: string | null; remote?: boolean; pageStatements?: readonly string[] }): ParsedResidency {
   const statements: ResidencyStatement[] = [];
   const exclusions: string[] = [];
   const exclusionStatements: string[] = [];
+  // A labelled or stated "fully remote within <place>" (the role's place
+  // line) reads like a remote location: "Role Location: Fully remote within
+  // the continental United States".
+  for (const original of sentences(input.rawText ?? "")) {
+    const value = /^(?:job\s+|work\s+|role\s+|position\s+)?location\s*[:：]\s*(.+)$/i.exec(original)?.[1];
+    if (!value || !/^(?:fully\s+|100%\s+)?remote\b/i.test(value)) continue;
+    const regions = readLocation(value.replace(/^((?:fully\s+|100%\s+)?remote)\s+(?:within|in|across|throughout)\s+(?:the\s+)?/i, "$1 ").replace(/\b(?:continental|contiguous)\s+/i, "").replace(/[.]+$/, ""));
+    if (regions && !qualifier.test(value)) statements.push({ source: "rawText", sentence: original, regions });
+  }
   let qualified = false;
   if (input.location) {
     const regions = readLocation(input.location);
@@ -274,6 +291,14 @@ export function parseResidency(input: { location: string | null; rawText: string
     const result = readSentence(sentence);
     if (result === "QUALIFIED") qualified = true;
     else if (result) statements.push({ source: "pageContext", sentence, regions: result.regions });
+  }
+  // The continental U.S., where a statement places the role or its
+  // candidates in the U.S., excludes Alaska and Hawaii.
+  const continental = [...statements.map((statement) => statement.sentence), ...sentences(input.rawText ?? "")]
+    .find((sentence) => continentalUs.test(sentence) && placeStatement.test(sentence) && !qualifier.test(sentence));
+  if (continental && statements.some((statement) => statement.regions.includes("US"))) {
+    exclusions.push(...continentalExclusions);
+    if (!exclusionStatements.includes(continental)) exclusionStatements.push(continental);
   }
   const excluded = { exclusions: [...new Set(exclusions)], exclusionStatements };
   const unknown = (reason: ParsedResidency["unknownReason"]): ParsedResidency => ({

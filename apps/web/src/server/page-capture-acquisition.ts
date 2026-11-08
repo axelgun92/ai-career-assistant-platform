@@ -89,7 +89,8 @@ export interface PageCaptureAcquisitionDependencies {
     | "releaseClaimed"
     | "finalizeProvisionalFailure"
     | "requeueUncounted"
-  >;
+  > &
+    Partial<Pick<PrismaPageCaptureRepository, "holdForBrowser" | "releaseBrowserHold">>;
   // The capture path's health without capturing anything (a transaction that
   // takes the capture lock and commits): decides whether a lone transient
   // database failure was the job's own. Absent: such a failure stays
@@ -201,10 +202,14 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
 
   return {
     async ingest(item: PageCaptureItemRecord, capture: ExtensionCapture) {
+      // A job's first read is discovered when its card was first seen. A
+      // saved job read again (a refresh) is observed now: its new version,
+      // the listing's last observation and the job's "last seen" are the
+      // read's time, not the first sighting (November 7, 2026).
       const { raw } = capturedListing(capture, {
         pairingId: item.pairingId,
         domain: dependencies.discovery.domain,
-        receivedAt: item.firstSeenAt,
+        receivedAt: isPageCaptureRefresh(item.lastReason) ? now() : item.firstSeenAt,
         method: "batch",
       });
       const ingested = await dependencies.ingestion.ingest(raw);
@@ -245,6 +250,7 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
   const diagnostics = dependencies.diagnostics ?? noDiagnostics;
   const ingestor = createPageCaptureIngestor(dependencies);
   let recovered = false;
+  const noBrowserWarned = new Set<string>();
   const ids = (item: PageCaptureItemRecord) => ({ site: item.site, itemId: item.id, listingId: item.siteJobId, batchId: item.lastBatchId });
 
   async function failOne(item: PageCaptureItemRecord, reason: "UNREADABLE" | "NOT_INGESTED") {
@@ -272,6 +278,21 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
       }
       const at = now();
       const enabled = new Set(dependencies.detailSites());
+      const workerSites = [...enabled].filter((key) => {
+        const site = pageCaptureSiteByKey(key);
+        return site && pageCaptureDetailMechanism(site) === "server-browser";
+      });
+      // With a browser, jobs held for want of one return to the batch
+      // (uncounted; November 7, 2026).
+      if (dependencies.browser && dependencies.repository.releaseBrowserHold) {
+        for (const siteKey of workerSites) {
+          const released = await dependencies.repository.releaseBrowserHold(siteKey);
+          if (released) {
+            log.info(`page capture: ${released} job(s) waiting for a browser are queued again`);
+            diagnostics.event("site.browser", { site: siteKey, decision: "RELEASED_BROWSER_HOLD", jobs: released });
+          }
+        }
+      }
       for (const siteKey of await dependencies.repository.sitesWithQueued(at)) {
         const site = pageCaptureSiteByKey(siteKey);
         // A site read in the extension's background tabs is never fetched by
@@ -279,6 +300,21 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
         if (!site || !enabled.has(siteKey) || pageCaptureDetailMechanism(site) !== "server-browser") continue;
         const stoppedUntil = await dependencies.repository.siteStoppedUntil(siteKey, at);
         if (stoppedUntil) continue;
+        // No browser configured: a configuration problem, not the jobs'.
+        // They wait in the queue, unclaimed and uncounted, with the reason
+        // shown, and are read automatically once a worker has a browser; no
+        // job needs a Retry of its own (November 7, 2026: a worker started
+        // without RETRIEVAL_BROWSER_EXECUTABLE had moved every claimed job to
+        // Awaiting details).
+        if (!dependencies.browser) {
+          const held = (await dependencies.repository.holdForBrowser?.(siteKey)) ?? 0;
+          if (!noBrowserWarned.has(siteKey)) {
+            noBrowserWarned.add(siteKey);
+            log.warn(`page capture: ${site.name} jobs are waiting: no browser is configured (RETRIEVAL_BROWSER_EXECUTABLE); nothing is read`);
+          }
+          if (held) diagnostics.event("site.browser", { site: siteKey, decision: "HELD_NO_BROWSER", jobs: held });
+          continue;
+        }
         const items = await dependencies.repository.claimQueued(siteKey, at, pageCaptureDetailsPerPass);
         if (!items.length) continue;
         const result: AcquisitionPassResult = { site: siteKey, claimed: items.length, ingested: 0, awaitingDetails: 0, unavailable: 0, stopped: null };
@@ -288,17 +324,10 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
           jobs: items.map((item) => ({ itemId: item.id, listingId: item.siteJobId, batchId: item.lastBatchId, attempts: item.attempts, refresh: isPageCaptureRefresh(item.lastReason) })),
         });
         const passEnd = (reason: string | null) => diagnostics.event("pass.end", { ...result, reason });
-        if (!dependencies.browser) {
-          for (const item of items) {
-            await dependencies.repository.markFailed(item.id, { status: "AWAITING_DETAILS", reason: "NO_BROWSER", nextAttemptAt: null, countAttempt: false });
-          }
-          result.awaitingDetails = items.length;
-          passEnd("NO_BROWSER");
-          return result;
-        }
+        const browser = dependencies.browser;
         let driver: BrowserDriver | null = null;
         try {
-          driver = await dependencies.browser.launch();
+          driver = await browser.launch();
           const session = createBrowserSession(driver, {
             minIntervalMs: site.detail.minIntervalMs,
             maxNavigations: pageCaptureDetailsPerPass,

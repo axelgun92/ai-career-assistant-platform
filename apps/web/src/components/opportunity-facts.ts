@@ -85,6 +85,10 @@ export function formatResidencyEligibility(
 ): string | null {
   const excluded = exclusions?.length ? exclusions.map(geographyName).join(", ") : null;
   if (!requirement) return excluded ? `Not eligible: ${excluded}` : null;
+  // The continental (contiguous) United States, as stated (November 7, 2026).
+  if (requirement === "US_REQUIRED" && regions?.length === 1 && regions[0] === "US" && exclusions?.length === 2 && [...exclusions].sort().join(",") === "US-AK,US-HI") {
+    return "Continental U.S. residence required (excluding Alaska and Hawaii)";
+  }
   const rule = formatResidency(requirement, regions);
   return excluded ? `${rule}, excluding: ${excluded}` : rule;
 }
@@ -98,7 +102,9 @@ export function formatCompensationRange(
 ): string | null {
   const range = formatSalaryRange(minimum, maximum, currency);
   if (!range) return null;
-  return basis === "OTE" ? `${range} (OTE)` : basis === "BASE" ? `${range} (base salary)` : range;
+  // On-target pay says what it includes (November 7, 2026: "OTE" alone did
+  // not tell a target-total-cash range from base salary).
+  return basis === "OTE" ? `${range} (OTE: base salary plus target variable pay)` : basis === "BASE" ? `${range} (base salary)` : range;
 }
 
 // The opportunity's salary, as shown everywhere in the product: the range
@@ -128,6 +134,19 @@ export function formatSalary(facts: {
 
 // The work arrangement as stated: one arrangement, or every option the
 // posting offers in its order ("On-site / Remote"); Unknown when none.
+// "Hybrid, with remote availability only by exception": an office-first
+// posting that offers remote work only to exceptional candidates (its
+// provenance carries the exception; November 7, 2026). Remote is not an
+// ordinary option of such a role.
+export function formatArrangementWithExceptions(
+  facts: { remoteStatus?: string | null; workArrangements?: readonly string[] | null },
+  provenance: ReadonlyArray<{ fieldName: string; sourceField: string }>,
+): string {
+  const stated = formatWorkArrangements(facts);
+  const exception = facts.remoteStatus === "HYBRID" && provenance.some((row) => row.fieldName === "remoteStatus" && row.sourceField.endsWith(":remote-by-exception"));
+  return exception ? `${stated}, with remote availability only by exception` : stated;
+}
+
 export function formatWorkArrangements(facts: { remoteStatus?: string | null; workArrangements?: readonly string[] | null }): string {
   const stated = facts.workArrangements?.length ? facts.workArrangements : facts.remoteStatus ? [facts.remoteStatus] : [];
   return stated.length ? stated.map((value) => workArrangementLabel(value)).join(" / ") : workArrangementLabel(null);

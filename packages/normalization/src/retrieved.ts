@@ -14,7 +14,7 @@ import {
   type RetrievedStructuredFields,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
-import { onTargetStatementFor, readJobTextFacts, relativePostedDate, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
+import { onTargetStatementFor, readJobTextFacts, relativePostedDate, remoteByExceptionValue, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
 import { primaryCountryTier } from "./salary-tiers";
 import { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, withdrawalSourceFields } from "./withdrawal";
@@ -236,6 +236,11 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         record("remoteStatus", remoteLocation ? "source.remoteLocations" : "location", "DETERMINISTIC", locationArrangement, statedLocation);
       }
       const remoteStatus = optionsInclude ? null : sourceArrangement ?? fallback("remoteStatus", facts.remoteStatus);
+      // Hybrid read from an office-first posting that offers remote work only
+      // by exception: the exception is recorded beside it (November 7, 2026).
+      if (remoteStatus === "HYBRID" && !sourceArrangement && facts.remoteByException) {
+        record("remoteStatus", facts.remoteByException.sourceField, "DETERMINISTIC", remoteByExceptionValue, facts.remoteByException.sourceText);
+      }
       // Several arrangements the posting offers as options, kept as stated
       // when the source names no single one.
       const offeredArrangements = remoteStatus ? null : fallback("workArrangements", facts.workArrangements);

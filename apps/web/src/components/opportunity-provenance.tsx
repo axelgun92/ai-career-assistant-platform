@@ -63,11 +63,14 @@ export function retrievedVia(record: SourceRecordView): string | null {
   return `${name} (${retrievalSummary(record.sourceCategory, record.retrievalType)})`;
 }
 
-// The most recent changed observation of a retrieved listing, if any.
-export function latestListingChange(sourceRecords: SourceRecordView[]): Date | null {
+// When the most recent change of a listing was found: the time its changed
+// version was stored. (Not the version's discoveredAt: for a job saved from a
+// results page that is when its card was first seen, so a change read days
+// later showed the first sighting; November 7, 2026.)
+export function latestListingChange(sourceRecords: Array<Pick<SourceRecordView, "previousSourceRecordId" | "createdAt">>): Date | null {
   const changed = sourceRecords.filter((record) => record.previousSourceRecordId);
   if (!changed.length) return null;
-  return changed.map((record) => new Date(record.discoveredAt)).sort((left, right) => right.getTime() - left.getTime())[0]!;
+  return changed.map((record) => new Date(record.createdAt)).sort((left, right) => right.getTime() - left.getTime())[0]!;
 }
 
 // Readable names for known source slugs; the slug is still shown.
@@ -137,7 +140,7 @@ export function OpportunityProvenance({
               ) : null}
               {record.previousSourceRecordId ? (
                 <p className="source-record-duplicate">
-                  A changed version of this listing, found {timestamp(record.discoveredAt)}. The earlier version is kept
+                  A changed version of this listing, found {timestamp(record.createdAt)}. The earlier version is kept
                   (source record <code>{record.previousSourceRecordId}</code>).
                 </p>
               ) : null}

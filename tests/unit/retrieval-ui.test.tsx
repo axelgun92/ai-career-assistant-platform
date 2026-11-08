@@ -274,7 +274,7 @@ describe("retrieval provenance and dashboard", () => {
     const html = renderToStaticMarkup(
       <OpportunityProvenance
         opportunity={{ source: "test-board", sourceType: "ATS", firstSeenAt: new Date(), lastSeenAt: new Date(), sourceUpdatedAt: null }}
-        sourceRecords={[record(), record({ id: "s2", previousSourceRecordId: "s1", discoveredAt: new Date("2026-10-19T09:30:00Z") })]}
+        sourceRecords={[record(), record({ id: "s2", previousSourceRecordId: "s1", discoveredAt: new Date("2026-10-19T09:30:00Z"), createdAt: new Date("2026-10-19T09:30:00Z") })]}
       />,
     );
     expect(html).toContain('Test Board (employer ATS · official API or feed) · <a href="https://jobs.example.com/1" target="_blank" rel="noopener noreferrer">via Test Board</a>');
@@ -284,6 +284,21 @@ describe("retrieval provenance and dashboard", () => {
     // Core TDD §51 (v1.15): current facts are the latest version; history and evaluations are kept.
     expect(html).toContain("The opportunity shows the latest version of the listing it was found from; every earlier version is kept below.");
     expect(html).toContain("An earlier evaluation stays as it was and may describe an earlier version; reevaluating is up to you.");
+  });
+
+  it("dates a change by when its changed version was stored, not by the job's first sighting (a results-page refresh, November 7, 2026)", () => {
+    const html = renderToStaticMarkup(
+      <OpportunityProvenance
+        opportunity={{ source: "browser-extension", sourceType: "BROWSER_EXTENSION", firstSeenAt: new Date("2026-11-04T23:40:00Z"), lastSeenAt: new Date("2026-11-07T18:05:00Z"), sourceUpdatedAt: null }}
+        sourceRecords={[
+          record({ discoveredAt: new Date("2026-11-04T23:40:00Z"), createdAt: new Date("2026-11-04T23:45:00Z") }),
+          record({ id: "s2", previousSourceRecordId: "s1", discoveredAt: new Date("2026-11-04T23:40:00Z"), createdAt: new Date("2026-11-07T18:05:00Z") }),
+        ]}
+      />,
+    );
+    expect(html).toContain("(latest change found 2026-11-07 18:05 UTC)");
+    expect(html).toContain("A changed version of this listing, found 2026-11-07 18:05 UTC.");
+    expect(html).not.toContain("latest change found 2026-11-04");
   });
 
   it("hints that the latest evaluation used an earlier listing version, and shows nothing otherwise", () => {

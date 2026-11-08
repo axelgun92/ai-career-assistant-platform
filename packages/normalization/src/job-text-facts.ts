@@ -47,6 +47,9 @@ export interface JobTextFacts {
   // Remote", "a remote or hybrid role"), in the order it states them; null
   // when it states one (remoteStatus) or none, or when statements conflict.
   workArrangements: TextFact<WorkArrangement[]> | null;
+  // Remote work the posting offers only by exception, for an office-first
+  // role (its remoteStatus is then HYBRID): the statement that says so.
+  remoteByException: TextFact<string> | null;
   employmentType: TextFact<EmploymentType> | null;
   // The compensation statement, kept whole; the normalizer parses it as
   // salary text.
@@ -648,7 +651,9 @@ function pageTitleCompany(pageTitle: string, title: string, knownPlaces: string[
   return new RegExp(`(?<![\\w])${escape(name)}(?![\\w])`).test(text) ? name : null;
 }
 
-const locationLabels = ["location", "locations", "job location", "office location", "work location"];
+// "Role Location: Fully remote within the continental United States."
+// (Nearmap, November 7, 2026) names the role's location like "Location:".
+const locationLabels = ["location", "locations", "job location", "office location", "work location", "role location", "position location"];
 // Labels that name where the job is only when what follows is a place
 // ("Region: United States", "Countries: Canada"; never "Region: Enterprise").
 const geographyLabels = ["region", "regions", "country", "countries"];
@@ -716,7 +721,7 @@ function collectLocation(source: TextSource): { candidates: Array<TextFact<strin
 function modifierSentence(sentence: string): ModifierReading | null {
   // "Location: Position is fully remote and open to candidates in …"
   // (AlertMedia, November 5, 2026): a location label before the statement.
-  const text = collapse(sentence).replace(/[.!]$/, "").replace(/^(?:job\s+|work\s+)?location\s*[:：]\s*/i, "");
+  const text = collapse(sentence).replace(/[.!]$/, "").replace(/^(?:job\s+|work\s+|role\s+|position\s+)?location\s*[:：]\s*/i, "");
   const thisIsA = /^this\s+is\s+(?:an?\s+)?(.{1,80}?)\s+(?:position|role|job|opportunity)\b/i.exec(text);
   if (thisIsA) {
     if (negation.test(thisIsA[1]!)) return null;
@@ -1796,6 +1801,34 @@ function mostSpecificLocation(candidates: Array<TextFact<string>>, key: (value: 
   return specific.length === 1 ? specific[0]! : null;
 }
 
+// The provenance value that marks remote availability only by exception
+// beside a Hybrid arrangement (fieldName remoteStatus, sourceField
+// "...:remote-by-exception").
+export const remoteByExceptionValue = "REMOTE_BY_EXCEPTION";
+
+// An office-first role with remote work only by exception (TENEX.AI,
+// November 7, 2026: "eager to relocate and commute here", "in-person work",
+// and "for candidates who embody the rare ... talent, we offer the
+// flexibility of fully remote work"): Hybrid, with remote availability only
+// by exception (Alex's decision). Both statements must be in the posting's
+// own text. No office days are inferred, and remote is never an ordinary
+// option of the role.
+const officeFirstStatement =
+  /\b(?:relocate\s+and\s+commute|commute\s+(?:here|in|to\s+(?:the|our|one\s+of\s+our)\s+offices?|into\s+(?:the|our)\s+office)|in[- ]person\s+(?:work|collaboration)|work(?:ing)?\s+(?:from|in|at)\s+(?:the|our|one\s+of\s+our)\s+offices?)\b/i;
+const exceptionalCandidates = /\b(?:exceptional|exceptionally\s+(?:strong|qualified)|rare|by\s+exception|on\s+an?\s+exception(?:al)?\s+basis|in\s+exceptional\s+cases)\b/i;
+const remoteOffered = /\b(?:offer|offers|offered|consider|considered|available|open\s+to|encourage\s+you\s+to\s+apply|eligible)\b/i;
+function officeFirstWithRemoteException(source: TextSource): { office: TextFact<WorkArrangement>; exception: TextFact<string> } | null {
+  const office = source.sentences.find((sentence) => sentence.length <= maxStatementLength && officeFirstStatement.test(sentence) && !negation.test(sentence));
+  const exception = source.sentences.find(
+    (sentence) => sentence.length <= maxStatementLength && /\bremote\b/i.test(sentence) && exceptionalCandidates.test(sentence) && remoteOffered.test(sentence),
+  );
+  if (!office || !exception) return null;
+  return {
+    office: { value: "HYBRID", sourceField: marker(source, "explicit-office-first-statement"), sourceText: office },
+    exception: { value: exception, sourceField: marker(source, "remote-by-exception"), sourceText: exception },
+  };
+}
+
 // Facts read from the posting text and the bounded page context. Both are
 // fallback evidence below the source's structured values: a candidate from
 // either one counts, and two that disagree leave the fact Unknown.
@@ -1825,8 +1858,14 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
   const offered = arrangementConflict ? null : agreed(positions.flatMap((reading) => reading.arrangementOptions), (value) => [...value].sort().join(","));
   const optionsConsistent = offered !== null && arrangements.every((candidate) => offered.value.includes(candidate.value));
   const optionsStated = positions.some((reading) => reading.arrangementOptions.length > 0);
-  const workArrangements = optionsConsistent ? offered : null;
-  const remoteStatus = arrangementConflict || optionsStated ? null : agreed(arrangements);
+  const statedOptions = optionsConsistent ? offered : null;
+  const statedArrangement = arrangementConflict || optionsStated ? null : agreed(arrangements);
+  // Office-first with remote only by exception: Hybrid, unless the posting
+  // states an on-site or hybrid arrangement, or options, of its own (its
+  // remote statements are the exception).
+  const officeFirst = statedOptions || (statedArrangement && statedArrangement.value !== "REMOTE") ? null : officeFirstWithRemoteException(posting);
+  const workArrangements = officeFirst ? null : statedOptions;
+  const remoteStatus = officeFirst ? officeFirst.office : statedArrangement;
   const employmentType = positions.some((reading) => reading.employmentConflict) ? null : agreed(positions.flatMap((reading) => reading.employments));
 
   const companies = sources.flatMap((source) => collectCompany(source, title));
@@ -1858,6 +1897,7 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
     broaderLocation: broaderLabelledLocation(input.location, locations.flatMap((reading) => reading.candidates)),
     broaderRemoteLocation: input.remoteLocations?.length ? broaderLabelledLocation(input.remoteLocations.join(", "), locations.flatMap((reading) => reading.candidates)) : null,
     remoteStatus,
+    remoteByException: officeFirst?.exception ?? null,
     employmentType,
     compensation: tiers ? null : agreedCompensation(compensationCandidates) ?? postingRangeWithinPage(compensationCandidates),
     compensationTiers: tiers,

@@ -23,7 +23,7 @@ describe("the normalized facts as shown", () => {
       .toBe("United States authorization required · Sponsorship: Unknown");
     expect(formatWorkAuthorization(facts({ visaSponsorship: "NOT_AVAILABLE" }), geographyName)).toBe("Requirement not stated · Sponsorship: not available");
     expect(formatWorkAuthorization(facts(), geographyName)).toBeNull();
-    expect(formatCompensationRange(105000, 155000, "USD", "OTE")).toBe("105,000–155,000 USD (OTE)");
+    expect(formatCompensationRange(105000, 155000, "USD", "OTE")).toBe("105,000–155,000 USD (OTE: base salary plus target variable pay)");
     expect(formatCompensationRange(80000, 100000, "USD", "BASE")).toBe("80,000–100,000 USD (base salary)");
     expect(formatCompensationRange(58000, 68000, "EUR", null)).toBe("58,000–68,000 EUR");
   });

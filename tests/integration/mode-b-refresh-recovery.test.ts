@@ -335,6 +335,32 @@ describe("site restrictions and refresh endings", () => {
   });
 });
 
+describe("when a refresh is dated (November 7, 2026)", () => {
+  it("a saved job read again records the read's time as its new version's discovery, its last observation and the job's last seen; earlier versions keep their dates", { timeout: 60_000 }, async () => {
+    const firstSeen = new Date(clock.now);
+    const [item] = await savedAsNov4(["dated"]);
+    const before = await database.opportunity.findUniqueOrThrow({ where: { id: item!.opportunityId! }, select: { lastSeenAt: true, firstSeenAt: true } });
+    const original = await database.sourceRecord.findFirstOrThrow({ where: { opportunityId: item!.opportunityId!, source: "browser-extension" }, orderBy: { createdAt: "asc" } });
+    // Three days later the page states more, and the same page is saved again.
+    later(3 * 24 * 60);
+    serve("dated", ["The base salary range for this role is $90,000 - $110,000 USD."]);
+    await stage(["dated"]);
+    await acquisition().runOnce();
+    const records = await database.sourceRecord.findMany({ where: { opportunityId: item!.opportunityId!, source: "browser-extension" }, orderBy: { createdAt: "asc" } });
+    expect(records).toHaveLength(2);
+    expect(records[1]!.previousSourceRecordId).toBe(original.id);
+    expect(records[1]!.discoveredAt).toEqual(clock.now);
+    expect(records[1]!.lastObservedAt).toEqual(clock.now);
+    // The earlier version is history, unchanged.
+    expect(records[0]).toMatchObject({ discoveredAt: original.discoveredAt, lastObservedAt: original.lastObservedAt });
+    const after = await database.opportunity.findUniqueOrThrow({ where: { id: item!.opportunityId! }, select: { lastSeenAt: true, firstSeenAt: true } });
+    expect(after.firstSeenAt).toEqual(before.firstSeenAt);
+    expect(after.lastSeenAt).toEqual(clock.now);
+    expect(after.lastSeenAt.getTime()).toBeGreaterThan(firstSeen.getTime());
+    expect(handoffs).toHaveLength(1);
+  });
+});
+
 describe("batches, history and the side panel", () => {
   it("a save of 25 cards mixing 10 saved jobs to read again and 15 new ones reads all 25 in one pass, hands off only the new ones", { timeout: 120_000 }, async () => {
     const savedNames = Array.from({ length: 10 }, (_, index) => `mx-saved-${index}`);

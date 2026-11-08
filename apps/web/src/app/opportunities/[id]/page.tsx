@@ -30,7 +30,7 @@ import {
   applicationUrlBasisNotes,
   employmentTypeLabel,
   formatSalary,
-  formatWorkArrangements,
+  formatArrangementWithExceptions,
   formatResidency,
   formatResidencyEligibility,
   formatWorkAuthorization,
@@ -199,7 +199,7 @@ export default async function OpportunityPage({
     ["Salary", formatSalary(detail.opportunity)],
     ["Posting date", postingDate],
     ["Closing date", closingDate],
-    ["Work arrangement", detail.opportunity.remoteStatus || detail.opportunity.workArrangements.length ? formatWorkArrangements(detail.opportunity) : null],
+    ["Work arrangement", detail.opportunity.remoteStatus || detail.opportunity.workArrangements.length ? formatArrangementWithExceptions(detail.opportunity, detail.fieldProvenance) : null],
     ["Work authorization", formatWorkAuthorization(detail.opportunity, geographyName)],
     // Where candidates must live, a separate fact from work authorization:
     // shown only when the posting states it.
@@ -319,7 +319,7 @@ export default async function OpportunityPage({
           company: detail.opportunity.companyName ?? "Unknown company",
           salary: formatSalary(detail.opportunity) ?? "Unknown",
           location: detail.opportunity.location ?? "Unknown",
-          workArrangement: formatWorkArrangements(detail.opportunity),
+          workArrangement: formatArrangementWithExceptions(detail.opportunity, detail.fieldProvenance),
           timeZoneRequirements: detail.opportunity.timeZoneRequirements ?? "Unknown",
         }}
       />

@@ -2030,3 +2030,45 @@ When later extension work is explicitly authorized:
 #### Do Not Change Without Coordination
 
 - The diagnostics' content limits (no page content or secrets in the event file) and the evidence package's database restriction.
+
+### Handoff: Mode B — November 7 Live Round Follow-up (Claude; shared-boundary record)
+
+**Date:** November 8, 2026
+**From:** Claude main-product workstream
+**To:** Alex (approval and closeout; the controlled LinkedIn live round); Codex (boundary awareness)
+**Status:** Implemented, verified offline on `ai_career_assistant_test` and approved by Alex on November 8, on top of `4847751`. WTTJ Mode B Rev 3 accepted by Alex on November 7; LinkedIn Mode B not yet accepted.
+
+#### Completed
+
+- L1: the November 7 LinkedIn stop was LinkedIn's HTTP 429 to the fourth logged-out job page in about five minutes (one request per pass, 1–3 minutes apart, no overlap or retry); the restriction handling matched the contract. The no-browser run opened no page.
+- No Retry per job without a browser (`page-capture-acquisition.ts`; `PrismaPageCaptureRepository.holdForBrowser` / `releaseBrowserHold`; waiting labels in `page-capture-labels.ts`).
+- TENEX.AI office-first Hybrid with remote by exception (`job-text-facts.ts` `remoteByException`, both normalizers, `formatArrangementWithExceptions`).
+- Nearmap: "Role Location:" label; continental U.S. as U.S. residence excluding Alaska and Hawaii (`residency.ts`, display in `opportunity-facts.ts`).
+- Thomson Reuters: target total cash as on-target pay (`compensation.ts`); OTE display spelled out.
+- WTTJ refresh dates (`page-capture-acquisition.ts` ingestor; `opportunity-provenance.tsx`).
+
+#### Current Contract / Assumptions
+
+- `NO_BROWSER` on a QUEUED item means "waiting for a worker with a browser"; such items are never claimed or counted.
+- A `remoteStatus` provenance row with sourceField `…:remote-by-exception` (value `REMOTE_BY_EXCEPTION`) qualifies a HYBRID arrangement; triage is unchanged and reads HYBRID.
+- Continental-U.S. eligibility is stored as `US_REQUIRED` + `["US"]` with exclusions `["US-AK", "US-HI"]`.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Mode B Rev 3 — November 7 Live Round Follow-up): unit 2,303, integration 418, E2E 60/60, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- LinkedIn's logged-out page budget is small and varies (429 on request 1 on October 20, on request 4 on November 7); a 25-job batch may need several automatic resumptions a day apart. Options for Alex: read the page as sent without running its scripts (fewer requests per job; live test needed), or read details in the user's own signed-in Chrome (account-level risk; product decision).
+
+#### Next Task
+
+- Approved by Alex on November 8 (repairs only; not LinkedIn acceptance). Next: scope Option A for approval; a controlled LinkedIn live round after 2026-11-08 19:15Z needs separate authorization, and all 17 waiting jobs completing in one run is not guaranteed (LinkedIn HTTP 429).
+
+#### Do Not Change Without Coordination
+
+- The restriction handling (a 429 or a challenge stops the site for at least a day; nothing counted); the batch-only contract (no per-job manual step).

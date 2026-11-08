@@ -200,9 +200,10 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   Welcome to the Jungle / Otta implemented; the November 5 live round failed (worker P2028 after 5 of
   25; the sixth job, TENEX.AI, unsaved); Rev 3 repairs committed at 58ef504; the Rev 3 final review
   (received-HTML apply link, persistent worker diagnostics, opt-in page evidence, read-only failure
-  evidence package) verified offline November 6, 2026, awaiting approval
-→ current sequence: Mode B live acceptance (after the acceptance-database migration, with
-  authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
+  evidence package) committed at 4847751; WTTJ Mode B Rev 3 accepted in the November 7 live round;
+  LinkedIn not yet accepted (LinkedIn HTTP 429 after three jobs); the November 7 follow-up fixes
+  verified offline and approved November 8, 2026 (repairs only)
+→ current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)

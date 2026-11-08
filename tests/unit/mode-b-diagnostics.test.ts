@@ -639,3 +639,59 @@ describe("diagnostic artifacts stay private (security review, November 6, 2026)"
     expect(parseCleanupArguments(["--bogus"], {})).toEqual({ ok: false, problem: "Unknown option --bogus" });
   });
 });
+
+// ------------------------------------- what counts as a LinkedIn restriction
+
+describe("a LinkedIn restriction is recorded only on the site's own answer (November 7, 2026 review)", () => {
+  const ids = ["4372638963", "4479301564", "4483749069", "4400000004"];
+  const ok = (id: string) => ({ status: 200, html: page(id).html });
+  it("HTTP 429 is RATE_LIMITED: the status is logged, the job and the rest wait uncounted, the site stops for a day", async () => {
+    const run = setup({ site: "linkedin", ids, serve: (id) => (id === ids[3] ? { status: 429, html: "<html><body>Too many requests</body></html>" } : ok(id)), diagnosticsRoot: temporary() });
+    expect(await run.acquisition.runOnce()).toMatchObject({ ingested: 3, stopped: "RATE_LIMITED" });
+    const events = run.events();
+    expect(events.find((event) => event.event === "job.navigate.failed")).toMatchObject({ itemId: ids[3], stage: "navigate", code: "RATE_LIMITED", status: 429 });
+    expect(events.find((event) => event.event === "site.stopped")).toMatchObject({ site: "linkedin", reason: "RATE_LIMITED" });
+    expect(run.rows.get(ids[3])).toMatchObject({ attempts: 0 });
+  });
+
+  it("a sign-in wall answered with HTTP 200 is a restriction of its own kind (ACCESS_STOPPED), never RATE_LIMITED; a failed load is neither", async () => {
+    const authwall = '<html><head><title>Sign Up | LinkedIn</title></head><body><main><form class="join-form"><input name="email"></form></main></body></html>';
+    const walled = setup({ site: "linkedin", ids: [ids[0]!], serve: () => ({ status: 200, html: authwall }), diagnosticsRoot: temporary() });
+    const walledPass = await walled.acquisition.runOnce();
+    expect(walledPass?.stopped).not.toBe("RATE_LIMITED");
+    const failure = walled.events().find((event) => event.event === "job.navigate.failed");
+    expect(failure).toMatchObject({ code: "ACCESS_DENIED", status: 200 });
+
+    const failedLoad: BrowserDriver = { navigate: async () => Promise.reject(new Error("net::ERR_TIMED_OUT")), close: async () => undefined };
+    const diagnostics = createWorkerDiagnostics({ directory: temporary(), now: () => now });
+    const rows = new Map([[ids[0]!, item(ids[0]!, "linkedin")]]);
+    const deferSite = vi.fn(async () => undefined);
+    const acquisition = createPageCaptureAcquisition({
+      repository: {
+        recoverInterrupted: async () => 0,
+        sitesWithQueued: async () => ["linkedin"],
+        siteStoppedUntil: async () => null,
+        claimQueued: async () => [...rows.values()],
+        markIngested: async () => undefined,
+        markFailed: async () => undefined,
+        deferSite,
+        markHandedOff: async () => undefined,
+        requeueUncounted: async () => true,
+        releaseClaimed: async () => 0,
+        finalizeProvisionalFailure: async () => false,
+      },
+      ingestion: { ingest: vi.fn() } as never,
+      handoff: { alreadyHandled: async () => false, request: async () => "X" },
+      discovery: customerSuccessDiscoveryConfiguration,
+      detailSites: () => ["linkedin"],
+      browser: { launch: async () => failedLoad },
+      now: () => now,
+      sleep: async () => undefined,
+      diagnostics,
+    });
+    expect(await acquisition.runOnce()).toMatchObject({ stopped: "NETWORK" });
+    // A failed load defers the site for an hour as NOT_INGESTED: no restriction recorded.
+    expect(deferSite).toHaveBeenCalledWith("linkedin", expect.any(Date), "NOT_INGESTED");
+    expect(readEvents(diagnostics.file!).find((event) => event.event === "job.navigate.failed")).toMatchObject({ code: "NETWORK", status: null });
+  });
+});

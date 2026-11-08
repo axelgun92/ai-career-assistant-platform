@@ -544,6 +544,26 @@ export class PrismaPageCaptureRepository {
     return rows.map((row) => row.site);
   }
 
+  // A worker with no browser configured (November 7, 2026): a site's queued
+  // jobs wait, unclaimed and uncounted, with the reason shown; nothing is
+  // read and no job is moved to Awaiting details (which would need a Retry
+  // per job). Returns how many jobs were marked.
+  async holdForBrowser(site: string): Promise<number> {
+    return this.database.$executeRaw`
+      UPDATE "PageCaptureItem" SET "lastReason" = 'NO_BROWSER', "updatedAt" = now()
+      WHERE "site" = ${site} AND "status" = 'QUEUED'::"PageCaptureItemStatus" AND "lastReason" IS NULL`;
+  }
+
+  // A worker that has a browser again: every job of the site waiting for one
+  // (queued, or left Awaiting details by an earlier worker without one; never
+  // charged an attempt) returns to the batch. Returns how many.
+  async releaseBrowserHold(site: string): Promise<number> {
+    return this.database.$executeRaw`
+      UPDATE "PageCaptureItem" SET "status" = 'QUEUED'::"PageCaptureItemStatus", "lastReason" = NULL, "nextAttemptAt" = NULL, "updatedAt" = now()
+      WHERE "site" = ${site} AND "lastReason" = 'NO_BROWSER' AND "opportunityId" IS NULL
+        AND ("status" = 'QUEUED'::"PageCaptureItemStatus" OR "status" = 'AWAITING_DETAILS'::"PageCaptureItemStatus")`;
+  }
+
   // Items left ACQUIRING by an interrupted worker go back to the queue.
   async recoverInterrupted(): Promise<number> {
     const { count } = await this.database.pageCaptureItem.updateMany({ where: { status: "ACQUIRING" }, data: { status: "QUEUED" } });

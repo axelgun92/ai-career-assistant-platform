@@ -10,7 +10,7 @@ import {
   type RawOpportunity,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
-import { onTargetStatementFor, readJobTextFacts, type TextFact } from "./job-text-facts";
+import { onTargetStatementFor, readJobTextFacts, remoteByExceptionValue, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
 import { compensationTier, primaryTierSourceField } from "./retrieved";
 import { primaryCountryTier } from "./salary-tiers";
@@ -32,6 +32,7 @@ export {
   pageContextSourceFields,
   parseUnambiguousDate,
   readJobTextFacts,
+  remoteByExceptionValue,
   standardizeSeniorityLabel,
   type EvidenceFact,
   type JobTextFacts,
@@ -156,6 +157,11 @@ export function createManualOpportunityNormalizer(): OpportunityNormalizer {
       const locationArrangement = workArrangementFromLocation(statedLocation);
       const remoteStatus = details.workArrangement ?? locationArrangement ??
         fallback("remoteStatus", facts.remoteStatus);
+      // Hybrid read from an office-first posting that offers remote work only
+      // by exception: the exception is recorded beside it (November 7, 2026).
+      if (remoteStatus === "HYBRID" && !details.workArrangement && !locationArrangement && facts.remoteByException) {
+        fallbacks.push({ fieldName: "remoteStatus", fact: facts.remoteByException, normalizedValue: remoteByExceptionValue });
+      }
       // Several arrangements the pasted text offers as options, kept as
       // stated when nothing names a single one.
       const offeredArrangements = remoteStatus ? null : fallback("workArrangements", facts.workArrangements, (value) => value);

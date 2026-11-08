@@ -6,7 +6,11 @@
 // real ingestion and the real triage-gated evaluation request. No evaluator
 // worker runs, so nothing is evaluated and no provider is called.
 //
-//   acquire <run> [no-browser]   one or more passes until nothing is due
+//   acquire <run> [no-browser|unreadable]
+//                                one or more passes until nothing is due;
+//                                no-browser: a worker without a browser;
+//                                unreadable: every page loads but holds no
+//                                posting, each pass an hour after the last
 //   items <run>                  the staged jobs of this run, as JSON
 //   outdate <run>                mark this run's saved reads as made by an
 //                                older reader (as the November 4–5 records
@@ -33,25 +37,31 @@ const ofRun = { externalId: { contains: run } };
 try {
   if (command === "acquire") {
     const navigated: string[] = [];
+    const mode = process.argv[4] ?? "";
     const driver: BrowserDriver = {
       async navigate(url) {
         navigated.push(url);
+        if (mode === "unreadable") return { status: 200, finalUrl: url, html: "<html><body><p>Loading…</p></body></html>", cookieNames: [] };
         const html = e2ePageFor(run, url);
         return { status: html ? 200 : 404, finalUrl: url, html: html ?? "Not found", cookieNames: [] };
       },
       close: async () => undefined,
     };
+    // Each "unreadable" pass is an hour after the last, when the jobs' retry is due.
+    const clock = { now: new Date() };
     const acquisition = createPageCaptureAcquisition({
       repository: new PrismaPageCaptureRepository(),
       ingestion: createRetrievalIngestionService({ repository: new PrismaManualOpportunityRepository(), normalizer: createRetrievedOpportunityNormalizer() }),
       handoff: evaluationHandoff(getEvaluationService()),
       discovery: customerSuccessDiscoveryConfiguration,
       detailSites: () => ["e2e-results"],
-      ...(process.argv[4] === "no-browser" ? {} : { browser: { launch: async () => driver } }),
+      ...(mode === "no-browser" ? {} : { browser: { launch: async () => driver } }),
       sleep: async () => undefined,
+      now: () => clock.now,
     });
     const passes = [];
     for (let pass = 0; pass < 5; pass += 1) {
+      if (mode === "unreadable" && pass > 0) clock.now = new Date(clock.now.getTime() + 61 * 60_000);
       const result = await acquisition.runOnce();
       if (!result) break;
       passes.push(result);

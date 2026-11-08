@@ -79,7 +79,11 @@ const nonAnnualPeriod =
 // names them. OTE wording takes precedence: a statement that calls its range
 // OTE is never ordinary salary because it also mentions "base" ("OTE (base +
 // commission)", "60/40 base to variable"). Base salary only without it.
-const onTargetEarnings = /\bOTE\b|\bon[- ]target\b/i;
+// Target total cash ("target total cash compensation, inclusive of base
+// salary and any target sales incentive"; Thomson Reuters, November 7, 2026)
+// is the same: base plus target variable pay, never base salary alone.
+const onTargetEarnings =
+  /\bOTE\b|\bon[- ]target\b|\btarget(?:ed)?\s+total\s+(?:cash|compensation|pay|earnings)\b|\btotal\s+target(?:ed)?\s+(?:cash|compensation|pay|earnings)\b|\btarget\s+cash\s+(?:compensation|pay)\b|\btotal\s+cash\s+compensation\b[^.]*\binclusive\s+of\s+base\b[^.]*\b(?:incentive|commission|bonus|variable)\b/i;
 const baseSalary = /\bbase\b/i;
 
 function resolveBasis(text: string): CompensationBasis | null {

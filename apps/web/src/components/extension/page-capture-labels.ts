@@ -47,7 +47,7 @@ export const savedBeforeText = "Already saved before this capture";
 
 export const reasonLabels: Record<string, string> = {
   NOT_SUPPORTED: "Automatic details are not available for this site yet",
-  NO_BROWSER: "No browser is configured for reading job details (RETRIEVAL_BROWSER_EXECUTABLE)",
+  NO_BROWSER: "No browser is configured for reading job details (RETRIEVAL_BROWSER_EXECUTABLE); they are read automatically once it is",
   UNREADABLE: "The job's page could not be read",
   ACCESS_STOPPED: "The site refused or challenged the request; it will not be contacted again for at least a day",
   RATE_LIMITED: "The site asked us to slow down; it will not be contacted again for at least a day",
@@ -59,6 +59,10 @@ export const reasonLabels: Record<string, string> = {
   USER_STOPPED: "You stopped reading the details",
   PERMISSION_MISSING: "The extension no longer has permission to read this site's job pages",
 };
+
+// Reasons a queued job waits that are not its turn: a site stop or a worker
+// with no browser.
+const waitingReasons = new Set(["NO_BROWSER", "RATE_LIMITED", "ACCESS_STOPPED"]);
 
 // For a job read in background tabs, how to read it again.
 export const saveAgainHint = "Save the results page that shows it again to read its details.";
@@ -112,6 +116,10 @@ export function statusText(row: PageCaptureRowView): string {
   switch (row.status) {
     case "QUEUED":
     case "ACQUIRING":
+      // A job waiting for a reason other than its turn says why (November 7,
+      // 2026: queued behind a site stop or a missing browser read "Getting
+      // details").
+      if (!refresh && row.status === "QUEUED" && row.lastReason && waitingReasons.has(row.lastReason)) return `Waiting: ${reasonLabels[row.lastReason]}`;
       return refresh ?? "Getting details";
     case "INGESTED":
       return refresh ? `${addedStateText(row)} · ${refresh}` : addedStateText(row);

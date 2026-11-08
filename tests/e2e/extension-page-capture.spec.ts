@@ -246,15 +246,24 @@ test("pair, read the loaded cards of a results page, leave one out, and stage th
 });
 
 test("a job whose details cannot be read waits with Retry and Dismiss, never as an opportunity", async () => {
-  // No browser configured: every claimed job waits for its details.
-  const result = JSON.parse(await runPageCaptureHelper("acquire", run, "no-browser")) as { passes: Array<{ awaitingDetails: number }>; navigated: string[] };
-  expect(result.passes[0]).toMatchObject({ awaitingDetails: 3 });
-  expect(result.navigated).toEqual([]);
-
+  // No browser configured (a worker setting, not the jobs'): nothing is read,
+  // and the jobs wait in the batch, uncounted, with the reason shown; they
+  // need no Retry (November 7, 2026).
+  const held = JSON.parse(await runPageCaptureHelper("acquire", run, "no-browser")) as { passes: unknown[]; navigated: string[] };
+  expect(held).toEqual({ passes: [], navigated: [] });
   const app = await context.newPage();
+  await app.goto(`${appUrl}/extension/jobs`);
+  await expect(rowOf(app, jobs.later.title)).toContainText("Waiting: No browser is configured for reading job details");
+
+  // With a browser, pages that load but hold no posting, three times (an
+  // hour apart): each job then waits for its details.
+  const result = JSON.parse(await runPageCaptureHelper("acquire", run, "unreadable")) as { passes: Array<{ awaitingDetails: number }>; navigated: string[] };
+  expect(result.passes.reduce((total, pass) => total + pass.awaitingDetails, 0)).toBe(3);
+  expect(result.navigated).toHaveLength(9);
+
   await app.goto(`${appUrl}/extension/jobs?status=waiting`);
   const later = rowOf(app, jobs.later.title);
-  await expect(later).toContainText("Awaiting details: No browser is configured for reading job details");
+  await expect(later).toContainText("Awaiting details: The job's page could not be read");
   await expect(later.getByRole("link", { name: "Open job ↗" })).toHaveAttribute("href", jobs.later.url);
   await expect(later.getByRole("link", { name: jobs.later.title })).toHaveCount(0);
 

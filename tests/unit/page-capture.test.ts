@@ -383,10 +383,12 @@ describe("automatic detail acquisition", () => {
     const disabled = acquisitionSetup({ detailSites: [] });
     expect(await disabled.acquisition.runOnce()).toBeNull();
     expect(disabled.repository.claimQueued).not.toHaveBeenCalled();
+    // No browser (a worker setting, not the jobs'): nothing is claimed or
+    // read, no job is moved to Awaiting details (November 7, 2026).
     const noBrowser = acquisitionSetup({ browser: false });
-    const result = await noBrowser.acquisition.runOnce();
-    expect(result).toMatchObject({ awaitingDetails: 2 });
-    expect(noBrowser.repository.markFailed).toHaveBeenCalledWith("a1", expect.objectContaining({ status: "AWAITING_DETAILS", reason: "NO_BROWSER" }));
+    expect(await noBrowser.acquisition.runOnce()).toBeNull();
+    expect(noBrowser.repository.claimQueued).not.toHaveBeenCalled();
+    expect(noBrowser.repository.markFailed).not.toHaveBeenCalled();
     expect(noBrowser.navigated).toEqual([]);
   });
 

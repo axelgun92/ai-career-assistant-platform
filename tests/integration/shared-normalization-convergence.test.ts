@@ -124,7 +124,7 @@ describe("Healthie through both paths, persisted", () => {
 
       const detail = (await repository.findOpportunityDetail(id))!;
       expect(formatCompensationRange(detail.opportunity.salaryMin, detail.opportunity.salaryMax, detail.opportunity.currency, detail.opportunity.compensationBasis))
-        .toBe("105,000–155,000 USD (OTE)");
+        .toBe("105,000–155,000 USD (OTE: base salary plus target variable pay)");
       expect(formatWorkAuthorization(detail.opportunity, geographyName)).toBe("United States authorization required · Sponsorship: Unknown");
       expect(workAuthorizationRelevance(detail.opportunity, { authorizedRegions: ["US"], citizenshipRegions: ["US"] }).status).toBe("SATISFIED");
 

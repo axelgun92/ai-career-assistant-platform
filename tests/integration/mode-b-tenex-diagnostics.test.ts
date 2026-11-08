@@ -387,6 +387,32 @@ describe("the November 5 batch: TENEX.AI (4372638963) sixth, a simulated P2028",
   });
 });
 
+describe("a worker started without a browser (November 7, 2026)", () => {
+  it("holds the batch, unclaimed and uncounted, with the reason shown; a worker with a browser reads it automatically, including jobs an earlier version parked in Awaiting details", { timeout: 180_000 }, async () => {
+    await saveBatch();
+    const noBrowser = createPageCaptureAcquisition({
+      repository,
+      ingestion,
+      handoff,
+      discovery: customerSuccessDiscoveryConfiguration,
+      detailSites: () => ["e2e-results"],
+      probeCapture: () => captureRepository.probeCaptureLock(),
+      now: () => clock.now,
+      sleep: async () => undefined,
+    });
+    expect(await noBrowser.runOnce()).toBeNull();
+    for (const name of names) expect(await itemOf(name), name).toMatchObject({ status: "QUEUED", attempts: 0, lastReason: "NO_BROWSER", opportunityId: null });
+    // Jobs the earlier code moved to Awaiting details (NO_BROWSER) wait for a browser too.
+    await database.pageCaptureItem.updateMany({ where: { sourceUrl: { in: names.slice(0, 5).map(jobUrl) } }, data: { status: "AWAITING_DETAILS" } });
+    const roots = { diagnostics: temporary(), evidence: temporary() };
+    const withBrowser = worker(roots);
+    expect(await withBrowser.acquisition.runOnce()).toMatchObject({ claimed: 25, ingested: 25, stopped: null });
+    for (const name of names) expect(await itemOf(name), name).toMatchObject({ status: "INGESTED", attempts: 1, lastReason: null });
+    expect(eventsOf(withBrowser.diagnostics).find((event) => event.event === "site.browser")).toMatchObject({ decision: "RELEASED_BROWSER_HOLD", jobs: 25 });
+    expect(handoffs).toHaveLength(25);
+  });
+});
+
 describe("the failure evidence package reads only", () => {
   it("cannot write: its reads run in a read-only session and transaction", { timeout: 60_000 }, async () => {
     const client = createReadOnlyDatabaseClient(testDatabaseUrl());
