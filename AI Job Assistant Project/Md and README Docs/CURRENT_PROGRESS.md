@@ -1,7 +1,99 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 8, 2026
+**Last updated:** November 9, 2026
+
+## LinkedIn Option A Phase 1 — P2028 Fixes F1–F4 (November 9, 2026; approved by Alex as Revision 2; implemented and verified offline on top of `e2a8049`; approved by Alex for repository closeout and committed with this change; no live request made)
+
+**Root cause of the November 9 P2028 is not identified.** These fixes make the next occurrence diagnosable, contain a stalled statement, and recover a one-off stall without charging the job. Observations, offline experiments and hypotheses are kept apart below.
+
+- **Confirmed observations (Phase 1, November 9):**
+  - 17 jobs were claimed and 16 ingested.
+  - Job 4476234680 failed in its capture transaction (`ingestRetrievedListing`) with Prisma P2028 "expired": 36,578 ms elapsed against the 30,000 ms timeout.
+  - Its handling matched the approved contract:
+    - it was provisional (`DB_PENDING`);
+    - the next job succeeded, so it was counted once (`INGEST_DB_ERROR`, attempts 1);
+    - its next attempt is 2026-11-09 20:09:07.151-06;
+    - nothing of it was saved;
+    - no evaluation ran.
+  - It has the same signature as the November 5 TENEX.AI failure.
+- **Offline experimental results (isolated test database only):**
+  - The capture transaction's own work: median about 25 ms, p95 under 0.5 s. One unrepeated 6.7 s stall occurred in this environment.
+  - A single lock wait cannot explain the overrun: `lock_timeout` (20 s) would end it with 55P03.
+  - A JavaScript-side stall reproduces the exact P2028 "expired" signature (elapsed above the timeout). A stalled statement gives the same signature unless a statement timeout is set.
+  - The worker never closed its JSDOM windows: 7 MB versus 3 MB retained for 34 small pages.
+- **Hypotheses (not confirmed; F1 is designed to tell them apart):**
+  - H1: a database or WSL stall during one statement or the commit;
+  - H2: a stall of the worker process (garbage collection or memory; unclosed JSDOM windows a possible contributor);
+  - H3: capture-lock contention plus a second wait.
+- **F1 — per-step timing and process diagnostics** (`database/src/capture-timing.ts`; `manual-opportunity-repository.ts` `captureLockTransaction`; `page-capture-acquisition.ts` `observeIngestion`):
+  - Every capture-lock transaction (`ingestRetrievedListing`, `ingestManualOpportunity`, `preserveUnnormalizedListing`, `probeCaptureLock`) records, in milliseconds with fixed step names:
+    - `connect-begin`, `capture-lock` and `statement-timeout`;
+    - each body step: lookup, source-record, candidates, scoring, company, opportunity, provenance, duplicate-links, and the D1 / changed-version steps when they apply;
+    - `commit`.
+  - The record lives outside the transaction (AsyncLocalStorage), so it survives a rollback, a 57014, a P2028 or a failed commit.
+  - A failure names the step in flight and how long it had run. That is recorded, not called proof of a stall.
+  - A failure after the body ended is recorded as a commit whose outcome is `unknown`.
+  - Per ingestion attempt the worker adds its event-loop delay (max, p99) and memory (RSS and heap, start and end).
+  - All of this goes into `job.ingested`, `job.failed` and `job.retry`. Only integers and fixed names are recorded: no text, HTML, values, credentials or connection strings.
+  - Without a recorder (Single Capture, tests) nothing is recorded and behaviour is unchanged.
+- **F2 — statement timeout after the capture lock:**
+  - Set transaction-locally with `set_config('statement_timeout', …, true)` once the lock is held. The value is min(10 s, the time left before the 30 s transaction deadline minus 2 s), never below 1 s.
+  - The lock wait keeps its 20 s `lock_timeout` and its 55P03 / CONTENTION meaning; it does not count against the statement limit.
+  - The 30 s transaction timeout and 15 s `maxWait` are unchanged.
+  - Classification (`worker-errors.ts` `isCaptureStatementTimeout`): SQLSTATE 57014 is TRANSIENT only when all of these hold:
+    - it was raised in a capture-lock transaction;
+    - the repository had armed the timeout (`captureStatementTimeoutMs` on the error);
+    - PostgreSQL's fixed reason is not "user request".
+  - Any other 57014 stays UNKNOWN / fatal. The diagnostics name the reason (`cancelReason`) from PostgreSQL's fixed wording only.
+  - F2 applies to every capture-lock transaction, Single Capture's included: a statement stalled there for 10 s now fails the save with 57014 instead of the transaction running on to its 30 s P2028. Single Capture has no retry (F3 is the worker's) and no timing recorder.
+- **F3 — one bounded immediate retry** (`page-capture-acquisition.ts`):
+  - What is retried: a TRANSIENT failure of the job's capture transaction (`ingestRetrievedListing`: P2028, a qualifying 57014, connection loss). It is re-run once, 2 s later, with the same capture already read: no new page request.
+  - It is retried only when all of these hold:
+    - this job has not been retried;
+    - no job in the pass is provisional (`DB_PENDING`);
+    - no earlier retry in the pass failed;
+    - fewer than 3 retries have run in the pass.
+  - Never retried: contention, permanent, unknown, normalization failures, failures after the save, the preservation transaction, and untagged errors.
+  - If the retry succeeds: no attempt is charged, there is one hand-off, and `job.retry` plus `job.ingested` (`retried`, `firstAttempt*` timings, `firstAttemptCommit`) record both attempts.
+  - If the retry fails: today's handling applies unchanged (`DB_PENDING`, the next job or the probe decides, counted at most once). An outage gets at most one retry, then the second transient failure ends the pass.
+  - **Uncertain commit (requirement 2):**
+    - When the first attempt failed after its body ended, the database decides (`describeCaptureOutcome`, read-only), never the retry's outcome alone.
+    - `FIRST_ATTEMPT_COMMITTED` needs all of the following:
+      - the same listing;
+      - one source record with this content;
+      - one opportunity for the listing;
+      - the record linked to the returned opportunity;
+      - the record written during the first attempt;
+      - the outcome UNCHANGED.
+    - `FIRST_ATTEMPT_NOT_COMMITTED` is recorded only when the retry created the only version. Anything else is `UNDETERMINED`.
+    - The hand-off runs once, because the first attempt never reached it.
+- **F4 — JSDOM windows closed:**
+  - The rendered page and the page as served are closed in a `finally` after all reading, including when the reader throws.
+  - The unavailable (404/410) page and a sign-in-wall page are also closed.
+  - Nothing reads them afterwards; the page evidence keeps the HTML strings.
+  - What is saved is identical with and without closing (real November 7 LinkedIn pages and the TENEX served-page route).
+  - The verification CLI's single window is unchanged. WTTJ is read in the extension's tabs, not JSDOM.
+- **Found and fixed during verification:** the real-database stall test showed that the step in flight was dropped when that step's own statement failed (F1 reported `inFlight: null`). The recorder now keeps the failing step until the transaction settles. A unit test covers it.
+- **Verified offline (`ai_career_assistant_test` only; normal and acceptance databases untouched; no live site, worker against acceptance data, paid call or evaluation):**
+  - New real-database tests (`p2028-capture-transactions.test.ts`, 3):
+    - A second session holds `LOCK TABLE "Opportunity"`. The capture fails alone at 10 s with 57014 (step `source-record`, 10,013 ms; not a P2028). It is retried after the stall clears and saved: one source record, attempts equal to its neighbour's, one hand-off. Both attempts' timings are recorded. `statement_timeout` is back to the server default on every pooled connection.
+    - The capture lock is held for 25 s: 55P03 after 20 s in `capture-lock`, statement timeout never set, not retried, requeued uncounted (`CAPTURE_BUSY`), pass ended.
+    - A real commit whose reply is lost (P2028 after commit): the retry gives UNCHANGED on the same job, `FIRST_ATTEMPT_COMMITTED` with the full verification, one source record, one opportunity, one hand-off.
+  - Unit:
+    - `p2028-fixes` (11);
+    - `page-capture-db-failures` (24; F3 retry rules, including the per-job, per-pass and DB_PENDING / outage suppression, and failure isolation);
+    - `p2028-jsdom-cleanup` (3; every window closed, including when extraction throws; identical saved captures; fails without F4).
+  - `mode-b-tenex-diagnostics` (7) was updated:
+    - the localized and outage cases inject two failures (a one-off is now retried);
+    - a new one-off case is retried and saved with nothing counted.
+  - Full gate: typecheck, lint, Prisma validate, `db:verify-migrations` (28), extension build and `git diff --check` pass. Unit 2,374 passed / 6 skipped (108 files); integration 475/475 (56 files); E2E 60/60. After the final cleanups (a comment moved, a guard on a non-object error), typecheck, lint, the touched unit files (64) and the four affected integration files (68) were re-run and pass.
+- **Remaining risks:**
+  - Root cause still unconfirmed. The next occurrence should show, in its timings, whether it was a slow statement (57014 with its step), a stalled process (event-loop delay) or an uncertain commit.
+  - A 57014 retry can repeat the same stalled statement once (2 s later), bounded per job and per pass.
+  - The 10 s statement limit is about 20× the worst measured transaction. A legitimately slow statement on a much larger table would be retried once, then charged.
+  - Uncertain-commit verification relies on the database and worker clocks agreeing (same host in the local setup).
+- **Open (each separately authorized):** the Phase 1 follow-up restricted to LinkedIn job 4476234680; then a Single Capture regression pass; Phase 2 stays blocked until both.
 
 ## Final Pre-Live Corrections — D1, Salary Accuracy and Capture Parity (November 8, 2026; implemented and verified offline on top of `42a647c`; approved by Alex for repository closeout and committed with this change; no live request made; live acceptance pending)
 

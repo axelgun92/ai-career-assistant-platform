@@ -639,6 +639,30 @@ export class PrismaPageCaptureRepository {
     return count > 0;
   }
 
+  // What the database holds for a listing after a capture retry whose first
+  // attempt's commit outcome was unknown (P2028 fix F3, requirement 2,
+  // November 9, 2026): read-only, counts and flags only.
+  async describeCaptureOutcome(input: { sourceRecordId: string; opportunityId: string; firstAttemptStartedAt: Date; retryStartedAt: Date }) {
+    const record = await this.database.sourceRecord.findUnique({
+      where: { id: input.sourceRecordId },
+      select: { source: true, externalId: true, contentHash: true, opportunityId: true, createdAt: true },
+    });
+    if (!record) return null;
+    const listing = { source: record.source, externalId: record.externalId };
+    const [recordsWithThisContent, owners] = await Promise.all([
+      this.database.sourceRecord.count({ where: { ...listing, contentHash: record.contentHash } }),
+      this.database.sourceRecord.findMany({ where: { ...listing, opportunityId: { not: null } }, select: { opportunityId: true }, distinct: ["opportunityId"] }),
+    ]);
+    return {
+      sameListing: record.externalId !== null,
+      recordsWithThisContent,
+      opportunitiesForListing: owners.length,
+      recordLinkedToOpportunity: record.opportunityId === input.opportunityId,
+      recordWrittenDuringFirstAttempt: record.createdAt >= input.firstAttemptStartedAt && record.createdAt < input.retryStartedAt,
+      recordWrittenBeforeFirstAttempt: record.createdAt < input.firstAttemptStartedAt,
+    };
+  }
+
   // A refresh read records how it went ("REFRESHED:<outcome>:<n>", n the
   // incomplete refreshes in a row: one more when this read was incomplete,
   // else none).

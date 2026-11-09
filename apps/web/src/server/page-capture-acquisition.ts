@@ -17,16 +17,24 @@ import {
   type RetrievalIngestionService,
   type RetrievedListingOutcome,
 } from "@ai-career/core";
-import { captureTransactionSettings, type PageCaptureItemRecord, type PrismaPageCaptureRepository } from "@ai-career/database";
+import {
+  captureTransactionSettings,
+  createCaptureTimingRecorder,
+  withCaptureTiming,
+  type CaptureTransactionTiming,
+  type PageCaptureItemRecord,
+  type PrismaPageCaptureRepository,
+} from "@ai-career/database";
 import { AdapterError, createBrowserSession, detectLinkedInFriction, type BrowserDriver, type BrowserRequestCounts } from "@ai-career/discovery";
 import { JSDOM } from "jsdom";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import { buildCaptureEnvelope } from "../../../extension/src/envelope";
 import { extractJobPosting, type PageExtraction } from "../../../extension/src/extract";
 import { EvaluationApiError } from "./evaluation-errors";
 import { capturedListing, ExtensionCaptureError } from "./extension-capture";
 import { applyEvidence, type ApplyEvidence, type PageCaptureEvidence } from "./page-capture-evidence";
 import { diagnosticError, diagnosticUrl, type DiagnosticFields } from "./worker-diagnostics";
-import { classifyJobDatabaseFailure, formatWorkerError } from "./worker-errors";
+import { classifyJobDatabaseFailure, formatWorkerError, sanitizeWorkerError } from "./worker-errors";
 
 // Structured diagnostics sink (worker-diagnostics.ts); absent in tests that
 // do not need it.
@@ -96,7 +104,7 @@ export interface PageCaptureAcquisitionDependencies {
     | "finalizeProvisionalFailure"
     | "requeueUncounted"
   > &
-    Partial<Pick<PrismaPageCaptureRepository, "holdForBrowser" | "releaseBrowserHold">>;
+    Partial<Pick<PrismaPageCaptureRepository, "holdForBrowser" | "releaseBrowserHold" | "describeCaptureOutcome">>;
   // The capture path's health without capturing anything (a transaction that
   // takes the capture lock and commits): decides whether a lone transient
   // database failure was the job's own. Absent: such a failure stays
@@ -162,6 +170,15 @@ export function readJobPage(document: Document): PageExtraction | null {
 }
 
 const parseRunnable = (html: string, url: string) => new JSDOM(html, { url, runScripts: "outside-only" }).window.document;
+// Closes a parsed page's window (its document, timers and script context),
+// releasing its memory (P2028 fix F4). Never throws.
+export function closeParsedPage(document: Document | null | undefined): void {
+  try {
+    document?.defaultView?.close();
+  } catch {
+    // Already closed or not a window: nothing to release.
+  }
+}
 
 // Why a scriptless page (pageScripts "skip") cannot be saved as a full read
 // (LinkedIn Option A, November 8, 2026), or null when it can. With the page's
@@ -204,6 +221,83 @@ export interface PageCaptureIngestorDependencies {
   log?: { info(message: string): void; warn(message: string): void };
   diagnostics?: DiagnosticsSink;
 }
+
+// P2028 fix F3: the one immediate retry of a job's capture transaction
+// waits this long, and a pass retries at most this many jobs.
+export const pageCaptureIngestRetryWaitMs = 2_000;
+export const pageCaptureIngestRetriesPerPass = 3;
+
+// P2028 fix F1: what one ingestion attempt observed. The capture-lock
+// transactions' step timings (recorded by the repository, kept even when a
+// transaction fails), the worker's event-loop delay while it ran, and its
+// memory before and after. Integers and fixed names only.
+export interface IngestionObservation {
+  timing: CaptureTransactionTiming[];
+  eventLoopMaxMs: number;
+  eventLoopP99Ms: number;
+  rssMb: [number, number];
+  heapUsedMb: [number, number];
+}
+const megabytes = (bytes: number) => Math.round(bytes / 1_048_576);
+export function observeIngestion() {
+  const recorder = createCaptureTimingRecorder();
+  const loop = monitorEventLoopDelay({ resolution: 20 });
+  const start = process.memoryUsage();
+  loop.enable();
+  let finished: IngestionObservation | null = null;
+  return {
+    run: <T>(work: () => Promise<T>) => withCaptureTiming(recorder, work),
+    finish(): IngestionObservation {
+      if (finished) return finished;
+      loop.disable();
+      const end = process.memoryUsage();
+      finished = {
+        timing: recorder.snapshot(),
+        eventLoopMaxMs: Math.round(loop.max / 1e6),
+        eventLoopP99Ms: Math.round(loop.percentile(99) / 1e6),
+        rssMb: [megabytes(start.rss), megabytes(end.rss)],
+        heapUsedMb: [megabytes(start.heapUsed), megabytes(end.heapUsed)],
+      };
+      return finished;
+    },
+  };
+}
+export function observationFields(observation: IngestionObservation): DiagnosticFields {
+  return {
+    transactions: observation.timing,
+    eventLoopMaxMs: observation.eventLoopMaxMs,
+    eventLoopP99Ms: observation.eventLoopP99Ms,
+    rssMb: observation.rssMb,
+    heapUsedMb: observation.heapUsedMb,
+  };
+}
+const prefixed = (prefix: string, fields: DiagnosticFields): DiagnosticFields =>
+  Object.fromEntries(Object.entries(fields).map(([key, value]) => [`${prefix}${key[0]!.toUpperCase()}${key.slice(1)}`, value]));
+
+// What the database holds for a listing after a retry whose first attempt's
+// commit outcome was unknown (requirement 2): the listing's identity, its
+// versions with this content, the opportunities they belong to, and when the
+// record the retry landed on was written.
+export interface CaptureOutcomeVerification {
+  sameListing: boolean;
+  recordsWithThisContent: number;
+  opportunitiesForListing: number;
+  recordLinkedToOpportunity: boolean;
+  recordWrittenDuringFirstAttempt: boolean;
+  recordWrittenBeforeFirstAttempt: boolean;
+}
+// The first attempt committed only when the record the retry landed on was
+// written during the first attempt, is the listing's only version with this
+// content, belongs to the opportunity returned, and the listing has one
+// opportunity: never from an UNCHANGED outcome alone.
+export function resolveUncertainCommit(outcome: string, verification: CaptureOutcomeVerification): "FIRST_ATTEMPT_COMMITTED" | "FIRST_ATTEMPT_NOT_COMMITTED" | "UNDETERMINED" {
+  const consistent = verification.sameListing && verification.recordsWithThisContent === 1 && verification.opportunitiesForListing === 1 && verification.recordLinkedToOpportunity;
+  if (!consistent) return "UNDETERMINED";
+  if (outcome === "UNCHANGED" && verification.recordWrittenDuringFirstAttempt) return "FIRST_ATTEMPT_COMMITTED";
+  if ((outcome === "CREATED" || outcome === "CHANGED" || outcome === "ATTACHED") && !verification.recordWrittenDuringFirstAttempt && !verification.recordWrittenBeforeFirstAttempt) return "FIRST_ATTEMPT_NOT_COMMITTED";
+  return "UNDETERMINED";
+}
+const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 // The one path from a staged job's read posting to an opportunity, shared by
 // both detail mechanisms (the worker's server browser and the extension's
@@ -289,6 +383,7 @@ export type PageCaptureIngestor = ReturnType<typeof createPageCaptureIngestor>;
 
 export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitionDependencies) {
   const now = dependencies.now ?? (() => new Date());
+  const sleep = dependencies.sleep ?? defaultSleep;
   const log = dependencies.log ?? { info: () => undefined, warn: () => undefined };
   const diagnostics = dependencies.diagnostics ?? noDiagnostics;
   const ingestor = createPageCaptureIngestor(dependencies);
@@ -424,6 +519,22 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
           // count once proven (a database signal from a job already saved
           // is never counted against it).
           const pending: Array<{ job: PageCaptureItemRecord; count: boolean }> = [];
+          // P2028 fix F3 (approved November 9, 2026): one immediate retry of
+          // a job's capture transaction after a transient failure, with the
+          // capture already read (no new page request). At most once per job,
+          // at most pageCaptureIngestRetriesPerPass per pass, never once
+          // another job is waiting provisionally (DB_PENDING) or an earlier
+          // retry in the pass failed (a database outage is suspected): those
+          // keep today's handling.
+          let retriesThisPass = 0;
+          let retryFailedThisPass = false;
+          const retryEligible = (error: unknown) =>
+            !(error instanceof RetrievedListingNormalizationError || error instanceof ExtensionCaptureError || error instanceof PageCaptureSavedError) &&
+            classifyJobDatabaseFailure(error) === "TRANSIENT" &&
+            sanitizeWorkerError(error).transaction === "ingestRetrievedListing" &&
+            pending.length === 0 &&
+            !retryFailedThisPass &&
+            retriesThisPass < pageCaptureIngestRetriesPerPass;
           const finalizePending = async () => {
             for (const { job, count } of pending.splice(0)) {
               if (!count) continue;
@@ -514,26 +625,40 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 log.info(`page capture: job ${item.id} stage=navigate status=${page.status} (no longer available)`);
                 diagnostics.event("job.decision", { ...ids(item), stage: "navigate", decision: "UNAVAILABLE", status: page.status, elapsedMs: navigationMs, pageScripts: scripts.mode, requests: page.requests ?? null });
                 dependencies.evidence?.record({ ...ids(item), url: item.sourceUrl, status: page.status, finalUrl: page.finalUrl, elapsedMs: navigationMs, html: page.html, servedHtml: page.servedHtml ?? null, requests: page.requests ?? null, outcome: "UNAVAILABLE" });
+                closeParsedPage(page.document);
                 await dependencies.repository.markFailed(item.id, { status: "UNAVAILABLE", reason: "NOT_INGESTED", nextAttemptAt: null, countAttempt: true });
                 result.unavailable += 1;
                 continue;
               }
-              let extraction = readJobPage(page.document);
+              let extraction: PageExtraction | null;
               // LinkedIn's employer apply link: from the rendered page, else
               // from the page as LinkedIn sent it (its scripts can remove the
               // element after load; approved precedence, step 2), else the
               // listing fallback set when the capture is mapped.
-              let applicationRoute: "EMPLOYER_LINK_RENDERED" | "EMPLOYER_LINK_SERVED" | "LISTING_FALLBACK" | "NONE" = extraction?.posting?.applicationUrl ? "EMPLOYER_LINK_RENDERED" : "NONE";
+              let applicationRoute: "EMPLOYER_LINK_RENDERED" | "EMPLOYER_LINK_SERVED" | "LISTING_FALLBACK" | "NONE";
               let servedApply: ApplyEvidence | null = null;
-              const renderedApply = siteKey === "linkedin" || dependencies.evidence?.directory ? applyEvidence(page.document) : null;
-              if (siteKey === "linkedin" && extraction?.posting && !extraction.posting.applicationUrl && page.servedHtml && page.servedHtml !== page.html) {
-                const servedDocument = parseRunnable(page.servedHtml, page.finalUrl);
-                servedApply = applyEvidence(servedDocument);
-                const servedLink = readJobPage(servedDocument)?.posting?.applicationUrl ?? null;
-                if (servedLink) {
-                  extraction = { ...extraction, posting: { ...extraction.posting, applicationUrl: servedLink, applicationUrlBasis: "PAGE_APPLY_LINK" } };
-                  applicationRoute = "EMPLOYER_LINK_SERVED";
+              let renderedApply: ApplyEvidence | null;
+              let servedDocument: Document | null = null;
+              try {
+                extraction = readJobPage(page.document);
+                applicationRoute = extraction?.posting?.applicationUrl ? "EMPLOYER_LINK_RENDERED" : "NONE";
+                renderedApply = siteKey === "linkedin" || dependencies.evidence?.directory ? applyEvidence(page.document) : null;
+                if (siteKey === "linkedin" && extraction?.posting && !extraction.posting.applicationUrl && page.servedHtml && page.servedHtml !== page.html) {
+                  servedDocument = parseRunnable(page.servedHtml, page.finalUrl);
+                  servedApply = applyEvidence(servedDocument);
+                  const servedLink = readJobPage(servedDocument)?.posting?.applicationUrl ?? null;
+                  if (servedLink) {
+                    extraction = { ...extraction, posting: { ...extraction.posting, applicationUrl: servedLink, applicationUrlBasis: "PAGE_APPLY_LINK" } };
+                    applicationRoute = "EMPLOYER_LINK_SERVED";
+                  }
                 }
+              } finally {
+                // P2028 fix F4 (approved November 9, 2026): every parsed page
+                // is closed once all reading of it is done, also when reading
+                // fails; nothing reads the documents afterwards (the page
+                // evidence keeps the HTML strings).
+                closeParsedPage(page.document);
+                if (servedDocument) closeParsedPage(servedDocument);
               }
               if (applicationRoute === "NONE" && siteKey === "linkedin" && extraction?.posting) applicationRoute = "LISTING_FALLBACK";
               const built = extraction?.posting
@@ -614,9 +739,54 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 continue;
               }
               const ingestStarted = Date.now();
+              // F1: this attempt's capture-transaction timings, event-loop
+              // delay and memory (the last attempt's, on success or failure).
+              let observation = observeIngestion();
               try {
-                const ingested = await ingestor.ingest(item, built.envelope);
+                let ingested;
+                let retried: { firstAttempt: IngestionObservation; retryStartedAt: Date } | null = null;
+                try {
+                  ingested = await observation.run(() => ingestor.ingest(item, built.envelope));
+                } catch (error) {
+                  if (!retryEligible(error)) throw error;
+                  retriesThisPass += 1;
+                  const firstAttempt = observation.finish();
+                  diagnostics.event("job.retry", {
+                    ...ids(item),
+                    stage: "ingest",
+                    failure: "TRANSIENT",
+                    decision: "RETRY_ONCE",
+                    retriesThisPass,
+                    waitMs: pageCaptureIngestRetryWaitMs,
+                    elapsedMs: Date.now() - ingestStarted,
+                    ...observationFields(firstAttempt),
+                    error,
+                  });
+                  log.warn(`page capture: job ${item.id} stage=ingest failure=TRANSIENT ${formatWorkerError(error)}; retrying once in ${pageCaptureIngestRetryWaitMs} ms`);
+                  await sleep(pageCaptureIngestRetryWaitMs);
+                  const retryStartedAt = new Date();
+                  observation = observeIngestion();
+                  try {
+                    ingested = await observation.run(() => ingestor.ingest(item, built.envelope));
+                  } catch (second) {
+                    retryFailedThisPass = true;
+                    if (second && typeof second === "object") Object.assign(second, { retriedAfter: firstAttempt });
+                    throw second;
+                  }
+                  retried = { firstAttempt, retryStartedAt };
+                }
                 result.ingested += 1;
+                // After a retry whose first attempt may have committed (its
+                // failure came after its transaction body ended), what the
+                // database holds for the listing decides it, never the
+                // retry's outcome alone (requirement 2, November 9, 2026).
+                const uncertain = retried?.firstAttempt.timing.some((transaction) => transaction.transaction === "ingestRetrievedListing" && transaction.outcome === "unknown") ?? false;
+                const verification = retried && uncertain && dependencies.repository.describeCaptureOutcome
+                  ? await dependencies.repository
+                      .describeCaptureOutcome({ sourceRecordId: ingested.sourceRecordId, opportunityId: ingested.opportunityId, firstAttemptStartedAt: new Date(ingestStarted), retryStartedAt: retried.retryStartedAt })
+                      .catch(() => null)
+                  : null;
+                const final = observation.finish();
                 diagnostics.event("job.ingested", {
                   ...ids(item),
                   opportunityId: ingested.opportunityId,
@@ -625,15 +795,31 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                   corrected: ingested.normalizationCorrected ?? [],
                   refresh: isPageCaptureRefresh(item.lastReason),
                   elapsedMs: Date.now() - ingestStarted,
+                  ...observationFields(final),
+                  ...(retried
+                    ? {
+                        retried: true,
+                        ...prefixed("firstAttempt", observationFields(retried.firstAttempt)),
+                        firstAttemptCommit: uncertain
+                          ? verification ? resolveUncertainCommit(ingested.outcome, verification) : "UNDETERMINED"
+                          : retried.firstAttempt.timing.some((transaction) => transaction.transaction === "ingestRetrievedListing" && transaction.outcome === "rolled-back")
+                            ? "ROLLED_BACK"
+                            : "NOT_RECORDED",
+                        ...(verification ? { commitVerification: verification } : {}),
+                      }
+                    : {}),
                 });
                 // The capture path works: earlier provisional failures were
                 // those jobs' own.
                 await finalizePending();
               } catch (error) {
                 const ingestMs = Date.now() - ingestStarted;
+                const lastAttempt = observation.finish();
+                const retriedAfter = (error as { retriedAfter?: IngestionObservation } | null)?.retriedAfter;
+                const attemptFields = { ...observationFields(lastAttempt), ...(retriedAfter ? { retried: true, ...prefixed("firstAttempt", observationFields(retriedAfter)) } : {}) };
                 if (error instanceof RetrievedListingNormalizationError || error instanceof ExtensionCaptureError) {
                   log.warn(`page capture: job ${item.id} stage=normalize (the posting could not be normalized)`);
-                  diagnostics.event("job.failed", { ...ids(item), stage: "normalize", failure: "UNREADABLE", elapsedMs: ingestMs, error });
+                  diagnostics.event("job.failed", { ...ids(item), stage: "normalize", failure: "UNREADABLE", elapsedMs: ingestMs, ...attemptFields, error });
                   if (await failOne(item, "UNREADABLE")) result.awaitingDetails += 1;
                   continue;
                 }
@@ -651,6 +837,7 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                     failure,
                     opportunityId: error.opportunityId,
                     elapsedMs: ingestMs,
+                    ...attemptFields,
                     error: error.cause,
                     decision: error.stage === "mark" ? (requeued ? "SAVED_UNMARKED_REQUEUED_UNCOUNTED" : "SAVED_UNMARKED_LEFT_FOR_RECOVERY") : "SAVED_HANDOFF_NOT_RECORDED",
                   });
@@ -662,7 +849,7 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
                 }
                 const failure = classifyJobDatabaseFailure(error);
                 log.warn(`page capture: job ${item.id} stage=ingest failure=${failure} ${formatWorkerError(error)}`);
-                const failed = { ...ids(item), stage: "ingest", failure, elapsedMs: ingestMs, transactionSettings: captureTransactionSettings, error };
+                const failed = { ...ids(item), stage: "ingest", failure, elapsedMs: ingestMs, transactionSettings: captureTransactionSettings, ...attemptFields, error };
                 if (failure === "UNKNOWN") {
                   diagnostics.event("job.failed", { ...failed, decision: "PASS_ENDED_UNKNOWN_ERROR" });
                   throw error;

@@ -173,7 +173,16 @@ export function createBrowserSession(driver: BrowserDriver, options: BrowserSess
     const document = options.parse(result.html, result.finalUrl);
     const page = { finalUrl: result.finalUrl, document };
     const friction = detectGenericFriction(page) ?? options.detectFriction?.(page) ?? null;
-    if (friction) stop(new AdapterError("ACCESS_DENIED", `The source presented ${friction}; retrieval stopped`, { status, url, ...requests }));
+    if (friction) {
+      // The page is not returned: release its parsed window now (P2028 fix
+      // F4, November 9, 2026).
+      try {
+        document.defaultView?.close();
+      } catch {
+        // Nothing to release.
+      }
+      stop(new AdapterError("ACCESS_DENIED", `The source presented ${friction}; retrieval stopped`, { status, url, ...requests }));
+    }
     const served = result.servedHtml !== undefined && result.servedHtml.length <= maxPageBytes ? { servedHtml: result.servedHtml } : {};
     return { status, finalUrl: result.finalUrl, document, html: result.html, ...served, ...requests };
   }

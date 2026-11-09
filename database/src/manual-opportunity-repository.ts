@@ -33,6 +33,7 @@ import {
 } from "@ai-career/deduplication";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { beginCaptureTiming, type CaptureTimingHandle } from "./capture-timing";
 import { namedTransaction } from "./transaction-diagnostics";
 import {
   containsPattern,
@@ -61,6 +62,59 @@ export const captureTransactionSettings = { ...captureTransactionOptions, lockTi
 async function takeCaptureLock(transaction: Transaction) {
   await transaction.$queryRaw`SELECT set_config('lock_timeout', ${`${captureLockWaitMs}ms`}, true)`;
   await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${captureLockKey})::text`;
+}
+// P2028 fix F2 (approved November 9, 2026): once the capture lock is held,
+// every later statement of the transaction is limited, so one stalled
+// statement fails on its own (SQLSTATE 57014) before the whole transaction
+// expires (P2028). Set only after the lock: the lock wait keeps its own
+// lock_timeout and its contention meaning (55P03), and does not count. The
+// limit is 10 s, or less when the transaction has less time left (2 s
+// margin), never below 1 s. Transaction-local (set_config(…, true)): it ends
+// with the transaction, whatever its outcome.
+export const captureStatementTimeoutMs = 10_000;
+const captureStatementMarginMs = 2_000;
+export function captureStatementTimeoutFor(elapsedInTransactionMs: number): number {
+  const remaining = captureTransactionOptions.timeout - elapsedInTransactionMs - captureStatementMarginMs;
+  return Math.max(1_000, Math.min(captureStatementTimeoutMs, Math.floor(remaining)));
+}
+// The names of the transactions that take the capture lock (a 57014 is a
+// capture statement timeout only from one of these).
+export const captureLockTransactionNames = ["ingestManualOpportunity", "ingestRetrievedListing", "probeCaptureLock", "preserveUnnormalizedListing"] as const;
+type CaptureLockTransactionName = (typeof captureLockTransactionNames)[number];
+
+// One capture-lock transaction: its options, the capture lock, the
+// statement timeout armed after the lock, per-step timing (F1; recorded only
+// when the caller set a recorder) and, on failure, the transaction's name
+// and the armed statement timeout attached to the error (no data).
+async function captureLockTransaction<T>(
+  database: ReturnType<typeof getDatabaseClient>,
+  name: CaptureLockTransactionName,
+  body: (transaction: Transaction, timing: CaptureTimingHandle) => Promise<T>,
+): Promise<T> {
+  const timing = beginCaptureTiming(name);
+  let armedStatementTimeoutMs: number | null = null;
+  try {
+    const result = await namedTransaction(name, () =>
+      database.$transaction(async (transaction) => {
+        timing.bodyStarted();
+        const bodyStartedAt = Date.now();
+        await timing.step("capture-lock", () => takeCaptureLock(transaction));
+        const statementTimeoutMs = captureStatementTimeoutFor(Date.now() - bodyStartedAt);
+        await timing.step("statement-timeout", () => transaction.$queryRaw`SELECT set_config('statement_timeout', ${`${statementTimeoutMs}ms`}, true)`);
+        armedStatementTimeoutMs = statementTimeoutMs;
+        timing.statementTimeout(statementTimeoutMs);
+        const value = await body(transaction, timing);
+        timing.bodyEnded();
+        return value;
+      }, captureTransactionOptions),
+    );
+    timing.settled("ok");
+    return result;
+  } catch (error) {
+    timing.settled("error");
+    if (error && typeof error === "object" && armedStatementTimeoutMs !== null) Object.assign(error, { captureStatementTimeoutMs: armedStatementTimeoutMs });
+    throw error;
+  }
 }
 // A capture transaction's failure names the transaction (logged by the
 // worker; no data): see transaction-diagnostics.ts.
@@ -437,13 +491,10 @@ export class PrismaManualOpportunityRepository
     provenance: FieldProvenanceInput[];
     duplicateResolution: DuplicateResolutionChoice | null;
   }): Promise<{ opportunityId: string; deduplication: DeduplicationOutcome }> {
-    return namedTransaction("ingestManualOpportunity", () =>
-      this.database.$transaction(async (transaction) => {
-        await takeCaptureLock(transaction);
-        const captured = await this.capture(transaction, { ...input, recordedBy: "CAPTURE" });
-        return { opportunityId: captured.opportunityId, deduplication: captured.deduplication };
-      }, captureTransactionOptions),
-    );
+    return captureLockTransaction(this.database, "ingestManualOpportunity", async (transaction, timing) => {
+      const captured = await this.capture(transaction, { ...input, recordedBy: "CAPTURE" }, timing);
+      return { opportunityId: captured.opportunityId, deduplication: captured.deduplication };
+    });
   }
 
   // One retrieved listing, in the same capture transaction and lock as a
@@ -464,25 +515,24 @@ export class PrismaManualOpportunityRepository
     const raw = input.rawOpportunity;
     const retrieval = raw.retrieval;
     if (!retrieval) throw new Error("A retrieved listing must carry retrieval provenance");
-    return namedTransaction("ingestRetrievedListing", () => this.database.$transaction(
-      async (transaction) => {
-        await takeCaptureLock(transaction);
+    return captureLockTransaction(this.database, "ingestRetrievedListing",
+      async (transaction, timing) => {
         const previous = raw.externalId
-          ? await transaction.sourceRecord.findFirst({
+          ? await timing.step("lookup", () => transaction.sourceRecord.findFirst({
               where: { source: raw.source, externalId: raw.externalId, opportunityId: { not: null }, contentHash: { not: null } },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               select: { id: true, opportunityId: true, contentHash: true },
-            })
+            }))
           : null;
         if (previous?.opportunityId) {
           const opportunityId = previous.opportunityId;
           let sourceRecordId = previous.id;
           let normalizationCorrected: string[] = [];
           if (previous.contentHash === retrieval.contentHash) {
-            await transaction.$executeRaw`
+            await timing.step("last-observed", () => transaction.$executeRaw`
               UPDATE "SourceRecord" SET "lastObservedAt" = GREATEST("lastObservedAt", ${raw.discoveredAt}::timestamptz), "updatedAt" = now()
               WHERE "id" = ${previous.id}::uuid
-            `;
+            `);
             // A browser-extension read that found this same version records
             // when it read it, with which reader and how completely
             // ("lastRead", additive; the stored evidence is unchanged), so
@@ -490,10 +540,10 @@ export class PrismaManualOpportunityRepository
             // (November 6, 2026).
             const lastRead = extensionReadOf(raw);
             if (lastRead) {
-              await transaction.$executeRaw`
+              await timing.step("last-read", () => transaction.$executeRaw`
                 UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set(COALESCE("sourceMetadata", '{}'::jsonb), '{lastRead}', ${JSON.stringify(lastRead)}::jsonb)
                 WHERE "id" = ${previous.id}::uuid
-              `;
+              `);
               // D1 (approved November 8, 2026): a browser-extension re-read
               // (Single Capture or a Mode B refresh) of the listing that
               // created the opportunity is normalized again by the current
@@ -505,35 +555,35 @@ export class PrismaManualOpportunityRepository
               // kept, nothing cleared for not being read. Facts that already
               // agree are not written again, so a repeat re-read changes
               // nothing. Nothing is evaluated.
-              const origin = await originatingVersion(transaction, opportunityId);
+              const origin = await timing.step("origin", () => originatingVersion(transaction, opportunityId));
               if (origin && origin.origin.sourceType !== "MANUAL" && origin.origin.source === raw.source && origin.origin.externalId === raw.externalId && origin.currentId === previous.id) {
-                normalizationCorrected = await this.reprojectCurrentFacts(transaction, {
+                normalizationCorrected = await timing.step("reprojection", () => this.reprojectCurrentFacts(transaction, {
                   opportunityId,
                   sourceRecordId: previous.id,
                   rawOpportunity: raw,
                   opportunity: input.opportunity,
                   provenance: input.provenance,
                   correction: true,
-                });
-                if (await this.reprojectApplicationLink(transaction, { opportunityId, sourceRecordId: previous.id, rawOpportunity: raw, originSource: origin.origin.source })) {
+                }));
+                if (await timing.step("application-link", () => this.reprojectApplicationLink(transaction, { opportunityId, sourceRecordId: previous.id, rawOpportunity: raw, originSource: origin.origin.source }))) {
                   normalizationCorrected.push("applicationUrl");
                 }
                 if (normalizationCorrected.length) {
                   // The correction event, on the version whose evidence it
                   // re-read (additive; the stored evidence is unchanged).
                   const event = { at: new Date().toISOString(), observedAt: raw.discoveredAt.toISOString(), readerRevision: lastRead.readerRevision, fields: normalizationCorrected };
-                  await transaction.$executeRaw`
+                  await timing.step("correction-event", () => transaction.$executeRaw`
                     UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set(
                       "sourceMetadata", '{normalizationCorrections}',
                       COALESCE("sourceMetadata"->'normalizationCorrections', '[]'::jsonb) || ${JSON.stringify([event])}::jsonb
                     ), "normalizedAt" = now()
                     WHERE "id" = ${previous.id}::uuid
-                  `;
+                  `);
                 }
               }
             }
           } else {
-            const created = await transaction.sourceRecord.create({
+            const created = await timing.step("source-version", () => transaction.sourceRecord.create({
               data: {
                 ...this.sourceRecordData(raw),
                 opportunityId,
@@ -541,27 +591,27 @@ export class PrismaManualOpportunityRepository
                 normalizedAt: new Date(),
               },
               select: { id: true },
-            });
+            }));
             sourceRecordId = created.id;
             // A newer version of the listing that created the opportunity
             // re-projects its current facts; a changed copy from another
             // source stays history only.
-            const origin = await originatingVersion(transaction, opportunityId);
+            const origin = await timing.step("origin", () => originatingVersion(transaction, opportunityId));
             if (origin && origin.origin.sourceType !== "MANUAL" && origin.origin.source === raw.source && origin.origin.externalId === raw.externalId) {
-              await this.reprojectCurrentFacts(transaction, {
+              await timing.step("reprojection", () => this.reprojectCurrentFacts(transaction, {
                 opportunityId,
                 sourceRecordId: created.id,
                 rawOpportunity: raw,
                 opportunity: input.opportunity,
                 provenance: input.provenance,
-              });
-              await this.reprojectApplicationLink(transaction, { opportunityId, sourceRecordId: created.id, rawOpportunity: raw, originSource: origin.origin.source });
+              }));
+              await timing.step("application-link", () => this.reprojectApplicationLink(transaction, { opportunityId, sourceRecordId: created.id, rawOpportunity: raw, originSource: origin.origin.source }));
             }
           }
-          await transaction.$executeRaw`
+          await timing.step("last-seen", () => transaction.$executeRaw`
             UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${raw.discoveredAt}::timestamptz)
             WHERE "id" = ${opportunityId}::uuid
-          `;
+          `);
           return {
             outcome: previous.contentHash === retrieval.contentHash ? ("UNCHANGED" as const) : ("CHANGED" as const),
             opportunityId,
@@ -571,13 +621,13 @@ export class PrismaManualOpportunityRepository
           };
         }
 
-        const captured = await this.capture(transaction, { ...input, duplicateResolution: null, recordedBy: "RETRIEVAL" });
+        const captured = await this.capture(transaction, { ...input, duplicateResolution: null, recordedBy: "RETRIEVAL" }, timing);
         if (captured.deduplication.outcome === "ATTACHED") {
-          await this.applyApplicationLinkPrecedence(transaction, {
+          await timing.step("application-link", () => this.applyApplicationLinkPrecedence(transaction, {
             opportunityId: captured.opportunityId,
             sourceRecordId: captured.sourceRecordId,
             rawOpportunity: raw,
-          });
+          }));
         }
         return {
           outcome: captured.deduplication.outcome,
@@ -586,8 +636,7 @@ export class PrismaManualOpportunityRepository
           decision: captured.deduplication.decision,
         };
       },
-      captureTransactionOptions,
-    ));
+    );
   }
 
   // The capture path's health, without capturing anything: one transaction
@@ -595,19 +644,14 @@ export class PrismaManualOpportunityRepository
   // the Mode B worker to tell a job-specific failure from a database or lock
   // that is unavailable (November 5, 2026).
   async probeCaptureLock(): Promise<void> {
-    await namedTransaction("probeCaptureLock", () =>
-      this.database.$transaction(async (transaction) => {
-        await takeCaptureLock(transaction);
-      }, captureTransactionOptions),
-    );
+    await captureLockTransaction(this.database, "probeCaptureLock", async () => undefined);
   }
 
   // Keeps a retrieved listing whose normalization failed, unlinked. The
   // same unnormalized content seen again only moves its last-observed time.
   async preserveUnnormalizedListing(rawOpportunity: RawOpportunity) {
     const hash = rawOpportunity.retrieval?.contentHash ?? null;
-    return namedTransaction("preserveUnnormalizedListing", () => this.database.$transaction(async (transaction) => {
-      await takeCaptureLock(transaction);
+    return captureLockTransaction(this.database, "preserveUnnormalizedListing", async (transaction) => {
       const existing =
         hash && rawOpportunity.externalId
           ? await transaction.sourceRecord.findFirst({
@@ -627,7 +671,7 @@ export class PrismaManualOpportunityRepository
         data: this.sourceRecordData(rawOpportunity),
         select: { id: true, discoveredAt: true },
       });
-    }, captureTransactionOptions));
+    });
   }
 
   // The capture path shared by manual capture and retrieval, inside the
@@ -643,16 +687,19 @@ export class PrismaManualOpportunityRepository
       duplicateResolution: DuplicateResolutionChoice | null;
       recordedBy: "CAPTURE" | "RETRIEVAL";
     },
+    timing: CaptureTimingHandle,
   ): Promise<{ opportunityId: string; sourceRecordId: string; deduplication: DeduplicationOutcome }> {
     // The raw capture is written first, exactly as submitted.
-    const sourceRecord = await transaction.sourceRecord.create({
+    const sourceRecord = await timing.step("source-record", () => transaction.sourceRecord.create({
       data: this.sourceRecordData(input.rawOpportunity),
       select: { id: true },
-    });
+    }));
     const identity = captureIdentity(input.opportunity);
-    const details = await findDuplicateCandidates(transaction, identity);
-    const decision = decideDuplicates(identity, details.candidates);
-    const matches = summaries(decision, details.labels);
+    const details = await timing.step("candidates", () => findDuplicateCandidates(transaction, identity));
+    const { decision, matches } = await timing.step("scoring", () => {
+      const decided = decideDuplicates(identity, details.candidates);
+      return { decision: decided, matches: summaries(decided, details.labels) };
+    });
     const now = new Date();
 
     if (decision.canonical && input.duplicateResolution !== "SEPARATE") {
@@ -660,6 +707,7 @@ export class PrismaManualOpportunityRepository
       // capture as another of its sources. Its fields, lifecycle,
       // evaluations and application are not changed.
       const canonical = decision.canonical;
+      await timing.step("attach", async () => {
       await transaction.$queryRaw`SELECT "id" FROM "Opportunity" WHERE "id" = ${canonical.opportunityId}::uuid FOR UPDATE`;
       await transaction.sourceRecord.update({
         where: { id: sourceRecord.id },
@@ -674,6 +722,7 @@ export class PrismaManualOpportunityRepository
         UPDATE "Opportunity" SET "lastSeenAt" = GREATEST("lastSeenAt", ${input.rawOpportunity.discoveredAt}::timestamptz)
         WHERE "id" = ${canonical.opportunityId}::uuid
       `;
+      });
       return {
         opportunityId: canonical.opportunityId,
         sourceRecordId: sourceRecord.id,
@@ -691,7 +740,7 @@ export class PrismaManualOpportunityRepository
       opportunity: input.opportunity,
       provenance: input.provenance,
       normalizedAt: now,
-    });
+    }, timing);
 
     // Relationships to record: an exact duplicate the user kept separate
     // (stored as DISTINCT, reversible) and the strongest probable matches.
@@ -701,7 +750,7 @@ export class PrismaManualOpportunityRepository
     ];
     for (const match of recorded) {
       const separate = match === decision.canonical;
-      await transaction.duplicateReference.create({
+      await timing.step("duplicate-links", () => transaction.duplicateReference.create({
         data: {
           ...orientPair({ opportunityId, firstSeenAt: input.opportunity.firstSeenAt }, match),
           decision: match.decision,
@@ -709,7 +758,7 @@ export class PrismaManualOpportunityRepository
           evidence: referenceEvidence(match, { recordedBy: separate ? "CAPTURE_KEPT_SEPARATE" : input.recordedBy }),
           ...(separate ? { resolution: "DISTINCT" as const, resolvedAt: now } : {}),
         },
-      });
+      }));
     }
 
     return {
@@ -993,9 +1042,10 @@ export class PrismaManualOpportunityRepository
       provenance: FieldProvenanceInput[];
       normalizedAt: Date;
     },
+    timing: CaptureTimingHandle,
   ): Promise<string> {
-    const companyId = await resolveCompanyId(transaction, input.opportunity.companyName);
-    const opportunity = await transaction.opportunity.create({
+    const companyId = await timing.step("company", () => resolveCompanyId(transaction, input.opportunity.companyName));
+    const opportunity = await timing.step("opportunity", () => transaction.opportunity.create({
       data: {
         domain: input.opportunity.domain,
         externalListingId: input.opportunity.externalListingId,
@@ -1047,10 +1097,10 @@ export class PrismaManualOpportunityRepository
         status: "DISCOVERED",
       },
       select: { id: true },
-    });
+    }));
 
     if (input.provenance.length > 0) {
-      await transaction.fieldProvenance.createMany({
+      await timing.step("provenance", () => transaction.fieldProvenance.createMany({
         data: input.provenance.map((provenance) => ({
           opportunityId: opportunity.id,
           sourceRecordId: input.sourceRecordId,
@@ -1062,17 +1112,18 @@ export class PrismaManualOpportunityRepository
           sourceText: provenance.sourceText,
           collectedAt: provenance.collectedAt,
         })),
-      });
+      }));
     }
 
-    await transaction.sourceRecord.update({
-      where: { id: input.sourceRecordId },
-      data: { opportunityId: opportunity.id, normalizedAt: input.normalizedAt },
-    });
-
-    const transitioned = await transaction.opportunity.updateMany({
-      where: { id: opportunity.id, status: "DISCOVERED" },
-      data: { status: "NORMALIZED" },
+    const transitioned = await timing.step("opportunity", async () => {
+      await transaction.sourceRecord.update({
+        where: { id: input.sourceRecordId },
+        data: { opportunityId: opportunity.id, normalizedAt: input.normalizedAt },
+      });
+      return transaction.opportunity.updateMany({
+        where: { id: opportunity.id, status: "DISCOVERED" },
+        data: { status: "NORMALIZED" },
+      });
     });
     if (transitioned.count !== 1) {
       throw new Error("Opportunity lifecycle transition DISCOVERED -> NORMALIZED was rejected");

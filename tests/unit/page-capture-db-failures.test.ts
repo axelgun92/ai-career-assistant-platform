@@ -423,3 +423,106 @@ describe("a saved job read again, and a job saved before a later step failed", (
   });
 });
 
+
+// ------------------------------------------------- P2028 fix F3: the retry
+// One immediate retry of a job's capture transaction after a transient
+// failure (approved November 9, 2026): at most once per job, at most three per
+// pass, never while another job is provisional or after a failed retry in the
+// pass; everything else keeps the handling above.
+const inCapture = (error: Error, transaction = "ingestRetrievedListing") => Object.assign(error, { captureTransaction: transaction });
+const statementTimeout = (extra: Record<string, unknown> = {}) =>
+  inCapture(Object.assign(prismaError("P2010", "Raw query failed.", { kind: "postgres", code: "57014", message: "canceling statement due to statement timeout" }), { captureStatementTimeoutMs: 10_000, ...extra }));
+const failures = (plan: Record<string, Array<() => Error>>) => {
+  const calls: Record<string, number> = {};
+  return {
+    calls,
+    ingest: (id: string) => {
+      calls[id] = (calls[id] ?? 0) + 1;
+      const next = plan[id]?.shift();
+      return next ? next() : null;
+    },
+  };
+};
+
+describe("the one immediate retry of a capture transaction (P2028 fix F3)", () => {
+  it("a one-off transient failure is retried once with the same read and saved: no attempt charged beyond the read, one hand-off, no provisional state", async () => {
+    const plan = failures({ r3: [() => inCapture(expired())] });
+    const { acquisition, rows, repository, handoff } = setup({ ids: ["r1", "r2", "r3", "r4"], ingest: plan.ingest });
+    expect(await acquisition.runOnce()).toMatchObject({ claimed: 4, ingested: 4, stopped: null });
+    expect(plan.calls.r3).toBe(2);
+    expect(state(rows, "r3")).toEqual({ status: "INGESTED", attempts: 1, lastReason: null });
+    expect(state(rows, "r3")).toEqual(state(rows, "r2"));
+    expect(repository.requeueUncounted).not.toHaveBeenCalled();
+    expect(handoff.request).toHaveBeenCalledTimes(4);
+  });
+
+  it("a capture statement timeout (57014) is retried; the same SQLSTATE from elsewhere is not", async () => {
+    const plan = failures({ s2: [() => statementTimeout()] });
+    const { acquisition, rows } = setup({ ids: ["s1", "s2", "s3"], ingest: plan.ingest });
+    expect(await acquisition.runOnce()).toMatchObject({ ingested: 3, stopped: null });
+    expect(plan.calls.s2).toBe(2);
+    expect(state(rows, "s2").status).toBe("INGESTED");
+    // An operator's cancellation, or a 57014 outside a capture transaction:
+    // UNKNOWN, never retried (the pass ends as today).
+    for (const error of [() => statementTimeout({ meta: { driverAdapterError: { cause: { kind: "postgres", code: "57014", message: "canceling statement due to user request" } } } }), () => Object.assign(prismaError("P2010", "x", { kind: "postgres", code: "57014" }), {})]) {
+      const other = failures({ u2: [error] });
+      const run = setup({ ids: ["u1", "u2", "u3"], ingest: other.ingest });
+      await expect(run.acquisition.runOnce()).rejects.toBeTruthy();
+      expect(other.calls.u2).toBe(1);
+    }
+  });
+
+  it("a failure that persists through the retry keeps today's handling: provisional, then counted once after the next job's success", async () => {
+    const plan = failures({ p2: [() => inCapture(expired()), () => inCapture(expired())] });
+    const { acquisition, rows } = setup({ ids: ["p1", "p2", "p3"], ingest: plan.ingest });
+    expect(await acquisition.runOnce()).toMatchObject({ claimed: 3, ingested: 2, stopped: null });
+    expect(plan.calls.p2).toBe(2);
+    expect(state(rows, "p2")).toEqual({ status: "QUEUED", attempts: 1, lastReason: "INGEST_DB_ERROR" });
+    expect(rows.get("p2")!.nextAttemptAt).toEqual(new Date(now.getTime() + pageCaptureRetryAfterMs));
+  });
+
+  it("an outage: one retry at most, then the next job's failure (another job provisional) is not retried and ends the pass; nothing counted", async () => {
+    const plan = failures({ o2: [() => inCapture(expired()), () => inCapture(expired())], o3: [() => inCapture(connectionLost())] });
+    const { acquisition, rows } = setup({ ids: ["o1", "o2", "o3", "o4", "o5"], ingest: plan.ingest });
+    expect(await acquisition.runOnce()).toMatchObject({ ingested: 1, stopped: "DATABASE_UNAVAILABLE" });
+    expect(plan.calls).toMatchObject({ o2: 2, o3: 1 });
+    expect(plan.calls.o4).toBeUndefined();
+    for (const id of ["o2", "o3"]) expect(state(rows, id), id).toEqual({ status: "QUEUED", attempts: 0, lastReason: "DB_PENDING" });
+    for (const id of ["o4", "o5"]) expect(state(rows, id).status, id).toBe("QUEUED");
+  });
+
+  it("after a failed retry in the pass, later transient failures are not retried (an outage is suspected); isolation still counts each job once", async () => {
+    const plan = failures({ f1: [() => inCapture(expired()), () => inCapture(expired())], f3: [() => inCapture(expired())] });
+    const { acquisition, rows } = setup({ ids: ["f1", "f2", "f3", "f4"], ingest: plan.ingest });
+    expect(await acquisition.runOnce()).toMatchObject({ ingested: 2, stopped: null });
+    expect(plan.calls).toMatchObject({ f1: 2, f3: 1 });
+    for (const id of ["f1", "f3"]) expect(state(rows, id), id).toEqual({ status: "QUEUED", attempts: 1, lastReason: "INGEST_DB_ERROR" });
+  });
+
+  it("at most three retries in a pass; a fourth transient failure gets today's handling", async () => {
+    const once = () => [() => inCapture(expired())];
+    const plan = failures({ c1: once(), c2: once(), c3: once(), c4: once() });
+    const { acquisition, rows } = setup({ ids: ["c1", "c2", "c3", "c4", "c5"], ingest: plan.ingest });
+    expect(await acquisition.runOnce()).toMatchObject({ ingested: 4, stopped: null });
+    expect(plan.calls).toMatchObject({ c1: 2, c2: 2, c3: 2, c4: 1, c5: 1 });
+    expect(state(rows, "c4")).toEqual({ status: "QUEUED", attempts: 1, lastReason: "INGEST_DB_ERROR" });
+  });
+
+  it("never retries contention, the job's own refused data, a failure outside the capture transaction, or a programming error", async () => {
+    const cases: Array<[string, () => Error, string]> = [
+      ["contention", () => inCapture(lockBusy()), "CAPTURE_BUSY"],
+      ["permanent", () => inCapture(tooLong()), "NOT_INGESTED"],
+      ["preserve transaction", () => inCapture(expired(), "preserveUnnormalizedListing"), "DB_PENDING"],
+      ["no transaction named", () => expired(), "DB_PENDING"],
+    ];
+    for (const [name, error] of cases) {
+      const plan = failures({ n2: [error] });
+      const { acquisition } = setup({ ids: ["n1", "n2", "n3"], ingest: plan.ingest });
+      await acquisition.runOnce();
+      expect(plan.calls.n2, name).toBe(1);
+    }
+    const unknown = failures({ n2: [() => inCapture(new TypeError("Cannot read properties of undefined"))] });
+    await expect(setup({ ids: ["n1", "n2"], ingest: unknown.ingest }).acquisition.runOnce()).rejects.toBeTruthy();
+    expect(unknown.calls.n2).toBe(1);
+  });
+});

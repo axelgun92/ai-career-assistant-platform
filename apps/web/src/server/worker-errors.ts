@@ -5,8 +5,11 @@
 // Only whitelisted, non-sensitive fields are ever logged: error class names,
 // Prisma codes, driver error kinds, SQLSTATE codes and errno codes, plus, for
 // a P2028 only, which of Prisma's two fixed sentences it was and the numbers
-// in it. No other message text, stacks, hosts, connection strings, keys or
-// provider data are ever read.
+// in it, and, for SQLSTATE 57014 only, which of PostgreSQL's fixed
+// cancellation sentences it was (P2028 fix F2). No other message text,
+// stacks, hosts, connection strings, keys or provider data are ever read.
+
+import { captureLockTransactionNames } from "@ai-career/database";
 
 export type WorkerErrorClass = "transient" | "fatal";
 
@@ -24,6 +27,12 @@ export interface SanitizedWorkerError {
   elapsedMs?: string;
   // The capture transaction it happened in, when the repository names it.
   transaction?: string;
+  // A capture-lock transaction's statement timeout, when it had been set
+  // after the lock (P2028 fix F2), and, for SQLSTATE 57014, which of
+  // PostgreSQL's fixed cancellation reasons it was (read only from that fixed
+  // wording; nothing else of the message).
+  statementTimeoutMs?: string;
+  cancelReason?: "statement-timeout" | "user-request" | "other";
 }
 
 const transientPrismaCodes = new Set(["P1001", "P1002", "P1008", "P1017", "P2024", "P2034"]);
@@ -63,14 +72,26 @@ function readFields(error: unknown): SanitizedWorkerError {
       }
     }
     fields.transaction ??= safeToken(value.captureTransaction, namePattern);
+    if (fields.statementTimeoutMs === undefined && typeof value.captureStatementTimeoutMs === "number" && Number.isInteger(value.captureStatementTimeoutMs)) {
+      fields.statementTimeoutMs = String(value.captureStatementTimeoutMs);
+    }
     const meta = value.meta as { driverAdapterError?: { cause?: Record<string, unknown> } } | undefined;
     const cause = meta?.driverAdapterError?.cause;
     if (cause) {
       fields.kind ??= safeToken(cause.kind, namePattern);
       fields.sqlState ??= safeToken(cause.code, /^[0-9A-Z]{5}$/) ?? safeToken(cause.originalCode, /^[0-9A-Z]{5}$/);
     }
+    // PostgreSQL's fixed 57014 wording only (English server messages):
+    // "canceling statement due to statement timeout" / "… due to user
+    // request". Any other text, or none, is "other"; no text is kept.
+    if (!fields.cancelReason && fields.sqlState === "57014") {
+      const texts = [value.message, cause?.message].filter((text): text is string => typeof text === "string");
+      if (texts.some((text) => /canceling statement due to statement timeout/.test(text))) fields.cancelReason = "statement-timeout";
+      else if (texts.some((text) => /canceling statement due to user request/.test(text))) fields.cancelReason = "user-request";
+    }
     current = value.cause;
   }
+  if (fields.sqlState === "57014" && !fields.cancelReason) fields.cancelReason = "other";
   return fields;
 }
 
@@ -96,11 +117,28 @@ export function classifyWorkerError(error: unknown): WorkerErrorClass {
 // that worker. The evaluation worker keeps classifyWorkerError unchanged.
 const retrievalTransientPrismaCodes = new Set(["P2028"]);
 const retrievalTransientSqlStates = new Set(["55P03"]);
+// SQLSTATE 57014 is transient for the retrieval worker only as a capture
+// statement timeout (P2028 fix F2, approved November 9, 2026): raised inside
+// a transaction that takes the capture lock, after that transaction set its
+// statement timeout, and not PostgreSQL's "user request" cancellation (an
+// operator's pg_cancel_backend). Any other 57014 stays fatal / UNKNOWN.
+const captureLockTransactions = new Set<string>(captureLockTransactionNames);
+export function isCaptureStatementTimeout(error: unknown): boolean {
+  const fields = readFields(error);
+  return (
+    fields.sqlState === "57014" &&
+    fields.transaction !== undefined &&
+    captureLockTransactions.has(fields.transaction) &&
+    fields.statementTimeoutMs !== undefined &&
+    fields.cancelReason !== "user-request"
+  );
+}
 export function classifyRetrievalWorkerError(error: unknown): WorkerErrorClass {
   if (classifyWorkerError(error) === "transient") return "transient";
   const fields = readFields(error);
   if (fields.prismaCode && retrievalTransientPrismaCodes.has(fields.prismaCode)) return "transient";
   if (fields.sqlState && retrievalTransientSqlStates.has(fields.sqlState)) return "transient";
+  if (isCaptureStatementTimeout(error)) return "transient";
   return "fatal";
 }
 

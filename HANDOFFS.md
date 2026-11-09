@@ -2280,3 +2280,38 @@ Replacement:
   - one version each;
   - zero evaluations.
 - No live site and no other database was used. Live acceptance remains pending.
+
+### Handoff: LinkedIn Option A Phase 1 — P2028 Fixes F1–F4 (Claude; shared-boundary record)
+
+- **Date / base:** November 9, 2026, on top of `e2a8049` (`integration/final-evaluator-product`). Implemented and verified offline; approved by Alex for repository closeout and committed with this change. Root cause not identified.
+- **Why:** in the Phase 1 LinkedIn run, job 4476234680's capture transaction failed with P2028 "expired" (36,578 ms against 30,000 ms). It was handled as approved: counted once, retry after an hour, nothing saved, no evaluation.
+- **Root cause is not identified.** Confirmed:
+  - the transaction's own work is about 25 ms (p95 under 0.5 s);
+  - one step overran;
+  - a single lock wait cannot explain it.
+  Open hypotheses: H1 database or WSL stall; H2 worker process stall (JSDOM windows a possible contributor); H3 contention plus a second wait.
+- **What changed:**
+  - `database/src/capture-timing.ts` (new): AsyncLocalStorage per-step timing recorder.
+  - `manual-opportunity-repository.ts`:
+    - `captureLockTransaction`, now shared by all four capture-lock transactions;
+    - step timings;
+    - `statement_timeout` set transaction-locally after the lock (`captureStatementTimeoutFor`);
+    - the armed value is attached to errors.
+  - `page-capture-repository.ts`: read-only `describeCaptureOutcome`.
+  - `worker-errors.ts`: `isCaptureStatementTimeout` (57014 is transient only from an armed capture-lock transaction and never for a user-request cancellation); `statementTimeoutMs` and `cancelReason` in sanitized fields.
+  - `page-capture-acquisition.ts`:
+    - `observeIngestion` (timings, event-loop delay, memory);
+    - one bounded retry: 1 per job, 3 per pass, none while a job is `DB_PENDING` or after a failed retry; `ingestRetrievedListing` only;
+    - uncertain-commit resolution (`resolveUncertainCommit`);
+    - `job.retry` events and retry fields on `job.ingested` / `job.failed`;
+    - `closeParsedPage`, so JSDOM windows are closed in `finally`.
+  - `packages/discovery/src/browser.ts`: the window is closed on friction.
+- **Unchanged:** deduplication, normalization, D1, source versions, provenance, the 30 s / 15 s transaction options, the 20 s lock timeout, `DB_PENDING`, outage and probe accounting, the 1 h / 3-attempt rules, LinkedIn Option A, WTTJ Mode B, Single Capture otherwise (no recorder or retry there; only F2's 10 s statement limit applies to its capture transaction) and the evaluation worker's classification.
+- **Tests:**
+  - New: `tests/integration/p2028-capture-transactions.test.ts` (real 57014 stall, held capture lock, lost commit reply), `tests/unit/p2028-fixes.test.ts`, `tests/unit/p2028-jsdom-cleanup.test.ts`.
+  - Extended: `page-capture-db-failures.test.ts` (F3 rules).
+  - Adjusted: `mode-b-tenex-diagnostics.test.ts` (two failures for the old contract cases, plus a new one-off retry case).
+- **Next (each separately authorized by Alex):**
+  1. the Phase 1 follow-up restricted to job 4476234680;
+  2. a Single Capture regression pass.
+  Phase 2 stays blocked until those are done. On the next failure, read `job.retry` / `job.failed` `transactions`, `inFlight`, `eventLoopMaxMs` and `rssMb` to tell H1–H3 apart.

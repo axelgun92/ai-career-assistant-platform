@@ -227,10 +227,11 @@ async function evidencePackage(roots: { diagnostics: string; evidence: string })
 }
 
 describe("the November 5 batch: TENEX.AI (4372638963) sixth, a simulated P2028", () => {
-  it("localized to TENEX.AI's capture transaction: 5 + 19 ingested, TENEX counted once; the diagnostics, page evidence and package name it", { timeout: 180_000 }, async () => {
+  it("localized to TENEX.AI's capture transaction, failing again on its one retry: 5 + 19 ingested, TENEX counted once; the diagnostics, page evidence and package name it", { timeout: 180_000 }, async () => {
     const roots = { diagnostics: temporary(), evidence: temporary() };
     await saveBatch();
-    failIngest.set(tenex, 1);
+    // The P2028 persists through the one immediate retry (P2028 fix F3).
+    failIngest.set(tenex, 2);
     const before = await database.opportunity.count();
     const first = worker(roots);
     const pass = await first.acquisition.runOnce();
@@ -255,7 +256,12 @@ describe("the November 5 batch: TENEX.AI (4372638963) sixth, a simulated P2028",
       decision: "DB_PENDING_PROVISIONAL",
       error: { prismaCode: "P2028", transactionError: "expired", timeoutMs: "30000", elapsedMs: "30412", transaction: "ingestRetrievedListing" },
       transactionSettings: { maxWait: 15_000, timeout: 30_000, lockTimeoutMs: 20_000 },
+      retried: true,
     });
+    // The one immediate retry, before the provisional failure (F3).
+    expect(events.filter((event) => event.event === "job.retry")).toEqual([
+      expect.objectContaining({ itemId: tenexItem.id, decision: "RETRY_ONCE", retriesThisPass: 1, waitMs: 2_000, error: expect.objectContaining({ prismaCode: "P2028" }) }),
+    ]);
     expect(events.find((event) => event.event === "job.decision" && event.itemId === tenexItem.id)).toMatchObject({ decision: "PROVISIONAL_FAILURE_COUNTED" });
     expect(events.filter((event) => event.event === "job.ingested")).toHaveLength(24);
 
@@ -294,10 +300,40 @@ describe("the November 5 batch: TENEX.AI (4372638963) sixth, a simulated P2028",
     expect(new Set(handoffs).size).toBe(25);
   });
 
-  it("a database-wide outage at TENEX.AI: nothing counted, the pass ends with 18 unread queued again; after a restart the 20 complete, no duplicate", { timeout: 180_000 }, async () => {
+  it("a one-off P2028 at TENEX.AI: retried once immediately and saved; nothing counted, one hand-off each, the retry recorded (P2028 fix F3)", { timeout: 180_000 }, async () => {
     const roots = { diagnostics: temporary(), evidence: temporary() };
     await saveBatch();
     failIngest.set(tenex, 1);
+    const before = await database.opportunity.count();
+    const first = worker(roots);
+    expect(await first.acquisition.runOnce()).toMatchObject({ claimed: 25, ingested: 25, stopped: null });
+    // A saved job's read counts as its one attempt (markIngested); the
+    // retry adds no charge: TENEX matches its neighbours.
+    expect(await itemOf(tenex)).toMatchObject({ status: "INGESTED", attempts: 1, lastReason: null });
+    expect(await itemOf(names[4]!)).toMatchObject({ status: "INGESTED", attempts: 1 });
+    expect(await database.opportunity.count()).toBe(before + 25);
+    expect(await database.sourceRecord.count({ where: { externalId: (await itemOf(tenex)).externalId } })).toBe(1);
+    expect(handoffs).toHaveLength(25);
+    expect(new Set(handoffs).size).toBe(25);
+    const events = eventsOf(first.diagnostics);
+    const tenexItem = await itemOf(tenex);
+    expect(events.filter((event) => event.event === "job.failed")).toEqual([]);
+    expect(events.filter((event) => event.event === "job.retry").map((event) => event.itemId)).toEqual([tenexItem.id]);
+    expect(events.find((event) => event.event === "job.ingested" && event.itemId === tenexItem.id)).toMatchObject({
+      retried: true,
+      outcome: "CREATED",
+      // The injected failure never reached the transaction: nothing to resolve.
+      firstAttemptCommit: "NOT_RECORDED",
+      transactions: [expect.objectContaining({ transaction: "ingestRetrievedListing", outcome: "committed", bodyEnded: true })],
+    });
+  });
+
+  it("a database-wide outage at TENEX.AI: nothing counted, the pass ends with 18 unread queued again; after a restart the 20 complete, no duplicate", { timeout: 180_000 }, async () => {
+    const roots = { diagnostics: temporary(), evidence: temporary() };
+    await saveBatch();
+    // TENEX fails, and fails again on its one retry; the seventh job then
+    // fails while TENEX is provisional: no retry, an outage (F3).
+    failIngest.set(tenex, 2);
     failIngest.set(names[6]!, 1);
     const before = await database.opportunity.count();
     const first = worker(roots);
@@ -306,6 +342,7 @@ describe("the November 5 batch: TENEX.AI (4372638963) sixth, a simulated P2028",
     for (const name of names.slice(7)) expect(await itemOf(name), name).toMatchObject({ status: "QUEUED", attempts: 0 });
     const firstEvents = eventsOf(first.diagnostics);
     expect(firstEvents.filter((event) => event.event === "job.failed").map((event) => event.decision)).toEqual(["DB_PENDING_PROVISIONAL", "DB_PENDING_SECOND_IN_A_ROW_OUTAGE"]);
+    expect(firstEvents.filter((event) => event.event === "job.retry")).toHaveLength(1);
     expect(firstEvents.find((event) => event.event === "pass.decision")).toMatchObject({ decision: "DATABASE_UNAVAILABLE", unreadJobsQueuedAgain: 18 });
 
     // The worker is killed and restarted: a new diagnostics session, recovery first.

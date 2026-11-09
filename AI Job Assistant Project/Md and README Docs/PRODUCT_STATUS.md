@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta P2 committed (awaiting live acceptance; not complete); workstreams C–E and Workstream B capture correctness committed; Workstream B Mode B live-round fixes (worker resilience, selective re-observation, evidence-based updates, LinkedIn listing fallback, residency exclusions, country salary tiers) and every E4-independent gap implemented and verified offline; committed as `58ef504`; Mode B Rev 3 final review committed as `4847751`; **WTTJ Mode B Rev 3 accepted by Alex in the November 7 live round**; LinkedIn Mode B not yet accepted (three jobs read, then LinkedIn answered HTTP 429 to its fourth logged-out page in five minutes); the November 7 follow-up fixes (no Retry per job when the worker has no browser; TENEX.AI Hybrid with remote only by exception; Nearmap Remote within the continental U.S.; Thomson Reuters target total cash; WTTJ refresh dates) implemented, verified offline and approved (not LinkedIn acceptance); a controlled LinkedIn live round pending separate authorization
-**Last updated:** November 6, 2026
+**Last updated:** November 9, 2026
 
 ## Purpose
 
@@ -96,6 +96,13 @@ Supported results page (Alex's Chrome)
     - LinkedIn jobs with no employer link found get "Apply on LinkedIn (listing page)", never a careers front page; an employer link always wins.
     - Residency exclusions are kept (additive field; migration on the test database only), country-labelled salary tiers are read, and Captured Jobs shows the saved job's company and location.
     - Verified offline: unit 2,260, integration 411, E2E 60/60. Wording-specific fixes and the P2028 root cause wait for Alex's read-only E4 evidence; the acceptance-database migration and the live round need authorization.
+  - **LinkedIn Option A Phase 1 P2028 fixes F1–F4 (November 9, 2026; implemented and verified offline on top of `e2a8049`; approved by Alex and committed; root cause unconfirmed; live follow-up pending):**
+    - Phase 1: job 4476234680's capture transaction hit P2028 "expired" (36,578 ms against 30,000 ms). It was handled as approved (counted once, retried after an hour, nothing saved). The root cause is not identified; H1 (database or WSL stall), H2 (worker stall) and H3 (contention plus a second wait) remain open.
+    - F1: per-step capture-transaction timings, event-loop delay and memory in the worker diagnostics, kept through failures and uncertain commits.
+    - F2: a statement timeout set after the capture lock (≤ 10 s), so one stalled statement fails alone with 57014. Contention stays 55P03.
+    - F3: one immediate retry of a transient capture failure (1 per job, 3 per pass, none while a job is `DB_PENDING` or after a failed retry). An uncertain first commit is verified from the database.
+    - F4: JSDOM windows are closed after reading; saved captures are unchanged.
+    - Verified offline, including real-database stall, lock-held and lost-commit tests. The Phase 1 follow-up (job 4476234680) and a Single Capture regression pass each need authorization; Phase 2 stays blocked until both.
   - **Final pre-live corrections (November 8, 2026; implemented and verified offline on top of `42a647c`; approved by Alex and committed; live acceptance pending):**
     - Salary: one field, in the employer's terms.
       - Displays: "(Base salary)", "base + commission", "(Includes bonuses)", "(Target total cash: base + incentives)" (Thomson Reuters), and "(OTE)" only when the employer says OTE or on-target (Dataminr).
