@@ -209,7 +209,12 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   (Salary in the employer's terms, D1 normalization correction on unchanged recapture as approved,
   Mode A/Mode B parity and duplicates verified on the saved November 5-7 facts) verified offline on
   top of 42a647c, approved by Alex on November 8, 2026 and committed; the D1 contract is adopted in
-  Core Platform TDD v1.20 (Section 51; v1.19 archived unchanged); no live test authorized
+  Core Platform TDD v1.20 (Section 51; v1.19 archived unchanged); P2028 fixes F1–F4 committed at
+  03aa99e; November 9 LinkedIn Mode B live round: one save, 25 claimed and 25 ingested (core
+  one-action requirement passed); November 9 diagnostic corrections (shared reader for escaped
+  structured descriptions, shared role-level hybrid rules, LinkedIn validThrough as listing expiry
+  with retraction on re-read) verified offline, approved by Alex and committed; the Core Platform
+  TDD v1.21 amendment is proposed only, not approved (v1.20 unchanged); no live test authorized
 → current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

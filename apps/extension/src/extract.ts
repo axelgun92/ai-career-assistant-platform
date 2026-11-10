@@ -140,10 +140,23 @@ export function extractJobPosting(): PageExtraction {
   };
   // HTML from structured data, read as inert text: a parsed document has no
   // browsing context, so nothing in it runs or loads.
+  // Some boards state that HTML with its markup itself escaped ("&lt;p&gt;…";
+  // LinkedIn's JobPosting, November 9, 2026): one parse then holds no
+  // element and leaves the markup as text. Only then, and only when that text
+  // is markup, is it read once more (never a third time); text that merely
+  // contains "<", or real HTML with an escaped tag in its prose, is read as
+  // it is.
+  const encodedMarkup = /<\/?(?:p|br|ul|ol|li|strong|b|em|i|u|h[1-6]|div|span|a)\b[^<>]*>/i;
   const htmlText = (value: unknown): string | null => {
     if (typeof value !== "string" || !value.trim()) return null;
     const parsed = new DOMParser().parseFromString(value, "text/html");
-    return parsed.body ? textOf(parsed.body) || null : null;
+    if (!parsed.body) return null;
+    const literal = parsed.body.querySelector("*") ? null : parsed.body.textContent ?? "";
+    if (literal && encodedMarkup.test(literal)) {
+      const decoded = new DOMParser().parseFromString(literal, "text/html");
+      if (decoded.body) return textOf(decoded.body) || null;
+    }
+    return textOf(parsed.body) || null;
   };
   const httpUrl = (value: unknown): string | null => {
     if (typeof value !== "string") return null;

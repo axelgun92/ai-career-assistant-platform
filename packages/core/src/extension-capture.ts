@@ -11,10 +11,23 @@ import { z } from "zod";
 export const extensionCaptureSchemaVersion = 1;
 // The capture's own reader revision: raised with every extraction fix that
 // changes what a read keeps (1: November 5, 2026 — WTTJ posting sections,
-// rendered tab reads, LinkedIn apply route). Captures without one are 0.
-// Selective re-observation reads a saved job again when its latest read is
-// older than its site's minimum (page-capture.ts).
-export const pageReaderRevision = 1;
+// rendered tab reads, LinkedIn apply route; 2: November 10, 2026 — a
+// structured description whose markup is itself escaped is read as text).
+// Captures without one are 0. Selective re-observation reads a saved job
+// again when its latest read is older than its site's minimum
+// (page-capture.ts); revision 2 raises no site's minimum: only pages read
+// through their structured data change, and those are corrected when next
+// read.
+export const pageReaderRevision = 2;
+
+// Sites whose structured validThrough is the listing's expiry, not an
+// application deadline: it states no closing date. Welcome to the Jungle and
+// Otta (October 27, 2026): a rolling expiry that moves forward on every visit.
+// LinkedIn (November 10, 2026): its JobPosting's validThrough is the
+// listing's lifetime, exactly 30 days after datePosted on every observed
+// record, with no deadline label. A deadline the posting itself states is
+// still read.
+export const listingExpiryValidThroughSites: ReadonlySet<string> = new Set(["welcome-to-the-jungle", "otta", "linkedin"]);
 export const extensionCaptureMaxBytes = 128 * 1024;
 export const extensionCaptureLimits = {
   url: 2048,

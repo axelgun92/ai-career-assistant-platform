@@ -4,6 +4,7 @@ import {
   correctedFactLabels,
   extensionCaptureSchema,
   knownSiteForHost,
+  listingExpiryValidThroughSites,
   normalizedSiteHost,
   linkedInJobIdFromUrl,
   RetrievedListingNormalizationError,
@@ -36,11 +37,6 @@ import type { ZodError } from "zod";
 
 export const extensionSourceKey = "browser-extension";
 
-// Sites whose structured validThrough is a rolling listing expiry that moves
-// forward on every visit (Welcome to the Jungle and Otta: 2026-11-10 one day,
-// 2026-11-12 two days later), not an application deadline: it states no
-// closing date. A deadline the posting itself states is still read.
-const rollingValidThroughSites = new Set(["welcome-to-the-jungle", "otta"]);
 
 export interface CaptureSite {
   host: string;
@@ -183,7 +179,10 @@ export function capturedListing(
     workplaceType: fields.workplaceType,
     employmentType: cleanOptional(fields.employmentType),
     postedAt: cleanOptional(fields.postedAt),
-    closingDate: rollingValidThroughSites.has(identity.site.key) ? null : cleanOptional(fields.closingDate),
+    // A structured validThrough that is the listing's expiry (Core's
+    // listingExpiryValidThroughSites: WTTJ, Otta, LinkedIn) states no closing
+    // date; a deadline the posting itself states is still read.
+    closingDate: listingExpiryValidThroughSites.has(identity.site.key) ? null : cleanOptional(fields.closingDate),
     ...capturedApplication(fields, identity.sourceUrl),
     siteJobId: fields.siteJobId,
     remoteLocations: [...new Set(fields.remoteLocations.map(cleanCapturedText).filter(Boolean))],

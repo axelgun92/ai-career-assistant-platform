@@ -2315,3 +2315,36 @@ Replacement:
   1. the Phase 1 follow-up restricted to job 4476234680;
   2. a Single Capture regression pass.
   Phase 2 stays blocked until those are done. On the next failure, read `job.retry` / `job.failed` `transactions`, `inFlight`, `eventLoopMaxMs` and `rssMb` to tell H1–H3 apart.
+
+### Handoff: November 9 LinkedIn Diagnostic Corrections (Claude; shared-boundary record)
+
+- **Date / base:** November 10, 2026, on top of `03aa99e` (`integration/final-evaluator-product`). Implemented and verified offline, including the six stored Q4 descriptions; approved by Alex for repository closeout and committed with this change.
+- **Evidence:**
+  - The November 9 LinkedIn Mode B round: one save, 25/25 ingested.
+  - The read-only diagnostic and Alex's Q1–Q4 on `ai_career_assistant_acceptance` found:
+    - Mode B (50) and Easyship used LinkedIn's job-page reader;
+    - Kerv and Staffr used its structured data (literal HTML; closing date = posted + 30 days);
+    - Papirfly and Kerv stated role-level hybrid working that no rule read.
+- **What changed (shared code only; nothing per workflow):**
+  - `apps/extension/src/extract.ts` `htmlText`: escaped structured markup is read once more, guarded.
+  - `packages/normalization/src/job-text-facts.ts`: office frequency and office-first attendance; `roleHybridRequirement`.
+  - `packages/core/src/extension-capture.ts`:
+    - `listingExpiryValidThroughSites` (adds LinkedIn to WTTJ and Otta);
+    - `pageReaderRevision` 2.
+  - `apps/web/src/server/extension-capture.ts`: uses the Core set.
+  - `database/src/manual-opportunity-repository.ts` `reprojectCurrentFacts`: listing-expiry closing-date retraction (`listingExpiryRetractionSourceField`).
+- **Unchanged:**
+  - Mode B orchestration, worker resilience, transactions and P2028 F1–F4.
+  - Refresh eligibility: no `minReaderRevision` raised.
+  - Deduplication; D1 otherwise; evaluator boundary.
+  - Other sources' validThrough.
+- **Decisions recorded:**
+  - SWEEP stays Unknown: company-model prose plus a London location satisfies no approved role-level rule.
+  - Busuu stays Unknown.
+- **Tests:**
+  - `tests/unit/nov9-linkedin-corrections.test.ts` (12);
+  - `tests/unit/nov9-linkedin-real-descriptions.test.ts` (12, on the six stored Q4 descriptions in `tests/fixtures/real-captures/linkedin-nov9-q4-descriptions.json`);
+  - `tests/integration/nov9-linkedin-closing-date.test.ts` (7, incl. the stored Kerv and Staffr records with Q2's provenance).
+- **Next (each separately authorized by Alex):**
+  1. the proposed Core Platform TDD v1.21 (not approved; v1.20 unchanged);
+  2. the 25-record audit and any targeted live confirmation.

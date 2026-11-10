@@ -753,16 +753,52 @@ interface PositionCandidates {
 // Days in the office each week ("1 day a week in the office", "in office two
 // days per week"): one to four is hybrid. Indefinite wording ("up to", "may",
 // "occasionally") states no arrangement.
-const officeDays =
-  /\b(?:(\d|one|two|three|four|five)\s+days?\s+(?:a|per|each)\s+week\s+(?:in|at)\s+(?:the\s+|our\s+|an\s+)?(?:office|hq|headquarters)|(?:in[- ](?:the[- ])?office|in[- ]person|on[- ]?site)\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?(\d|one|two|three|four|five)\s+days?\s+(?:a|per|each)\s+week)\b/i;
+// A weekly count is a number of days, or how often ("twice a week", "three
+// times per week"; Kerv, November 9, 2026). The office may also come first,
+// after a verb of attending it ("attend Richmond (TW9) based office twice a
+// week", "be in our London office 2 days a week"), with at most four words
+// naming it.
+const weeklyCount = String.raw`(?:(?:\d|one|two|three|four|five)\s+(?:days?|times)|once|twice|thrice)\s+(?:a|per|each)\s+week`;
+const officePlace = String.raw`(?:office|offices|hq|headquarters)`;
+const officeDays = new RegExp(
+  String.raw`\b(?:` +
+    String.raw`${weeklyCount}\s+(?:in|at)\s+(?:the\s+|our\s+|an\s+)?${officePlace}` +
+    String.raw`|(?:in[- ](?:the[- ])?office|in[- ]person|on[- ]?site)\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?${weeklyCount}` +
+    String.raw`|(?:attend(?:ing)?|visit(?:ing)?|work(?:ing)?\s+(?:from|in|at)|be\s+(?:in|at)|come\s+(?:in)?to|commut(?:e|ing)\s+to)\s+(?:(?:the|our|an?|its|their)\s+)?(?:[^\s.;:!?]+\s+){0,4}?${officePlace}\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?${weeklyCount}` +
+    String.raw`)\b`,
+  "i",
+);
 const indefiniteDays = /\b(?:up to|may|might|occasional(?:ly)?|optional(?:ly)?|if needed|as needed|at most|no more than)\b/i;
-const dayCounts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+const dayCounts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, once: 1, twice: 2, thrice: 3 };
 function officeDaysArrangement(text: string): WorkArrangement | null {
   const match = officeDays.exec(text);
   if (!match || indefiniteDays.test(text) || negation.test(text)) return null;
-  const word = (match[1] ?? match[2])!.toLowerCase();
+  const count = /\b(\d|one|two|three|four|five)\s+(?:days?|times)\b|\b(once|twice|thrice)\b/i.exec(match[0]);
+  if (!count) return null;
+  const word = (count[1] ?? count[2])!.toLowerCase();
   const days = dayCounts[word] ?? Number(word);
   return days >= 1 && days <= 4 ? "HYBRID" : days === 5 ? "ONSITE" : null;
+}
+
+// What the role requires of the person in it, stated as working in a hybrid
+// environment or model ("Must be based in London and excited about working
+// in a hybrid, collaborative environment"; "Comfortable working within a
+// hybrid model that balances office-based and remote work"; Papirfly and
+// Kerv, November 9, 2026). Only a requirement the sentence opens with counts:
+// the employer describing itself ("We are a hybrid working company", "Our
+// hybrid work model …", Busuu's "a hybrid or remote model"), past experience
+// ("Experience working in a hybrid environment") and offered alternatives
+// ("a hybrid or remote environment") state no arrangement for the role.
+const roleRequirementLead =
+  /^(?:(?:you|candidates?|applicants?)\s+(?:must|will|should|need\s+to|are|['’]re)\b|must\b|(?:this|the)\s+(?:role|position|job)\s+(?:requires|will\s+require|involves)\b|comfortable\b|able\s+to\b|ability\s+to\b|willing(?:ness)?\s+to\b|happy\s+to\b|excited\s+(?:about|by|to)\b)/i;
+const hybridWorkSetting =
+  /\b(?:work|working)\s+(?:in|within|under)\s+(?:a|an|our|the|this)\s+hybrid\b(?:[\s,]+[a-z-]+){0,2}?[\s,]+(?:environment|model|setting|arrangement|pattern|schedule|structure|set-?up|way\s+of\s+working)\b/i;
+const hybridAlternative = /\bhybrid\s*(?:or|\/)\s*(?:fully\s+)?(?:remote|on[- ]?site|in[- ]office)\b|\b(?:remote|on[- ]?site|in[- ]office)\s*(?:or|\/)\s*hybrid\b/i;
+function roleHybridRequirement(sentence: string): WorkArrangement | null {
+  const text = collapse(sentence).replace(/^[-–•·*]\s*/, "");
+  if (text.length > 250 || !roleRequirementLead.test(text) || !hybridWorkSetting.test(text)) return null;
+  if (hybridAlternative.test(text) || negation.test(text) || indefiniteDays.test(text)) return null;
+  return "HYBRID";
 }
 
 // The arrangements a value offers as options, in its order: "Remote or
@@ -889,6 +925,8 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
   for (const sentence of source.sentences) {
     const cadence = sentence.length <= maxStatementLength ? officeDaysArrangement(sentence) : null;
     if (cadence) result.arrangements.push({ value: cadence, sourceField: marker(source, "explicit-office-days-statement"), sourceText: sentence });
+    const required = roleHybridRequirement(sentence);
+    if (required) result.arrangements.push({ value: required, sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
     if (
       sentence.length <= 200 &&
       (remotePrimary.test(sentence) || fullyRemoteLead.test(sentence) || remoteFirstOptionalOffice.test(sentence)) &&

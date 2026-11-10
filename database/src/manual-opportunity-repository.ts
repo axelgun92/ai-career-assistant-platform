@@ -4,6 +4,7 @@ import {
   applicationUrlProvenance,
   compensationBasisValues,
   compensationTierSchema,
+  listingExpiryValidThroughSites,
   workArrangementValues,
   offerAvailabilityValues,
   residencyRequirementValues,
@@ -259,6 +260,9 @@ const projectedFields = [
   "salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers", "bonus", "postingDate", "closingDate", "jobDescription",
 ] as const;
 type ProjectedField = (typeof projectedFields)[number];
+// The provenance of a closing date retracted because it was the listing's
+// structured expiry, not a deadline (November 10, 2026).
+export const listingExpiryRetractionSourceField = "listing-expiry:source.closingDate";
 // Facts that change together on a re-read (November 5, 2026): a salary is its
 // bounds, currency, basis, tiers and text; an arrangement its status and
 // options; residency its rule, places and exclusions; work authorization its
@@ -904,7 +908,7 @@ export class PrismaManualOpportunityRepository
   ): Promise<string[]> {
     const current = await transaction.fieldProvenance.findMany({
       where: { opportunityId: input.opportunityId, supersededAt: null },
-      select: { fieldName: true, sourceField: true, sourceRecord: { select: { source: true, externalId: true, sourceType: true } } },
+      select: { fieldName: true, sourceField: true, sourceText: true, sourceRecord: { select: { source: true, externalId: true, sourceType: true } } },
     });
     const correctedNow = new Set(
       (Array.isArray(input.rawOpportunity.sourceMetadata?.userCorrectedFields) ? input.rawOpportunity.sourceMetadata!.userCorrectedFields : [])
@@ -948,11 +952,31 @@ export class PrismaManualOpportunityRepository
       });
       keepSavedSalary = Boolean(saved && (saved.salaryMin !== null || saved.salaryMax !== null || (Array.isArray(saved.compensationTiers) && saved.compensationTiers.length > 0)));
     }
+    // A closing date that this same listing's structured validThrough
+    // supplied, on a site where that is the listing's expiry (Core's
+    // listingExpiryValidThroughSites; LinkedIn since November 10, 2026), was
+    // never an application deadline. The next read of the listing that states
+    // no deadline retracts it, recording why, with the retracted value as its
+    // text: the reading rule changed, so this is affirmative evidence, not a
+    // fact cleared for not being read. A deadline the posting states replaces
+    // it as usual; a closing date from the posting's text, from another
+    // listing or from any other site is never retracted this way.
+    const captureSite = (input.rawOpportunity.sourceMetadata?.capture as { site?: unknown } | undefined)?.site;
+    const retractedExpiry =
+      evidenceOnly && typeof captureSite === "string" && listingExpiryValidThroughSites.has(captureSite) && !stated("closingDate") && !withdrawn.has("closingDate")
+        ? current.find(
+            (row) =>
+              row.fieldName === "closingDate" &&
+              row.sourceField === "source.closingDate" &&
+              row.sourceRecord?.source === input.rawOpportunity.source &&
+              row.sourceRecord?.externalId === input.rawOpportunity.externalId,
+          ) ?? null
+        : null;
     let fields: ProjectedField[] = projectedFields.filter(
       (field) =>
         !protectedFields.has(field) &&
         !(keepSavedSalary && salaryGroup.includes(field)) &&
-        (!evidenceOnly || groupOf(field).some(stated) || groupOf(field).some((member) => withdrawn.has(member))),
+        (!evidenceOnly || groupOf(field).some(stated) || groupOf(field).some((member) => withdrawn.has(member)) || (field === "closingDate" && retractedExpiry !== null)),
     );
     if (input.correction) {
       // Another source's evidence (a fact whose current provenance cites a
@@ -1013,6 +1037,17 @@ export class PrismaManualOpportunityRepository
       data: { supersededAt: new Date() },
     });
     const rows = input.provenance.filter((row) => (fields as readonly string[]).includes(row.fieldName));
+    if (retractedExpiry && fields.includes("closingDate") && next.closingDate === null) {
+      rows.push({
+        fieldName: "closingDate",
+        sourceField: listingExpiryRetractionSourceField,
+        kind: "DETERMINISTIC",
+        normalizedValue: null,
+        sourceReference: `retrieval:${input.rawOpportunity.source}`,
+        sourceText: retractedExpiry.sourceText,
+        collectedAt: input.rawOpportunity.discoveredAt,
+      });
+    }
     if (rows.length) {
       await transaction.fieldProvenance.createMany({
         data: rows.map((provenance) => ({

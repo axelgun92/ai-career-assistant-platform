@@ -1,7 +1,87 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 9, 2026
+**Last updated:** November 10, 2026
+
+## November 9 LinkedIn Live Round and Diagnostic Corrections (November 10, 2026; corrections implemented and verified offline on top of `03aa99e`; approved by Alex for repository closeout and committed with this change; no live request made)
+
+- **LinkedIn Mode B live round (November 9, run by Alex at `03aa99e` on `ai_career_assistant_acceptance`):**
+  - One save of 25 loaded London jobs gave `claimed=25 ingested=25 awaitingDetails=0 unavailable=0 incomplete=0 stopped=- pageScripts=skip pages=25 documentRequests=25`.
+  - Each hand-off was refused with `USER_PROFILE_NOT_FOUND`, as expected with no active profile.
+  - The core one-action, 25-job requirement passed. LinkedIn Mode B is not yet fully accepted: the read-only audit of all 25 records is still open.
+- **Diagnostic (read-only; Q1–Q4 run by Alex on the acceptance database):**
+  - Single Capture and Mode B share one reader, mapping, normalizer and repository. Which reader branch runs depends on the page LinkedIn serves:
+    - its JobPosting structured data (`structured-data`), or
+    - its job page (`site:linkedin`).
+  - Q1:
+    - Mode B, 50 records `site:linkedin`: no literal HTML, no source closing date.
+    - Single Capture, 1 `site:linkedin` (Easyship).
+    - Single Capture, 2 `structured-data` (Kerv, Staffr): both with literal HTML tags and a source closing date exactly 30 days after posting (Q3).
+  - Q2: provenance as diagnosed. Papirfly and SWEEP have no arrangement provenance.
+- **Fix A — shared reader** (`apps/extension/src/extract.ts`, `htmlText`):
+  - A structured description whose markup is itself escaped is read once more as HTML, but only when the first parse holds no element and its text is markup, and never a third time.
+  - It gives the same text as the job page: paragraph, line and list boundaries kept, no tags.
+  - Text that merely contains "<", and real HTML with escaped tags in its prose, are read as written; nothing in them runs.
+  - The same posting through either branch now has the same description, and so the same content hash: no new version for the encoding alone. A real change still gives one.
+- **Fix B — shared arrangement reader** (`packages/normalization/src/job-text-facts.ts`, `collectArrangementAndEmployment`):
+  - Office attendance as a weekly frequency ("twice a week", "three times a week") as well as a day count, with the office before or after it ("attend Richmond (TW9) based office twice a week"). One to four is Hybrid, five is On-site, with the existing "up to / may / occasionally / optional" and negation guards.
+  - A requirement the sentence opens with ("Must …", "You will/must/are …", "Comfortable …", "Able to …", "Excited about …", "This role requires …") to work in a hybrid environment or model is Hybrid (`roleHybridRequirement`).
+  - Never read as a role arrangement: the employer's description of itself ("We are a hybrid working company", "Our hybrid work model …"), past experience ("Experience working in a hybrid environment"), alternatives ("a hybrid or remote model") and benefits.
+  - No country-specific rule.
+- **SWEEP decision (documented): Unknown under the current contract.**
+  - "Our hybrid work model, with hiring focussed around our head offices in Paris, London and Montpellier" is company-model prose.
+  - "This role is based in London" states a location, not an arrangement.
+  - Together they satisfy no approved role-level rule. A rule tying company prose to a role's location would be a new contract decision for Alex.
+- **Fix C — LinkedIn validThrough:**
+  - Core's `listingExpiryValidThroughSites` (`packages/core/src/extension-capture.ts`) is now `welcome-to-the-jungle`, `otta` and `linkedin`. The capture mapping uses it (`extension-capture.ts`), so LinkedIn's structured validThrough no longer gives a closing date and is not material.
+  - Before this fix it outranked even a deadline the posting stated in its own words; that deadline is now read.
+  - Other sources' validThrough is still the closing date.
+- **Saved records (correction mechanism):**
+  - Absence clears nothing, so a reader that merely stops supplying the date would leave Kerv's and Staffr's. Instead, `reprojectCurrentFacts` (`database/src/manual-opportunity-repository.ts`) applies a reclassification on any browser-extension re-observation:
+    - It covers a closing date currently backed by that same listing's `source.closingDate`, on a listing-expiry site.
+    - When the new read states no deadline: the closing date becomes Unknown, its row is superseded, and a provenance row `listing-expiry:source.closingDate` records the retraction with the retracted value as its text.
+  - A deadline the read states replaces it. A closing date from the posting's words, another listing or another site is never retracted.
+  - Nothing is modified in any database except through a later read of the job itself.
+- **Reader revision:**
+  - `pageReaderRevision` is 2, so new reads are distinguishable.
+  - No site's `minReaderRevision` was raised: Mode B's job-page reads are unchanged by these fixes, and re-reading all saved LinkedIn jobs would only spend LinkedIn requests.
+  - Kerv and Staffr are corrected by their next Single Capture, or by a refresh the existing R2/R3 rules select. That read is CHANGED (clean description, no expiry): same opportunity, new version, no hand-off for a refresh, and no evaluation.
+- **Real-evidence replay (the six complete stored Q4 descriptions, `nov9-dx.txt`, committed unredacted as `tests/fixtures/real-captures/linkedin-nov9-q4-descriptions.json`: public listing text, no personal data found):**
+  - Papirfly: Unknown → Hybrid, `rawText:explicit-work-arrangement-statement`, "Must be based in London and excited about working in a hybrid, collaborative environment."
+  - Kerv:
+    - Unknown → Hybrid, `rawText:explicit-office-days-statement`, "Please note: We are a hybrid working company and this role will require to attend Richmond (TW9) based office twice a week depending on business needs."
+    - It also has a second, agreeing line: "Comfortable working within a hybrid model, balancing office-based and remote working."
+  - Easyship: Hybrid (unchanged), "This is a full-time, hybrid role (3 days in office) based in London." Its "Work from Anywhere for 4 weeks" states nothing.
+  - Staffr: Hybrid (unchanged), now from the clean "• Location: Hybrid, London (1–2 days a week in the office)" (it agrees with "• Hybrid working in London. 1–2 days a week in the office …"). "• Work from anywhere. Two weeks a year …" states nothing.
+  - Busuu: Unknown, with no options ("flexible working hours and hybrid or remote model of working" states none).
+  - SWEEP: Unknown. Its only mention is "Our hybrid work model, with hiring focussed around our head offices …"; "The role is based in London." states a location.
+  - In every posting, every line that states an arrangement agrees with the result, and no line conflicts.
+- **Kerv and Staffr, rebuilt from their stored HTML:**
+  - Read as LinkedIn's structured data (escaped) and as its job page, they give the same clean description: every stored word kept, no tags.
+  - The content hash is the same both ways. Kerv: 5,699 stored characters with tags → 5,143 clean; Staffr: 5,816 → 5,244.
+  - The reader still reports LinkedIn's validThrough (posted + 30 days), but the normalized closing date is Unknown, and the stated posting date is kept.
+- **Saved records:**
+  - Reproduced exactly as Q2 shows them: closing date `source.closingDate` and posting date `postingDate`, ISO text.
+  - The next Single Capture through the corrected reader:
+    - is CHANGED on the same job;
+    - retracts the closing date (`listing-expiry:source.closingDate` with the original date as its text);
+    - cleans the description, reads Hybrid and keeps the posting date and every other fact.
+  - Staffr's salary (£30,000–£40,000 GBP), which the literal tags had hidden from the text reading, is now read from its own words: gained, not cleared.
+  - A repeat read, and the job page's read of the same posting, are UNCHANGED and write nothing.
+  - A Mode B (batch) read of the stored Kerv record retracts the same way.
+  - One opportunity, two source records, no evaluation.
+- **Verified offline (`ai_career_assistant_test` only; normal and acceptance databases untouched; no live site, paid call or evaluation):**
+  - New unit `nov9-linkedin-corrections` (12; 8 fail without the fixes).
+  - New unit `nov9-linkedin-real-descriptions` (12, the stored Q4 texts; 8 fail without the fixes).
+  - New integration `nov9-linkedin-closing-date` (7; 4 synthetic cases, of which the two retraction cases fail without the repository change, and 3 on the stored Kerv and Staffr records).
+  - Typecheck, lint, Prisma validate, `db:verify-migrations` (28), extension build and `git diff --check` pass.
+  - Unit 2,398 passed / 6 skipped (110 files); integration 482/482 (57 files); E2E 60/60 (before the evidence fixtures, which change no code).
+- **Documents:**
+  - Proposed Core Platform TDD v1.21 amendment (§51 ¶856–857, ¶890; ¶924): a proposal for Alex's separate approval, not an approved specification and not applied; v1.20 is unchanged.
+  - Updated: extension README, AGENTS.md routing, CHANGELOG, HANDOFFS, PRODUCT_STATUS, DEVELOPMENT_PLAN, AI_Architecture_README.
+- **Remaining:**
+  - A branch switch can still give a CHANGED version where LinkedIn's structured data and its job page state other fields differently (for example an employment-type code or a location's wording).
+  - Live confirmation of Kerv and Staffr after a re-read needs separate authorization.
 
 ## LinkedIn Option A Phase 1 — P2028 Fixes F1–F4 (November 9, 2026; approved by Alex as Revision 2; implemented and verified offline on top of `e2a8049`; approved by Alex for repository closeout and committed with this change; no live request made)
 
