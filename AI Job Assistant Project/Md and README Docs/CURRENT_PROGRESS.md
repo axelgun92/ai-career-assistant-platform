@@ -3,6 +3,28 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 10, 2026
 
+## LinkedIn Mode B Corrections — Offline Audit and Re-verification against Core Platform TDD v1.21 (November 10, 2026; at `891a130`; no production code changed; awaiting Alex's review; no live request made)
+
+- **Purpose:** confirm, before the next targeted live acceptance, that the code implements the four v1.21 amendments and every earlier LinkedIn Mode B correction contract. TDD adoption alone is not evidence of implementation.
+- **The four v1.21 amendments (implemented at `eaf1cdf`; confirmed in the code):**
+  - A, role-level hybrid: `officeDaysArrangement` and `roleHybridRequirement` (`job-text-facts.ts`). An Unknown arrangement reaches pre-evaluator triage as `work-arrangement-unknown` → NEEDS_REVIEW (`pre-evaluator-triage.ts`), not as a normalization error.
+  - B, listing expiry: `listingExpiryValidThroughSites` (Core) is used by the capture mapping. Stated deadlines are still read.
+  - C, retraction: `reprojectCurrentFacts` with `listing-expiry:source.closingDate`. Absence alone clears nothing.
+  - D, escaped descriptions: `htmlText` in the reader; `pageReaderRevision` 2, with every site's `minReaderRevision` still 1.
+- **Earlier contracts, each confirmed in code and existing tests:**
+  - Worker resilience: failure classes; `DB_PENDING` provisional accounting with outage detection; one bounded retry; restriction stops; unavailable pages; interrupted-job recovery.
+  - Application route: rendered employer link, then the served HTML, then "Apply on LinkedIn (listing page)", never a generic careers page.
+  - Country salary tiers with an evidence-supported primary only; residency exclusions.
+  - Deadline wording (Critical Start) and its negatives.
+  - Selective refresh: reader revision, incomplete, stale; never twice in one save; never queued, dismissed or already-refreshed jobs.
+  - Evidence-only updates.
+  - Captured Jobs title, company and location from the saved job.
+- **One coverage gap closed (test only):** `nov9-linkedin-corrections` now also asserts the shipped LinkedIn and WTTJ refresh policy. A job last read by revision 1 (the November 9 records) or 2 is not re-read for its revision; revision 0 still is.
+- **Verified offline (`ai_career_assistant_test` only):**
+  - Typecheck, lint, Prisma validate, `db:verify-migrations` (28), extension build and `git diff --check` pass.
+  - Unit 2,398 passed / 6 skipped; integration 482/482 (57 files); E2E 60/60.
+- **Not live acceptance.** The targeted live plan is in the November 10 report to Alex. Each live step needs separate authorization.
+
 ## November 9 LinkedIn Live Round and Diagnostic Corrections (November 10, 2026; corrections implemented and verified offline on top of `03aa99e`; approved by Alex for repository closeout and committed with this change; no live request made)
 
 - **LinkedIn Mode B live round (November 9, run by Alex at `03aa99e` on `ai_career_assistant_acceptance`):**

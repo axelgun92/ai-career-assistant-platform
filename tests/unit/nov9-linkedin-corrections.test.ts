@@ -10,7 +10,7 @@
 // quoted from the stored descriptions.
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
-import { listingExpiryValidThroughSites, pageReaderRevision, type RawOpportunity } from "@ai-career/core";
+import { listingExpiryValidThroughSites, pageCaptureRefreshReason, pageCaptureSiteByKey, pageReaderRevision, type RawOpportunity } from "@ai-career/core";
 import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import { createRetrievedOpportunityNormalizer, readJobTextFacts } from "@ai-career/normalization";
 import { buildCaptureEnvelope } from "../../apps/extension/src/envelope";
@@ -134,6 +134,17 @@ describe("Fix A — LinkedIn's structured description is read as text whichever 
   it("new reads record reader revision 2; no site's refresh minimum is raised, so saved jobs are not re-read for it", () => {
     expect(pageReaderRevision).toBe(2);
     expect(captureOf(linkedInPage({ ...kerv, structured: "none" })).sourceMetadata?.capture).toMatchObject({ readerRevision: 2 });
+    // The shipped policy: a job last read by revision 1 (the November 9
+    // records) or 2 is not re-read for its revision; one read before revisions
+    // existed (0) still is. Its other refresh rules are unchanged.
+    const now = new Date("2026-11-10T12:00:00.000Z");
+    for (const key of ["linkedin", "welcome-to-the-jungle"]) {
+      const policy = pageCaptureSiteByKey(key)!.refresh;
+      expect(policy.minReaderRevision, key).toBe(1);
+      const reason = (readerRevision: number) =>
+        pageCaptureRefreshReason({ policy, latestRead: { readerRevision, readQuality: "COMPLETE", lastReadAt: new Date("2026-11-09T23:30:00.000Z") }, hasApplicationRoute: true, hasDescription: true, incompleteRefreshes: 0, now });
+      expect([reason(0), reason(1), reason(2)], key).toEqual(["OUTDATED_READER", null, null]);
+    }
   });
 });
 
