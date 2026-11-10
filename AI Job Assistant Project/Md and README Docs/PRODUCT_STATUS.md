@@ -101,7 +101,7 @@ Supported results page (Alex's Chrome)
     - Shared reader: escaped structured descriptions are read as clean text, the same on both LinkedIn reader branches (reader revision 2, no refresh minimum raised).
     - Shared arrangement reader: weekly office frequencies and role-level hybrid requirements are read (Papirfly and Kerv → Hybrid). Company prose stays Unknown (Busuu, SWEEP).
     - LinkedIn's validThrough is a listing expiry, not a closing date. An earlier expiry-based closing date is retracted, with provenance, on the job's next read.
-    - The Core Platform TDD v1.21 amendment is proposed only, awaiting separate approval (v1.20 unchanged).
+    - Adopted in Core Platform TDD v1.21 (approved November 10, 2026; v1.20 archived unchanged).
   - **LinkedIn Option A Phase 1 P2028 fixes F1–F4 (November 9, 2026; implemented and verified offline on top of `e2a8049`; approved by Alex and committed; root cause unconfirmed; live follow-up pending):**
     - Phase 1: job 4476234680's capture transaction hit P2028 "expired" (36,578 ms against 30,000 ms). It was handled as approved (counted once, retried after an hour, nothing saved). The root cause is not identified; H1 (database or WSL stall), H2 (worker stall) and H3 (contention plus a second wait) remain open.
     - F1: per-step capture-transaction timings, event-loop delay and memory in the worker diagnostics, kept through failures and uncertain commits.

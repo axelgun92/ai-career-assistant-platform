@@ -77,7 +77,7 @@
   - Typecheck, lint, Prisma validate, `db:verify-migrations` (28), extension build and `git diff --check` pass.
   - Unit 2,398 passed / 6 skipped (110 files); integration 482/482 (57 files); E2E 60/60 (before the evidence fixtures, which change no code).
 - **Documents:**
-  - Proposed Core Platform TDD v1.21 amendment (§51 ¶856–857, ¶890; ¶924): a proposal for Alex's separate approval, not an approved specification and not applied; v1.20 is unchanged.
+  - Core Platform TDD v1.21 adopts these corrections (§51: the bounded hybrid constructions, the closing-date sources, the listing-expiry retraction; the browser-extension reader and reader revision 2). It was proposed with this change and approved by Alex on November 10, 2026. v1.20 is archived unchanged.
   - Updated: extension README, AGENTS.md routing, CHANGELOG, HANDOFFS, PRODUCT_STATUS, DEVELOPMENT_PLAN, AI_Architecture_README.
 - **Remaining:**
   - A branch switch can still give a CHANGED version where LinkedIn's structured data and its job page state other fields differently (for example an employment-type code or a location's wording).

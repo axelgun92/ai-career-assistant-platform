@@ -11,7 +11,7 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
 1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.18.docx`
-2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.20.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.21.docx`
 3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.16.docx`
 4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.16.docx`
 5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
@@ -29,7 +29,7 @@ Project documentation lives in the folders below. There is no `docs/` folder; us
 | --- | --- |
 | Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.18.docx` |
 | Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.16.docx` |
-| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.20.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.21.docx` |
 | Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.16.docx` |
 | Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
 | `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
@@ -213,8 +213,8 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   03aa99e; November 9 LinkedIn Mode B live round: one save, 25 claimed and 25 ingested (core
   one-action requirement passed); November 9 diagnostic corrections (shared reader for escaped
   structured descriptions, shared role-level hybrid rules, LinkedIn validThrough as listing expiry
-  with retraction on re-read) verified offline, approved by Alex and committed; the Core Platform
-  TDD v1.21 amendment is proposed only, not approved (v1.20 unchanged); no live test authorized
+  with retraction on re-read) verified offline, approved by Alex and committed; they are adopted in
+  Core Platform TDD v1.21 (approved November 10, 2026; v1.20 archived unchanged); no live test authorized
 → current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

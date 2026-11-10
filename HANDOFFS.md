@@ -2345,6 +2345,56 @@ Replacement:
   - `tests/unit/nov9-linkedin-corrections.test.ts` (12);
   - `tests/unit/nov9-linkedin-real-descriptions.test.ts` (12, on the six stored Q4 descriptions in `tests/fixtures/real-captures/linkedin-nov9-q4-descriptions.json`);
   - `tests/integration/nov9-linkedin-closing-date.test.ts` (7, incl. the stored Kerv and Staffr records with Q2's provenance).
-- **Next (each separately authorized by Alex):**
-  1. the proposed Core Platform TDD v1.21 (not approved; v1.20 unchanged);
-  2. the 25-record audit and any targeted live confirmation.
+- **Spec:** Core Platform TDD v1.21 adopts these corrections (approved by Alex on November 10, 2026; v1.20 archived unchanged); amendment record below.
+- **Next (each separately authorized by Alex):** the 25-record audit and any targeted live confirmation.
+
+#### AMENDMENT RECORD — Core Platform TDD v1.20 → v1.21 (November 9 LinkedIn corrections)
+
+Status: APPROVED by Alex on November 10, 2026 and adopted as Core Platform TDD v1.21, with v1.20 archived unchanged (byte-identical, `Archive/Core Platform TDD v1.20.docx`). The adopted text is the proposal below (A–D), unchanged. One correction was made at adoption, by Alex's instruction: the implementation status.
+- As proposed: "implemented on `integration/final-evaluator-product` on top of `03aa99e` (uncommitted, awaiting review)".
+- As adopted in v1.21's revision history:
+  - implemented on `integration/final-evaluator-product` at commit `eaf1cdfff45cdb4463e3375fb1f5c7ccf2a45665`;
+  - local and remote SHAs verified to match, working tree clean after the implementation closeout;
+  - offline regression verification complete;
+  - final live acceptance pending separate authorization.
+v1.21 also sets its own cover table to Version 1.21 / November 10, 2026. v1.20's cover table still reads 1.19 / October 31, 2026 and is kept as it is.
+Scope: Section 51 (the job-text fallback ¶856–857; re-observation ¶890) and the browser-extension paragraph (¶924). No other section, and not the Core AI Framework PRD v1.18.
+
+##### A. Bounded job-specific constructions (¶856)
+
+Old (v1.20, verbatim, the constructions sentence in part):
+> "… and bounded job-specific constructions: "This position is based in New York.", "This role is located in Chicago.", "Work from our Boston office.", "This is a full-time, NYC-Hybrid position." (employment type, work arrangement and location), "This position is hybrid.", "This is a fully remote role.", …"
+
+Insert after "This is a fully remote role.",:
+> "office attendance stated as a weekly count or frequency, with the office before or after it ("2 days a week in the office", "in the office twice a week", "attend our Richmond office twice a week"; one to four days is hybrid, five is on-site; never with "up to", "may", "occasionally", "optional" or a negation), a requirement the sentence opens with to work in a hybrid environment or model ("Must … be excited about working in a hybrid, collaborative environment.", "Comfortable working within a hybrid model …"),"
+
+Append to the sentence listing what the fallback never uses:
+> "… nor an employer's description of its own working model ("We are a hybrid working company", "Our hybrid work model …"), past experience ("Experience working in a hybrid environment") or offered alternatives ("a hybrid or remote model"), which state no arrangement for the role."
+
+##### B. Closing date (¶857, new sentence after the date rules)
+
+Insert:
+> "A source's structured closing date is an application deadline only where the source means one: a schema.org validThrough that is the listing's expiry states no closing date. These are LinkedIn (its JobPosting validThrough is datePosted plus 30 days, with no deadline label; November 9, 2026 acceptance records) and Welcome to the Jungle and Otta (a rolling expiry, October 27, 2026). A deadline the posting states in its own words is still read, and other sources' validThrough remains the closing date. No deadline is ever inferred from a posting date, a listing lifetime, benefit dates or a contract's length."
+
+##### C. Re-observation: retraction of an expiry read as a deadline (¶890, after the D1 paragraph's "… the application link keeps its precedence rules.")
+
+Insert:
+> "One reclassification is applied on any browser-extension re-observation of a listing (changed, or a normalization correction): a closing date whose current provenance is that same listing's source.closingDate, on a site whose validThrough is the listing's expiry (B), was never a deadline. When the new reading states no deadline, the closing date becomes Unknown, its row is superseded and a provenance row listing-expiry:source.closingDate records the retraction with the retracted value as its text. A deadline the reading states replaces it as usual. A closing date from the posting's words, from another listing, or from any other site is never retracted this way, and absence alone still clears nothing."
+
+##### D. Browser-extension reader (¶924, appended)
+
+Insert:
+> "A structured description whose HTML markup is itself escaped (LinkedIn's JobPosting, November 9, 2026) is read as the same text as that description on the page: when one parse holds no element and its text is markup, it is read once more, never a third time; text that merely contains "<", or real HTML with escaped tags in its prose, is read as written, and nothing in it runs. The capture's reader revision is 2 from November 10, 2026; no site's refresh minimum was raised for it, so saved jobs are corrected when next read (a Single Capture, or a refresh the existing rules select), never by a sweep."
+
+##### E. Rationale
+
+1. Evidence (Q1–Q4 on ai_career_assistant_acceptance, November 9–10, 2026):
+   - Mode B (50 records) and one Single Capture used LinkedIn's job-page reader: no literal HTML and no source closing date.
+   - Two Single Captures (Kerv, Staffr) used LinkedIn's structured data: literal HTML and a source closing date exactly 30 days after posting.
+   - Papirfly and Kerv stated role-level hybrid working that no rule read; Easyship and Staffr were read Hybrid; Busuu (company-wide "hybrid or remote") was correctly Unknown.
+2. One shared path: the reader and the normalizer are shared by Single Capture and Mode B; the corrections are made there, never per workflow.
+3. Evidence-safe:
+   - the new constructions are role-level and bounded, with the existing negation and indefinite-wording guards;
+   - company prose stays Unknown (SWEEP, Busuu);
+   - the retraction (C) touches only a value its own listing's expiry supplied, records why, and keeps the history.
+4. No refresh storm: no refresh minimum is raised; Mode B's job-page reader output is unchanged, so its records need no re-read.
