@@ -1534,3 +1534,30 @@ Do not reconstruct or guess these values from later project history.
 This document stops at Milestone 10 completion.
 
 Later work—including live-provider debugging, provider/application schema hardening, successful all-Terra production evaluation, Terra/Luna routing, cost optimization, and final evaluator completion work—belongs in the separate evaluator-status/history documentation.
+
+## Git Record Addendum (added October 16, 2026)
+
+This addendum was added after the fact from the repository's Git history (`main`). It does not change the milestone-time record above:
+
+- "Known Git Checkpoints" and "Known Historical Uncertainties" stay as written, because they record what the milestone conversations established at the time.
+- The facts below come only from Git. They are not evidence of what was known or done at each milestone checkpoint.
+
+| Commit | Commit date (UTC) | Message | Tag |
+| --- | --- | --- | --- |
+| `482ecf7` | 2026-08-12 15:29 | `Completed Milestone platform 1` | `milestone-1` |
+| `4d90d1e` | 2026-08-13 14:03 | `Completed Milestone platform 2` | — |
+| `344fece` | 2026-08-13 15:04 | `Fix Playwright E2E server startup` | `milestone-2` |
+| `716f983` | 2026-08-13 17:43 | `Completed Milestone platform 3` | `milestone-3` |
+| `312b7e0` | 2026-08-17 07:49 | `Completed Milestone platform 4` | — |
+| `c1ad52e` | 2026-08-17 08:25 | `Completed Milestone platform 5` | — |
+| `0674c06` | 2026-08-17 09:37 | `Completed Milestone platform 6` | — |
+| `96d84fa` | 2026-08-17 10:56 | `Completed Milestone platform 7` | — |
+| `d53171d` | 2026-08-17 12:01 | `Completed Milestone platform 8` | — |
+| `1215f90` | 2026-08-17 13:35 | `Completed Milestone platform 9` | — |
+| `90c085d` | 2026-08-17 15:35 | `Completed Milestone platform 10` | — |
+
+- **Milestone 3.** Git resolves the hash, message and tag listed as unknown above: `716f983`, `Completed Milestone platform 3`, tag `milestone-3`.
+- **Milestones 4–10.** Git shows one commit per milestone, each named "Completed Milestone platform N", with no tags. Git does not show:
+  - whether these commits were made at each milestone's completion checkpoint (the completion reports above state that no commit, tag or push was made then);
+  - whether the work was committed later.
+- Still unresolved by Git: Milestone 1's file-by-file diff and test filenames; Milestone 6's file inventory and new-test count; Milestone 10's test totals.

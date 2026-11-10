@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     "@ai-career/core",
     "@ai-career/database",
+    "@ai-career/deduplication",
+    "@ai-career/discovery",
     "@ai-career/normalization",
     "@ai-career/shared",
   ],

@@ -10,16 +10,51 @@ This repository contains a shared Core AI Platform and domain-specific assistant
 
 Before changing product behavior or architecture, read the relevant authoritative documentation:
 
-1. Core AI Framework PRD
-2. Core Platform TDD
-3. Customer Success AI Assistant PRD
-4. Customer Success Assistant TDD
-5. AI Career Assistant Semantic Evaluation Implementation Playbook
-6. `docs/PRODUCT_STATUS.md`
-7. `docs/CURRENT_PROGRESS.md`
-8. `docs/AGENT_WORKSTREAMS.md`
+1. Core AI Framework PRD — `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.18.docx`
+2. Core Platform TDD — `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.21.docx`
+3. Customer Success AI Assistant PRD — `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.16.docx`
+4. Customer Success Assistant TDD — `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.16.docx`
+5. AI Career Assistant Semantic Evaluation Implementation Playbook — `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md`
+6. `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md`
+7. `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
+8. `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md`
 
 Do not treat this file as a replacement for the PRDs/TDDs.
+
+## Documentation Locations
+
+Project documentation lives in the folders below. There is no `docs/` folder; use these paths exactly.
+
+| Document | Path |
+| --- | --- |
+| Core AI Framework PRD | `AI Job Assistant Project/Product Recommendation Documents/Core AI Framework PRD v1.18.docx` |
+| Customer Success AI Assistant PRD | `AI Job Assistant Project/Product Recommendation Documents/Customer Success AI Assistant PRD v1.16.docx` |
+| Core Platform TDD | `AI Job Assistant Project/Technical Design Documents/Core Platform TDD v1.21.docx` |
+| Customer Success Assistant TDD | `AI Job Assistant Project/Technical Design Documents/Customer Success Assistant TDD v1.16.docx` |
+| Semantic Evaluation Implementation Playbook | `AI Job Assistant Project/Md and README Docs/AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.3.md` |
+| `PRODUCT_STATUS.md` | `AI Job Assistant Project/Md and README Docs/PRODUCT_STATUS.md` |
+| `DEVELOPMENT_PLAN.md` | `AI Job Assistant Project/Md and README Docs/DEVELOPMENT_PLAN.md` |
+| `CURRENT_PROGRESS.md` | `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` |
+| `AGENT_WORKSTREAMS.md` | `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md` |
+| `HANDOFFS.md` | `HANDOFFS.md` (repository root) |
+| `MILESTONES_1_10.md` | `AI Job Assistant Project/Md and README Docs/MILESTONES_1_10.md` |
+| `EVALUATOR_STATUS.md` | `AI Job Assistant Project/Md and README Docs/EVALUATOR_STATUS.md` |
+| `CHANGELOG.md` | `AI Job Assistant Project/Md and README Docs/CHANGELOG.md` |
+| AI Career Platform README | `AI Job Assistant Project/Md and README Docs/AI_Career_Platform_README.md` |
+| AI Architecture README | `AI Job Assistant Project/Md and README Docs/AI_Architecture_README.md` |
+| Repository README | `README.md` (repository root) |
+
+Freelance Writing PRD/TDD documents also live in the PRD and TDD folders above; they are not current implementation targets.
+
+### Version Retention
+
+Older formal PRD/TDD versions are intentionally kept for history and are not authoritative:
+
+- Superseded PRDs: `AI Job Assistant Project/Product Recommendation Documents/Archive/`
+- Superseded TDDs: `AI Job Assistant Project/Technical Design Documents/Archive/`
+- The earlier Semantic Evaluation Playbooks (`AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.1.md` and `AI_Career_Assistant_Semantic_Evaluation_Playbook_v1.2.md`) stay beside v1.3 in `Md and README Docs/`.
+
+The table above identifies the authoritative current versions. Do not edit, rename, or delete archived versions; they are frozen historical records.
 
 ## Core Rules
 
@@ -37,20 +72,27 @@ Do not treat this file as a replacement for the PRDs/TDDs.
 
 ## Evaluator Rules
 
-Accepted routing:
+Locked routing (October 15, 2026):
 
 | Operation | Execution |
 | --- | --- |
+| Hard Filters | Deterministic |
 | JD Reconstruction | GPT-5.6 Terra |
 | Job Evaluation | GPT-5.6 Luna |
-| Company Alignment | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
 | Organizational Maturity | GPT-5.6 Luna |
 | Alex Fit | GPT-5.6 Luna |
-| Burnout Risk | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
 | Resume Match | GPT-5.6 Terra |
 | Opportunity Priority | GPT-5.6 Luna |
-| Ghost Job Risk | Deterministic when evidence is insufficient |
+| Ghost Job Risk | Deterministic when posting-history evidence is insufficient |
 | Final Recommendation | Deterministic application logic |
+
+Branch state:
+
+- The final evaluator/product integration is committed on `integration/final-evaluator-product` at pre-triage baseline `45d5fff` (November 2, 2026). It combines Features 1–18 with the accepted evaluator checkpoint, including the GPT-6 Luna routes and the current semantic contracts.
+- The post-baseline pre-evaluator triage enhancement is implemented at `5ac3c9d`. It is deterministic product admission logic after normalization/deduplication and before budget/admission; it is not an evaluator stage and does not change Apply / Review / Skip.
+- Final live acceptance and current-contract cost measurement still require separate explicit paid-call authorization.
 
 Do not change routing casually. Model changes require quality/cost comparison against the last known-good route.
 
@@ -79,28 +121,117 @@ For isolated live verification:
 
 ## Development Priority
 
-Current order:
+Current order (November 2, 2026). The intended main product is features 1–18:
 
 ```text
-Finish Evaluator
-+
-Finish Remaining Main Product
-→ Stable Usable Product
-→ Retrieval / Scraper
-→ Later Expansion
+Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 complete
+→ post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update: complete (Core AI Framework
+  PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4,
+  Semantic Evaluation Playbook v1.3)
+→ features 1–10 gap audit: complete (October 17, 2026)
+→ Features 1–10 Gap Closure: complete (d573acf, October 17, 2026): deduplication with provenance
+  retention, duplicate-spend guard, company normalization, history versions, stated time-zone
+  requirement, usage by domain and source, phone-width fixes (Core AI Framework PRD v1.6, Customer
+  Success PRD v1.5, Core Platform TDD v1.7, Customer Success TDD v1.5)
+→ Feature 11A: complete (fad2341, October 18, 2026): automated retrieval from the verified official
+  API and feed sources (Core AI Framework PRD v1.7, Customer Success PRD v1.6, Core Platform TDD v1.8,
+  Customer Success TDD v1.6)
+→ Feature 11B: complete (2a1d8c2, October 18, 2026): the verified public/guest-endpoint and
+  public-HTML sources (Workday, Workable, Wellfound; Welcome to the Jungle / Otta registered but
+  unverified) (Core AI Framework PRD v1.8, Customer Success PRD v1.7, Core Platform TDD v1.9,
+  Customer Success TDD v1.7)
+→ Feature 12: complete (f10a02b, October 18, 2026): source health and conservative retrieval
+  (Core AI Framework PRD v1.9, Customer Success PRD v1.8, Core Platform TDD v1.10, Customer
+  Success TDD v1.8)
+→ Feature 13: complete (d1bf217, October 19, 2026): posting history and listing removal (Core AI
+  Framework PRD v1.10, Customer Success PRD v1.9, Core Platform TDD v1.11, Customer Success TDD
+  v1.9); its posting-history facts are withheld from the evaluator until the coordinated integration
+→ Feature 14: complete (two parts; 14B accepted October 29, 2026):
+  → 14A: complete and accepted (dd77d29, October 20, 2026): browser-assisted automated retrieval
+    for public, logged-out LinkedIn job pages plus source audits and corrections (We Work Remotely
+    all-jobs RSS, Wellfound 12-second cadence) (Core AI Framework PRD v1.11, Customer Success PRD
+    v1.10, Core Platform TDD v1.12, Customer Success TDD v1.10); the LinkedIn source stays
+    unverified and disabled (its local adapter check discovered 60 public jobs, then the first job
+    page answered HTTP 429); a later job-page check needs separate approval
+  → 14B: accepted (October 29, 2026; 2ccdc7f), the browser-extension companion: required main-product
+    work, committed e6bacc6 (October 20, 2026; apps/extension, /api/extension/*, /extension); its local
+    acceptance led to the approved shared-Core job-text fallback correction (packages/normalization
+    job-text-facts.ts used by both shared normalizers; bare "$" is USD only with clear U.S. evidence,
+    superseded October 27, 2026: a recognized currency symbol is its currency, a stated code wins;
+    deduplication unchanged; no migration or backfill), implemented and verified October 23, 2026
+    with Core Platform TDD v1.15 and Core AI Framework PRD v1.14; followed by the convergence, v5 and
+    cross-source corrections (checkpoint v7 committed 6536ef8; read-only retest helper 362fe01) and
+    the final cross-source batch of October 27, 2026, the live acceptance batch of October 29, 2026
+    and its round 2 (all committed; see CURRENT_PROGRESS.md): 14B live acceptance passed October 29,
+    2026, verified through the installed Chrome extension on real evidence; the known edge cases
+    listed there are non-blocking
+    (earlier: "14B is accepted only after the live acceptance batch's targeted live verification passes")
+    (earlier: "awaiting Alex's review, a minimal human retest and acceptance; not committed")
+    (an October 19 implementation instruction incorrectly treated 14B as deferred, optional and not
+    required; no approved roadmap or product-scope revision removed it; corrected October 20 in Core
+    AI Framework PRD v1.12, Customer Success PRD v1.11, Core Platform TDD v1.13 and Customer Success
+    TDD v1.11, preserving Feature 14A's accepted implementation)
+→ Feature 15, Source Intelligence: complete and accepted (October 31, 2026): read-only per-source evidence (/sources/insights, /sources/[id]/insights,
+  /api/sources/insights), first-discovery credit with presence, neutral deferral states, no
+  migration; test-DB guard (Core AI Framework PRD v1.15, Customer Success PRD v1.13, Core Platform
+  TDD v1.16, Customer Success TDD v1.13)
+→ Feature 16, Job-Market Analytics: complete and accepted (October 31, 2026): read-only market view (/market, top-level "Market" nav, GET /api/market),
+  one canonical opportunity per job by first-seen date, automated-only default with an
+  "All collected" view, salary per currency and basis with tiers apart, title groups from the
+  discovery terms, evaluated-only requirements/segment/recommendations with coverage, no migration
+  (Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17, Customer
+  Success TDD v1.14)
+→ Feature 17, Personal Job-Search Analytics: complete and accepted (October 31, 2026): read-only personal view (/my-search, "My search" nav,
+  GET /api/my-search), application cohort by appliedAt with the Feature 15 outcome rules, offer
+  rates excluding processes in progress, recommendation at application from timing evidence,
+  evaluator view vs outcomes by title group, profile- and version-grouped Genuine Gaps, no
+  accuracy metric, no migration (Core AI Framework PRD v1.17, Customer Success PRD v1.15, Core Platform TDD v1.18, Customer Success TDD v1.15)
+→ Feature 18, Company Intelligence: complete and accepted October 31, 2026: read-only company view
+  (/companies index and /companies/[id], "Companies" nav after Market, GET /api/companies and /api/companies/[id]),
+  companies grouped by exact normalized name, observed postings (never "hires"), Feature 13 listing state and reposts plus
+  requisition relisting, recurring role groups apart from reposts, arrangement and hiring regions (no "remote-friendly" label),
+  your history there with the Feature 17 outcomes and tracker-dated timing (no "hiring speed"), company type from evaluated
+  roles, no score or ranking, no migration (Core AI Framework PRD v1.18, Customer Success PRD v1.16, Core Platform TDD v1.19,
+  Customer Success TDD v1.16); it completes main-product features 1–18
+→ main-product features 1–18 are complete
+→ final evaluator/product integration: complete at 45d5fff (November 2, 2026)
+→ post-45d5fff pre-evaluator triage admission/backlog enhancement: complete at 5ac3c9d
+→ extension Mode B (one save of up to 25 loaded jobs, then automatic per-job processing): LinkedIn and
+  Welcome to the Jungle / Otta implemented; the November 5 live round failed (worker P2028 after 5 of
+  25; the sixth job, TENEX.AI, unsaved); Rev 3 repairs committed at 58ef504; the Rev 3 final review
+  (received-HTML apply link, persistent worker diagnostics, opt-in page evidence, read-only failure
+  evidence package) committed at 4847751; WTTJ Mode B Rev 3 accepted in the November 7 live round;
+  LinkedIn not yet accepted (LinkedIn HTTP 429 after three jobs); the November 7 follow-up fixes
+  verified offline, approved November 8, 2026 (repairs only) and committed at ddf5937; LinkedIn
+  Option A (job pages read with JavaScript off, document only, request counts, incomplete-page
+  guard; PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run reverts) verified offline and approved for closeout
+  November 8, 2026, committed at 42a647c (not LinkedIn acceptance); the final pre-live corrections
+  (Salary in the employer's terms, D1 normalization correction on unchanged recapture as approved,
+  Mode A/Mode B parity and duplicates verified on the saved November 5-7 facts) verified offline on
+  top of 42a647c, approved by Alex on November 8, 2026 and committed; the D1 contract is adopted in
+  Core Platform TDD v1.20 (Section 51; v1.19 archived unchanged); P2028 fixes F1–F4 committed at
+  03aa99e; November 9 LinkedIn Mode B live round: one save, 25 claimed and 25 ingested (core
+  one-action requirement passed); November 9 diagnostic corrections (shared reader for escaped
+  structured descriptions, shared role-level hybrid rules, LinkedIn validThrough as listing expiry
+  with retraction on re-read) verified offline, approved by Alex and committed; they are adopted in
+  Core Platform TDD v1.21 (approved November 10, 2026; v1.20 archived unchanged); no live test authorized
+→ current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
+  production readiness and merge
+→ next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff
+→ later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)
 ```
 
-Do not let retrieval work delay the first usable product.
+Retrieval and intelligence are main-product work, not a post-product phase. Keep the evaluator stable while they are built, and do not let retrieval destabilize the working manual workflow. See `DEVELOPMENT_PLAN.md`.
 
 ## Agent Coordination
 
-Check `docs/AGENT_WORKSTREAMS.md` before beginning substantial work.
+Check `AI Job Assistant Project/Md and README Docs/AGENT_WORKSTREAMS.md` before beginning substantial work.
 
 Do not edit the same high-risk area concurrently with another agent.
 
-Use `docs/HANDOFFS.md` when work is actively transferred.
+Use `HANDOFFS.md` (repository root) when work is actively transferred.
 
-After meaningful completed work, update `docs/CURRENT_PROGRESS.md` with:
+After meaningful completed work, update `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` with:
 
 - what was completed;
 - what is next;
@@ -109,13 +240,15 @@ After meaningful completed work, update `docs/CURRENT_PROGRESS.md` with:
 
 ## Source / Retrieval Rule
 
-When future retrieval work begins:
+Retrieval (feature 11) follows these rules:
 
-- source adapters obtain source data only;
+- source adapters obtain source data only, and keep a listing only when its title matches a domain role-family term;
 - normalization standardizes it;
 - deduplication resolves duplicate opportunities;
 - the existing evaluator decides suitability;
-- retrieval must not become a second evaluator.
+- retrieval must not become a second evaluator, and never starts an evaluation;
+- a new or changed source contract is verified with one approved live request and a small sanitized fixture before its adapter can be enabled;
+- each source uses the least intrusive method that works (feature 14): an official API or feed first, then public structured data without a browser, then public data embedded in a webpage, and a browser only where the public data needs one. Browser-assisted retrieval (LinkedIn only) is public and logged-out: a fresh browser context per run with no account, cookies, profile or stored state; it only opens and reads pages, sequentially and at least 5 seconds apart within bounded page budgets, and any 403, 429, 999, login wall, authwall, checkpoint, CAPTCHA or challenge stops the run for Feature 12 backoff. No login, account actions, proxy rotation, stealth, fingerprint changes, CAPTCHA solving or access-control bypass, and no query splitting to get around a source's result caps.
 
 Once a job source has enough evidence to classify it under an established retrieval category, stop investigating that source unless more detail is actually required.
 
@@ -140,4 +273,9 @@ Use:
 - `CURRENT_PROGRESS.md` for active development state;
 - `DEVELOPMENT_PLAN.md` for sequencing;
 - `AGENT_WORKSTREAMS.md` for ownership;
-- `HANDOFFS.md` for active work transfer.
+- `HANDOFFS.md` for active work transfer;
+- `MILESTONES_1_10.md` for Milestone 1–10 implementation history;
+- `EVALUATOR_STATUS.md` for evaluator routing, optimization, and completion state;
+- `CHANGELOG.md` for notable project changes.
+
+See **Documentation Locations** above for the path of each document.

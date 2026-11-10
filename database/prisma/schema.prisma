@@ -19,6 +19,14 @@ enum OpportunityStatus {
   ARCHIVED
 }
 
+enum OpportunityUserActionType {
+  SAVE
+  MARK_APPLIED
+  DISMISS
+  ARCHIVE
+  RESTORE
+}
+
 enum SourceType {
   MANUAL
   BROWSER_EXTENSION
@@ -33,6 +41,12 @@ enum DuplicateDecision {
   MATCH
   PROBABLE_MATCH
   NO_MATCH
+}
+
+// A user's decision about an engine-detected pair. Reversible: clearing it
+// reopens the pair.
+enum DuplicateResolution {
+  DISTINCT
 }
 
 enum EvaluationStatus {
@@ -112,14 +126,44 @@ model Opportunity {
   department     String?
   employmentType String?
   seniority      String?
+  // The seniority label as stated ("Mid-Senior level"), kept even when it
+  // names no single level.
+  seniorityLabel String?
 
   location             String?
   remoteStatus         String?
+  // Every arrangement the posting states, in its order; remoteStatus is the
+  // one stated arrangement (null when several are offered).
+  workArrangements     String[] @default([])
   timeZoneRequirements String?
+  // Explicit residency / geographic eligibility: US_REQUIRED, NON_US, or
+  // null (Unknown); residencyRegions lists the stated eligible geographies
+  // (ISO 3166-1 alpha-2 or named regions), empty when not stated.
+  residencyRequirement String?
+  residencyRegions     String[] @default([])
+  // Places the posting explicitly excludes from hiring (November 5, 2026): a
+  // qualification of the residency rule, never work authorization.
+  residencyExclusions  String[] @default([])
+  // Explicit work authorization (a separate concept from residency):
+  // RIGHT_TO_WORK or CITIZENSHIP and the countries it names; whether visa
+  // sponsorship and relocation support are AVAILABLE or NOT_AVAILABLE; the
+  // countries an employer of record is stated for. Null / empty = Unknown.
+  workAuthorizationRequirement String?
+  workAuthorizationRegions     String[] @default([])
+  visaSponsorship              String?
+  relocationSupport            String?
+  employerOfRecordRegions      String[] @default([])
 
   salaryMin         Decimal? @db.Decimal(12, 2)
   salaryMax         Decimal? @db.Decimal(12, 2)
   salaryText        String?
+  // What the stated range is: BASE or OTE; null when the posting does not
+  // say. The bounds are the stated numbers either way.
+  compensationBasis String?
+  // Labelled pay ranges a posting states for several places, zones or bands
+  // ([{ label, minimum, maximum, currency }]); salaryMin/salaryMax are then
+  // null. Empty when not stated.
+  compensationTiers Json     @default("[]")
   bonus             String?
   equity            String?
   currency          String?
@@ -143,9 +187,16 @@ model Opportunity {
   evaluations           Evaluation[]
   evidenceRecords       EvidenceRecord[]
   recommendations       Recommendation[]
+  evaluationAdmissions  EvaluationAdmission[]
+  deferredEvaluations   DeferredEvaluation[]
+  preEvaluatorTriage    PreEvaluatorTriage?
+  userActions           OpportunityUserAction[]
+  pageCaptureItems      PageCaptureItem[]
+  application           Application?
   semanticOperations    SemanticOperationAttempt[]
   duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
   referencedAsDuplicate DuplicateReference[]       @relation("DuplicateReferenceTarget")
+  retrievedListings     RetrievedListing[]
   createdAt             DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime                   @updatedAt @db.Timestamptz(3)
 
@@ -154,38 +205,173 @@ model Opportunity {
   @@index([externalListingId])
   @@index([atsRequisitionId])
   @@index([postingDate])
+  @@index([discoveredAt(sort: Desc), id(sort: Desc)])
+  @@index([status, discoveredAt])
+  @@index([sourceType])
+  @@index([updatedAt])
 }
 
 model SourceRecord {
-  id                 String                     @id @default(uuid()) @db.Uuid
-  opportunityId      String?                    @db.Uuid
-  opportunity        Opportunity?               @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  source             String
-  sourceType         SourceType
-  sourceUrl          String?                    @db.Text
-  externalId         String?
-  requisitionId      String?
-  rawTitle           String?
-  rawCompany         String?
-  rawLocation        String?
-  rawDescription     String?                    @db.Text
-  rawSalaryText      String?
-  rawEmploymentType  String?
-  rawPostingDate     String?
-  sourceMetadata     Json?
-  rawPayload         Json?
-  discoveredAt       DateTime                   @default(now()) @db.Timestamptz(3)
-  lastObservedAt     DateTime                   @default(now()) @db.Timestamptz(3)
-  normalizedAt       DateTime?                  @db.Timestamptz(3)
-  fieldProvenance    FieldProvenance[]
-  evidenceRecords    EvidenceRecord[]
-  semanticOperations SemanticOperationAttempt[]
-  createdAt          DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime                   @updatedAt @db.Timestamptz(3)
+  id                     String                     @id @default(uuid()) @db.Uuid
+  opportunityId          String?                    @db.Uuid
+  opportunity            Opportunity?               @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  source                 String
+  sourceType             SourceType
+  sourceUrl              String?                    @db.Text
+  // This source's own application link; Opportunity.applicationUrl is the
+  // canonical choice across sources.
+  applicationUrl         String?                    @db.Text
+  externalId             String?
+  requisitionId          String?
+  rawTitle               String?
+  rawCompany             String?
+  rawLocation            String?
+  rawDescription         String?                    @db.Text
+  rawSalaryText          String?
+  rawEmploymentType      String?
+  rawPostingDate         String?
+  sourceMetadata         Json?
+  rawPayload             Json?
+  // Set only when this record was attached to an existing opportunity as an
+  // exact duplicate (MATCH), with the engine's evidence.
+  duplicateDecision      DuplicateDecision?
+  duplicateEvidence      Json?
+  // Automated retrieval (feature 11): how and from which configured source
+  // and run this record was retrieved. Sources and runs with records are
+  // archived, never deleted, so this provenance is never lost.
+  retrievalType          RetrievalType?
+  sourceCategory         SourceCategory?
+  retrievalSourceId      String?                    @db.Uuid
+  retrievalSource        RetrievalSource?           @relation(fields: [retrievalSourceId], references: [id], onDelete: Restrict)
+  retrievalRunId         String?                    @db.Uuid
+  retrievalRun           RetrievalRun?              @relation(fields: [retrievalRunId], references: [id], onDelete: Restrict)
+  // Hash of the listing's material fields; a different hash on a later
+  // retrieval of the same source listing is a changed observation.
+  contentHash            String?
+  // Set on a changed observation: the earlier record of the same source
+  // listing. The earlier record is never overwritten.
+  previousSourceRecordId String?                    @db.Uuid
+  previousSourceRecord   SourceRecord?              @relation("SourceRecordObservations", fields: [previousSourceRecordId], references: [id], onDelete: Restrict)
+  laterObservations      SourceRecord[]             @relation("SourceRecordObservations")
+  discoveredAt           DateTime                   @default(now()) @db.Timestamptz(3)
+  lastObservedAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  normalizedAt           DateTime?                  @db.Timestamptz(3)
+  fieldProvenance        FieldProvenance[]
+  evidenceRecords        EvidenceRecord[]
+  semanticOperations     SemanticOperationAttempt[]
+  evaluatedBy            Evaluation[]               @relation("EvaluatedSourceVersion")
+  createdAt              DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime                   @updatedAt @db.Timestamptz(3)
 
   @@index([opportunityId])
   @@index([source, externalId])
   @@index([requisitionId])
+  @@index([retrievalSourceId])
+  @@index([retrievalRunId])
+  @@index([previousSourceRecordId])
+}
+
+// Automated retrieval (feature 11, Core TDD §8, §15).
+enum RetrievalType {
+  OFFICIAL_PUBLIC_API_FEED
+  BROWSER_ASSISTED
+  PUBLIC_GUEST_INTERNAL_ENDPOINT
+  PUBLIC_HTML
+}
+
+enum SourceCategory {
+  ATS
+  COMPANY_CAREERS
+  JOB_BOARD
+  MARKETPLACE
+  AGGREGATOR
+}
+
+enum RetrievalRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+// A tracked listing's state (feature 13). HISTORICAL: known from records
+// retrieved before feature 13, current status unknown. LISTED: seen in the
+// source's listing. MISSING: absent from one qualifying complete check.
+// REMOVED: absent from two consecutive qualifying complete checks at least
+// 24 hours apart. UNTRACKED: belongs to an earlier tracking scope.
+enum RetrievedListingState {
+  HISTORICAL
+  LISTED
+  MISSING
+  REMOVED
+  UNTRACKED
+}
+
+enum RetrievalTrigger {
+  MANUAL
+  SCHEDULE
+}
+
+// A configured retrieval source: one adapter with its configuration (for
+// example a Greenhouse board). Disabled by default. A source that produced
+// runs or records is archived (archivedAt), never deleted.
+model RetrievalSource {
+  id              String         @id @default(uuid()) @db.Uuid
+  adapterKey      String
+  name            String
+  domain          String
+  retrievalType   RetrievalType
+  sourceCategory  SourceCategory
+  enabled         Boolean        @default(false)
+  config          Json
+  scheduleMinutes Int            @default(720)
+  lastRunAt       DateTime?      @db.Timestamptz(3)
+  // The earliest time the next run may start after source failures (backoff
+  // or a wait the source asked for); null when the normal schedule applies.
+  nextEligibleAt  DateTime?      @db.Timestamptz(3)
+  // The current tracking-scope generation (feature 13): an opaque key,
+  // replaced whenever a settings change alters which listings the source
+  // retrieves, so a new scope never inherits an earlier scope's listing
+  // history. Null only for a source created before feature 13 until its
+  // first run.
+  trackingScopeKey String?
+  listings         RetrievedListing[]
+  archivedAt      DateTime?      @db.Timestamptz(3)
+  runs            RetrievalRun[]
+  sourceRecords   SourceRecord[]
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@index([enabled, archivedAt])
+}
+
+model RetrievalRun {
+  id                String             @id @default(uuid()) @db.Uuid
+  retrievalSourceId String             @db.Uuid
+  retrievalSource   RetrievalSource    @relation(fields: [retrievalSourceId], references: [id], onDelete: Restrict)
+  trigger           RetrievalTrigger
+  status            RetrievalRunStatus @default(QUEUED)
+  leaseExpiresAt    DateTime?          @db.Timestamptz(3)
+  startedAt         DateTime?          @db.Timestamptz(3)
+  finishedAt        DateTime?          @db.Timestamptz(3)
+  counts            Json?
+  // A safe code and message only; never a response body or credential.
+  errorCode         String?
+  errorMessage      String?
+  // When the source asked us to wait until (a valid Retry-After on a 429 or
+  // 503 in this run).
+  retryAfterUntil   DateTime?          @db.Timestamptz(3)
+  // Whether the run read the source's whole listing as one consistent
+  // snapshot (feature 13); null when the adapter reports no coverage.
+  listingCoverageComplete Boolean?
+  sourceRecords     SourceRecord[]
+  sightedListings   RetrievedListing[]
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+
+  @@index([retrievalSourceId, createdAt])
+  @@index([status, createdAt])
 }
 
 model FieldProvenance {
@@ -202,6 +388,11 @@ model FieldProvenance {
   sourceText      String?          @db.Text
   collectedAt     DateTime?        @db.Timestamptz(3)
   createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  // Set when a newer source version, or a newer application link, replaced
+  // this row as the current evidence for its field. Superseded rows are kept
+  // for history (evaluation evidence may reference them) and are never
+  // deleted or changed otherwise.
+  supersededAt    DateTime?        @db.Timestamptz(3)
   evidenceRecords EvidenceRecord[]
 
   @@index([opportunityId, fieldName])
@@ -209,25 +400,27 @@ model FieldProvenance {
 }
 
 model DuplicateReference {
-  id                   String            @id @default(uuid()) @db.Uuid
-  opportunityId        String            @db.Uuid
-  opportunity          Opportunity       @relation("DuplicateReferenceSource", fields: [opportunityId], references: [id], onDelete: Cascade)
-  relatedOpportunityId String            @db.Uuid
-  relatedOpportunity   Opportunity       @relation("DuplicateReferenceTarget", fields: [relatedOpportunityId], references: [id], onDelete: Cascade)
+  id                   String               @id @default(uuid()) @db.Uuid
+  opportunityId        String               @db.Uuid
+  opportunity          Opportunity          @relation("DuplicateReferenceSource", fields: [opportunityId], references: [id], onDelete: Cascade)
+  relatedOpportunityId String               @db.Uuid
+  relatedOpportunity   Opportunity          @relation("DuplicateReferenceTarget", fields: [relatedOpportunityId], references: [id], onDelete: Cascade)
   decision             DuplicateDecision
-  confidence           Decimal?          @db.Decimal(5, 4)
+  confidence           Decimal?             @db.Decimal(5, 4)
   evidence             Json?
-  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+  resolution           DuplicateResolution?
+  resolvedAt           DateTime?            @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @db.Timestamptz(3)
 
   @@unique([opportunityId, relatedOpportunityId])
   @@index([relatedOpportunityId])
 }
 
 model UserProfile {
-  id                      String       @id @default(uuid()) @db.Uuid
+  id                      String               @id @default(uuid()) @db.Uuid
   label                   String
-  version                 Int          @default(1)
+  version                 Int                  @default(1)
   contentHash             String?
   careerGoals             Json?
   experience              Json?
@@ -236,14 +429,31 @@ model UserProfile {
   locationPreferences     Json?
   compensationPreferences Json?
   workPreferences         Json?
+  // Structured profile limitations, as authored by the user. Validated by the
+  // domain profile contract; NULL when the version states none.
+  limitations             Json?
   companyPreferences      Json?
   domainPreferences       Json?
   evaluations             Evaluation[]
-  createdAt               DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt               DateTime     @updatedAt @db.Timestamptz(3)
+  activeFor               ActiveUserProfile[]
+  deferredEvaluations     DeferredEvaluation[]
+  preEvaluatorTriages     PreEvaluatorTriage[]
+  createdAt               DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime             @updatedAt @db.Timestamptz(3)
 
   @@unique([label, version])
   @@unique([label, contentHash])
+}
+
+// The profile version the user explicitly chose for new evaluations in a
+// domain. Activation only moves this pointer; UserProfile rows stay immutable.
+model ActiveUserProfile {
+  domain        String      @id
+  userProfileId String      @db.Uuid
+  userProfile   UserProfile @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+  activatedAt   DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([userProfileId])
 }
 
 model Evaluation {
@@ -259,6 +469,12 @@ model Evaluation {
   ruleVersion        String
   promptVersion      String?
   userProfileVersion Int?
+  // The source version this evaluation evaluates, bound when it is created:
+  // the current version of the opportunity's originating listing. Null for
+  // evaluations created before the binding existed (they evaluated the
+  // opportunity's first source record).
+  sourceRecordId     String?                    @db.Uuid
+  sourceRecord       SourceRecord?              @relation("EvaluatedSourceVersion", fields: [sourceRecordId], references: [id], onDelete: SetNull)
   executionMetadata  Json?
   domainResult       Json?
   stageResults       StageResult[]
@@ -267,6 +483,7 @@ model Evaluation {
   recommendation     Recommendation?
   task               EvaluationTask?
   semanticOperations SemanticOperationAttempt[]
+  admission          EvaluationAdmission?
   errorMessage       String?                    @db.Text
   startedAt          DateTime?                  @db.Timestamptz(3)
   completedAt        DateTime?                  @db.Timestamptz(3)
@@ -276,6 +493,7 @@ model Evaluation {
   @@index([opportunityId, createdAt])
   @@index([userProfileId])
   @@index([domain, status])
+  @@index([sourceRecordId])
 }
 
 model AiModelPricingConfiguration {
@@ -463,4 +681,462 @@ model SemanticOperationAttempt {
   @@index([domain, createdAt])
   @@index([sourceRecordId])
   @@index([pricingConfigurationId])
+}
+
+// Explicit user lifecycle actions only. Evaluations and automatic system
+// lifecycle sync never write here.
+model OpportunityUserAction {
+  id            String                    @id @default(uuid()) @db.Uuid
+  opportunityId String                    @db.Uuid
+  opportunity   Opportunity               @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  action        OpportunityUserActionType
+  fromStatus    OpportunityStatus
+  toStatus      OpportunityStatus
+  createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
+}
+
+enum BudgetPeriodType {
+  CALENDAR_MONTH
+}
+
+enum DeferredEvaluationStatus {
+  DEFERRED
+  RESUMED
+  CANCELLED
+}
+
+enum PreEvaluatorTriageOutcome {
+  EVALUATE
+  NEEDS_REVIEW
+  REJECT
+}
+
+enum PreEvaluatorTriageManualDecision {
+  EVALUATE
+  REJECT
+}
+
+// Request integrity (no money involved): one row per evaluation request the
+// product admitted to the queue. A live admission is consumed only inside the
+// transaction that creates its Evaluation (enqueueAdmitted), or abandoned;
+// the two are mutually exclusive, so an abandoned admission can never produce
+// an Evaluation.
+model EvaluationAdmission {
+  id              String                       @id @default(uuid()) @db.Uuid
+  opportunityId   String                       @db.Uuid
+  opportunity     Opportunity                  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  evaluationId    String?                      @unique @db.Uuid
+  evaluation      Evaluation?                  @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  reservation     EvaluationBudgetReservation?
+  resumedDeferral DeferredEvaluation?
+  createdAt       DateTime                     @default(now()) @db.Timestamptz(3)
+  attachedAt      DateTime?                    @db.Timestamptz(3)
+  abandonedAt     DateTime?                    @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
+  @@index([evaluationId, abandonedAt])
+  @@index([createdAt])
+}
+
+// The user's budget (a single row, id "global"). Editing it never touches
+// usage or cost records.
+model BudgetSetting {
+  id                      String           @id
+  amount                  Decimal          @db.Decimal(18, 6)
+  currency                String
+  periodType              BudgetPeriodType @default(CALENDAR_MONTH)
+  timeZone                String           @default("UTC")
+  enforced                Boolean          @default(true)
+  reservePerEvaluation    Decimal          @db.Decimal(18, 6)
+  // Percentages of the monthly budget (spent + reserved) that raise a warning.
+  warningThresholds       Int[]            @default([])
+  // Throughput limits; null means no limit. Volume counts admitted
+  // evaluations in the budget time zone's day / ISO week.
+  dailyEvaluationLimit    Int?
+  weeklyEvaluationLimit   Int?
+  // Cap on provider-reported output tokens in the budget period.
+  monthlyOutputTokenLimit Int?
+  // Paid semantic calls allowed per evaluation, persisted on each evaluation
+  // at enqueue. Null uses the deployment maximum (AI_CALL_BUDGET).
+  evaluationCallLimit     Int?
+  updatedAt               DateTime         @updatedAt @db.Timestamptz(3)
+}
+
+// The budget held for an admitted evaluation before its actual cost is
+// known. Written only when a budget is configured; never updated. The hold
+// is derived from persisted attempt costs, so reconciliation rewrites nothing.
+model EvaluationBudgetReservation {
+  id          String              @id @default(uuid()) @db.Uuid
+  admissionId String              @unique @db.Uuid
+  admission   EvaluationAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  amount      Decimal             @db.Decimal(18, 12)
+  currency    String
+  enforced    Boolean
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+}
+
+// An evaluation request that was not started because budget was unavailable.
+// It never reached the queue; the opportunity lifecycle is untouched. The
+// profile version resolved at request time is pinned and used on resume.
+model DeferredEvaluation {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  opportunityId      String                   @db.Uuid
+  opportunity        Opportunity              @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  domain             String
+  userProfileId      String?                  @db.Uuid
+  userProfile        UserProfile?             @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  userProfileVersion Int?
+  status             DeferredEvaluationStatus @default(DEFERRED)
+  reasonCode         String
+  reasonSnapshot     Json
+  lastCheckedAt      DateTime                 @db.Timestamptz(3)
+  // The admission that resumed this request. Its evaluation is attached
+  // atomically by enqueueAdmitted(); if the admission is abandoned instead,
+  // the request returns to DEFERRED.
+  resumedAdmissionId String?                  @unique @db.Uuid
+  resumedAdmission   EvaluationAdmission?     @relation(fields: [resumedAdmissionId], references: [id], onDelete: SetNull)
+  resumedAt          DateTime?                @db.Timestamptz(3)
+  cancelledAt        DateTime?                @db.Timestamptz(3)
+  createdAt          DateTime                 @default(now()) @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([opportunityId, status])
+}
+
+// The deterministic, pre-evaluator admission decision. It is one current
+// record per Opportunity, tied to the profile version used for the decision.
+// Manual decisions remain effective when later observations refresh the
+// automatic outcome, so an explicit user choice is never silently erased.
+model PreEvaluatorTriage {
+  id                 String                            @id @default(uuid()) @db.Uuid
+  opportunityId      String                            @unique @db.Uuid
+  opportunity        Opportunity                       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  domain             String
+  userProfileId      String?                           @db.Uuid
+  userProfile        UserProfile?                      @relation(fields: [userProfileId], references: [id], onDelete: SetNull)
+  userProfileVersion Int?
+  outcome            PreEvaluatorTriageOutcome
+  reasons            Json
+  inputFingerprint   String
+  manualDecision     PreEvaluatorTriageManualDecision?
+  manuallyDecidedAt  DateTime?                         @db.Timestamptz(3)
+  assessedAt         DateTime                           @db.Timestamptz(3)
+  createdAt          DateTime                           @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                           @updatedAt @db.Timestamptz(3)
+
+  @@index([outcome, manualDecision, assessedAt])
+  @@index([userProfileId])
+}
+
+enum ApplicationStage {
+  PLANNED
+  APPLIED
+  SCREENING
+  INTERVIEWING
+  FINAL_ROUND
+  OFFER
+  CLOSED
+}
+
+enum ApplicationOutcome {
+  OFFER_ACCEPTED
+  OFFER_DECLINED
+  REJECTED
+  WITHDRAWN
+  NO_RESPONSE
+  NOT_SUBMITTED
+}
+
+enum ApplicationEventType {
+  CREATED
+  SUBMITTED
+  STAGE_CHANGED
+  CLOSED
+  REOPENED
+  NOTE_ADDED
+  NOTE_EDITED
+  CONTACT_ADDED
+  CONTACT_UPDATED
+  FOLLOW_UP_ADDED
+  FOLLOW_UP_COMPLETED
+  FOLLOW_UP_REOPENED
+  FOLLOW_UP_UPDATED
+  INTERVIEW_ADDED
+  INTERVIEW_UPDATED
+  DETAILS_UPDATED
+}
+
+enum ApplicationContactRole {
+  RECRUITER
+  HIRING_MANAGER
+  INTERVIEWER
+  REFERRAL
+  OTHER
+}
+
+enum ApplicationInterviewKind {
+  RECRUITER_SCREEN
+  HIRING_MANAGER
+  TECHNICAL
+  CASE_STUDY
+  PANEL
+  FINAL
+  OTHER
+}
+
+enum ApplicationInterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+// The user's record of pursuing one Opportunity, beside (not inside) its
+// lifecycle. Stage, outcome, closedOn and appliedOn are kept consistent by
+// CHECK constraints in the migration. version guards stage/outcome/date
+// changes; lastEventSequence orders the append-only event history.
+model Application {
+  id                String                 @id @default(uuid()) @db.Uuid
+  opportunityId     String                 @unique @db.Uuid
+  opportunity       Opportunity            @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  stage             ApplicationStage
+  outcome           ApplicationOutcome?
+  appliedOn         DateTime?              @db.Date
+  closedOn          DateTime?              @db.Date
+  version           Int                    @default(1)
+  lastEventSequence Int                    @default(0)
+  events            ApplicationEvent[]
+  notes             ApplicationNote[]
+  contacts          ApplicationContact[]
+  followUps         ApplicationFollowUp[]
+  interviews        ApplicationInterview[]
+  createdAt         DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime               @updatedAt @db.Timestamptz(3)
+
+  @@index([stage])
+  @@index([appliedOn])
+}
+
+// Append-only: rows are never updated or deleted (other than by cascade).
+model ApplicationEvent {
+  id            String               @id @default(uuid()) @db.Uuid
+  applicationId String               @db.Uuid
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  sequence      Int
+  type          ApplicationEventType
+  fromStage     ApplicationStage?
+  toStage       ApplicationStage?
+  outcome       ApplicationOutcome?
+  occurredOn    DateTime?            @db.Date
+  payload       Json?
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@unique([applicationId, sequence])
+}
+
+model ApplicationNote {
+  id            String      @id @default(uuid()) @db.Uuid
+  applicationId String      @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  body          String      @db.Text
+  version       Int         @default(1)
+  editedAt      DateTime?   @db.Timestamptz(3)
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@index([applicationId, createdAt])
+}
+
+model ApplicationContact {
+  id            String                 @id @default(uuid()) @db.Uuid
+  applicationId String                 @db.Uuid
+  application   Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  name          String
+  role          ApplicationContactRole
+  title         String?
+  organization  String?
+  email         String?
+  profileUrl    String?                @db.Text
+  notes         String?                @db.Text
+  version       Int                    @default(1)
+  interviews    ApplicationInterview[]
+  createdAt     DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime               @updatedAt @db.Timestamptz(3)
+
+  @@index([applicationId, createdAt])
+}
+
+model ApplicationFollowUp {
+  id            String      @id @default(uuid()) @db.Uuid
+  applicationId String      @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  description   String
+  dueOn         DateTime    @db.Date
+  completedAt   DateTime?   @db.Timestamptz(3)
+  version       Int         @default(1)
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([applicationId, completedAt, dueOn])
+  @@index([completedAt, dueOn])
+}
+
+model ApplicationInterview {
+  id            String                     @id @default(uuid()) @db.Uuid
+  applicationId String                     @db.Uuid
+  application   Application                @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  kind          ApplicationInterviewKind
+  roundLabel    String?
+  scheduledAt   DateTime?                  @db.Timestamptz(3)
+  status        ApplicationInterviewStatus @default(SCHEDULED)
+  contactId     String?                    @db.Uuid
+  contact       ApplicationContact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  notes         String?                    @db.Text
+  version       Int                        @default(1)
+  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
+
+  @@index([applicationId, scheduledAt])
+}
+
+// One listing of a configured source within one tracking scope (feature 13):
+// its positive sightings, absences from complete checks, confirmed removal and
+// reappearance. A row exists only for a listing that was stored. lastSeenAt is
+// the last time the listing was seen listed; SourceRecord.lastObservedAt stays
+// the last time its content was observed.
+model RetrievedListing {
+  id                 String                @id @default(uuid()) @db.Uuid
+  retrievalSourceId  String                @db.Uuid
+  retrievalSource    RetrievalSource       @relation(fields: [retrievalSourceId], references: [id], onDelete: Cascade)
+  // The source's scope generation; '' for the pre-feature-13 baseline.
+  trackingScopeKey   String
+  // The adapter key, as on SourceRecord.source.
+  source             String
+  externalId         String
+  opportunityId      String?               @db.Uuid
+  opportunity        Opportunity?          @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  // Whether the source can confirm removal (captured from its adapter).
+  removalCapable     Boolean               @default(false)
+  state              RetrievedListingState
+  firstSeenAt        DateTime              @db.Timestamptz(3)
+  lastSeenAt         DateTime              @db.Timestamptz(3)
+  lastSeenRunId      String?               @db.Uuid
+  lastSeenRun        RetrievalRun?         @relation(fields: [lastSeenRunId], references: [id], onDelete: SetNull)
+  missingSince       DateTime?             @db.Timestamptz(3)
+  missedCompleteRuns Int                   @default(0)
+  removedAt          DateTime?             @db.Timestamptz(3)
+  reappearedAt       DateTime?             @db.Timestamptz(3)
+  reappearances      Int                   @default(0)
+  // An expiry the source itself states (display only).
+  sourceExpiresAt    DateTime?             @db.Timestamptz(3)
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @db.Timestamptz(3)
+
+  @@unique([retrievalSourceId, trackingScopeKey, externalId])
+  @@index([opportunityId])
+  @@index([lastSeenRunId])
+}
+
+// A browser paired with the extension companion (feature 14B). Only the
+// SHA-256 hash of the pairing credential is stored, never the credential;
+// the hint is its last characters, for recognizing it in the list. A revoked
+// pairing is kept (revokedAt set) so its captures' provenance stays readable.
+model ExtensionPairing {
+  id         String    @id @default(uuid()) @db.Uuid
+  label      String
+  tokenHash  String    @unique
+  tokenHint  String
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  // The extension version that last used this pairing, as the extension
+  // reported it (Setup & Connection, November 5, 2026). Null until then.
+  lastExtensionVersion String?
+}
+
+// A job card the browser extension read from a results page (Mode B, "Save
+// jobs on this page"), staged until its full posting is read by the site's
+// approved automatic detail-acquisition mechanism and ingested through the
+// normal path. A staged card is never an opportunity, is never evaluated and
+// is read by no analytics. externalId is the same listing identity a
+// single-job capture of the job's page records, so both meet in ingestion.
+// opportunityId is set only by this item's own ingestion.
+model PageCaptureItem {
+  id             String                @id @default(uuid()) @db.Uuid
+  site           String
+  host           String
+  externalId     String                @unique
+  sourceUrl      String                @db.Text
+  siteJobId      String?
+  title          String
+  company        String?
+  location       String?
+  postedText     String?
+  resultsPageUrl String                @db.Text
+  firstSeenAt    DateTime              @db.Timestamptz(3)
+  lastSeenAt     DateTime              @db.Timestamptz(3)
+  sightings      Int                   @default(1)
+  lastBatchId    String                @db.Uuid
+  pairingId      String                @db.Uuid
+  status         PageCaptureItemStatus @default(QUEUED)
+  attempts       Int                   @default(0)
+  lastAttemptAt  DateTime?             @db.Timestamptz(3)
+  nextAttemptAt  DateTime?             @db.Timestamptz(3)
+  // A safe code only (Core pageCaptureReasonValues), never page content.
+  lastReason     String?
+  opportunityId  String?               @db.Uuid
+  opportunity    Opportunity?          @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  // What the hand-off into the existing evaluation request (and its
+  // pre-evaluator triage) returned, once.
+  handoffOutcome String?
+  handedOffAt    DateTime?             @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(3)
+
+  @@index([status, nextAttemptAt])
+  @@index([site, lastAttemptAt])
+  @@index([opportunityId])
+}
+
+// One "Save selected jobs" from a results page (Mode B), kept so that earlier
+// captures can be reopened (capture history, November 5, 2026). History only:
+// the jobs stay in PageCaptureItem (and, once added, Opportunity); a session
+// lists which staged items that save covered, in page order, with the counts
+// reported then. Its id is the batch's own batchId, so a repeated batch is
+// one session. Additive; nothing else reads or writes it.
+model PageCaptureSession {
+  id         String   @id @db.Uuid
+  site       String
+  pageUrl    String   @db.Text
+  pageTitle  String?
+  pairingId  String   @db.Uuid
+  receivedAt DateTime @db.Timestamptz(3)
+  itemIds    String[] @db.Uuid
+  counts     Json
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([receivedAt(sort: Desc)])
+  @@index([site, receivedAt])
+}
+
+enum PageCaptureItemStatus {
+  QUEUED
+  ACQUIRING
+  INGESTED
+  AWAITING_DETAILS
+  UNAVAILABLE
+  ALREADY_SAVED
+  DISMISSED
+}
+
+// The user's own work eligibility, for showing which jobs' work-
+// authorization requirements need attention (never for normalization, and
+// never part of the evaluator's profile input). One row: the countries the
+// user is authorized to work in, and the countries the user is a citizen of
+// (ISO 3166-1 alpha-2), for jobs that require citizenship.
+model UserEligibility {
+  id                 String   @id
+  authorizedRegions  String[] @default([])
+  citizenshipRegions String[] @default([])
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
 }

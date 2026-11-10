@@ -1,0 +1,327 @@
+import {
+  parseGeographyList,
+  readGeographyList,
+  residencyRequirementFor,
+  type ResidencyRequirement,
+} from "@ai-career/core";
+
+// Deterministic reading of explicit residency / geographic-eligibility
+// statements. Only clear statements count:
+//   "Applicants must reside in the United States", "US only",
+//   "EU residents only", "must be based in Spain", "open to candidates in
+//   the US or Canada", "anywhere in the world", or a location field such as
+//   "Remote - United States" / "Remote (Spain)".
+// Never read: a bare "Remote", a city or country on its own (an office
+// location is not a residency rule), currency, company headquarters,
+// nationality or citizenship, work authorization, time zones, and anything
+// preferred, negated, conditional or conflicting. Those stay Unknown.
+
+export interface ResidencyStatement {
+  source: "location" | "rawText" | "basedRole" | "pageContext";
+  sentence: string;
+  regions: string[];
+}
+
+export interface ParsedResidency {
+  requirement: ResidencyRequirement | null;
+  regions: string[];
+  statements: ResidencyStatement[];
+  unknownReason: "CONFLICTING_STATEMENTS" | "QUALIFIED_STATEMENT" | null;
+  // Places the posting explicitly excludes from hiring ("candidates residing
+  // in Alaska, California, … are not eligible"), with the sentences that
+  // state them (November 5, 2026). A qualification of the residency rule,
+  // never work authorization. Empty when none is stated.
+  exclusions: string[];
+  exclusionStatements: string[];
+}
+
+// Provenance markers for deterministically read residency facts.
+export const residencySourceFields = {
+  location: "location:explicit-eligible-geography",
+  rawText: "rawText:explicit-residency-statement",
+  // A statement that the remote role itself is based in a place ("This is
+  // a U.S.-based, full-time remote role."): where the remote work is done.
+  basedRole: "rawText:explicit-remote-base-statement",
+  // A page's own labelled region or country ("Region: Anywhere in the
+  // World"), read like a posting statement.
+  pageContext: "pageContext:explicit-residency-statement",
+  // Places a posting explicitly excludes from hiring.
+  exclusion: "rawText:explicit-residency-exclusion",
+} as const;
+
+const residenceVerb =
+  /\b(?:must|required to|requires? (?:you|candidates|applicants) to|needs? to|have to|has to)\s+(?:currently\s+)?(?:reside|live|be based|be located|be a resident of|be resident in|be residing)\s+(?:in|within|of)\s+/i;
+const openTo =
+  /\b(?:open|available)\s+(?:only\s+)?to\s+(?:candidates|applicants|residents|people|those)\s+(?:who\s+(?:reside|live|are based|are located)\s+)?(?:in|of|from|based in|located in|residing in)\s+/i;
+const basedIn = /\b(?:candidates|applicants)\s+(?:must be\s+)?(?:based|located|residing)\s+in\s+/i;
+// "the following states:", "one of these provinces:" before the list.
+const listLeadIn =
+  /^(?:(?:one|any)\s+of\s+)?(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+|canadian\s+)?(?:states|provinces|territories|provinces and territories|countries|locations|regions)(?:\s+listed\s+below)?\s*:?\s*/i;
+const onlySuffix =
+  /^\s*[- ]?\s*(?:only|residents only|resident only|based (?:candidates|applicants) only|(?:candidates|applicants) only)\b/i;
+const worldwide =
+  /\b(?:(?:work|working|live|reside)\s+from\s+anywhere\s+in\s+the\s+world|anywhere\s+in\s+the\s+world|(?:open\s+to|hiring|hire)\s+(?:candidates\s+|applicants\s+|talent\s+)?(?:worldwide|globally))\b/i;
+// Preference, negation or conditions make a sentence unusable.
+const qualifier =
+  /\b(?:not|no|never|without|except|excluding|outside|preferred|preferably|prefer|ideally|ideal|bonus|plus|nice to have|may|might|can also|or similar)\b|n't\b/i;
+
+// A lead-in that ends in a list ("…reside in one of the following states:")
+// followed by one geography per line ("- Arizona", "• TX") reads as one
+// statement: "…states: Arizona, TX".
+const bullet = /^\s*(?:[-–—•*·▪◦]|\d{1,2}[.)])?\s*/;
+function joinListLines(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const joined: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (!/(?:[:：]|\b(?:following|below)(?:\s+\w+){0,2})\s*$/i.test(line.trim())) {
+      joined.push(line);
+      continue;
+    }
+    const items: string[] = [];
+    let next = index + 1;
+    while (next < lines.length) {
+      const item = lines[next]!.replace(bullet, "").replace(/[,;.]\s*$/, "").trim();
+      if (!item || !parseGeographyList(item)) break;
+      items.push(item);
+      next += 1;
+    }
+    if (items.length) {
+      joined.push(`${line.trim().replace(/[:：]$/, "")}: ${items.join(", ")}`);
+      index = next - 1;
+    } else {
+      joined.push(line);
+    }
+  }
+  return joined.join("\n");
+}
+
+function sentences(text: string): string[] {
+  // Keep "U.S." / "U.K." / "D.C." abbreviations inside their sentence.
+  return joinListLines(text)
+    .split(/(?<=[.!?])(?<!\bU\.S\.)(?<!\bU\.K\.)(?<!\bU\.S\.A\.)(?<!\bD\.C\.)\s+|\r?\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+type SentenceResult = { regions: string[] } | "QUALIFIED" | null;
+
+// "This is a U.S.-based, full-time remote role.": a role statement naming
+// where the role is based, for a remote role (the statement says remote, or
+// the role's arrangement is remote). For an on-site role the same words name
+// an office, and are not read. Preferred, negated or conditional wording is
+// not read.
+const basedPlace = /(?:^|[\s,(])((?:[A-Z][\w.]*\s){0,2}[A-Z][\w.]*)-based\b/;
+const roleNoun = /\b(?:role|position|job|opportunity)\b/i;
+function readBasedRole(sentence: string, remote: boolean): string[] | null {
+  const match = basedPlace.exec(sentence);
+  if (!match || !roleNoun.test(sentence) || qualifier.test(sentence)) return null;
+  if (!remote && !/\bremote\b/i.test(sentence)) return null;
+  return parseGeographyList(match[1]!);
+}
+
+function readSentence(sentence: string): SentenceResult {
+  const found: string[][] = [];
+  let ambiguous = false;
+  for (const pattern of [residenceVerb, openTo, basedIn]) {
+    const match = pattern.exec(sentence);
+    if (!match) continue;
+    let after = sentence.slice(match.index + match[0].length);
+    // "open to candidates in Austin, Texas or other cities in the United
+    // States" (AlertMedia, November 5, 2026): the places named first are
+    // examples within the country named last, which is where candidates may be.
+    const within = /^[^.;]{1,80}?\s+(?:or|and)\s+(?:any\s+)?(?:other|elsewhere)\s+(?:cities|locations|places|states|areas)?\s*(?:in|within|across|throughout)\s+(?:the\s+)?/i.exec(after);
+    if (within) after = after.slice(within[0].length);
+    const reading = readGeographyList(after.replace(listLeadIn, ""));
+    if (reading.ambiguous) ambiguous = true;
+    else if (reading.codes.length) found.push(reading.codes);
+  }
+  // "<geography> only" / "<geography> residents only". A bare "only" after
+  // a two-letter abbreviation ("OK only", "IN only") is ordinary English.
+  for (let index = 0; index < sentence.length; index += 1) {
+    if (index > 0 && /[A-Za-z]/.test(sentence[index - 1]!)) continue;
+    const reading = readGeographyList(sentence.slice(index));
+    const suffix = onlySuffix.exec(sentence.slice(index + reading.consumed));
+    if (!reading.codes.length || !suffix) continue;
+    if (reading.abbreviated && /^\s*[- ]?\s*only\b/i.test(suffix[0])) continue;
+    if (reading.ambiguous) ambiguous = true;
+    else found.push(reading.codes);
+    break;
+  }
+  if (ambiguous) return "QUALIFIED";
+  if (worldwide.test(sentence)) found.push(["WORLDWIDE"]);
+  if (!found.length) return null;
+  if (qualifier.test(sentence)) return "QUALIFIED";
+  return { regions: [...new Set(found.flat())] };
+}
+
+// "Remote - United States", "Remote (US or Canada)", "US Remote",
+// "Remote - Worldwide". Requires the word "remote" plus nothing but
+// geography; "Boston, MA (Remote)" or "Berlin, Germany" are not read.
+function readLocation(location: string): string[] | null {
+  if (!/\bremote\b/i.test(location)) return null;
+  // "Chicago Office or Remote, North America (US & Canada)": the remote
+  // option's geography is where the role may be done; the other options are
+  // offices.
+  const options = location.split(/\s*(?:;|\bor\b)\s*/i).filter(Boolean);
+  const remote = options.filter((option) => /\bremote\b/i.test(option));
+  if (remote.length !== 1) return null;
+  if (options.length > 1 && !options.every((option) => option === remote[0] || /\b(?:office|offices|hq|headquarters|on-?site|in[- ]office)\b/i.test(option))) return null;
+  const rest = remote[0]!.replace(/\b(?:fully\s+)?remote\b/gi, " ").replace(/\b(?:in|within)\b/gi, " ");
+  if (/^[\s()[\],.;:–—/-]*(?:worldwide|anywhere|global(?:ly)?)[\s()[\],.;:–—-]*$/i.test(rest)) return ["WORLDWIDE"];
+  // A region named with the countries it means ("North America (US &
+  // Canada)") reads as those countries.
+  const named = /^(.*?)\(([^()]+)\)\s*[,.;]?\s*$/.exec(rest);
+  if (named) {
+    const inner = parseGeographyList(named[2]!);
+    const outer = named[1]!.replace(/^[\s,.;:–—/-]+|[\s,.;:–—/-]+$/g, "");
+    if (inner && (!outer || parseGeographyList(outer))) return inner;
+  }
+  return parseGeographyList(rest);
+}
+
+// Explicit hiring exclusions (November 5, 2026), in three forms:
+//   "… except (for) / excluding / with the exception of / other than
+//     [residents of | candidates residing in | the following states:] <list>"
+//   "Residents of / Candidates residing in <list> are not eligible / cannot
+//     be considered / are ineligible"
+//   "We are unable / not able to hire (candidates) in / from <list>"
+// The list must read completely as geography. In such a list, "Washington"
+// and "Georgia" (otherwise ambiguous) are the U.S. states when every other
+// item is a U.S. state; anything else unreadable leaves the sentence as it
+// was (not read).
+const exclusionLead =
+  /\b(?:except(?:\s+for)?|excluding|with\s+the\s+exception\s+of|other\s+than)\s+(?:(?:candidates|applicants|residents|individuals|people|those)\s+(?:who\s+)?(?:are\s+)?(?:residing|living|located|based|reside|live)\s+in\s+|residents\s+of\s+)?(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|territories|countries|locations)(?:\s+of)?\s*:?\s*)?/i;
+const exclusionSubject =
+  /\b(?:residents\s+of|(?:candidates|applicants|individuals|people|employees)\s+(?:who\s+)?(?:are\s+)?(?:residing|living|located|based|reside|live)\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
+const notEligible =
+  /^\s*[,;:]?\s*(?:(?:are|is)\s+(?:not\s+(?:currently\s+)?(?:eligible|considered|able\s+to\s+be\s+considered)|ineligible)|(?:cannot|can\s*not|will\s+not)\s+be\s+(?:considered|hired|employed))\b/i;
+// "we currently do not hire candidates residing in the following states:
+// …" (AlertMedia, November 5, 2026) is the same statement.
+const unableToHire =
+  /\b(?:(?:are|is)\s+(?:not\s+(?:currently\s+)?able|unable)\s+to|(?:do|does)\s+not\s+(?:currently\s+)?|don't\s+(?:currently\s+)?|(?:cannot|can\s*not|will\s+not)\s+(?:currently\s+)?)\s*(?:hire|employ|consider|accept\s+applications\s+from)\s+(?:(?:candidates|applicants|residents|individuals|anyone|employees)\s+)?(?:(?:who\s+)?(?:reside|live|are\s+located|are\s+based)\s+)?(?:in|from|of|residing\s+in|located\s+in|based\s+in)\s+(?:(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+)?(?:states|provinces|countries)(?:\s+of)?\s*:?\s*)?/i;
+const listItemSeparator = /\s*(?:,\s*(?:(?:or|and)\b)?|\/|&|;|\bor\b|\band\b)\s*/i;
+const contextualStates: Record<string, string> = { washington: "US-WA", georgia: "US-GA" };
+
+// The places a list names, read to its end ("…, and Wyoming."), or null.
+function readExclusionList(text: string): { regions: string[]; consumed: number } | null {
+  const end = /[.;!?)]|\s+(?:are|is|cannot|can\s*not|will|may|due|because|as)\b/i.exec(text);
+  const listText = end ? text.slice(0, end.index) : text;
+  const items = listText.split(listItemSeparator).map((item) => item.replace(/^(?:the\s+)?states?\s+of\s+/i, "").trim()).filter(Boolean);
+  if (!items.length) return null;
+  const read = items.map((item) => parseGeographyList(item) ?? (contextualStates[item.toLowerCase()] ? null : undefined));
+  if (read.some((codes) => codes === undefined)) return null;
+  const known = read.filter((codes): codes is string[] => codes !== null).flat();
+  // An ambiguous state name counts only among other U.S. states.
+  if (read.some((codes) => codes === null) && (known.length < 2 || !known.every((code) => code.startsWith("US-")))) return null;
+  const regions = items.map((item, index) => read[index] ?? [contextualStates[item.toLowerCase()]!]).flat();
+  return { regions: [...new Set(regions)], consumed: listText.length };
+}
+
+// One sentence's exclusion, and what remains of it for the residency reader.
+function readExclusion(sentence: string): { regions: string[]; remainder: string } | null {
+  const unable = unableToHire.exec(sentence);
+  if (unable) {
+    const list = readExclusionList(sentence.slice(unable.index + unable[0].length));
+    // What the sentence states before the exclusion is still read
+    // ("Candidates must reside in the United States; we are unable to hire in
+    // Alaska, …": U.S. residence, with the exclusions; November 8, 2026).
+    const before = sentence.slice(0, unable.index).replace(/(?:[\s,;:–—-]|\b(?:and|but|however|although|though|that|we|currently|please\s+note)\b)+$/i, "");
+    return list ? { regions: list.regions, remainder: before } : null;
+  }
+  const subject = exclusionSubject.exec(sentence);
+  if (subject) {
+    const start = subject.index + subject[0].length;
+    const list = readExclusionList(sentence.slice(start));
+    if (list && notEligible.test(sentence.slice(start + list.consumed))) return { regions: list.regions, remainder: sentence.slice(0, subject.index) };
+  }
+  const lead = exclusionLead.exec(sentence);
+  if (lead) {
+    const start = lead.index + lead[0].length;
+    const list = readExclusionList(sentence.slice(start));
+    if (list) {
+      const remainder = `${sentence.slice(0, lead.index)}${sentence.slice(start + list.consumed)}`.replace(/[\s,(–—-]+$/, "").replace(/\(\s*\)/g, "");
+      return { regions: list.regions, remainder };
+    }
+  }
+  return null;
+}
+
+// The continental (contiguous) United States, stated as where the role may
+// be done or where candidates must be: the lower 48 states and D.C., so U.S.
+// residence excluding Alaska and Hawaii (November 7, 2026: "Fully remote
+// within the continental United States" read as the whole U.S.).
+const continentalUs = /\b(?:continental|contiguous)\s+(?:united\s+states|u\.?s\.?a?\.?)(?![a-z])|\blower\s+48\b/i;
+const placeStatement = /\b(?:remote(?:ly)?|reside|resident|residing|live|living|based|located|location|candidates?|applicants?|eligible|work\s+from|hire|hiring)\b/i;
+const continentalExclusions = ["US-AK", "US-HI"];
+
+export function parseResidency(input: { location: string | null; rawText: string | null; remote?: boolean; pageStatements?: readonly string[] }): ParsedResidency {
+  const statements: ResidencyStatement[] = [];
+  const exclusions: string[] = [];
+  const exclusionStatements: string[] = [];
+  // A labelled or stated "fully remote within <place>" (the role's place
+  // line) reads like a remote location: "Role Location: Fully remote within
+  // the continental United States".
+  for (const original of sentences(input.rawText ?? "")) {
+    const value = /^(?:job\s+|work\s+|role\s+|position\s+)?location\s*[:：]\s*(.+)$/i.exec(original)?.[1];
+    if (!value || !/^(?:fully\s+|100%\s+)?remote\b/i.test(value)) continue;
+    const regions = readLocation(value.replace(/^((?:fully\s+|100%\s+)?remote)\s+(?:within|in|across|throughout)\s+(?:the\s+)?/i, "$1 ").replace(/\b(?:continental|contiguous)\s+/i, "").replace(/[.]+$/, ""));
+    if (regions && !qualifier.test(value)) statements.push({ source: "rawText", sentence: original, regions });
+  }
+  let qualified = false;
+  if (input.location) {
+    const regions = readLocation(input.location);
+    if (regions) statements.push({ source: "location", sentence: input.location, regions });
+  }
+  for (const original of sentences(input.rawText ?? "")) {
+    // An explicit exclusion is read on its own; what remains of the sentence
+    // is read as before (an unread exclusion still qualifies it).
+    const exclusion = readExclusion(original);
+    if (exclusion) {
+      exclusions.push(...exclusion.regions);
+      exclusionStatements.push(original);
+    }
+    const sentence = exclusion ? exclusion.remainder : original;
+    if (!sentence.trim()) continue;
+    const result = readSentence(sentence);
+    if (result === "QUALIFIED") qualified = true;
+    else if (result) statements.push({ source: "rawText", sentence, regions: result.regions });
+    else {
+      const based = readBasedRole(sentence, input.remote ?? false);
+      if (based) statements.push({ source: "basedRole", sentence, regions: based });
+    }
+  }
+  for (const sentence of input.pageStatements ?? []) {
+    const result = readSentence(sentence);
+    if (result === "QUALIFIED") qualified = true;
+    else if (result) statements.push({ source: "pageContext", sentence, regions: result.regions });
+  }
+  // The continental U.S., where a statement places the role or its
+  // candidates in the U.S., excludes Alaska and Hawaii.
+  const continental = [...statements.map((statement) => statement.sentence), ...sentences(input.rawText ?? "")]
+    .find((sentence) => continentalUs.test(sentence) && placeStatement.test(sentence) && !qualifier.test(sentence));
+  if (continental && statements.some((statement) => statement.regions.includes("US"))) {
+    exclusions.push(...continentalExclusions);
+    if (!exclusionStatements.includes(continental)) exclusionStatements.push(continental);
+  }
+  const excluded = { exclusions: [...new Set(exclusions)], exclusionStatements };
+  const unknown = (reason: ParsedResidency["unknownReason"]): ParsedResidency => ({
+    requirement: null,
+    regions: [],
+    statements,
+    unknownReason: reason,
+    ...excluded,
+  });
+  if (qualified) return unknown("QUALIFIED_STATEMENT");
+  // Where the role is based is the broadest reading: an explicit statement
+  // of where candidates may be (the eligible states, a "Remote - …"
+  // location) says more, and replaces it.
+  if (statements.some((statement) => statement.source !== "basedRole")) {
+    for (let index = statements.length - 1; index >= 0; index -= 1) if (statements[index]!.source === "basedRole") statements.splice(index, 1);
+  }
+  if (!statements.length) return unknown(null);
+  const requirements = new Set(statements.map((statement) => residencyRequirementFor(statement.regions)));
+  if (requirements.size > 1) return unknown("CONFLICTING_STATEMENTS");
+  const regions = [...new Set(statements.flatMap((statement) => statement.regions))];
+  return { requirement: residencyRequirementFor(regions), regions, statements, unknownReason: null, ...excluded };
+}

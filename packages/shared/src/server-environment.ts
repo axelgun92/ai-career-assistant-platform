@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const customerSuccessProductionSemanticPolicyVersion =
-  "customer-success-semantic-policy-v3-mixed-terra-luna";
+  "customer-success-semantic-policy-v4-final-terra-luna-gpt6";
 
 const postgresConnectionString = z.string().min(1).refine(
   (value) => {
@@ -159,12 +159,28 @@ export const gpt56LunaPricingConfiguration = {
   effectiveTo: null,
 } as const;
 
+export const gpt6LunaPricingConfiguration = {
+  provider: "openai",
+  model: "gpt-6-luna",
+  version: "openai-gpt-6-luna-standard-2026-09-22",
+  currency: "USD",
+  inputCostPerMillionTokens: 0.1,
+  cachedInputCostPerMillionTokens: 0.01,
+  outputCostPerMillionTokens: 0.5,
+  longContextThresholdTokens: 272_000,
+  longContextInputMultiplier: 2,
+  longContextOutputMultiplier: 1.5,
+  effectiveFrom: new Date("2026-09-22T00:00:00.000Z"),
+  effectiveTo: null,
+} as const;
+
 export function semanticPricingConfigurationsFromEnvironment(
   environment: SemanticEnvironment,
 ) {
   return [
     semanticPricingFromEnvironment(environment),
     gpt56LunaPricingConfiguration,
+    gpt6LunaPricingConfiguration,
   ];
 }
 
@@ -172,4 +188,21 @@ export function readEvaluationWorkerEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): EvaluationWorkerEnvironment {
   return evaluationWorkerEnvironmentSchema.parse(environment);
+}
+
+// The retrieval worker (feature 11). Every setting is optional.
+// RETRIEVAL_BROWSER_EXECUTABLE (feature 14) is the Chromium or Chrome binary
+// for browser-assisted sources (LinkedIn); without it they cannot run.
+export const retrievalWorkerEnvironmentSchema = z.object({
+  RETRIEVAL_WORKER_POLL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
+  RETRIEVAL_USER_AGENT: z.string().trim().min(1).max(200).optional(),
+  RETRIEVAL_BROWSER_EXECUTABLE: z.string().trim().min(1).max(500).optional(),
+});
+
+export type RetrievalWorkerEnvironment = z.infer<typeof retrievalWorkerEnvironmentSchema>;
+
+export function readRetrievalWorkerEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): RetrievalWorkerEnvironment {
+  return retrievalWorkerEnvironmentSchema.parse(environment);
 }

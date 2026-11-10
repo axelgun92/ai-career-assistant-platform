@@ -1,4 +1,5 @@
 import { ZodError, z } from "zod";
+import { isNormalizedLifecycleState } from "@ai-career/core";
 import {
   evaluationSnapshotSchema,
   stageFailureSchema,
@@ -90,6 +91,7 @@ function buildContext<TDomainData>(input: {
     ruleVersion: input.snapshot.ruleVersion,
     promptVersion: input.snapshot.promptVersion,
     opportunity: input.subject.opportunity,
+    subjectSourceRecordId: input.subject.subjectSourceRecordId ?? null,
     rawSources: input.subject.rawSources,
     provenance: input.subject.provenance,
     userProfile: input.subject.userProfile,
@@ -278,10 +280,11 @@ export function createEvaluationExecutor(repository: EvaluationRepository) {
     const subject = await repository.loadSubject({
       opportunityId: snapshot.opportunityId,
       userProfileId: snapshot.userProfileId,
+      evaluationId: snapshot.id,
     });
     if (!subject) throw new Error("Evaluation subject no longer exists");
-    if (subject.opportunity.status !== "NORMALIZED") {
-      throw new Error("Only a NORMALIZED Opportunity can be evaluated");
+    if (!isNormalizedLifecycleState(subject.opportunity.status)) {
+      throw new Error("Only a normalized Opportunity can be evaluated");
     }
 
     await repository.markEvaluationRunning(evaluationId);
@@ -316,8 +319,8 @@ export function createEvaluationExecutor(repository: EvaluationRepository) {
       });
       const subject = await repository.loadSubject(request);
       if (!subject) throw new Error("Opportunity or user profile does not exist");
-      if (subject.opportunity.status !== "NORMALIZED") {
-        throw new Error("Only a NORMALIZED Opportunity can be evaluated");
+      if (!isNormalizedLifecycleState(subject.opportunity.status)) {
+        throw new Error("Only a normalized Opportunity can be evaluated");
       }
 
       const evaluationId = await repository.createEvaluation({
@@ -370,6 +373,7 @@ export function createEvaluationExecutor(repository: EvaluationRepository) {
       const subject = await repository.loadSubject({
         opportunityId: snapshot.opportunityId,
         userProfileId: snapshot.userProfileId,
+        evaluationId: snapshot.id,
       });
       if (!subject) throw new Error("Evaluation subject no longer exists");
       await repository.markEvaluationRunning(snapshot.id);

@@ -1,0 +1,212 @@
+// Presentational fields for manual opportunity entry, with per-field
+// validation messages from the API's `issues` array.
+
+import { salaryCurrencyOptions } from "../server/opportunity-query";
+import {
+  employmentTypeChoices,
+  residencyChoices,
+  seniorityChoices,
+  workArrangementChoices,
+} from "./opportunity-facts";
+
+// Domains the platform can currently evaluate. A blank domain cannot be
+// evaluated, so the form always submits one of these slugs.
+export const domainOptions = [
+  { value: "customer-success", label: "Customer Success" },
+] as const;
+const defaultDomain = domainOptions[0].value;
+
+export const manualOpportunityFieldNames = [
+  "rawText",
+  "title",
+  "company",
+  "location",
+  "compensationText",
+  "postingDate",
+  "domain",
+  "sourceUrl",
+  "applicationUrl",
+  "sourceJobId",
+  "foundOn",
+  "workArrangement",
+  "seniority",
+  "employmentType",
+  "department",
+  "closingDate",
+  "timeZoneRequirements",
+  "compensationCurrency",
+  "residencyRequirement",
+  "residencyRegions",
+] as const;
+
+export type ManualOpportunityFieldName = (typeof manualOpportunityFieldNames)[number];
+export type FieldErrors = Partial<Record<ManualOpportunityFieldName, string>>;
+
+export interface ValidationIssue {
+  path: string;
+  message: string;
+}
+
+export function fieldErrorsFromIssues(issues: unknown): {
+  fieldErrors: FieldErrors;
+  formErrors: string[];
+} {
+  const fieldErrors: FieldErrors = {};
+  const formErrors: string[] = [];
+  if (!Array.isArray(issues)) return { fieldErrors, formErrors };
+  for (const issue of issues as Partial<ValidationIssue>[]) {
+    if (typeof issue?.message !== "string") continue;
+    const field = String(issue.path ?? "").split(".")[0];
+    if ((manualOpportunityFieldNames as readonly string[]).includes(field)) {
+      fieldErrors[field as ManualOpportunityFieldName] ??= issue.message;
+    } else {
+      formErrors.push(issue.message);
+    }
+  }
+  return { fieldErrors, formErrors };
+}
+
+function errorProps(name: ManualOpportunityFieldName, fieldErrors: FieldErrors) {
+  return fieldErrors[name]
+    ? { "aria-invalid": true as const, "aria-describedby": `${name}-error` }
+    : {};
+}
+
+function FieldError({ name, fieldErrors }: { name: ManualOpportunityFieldName; fieldErrors: FieldErrors }) {
+  const message = fieldErrors[name];
+  return message ? (
+    <span id={`${name}-error`} className="field-error">
+      {message}
+    </span>
+  ) : null;
+}
+
+const optionalTextFields = [
+  ["title", "Title (optional)", "text"],
+  ["company", "Company (optional)", "text"],
+  ["location", "Location (optional)", "text"],
+  ["compensationText", "Compensation text (optional)", "text"],
+  ["postingDate", "Posting date (optional)", "date"],
+] as const;
+
+const urlFields = [
+  ["sourceUrl", "Source URL (optional)"],
+  ["applicationUrl", "Application URL (optional)"],
+] as const;
+
+// Provenance details. "Where you found it" is informational only; manual
+// entries always remain identified as manual input.
+const provenanceFields = [
+  ["sourceJobId", "Source job ID (optional)"],
+  ["foundOn", "Where you found it (optional, e.g. LinkedIn)"],
+] as const;
+
+const currencyChoices = salaryCurrencyOptions.map((code) => [code, code] as const);
+
+const selectFields = [
+  ["workArrangement", "Work arrangement", workArrangementChoices],
+  ["seniority", "Seniority", seniorityChoices],
+  ["employmentType", "Employment type", employmentTypeChoices],
+  ["compensationCurrency", "Salary currency", currencyChoices],
+  ["residencyRequirement", "Residency requirement", residencyChoices],
+] as const satisfies ReadonlyArray<
+  readonly [ManualOpportunityFieldName, string, ReadonlyArray<readonly [string, string]>]
+>;
+
+export function ManualOpportunityFields({ fieldErrors }: { fieldErrors: FieldErrors }) {
+  return (
+    <>
+      <label>
+        Raw opportunity or job-description text
+        <textarea name="rawText" rows={14} required {...errorProps("rawText", fieldErrors)} />
+        <FieldError name="rawText" fieldErrors={fieldErrors} />
+      </label>
+
+      <div className="form-grid">
+        {optionalTextFields.map(([name, label, type]) => (
+          <label key={name}>
+            {label}
+            <input name={name} type={type} {...errorProps(name, fieldErrors)} />
+            <FieldError name={name} fieldErrors={fieldErrors} />
+          </label>
+        ))}
+        <label>
+          Domain
+          <select name="domain" defaultValue={defaultDomain} {...errorProps("domain", fieldErrors)}>
+            {domainOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <FieldError name="domain" fieldErrors={fieldErrors} />
+        </label>
+        {urlFields.map(([name, label]) => (
+          <label key={name}>
+            {label}
+            <input name={name} type="url" {...errorProps(name, fieldErrors)} />
+            <FieldError name={name} fieldErrors={fieldErrors} />
+          </label>
+        ))}
+        {provenanceFields.map(([name, label]) => (
+          <label key={name}>
+            {label}
+            <input name={name} {...errorProps(name, fieldErrors)} />
+            <FieldError name={name} fieldErrors={fieldErrors} />
+          </label>
+        ))}
+      </div>
+
+      <fieldset className="form-details">
+        <legend>Additional details (optional)</legend>
+        <p className="field-help">
+          Fill in only what the listing states. Anything left blank stays Unknown; nothing is guessed from the
+          job text. Salary amounts are read from the compensation text; a plain “$” is read as US dollars unless
+          you choose a currency here. Residency is only recorded when the listing states where you must or may
+          live; a salary currency or “Remote” alone never implies it.
+        </p>
+        <div className="form-grid">
+          {selectFields.map(([name, label, choices]) => (
+            <label key={name}>
+              {label}
+              <select name={name} defaultValue="" {...errorProps(name, fieldErrors)}>
+                <option value="">Not stated</option>
+                {choices.map(([value, text]) => (
+                  <option key={value} value={value}>
+                    {text}
+                  </option>
+                ))}
+              </select>
+              <FieldError name={name} fieldErrors={fieldErrors} />
+            </label>
+          ))}
+          <label>
+            Eligible residence (countries or regions)
+            <input
+              name="residencyRegions"
+              maxLength={200}
+              placeholder="e.g. United States, Texas, Ontario, or Spain"
+              {...errorProps("residencyRegions", fieldErrors)}
+            />
+            <FieldError name="residencyRegions" fieldErrors={fieldErrors} />
+          </label>
+          <label>
+            Closing date
+            <input name="closingDate" type="date" {...errorProps("closingDate", fieldErrors)} />
+            <FieldError name="closingDate" fieldErrors={fieldErrors} />
+          </label>
+          <label>
+            Time-zone requirements
+            <input
+              name="timeZoneRequirements"
+              maxLength={120}
+              placeholder="e.g. US Eastern business hours"
+              {...errorProps("timeZoneRequirements", fieldErrors)}
+            />
+            <FieldError name="timeZoneRequirements" fieldErrors={fieldErrors} />
+          </label>
+        </div>
+      </fieldset>
+    </>
+  );
+}

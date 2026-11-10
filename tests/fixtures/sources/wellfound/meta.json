@@ -1,0 +1,64 @@
+{
+  "adapter": "wellfound",
+  "request": "GET https://wellfound.com/role/customer-success-specialist",
+  "httpStatus": 200,
+  "contentType": "text/html; charset=utf-8",
+  "capturedAt": "2026-10-18T17:18:46Z",
+  "fullResponse": {
+    "bytes": 570084,
+    "sha256": "f97a790c4a2e9e33a99ef3af406e8e18916ea1a0efe1a4cb707feb269048319d",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 39 items",
+  "items": [
+    {
+      "stateKey": "JobListingSearchResult:1716423",
+      "id": "1716423",
+      "title": "Customer Success Specialist",
+      "company": "Pragma (formerly Logisy)",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "stateKey": "JobListingSearchResult:4829861",
+      "id": "4829861",
+      "title": "Head of Customer Success",
+      "company": "Medsender",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "stateKey": "JobListingSearchResult:3886599",
+      "id": "3886599",
+      "title": "Customer Support Specialist",
+      "company": "Medsender",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "The document is reduced to its <title> and the __NEXT_DATA__ script (tag attributes as received), which is all the adapter reads. Inside the state, the listing, company (StartupResult) and badge entities are reproduced value-for-value; the results entry (totalJobCount 335, totalStartupCount 202, perPage 20, pageCount 11) is kept as received except that its startups list and each company's highlightedJobListings are cut to the kept items. Other state (viewer, editorial, runtime configuration, build data) and the rendered markup are left out.",
+  "sanitization": [],
+  "selectionNote": "Two Customer Success titles and one support title from the same company (Medsender), to cover the title filter and a company with several listings.",
+  "fixtureFile": "response.html",
+  "earlierRequest": {
+    "request": "GET https://wellfound.com/jobs",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T17:12:21Z",
+    "fullResponse": {
+      "bytes": 237442,
+      "sha256": "bab5d3601fd1816dca708ee914b829126259a6199357112325e3d511ef2be011",
+      "keptInGit": false
+    },
+    "note": "A curated featured-jobs landing page (45 listings, no descriptions, no paging); not a discovery page and not kept as a fixture."
+  }
+}

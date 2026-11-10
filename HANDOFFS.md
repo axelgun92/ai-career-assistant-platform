@@ -69,6 +69,68 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: Codex E2E Cleanup — Grouped Verification Complete
+
+**Date:** November 4, 2026
+**From:** Codex final-integration workstream
+**To:** Alex
+**Status:** Accepted for closeout; grouped E2E verification is sufficient and no uninterrupted rerun is required
+
+#### Completed
+
+- Preserved and synchronized the integration baseline through `17d2a3289688ce40a17a4a573ead87aefe042e74` without overwriting the unfinished Codex cleanup.
+- Corrected the four stale triage-era E2E scenarios through valid fixture/helper inputs. Production triage and evaluator behavior were not bypassed or weakened.
+- Preserved exact product assertions while adding only measured Windows/runtime synchronization and portability corrections.
+- Corrected the shared browser-session navigation timestamp to enforce the locked minimum interval from the actual driver invocation.
+- Stabilized one integration assertion whose Prisma evidence rows have no contractual order by comparing them in immutable-ID order.
+- Completed grouped E2E verification: every one of the 59 tests has passing evidence on the final unchanged implementation and deterministic configuration.
+
+#### Files Changed
+
+- `packages/discovery/src/browser.ts`
+- `playwright.config.ts`
+- `tests/e2e/dashboard.spec.ts`
+- `tests/e2e/evaluation-results.spec.ts`
+- `tests/e2e/extension-page-capture.spec.ts`
+- `tests/e2e/extension.spec.ts`
+- `tests/e2e/golden-path.spec.ts`
+- `tests/e2e/retrieval.spec.ts`
+- `tests/integration/listing-version-projection.test.ts`
+- `tests/support/e2e-evaluation-helper.ts`
+- `tests/unit/page-capture-verify-runtime.test.ts`
+- `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`
+- `AI Job Assistant Project/Md and README Docs/CHANGELOG.md`
+- `HANDOFFS.md`
+
+#### Verification Completed
+
+- Unit: 92 files passed, 1 replay file skipped; 2,144 passed and 6 skipped.
+- Integration corrections: browser-session focused unit 75/75 and focused integration 3/3; after the full integration run exposed only nondeterministic evidence ordering (372 passed, 1 failed), the corrected focused listing-version file passed 13/13.
+- Extension and page-capture E2E after synchronization: 12/12.
+- Latest uninterrupted 59-test attempt: 31 passed, 1 failed, 27 unexecuted under fail-fast.
+- Targeted daily-budget test: 1/1 passed unchanged; both save requests returned HTTP 200.
+- Ordered downstream group: 25 passed, one Companies index test failed during first-use route compilation, and its serial detail test did not run.
+- Focused Companies verification: index 1/1 passed; detail 1/1 passed after its first-use dynamic route compiled. Thus all 27 formerly unexecuted tests, and all 59 overall tests, have current passing evidence.
+- Environment evidence: Next.js measured the worktree filesystem at 6.9 seconds and reported cache compactions of 31.6–66 seconds. The company detail request returned HTTP 200 in 15.7 seconds, of which 14.8 seconds was Next.js compilation/cache work and 828 ms was application code.
+- Database/provider boundary: `ai_career_assistant_test` only; deterministic fixture transport; no live/provider/paid call; normal and acceptance databases untouched.
+
+#### Known Issues / Blockers
+
+- No application failure remains in grouped verification.
+- A single uninterrupted 59/59 run did not pass. Alex explicitly accepted grouped 59/59 evidence as sufficient for this closeout; do not report it as an uninterrupted pass.
+- The Windows integration worktree's very slow filesystem can make first-use Next.js route compilation exceed exact UI assertion windows. Precompiling routes demonstrated the distinction without changing product behavior or assertions.
+
+#### Next Task
+
+- Commit and push the accepted cleanup, verify the local/remote SHA and clean synchronization, then provide fresh copies of every changed documentation file.
+- No further task or E2E run is part of this work package.
+
+#### Do Not Change Without Coordination
+
+- Do not weaken triage, evaluator, retrieval pacing, extension, or E2E assertions to accommodate local compilation latency.
+- Do not claim uninterrupted full-suite acceptance until one complete 59/59 run passes.
+- Do not rerun the full E2E suite for this closeout unless a new demonstrated issue requires it.
+
 ### Handoff: Evaluator Boundary to Main-Product Work
 
 **Date:** 2026-10-06  
@@ -156,6 +218,2183 @@ Claude should not modify the following merely to complete product UI or workflow
 
 If a true integration defect is found in one of those areas, stop and document it before changing evaluator internals.
 
+### Handoff: Evaluator Test-Harness Drift Repaired (Test-Only)
+
+**Date:** 2026-10-06  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+On `main` (`ebd5911`), 11 integration tests and both E2E evaluation flows failed before any main-product change. The cause was test harnesses that had not followed accepted evaluator contract changes. No production evaluator defect was found, and no production code changed.
+
+1. **Burnout Risk transport (`65dcaab`).** `tests/integration/production-evaluation-flow.test.ts` had a private fake provider that still returned raw Burnout Risk domain output. It now applies `toBurnoutRiskProviderTransport`, as the shared fixture transport already did.
+2. **Resume Match compatibility model (`fe8b0d2`).** Four parameterized "required gap" cases in the same file marked requirement 1 as `STRONG_MATCH` / `DIRECT_CUSTOMER_SUCCESS`. In that JD, requirement 1 is a preferred TOOL requirement, and the compatibility model correctly rejects a direct Customer Success work match for a tool. Requirement 1 is now a valid `TRANSFERABLE_MATCH` / `TRANSFERABLE` counterweight. Every assertion is unchanged: the expected Apply/Review/Skip decision and requirement 0's decision impact.
+3. **Mixed-routing execution policy (`a307631`).** The E2E worker helper (`tests/support/e2e-evaluation-helper.ts`) ran without an execution policy. The processor therefore rejected the web-queued task with `SEMANTIC_EXECUTION_POLICY_MISMATCH`, which is correct production behavior.
+   - The helper now builds its config with the production `semanticExecutorConfigFromEnvironment()`.
+   - The Playwright web server and the helper now share one set of deterministic E2E env defaults (`tests/support/e2e-environment.ts`).
+   - The fixture transport still replaces the provider, so no provider call is possible.
+
+#### Files Changed
+
+- `tests/integration/production-evaluation-flow.test.ts`
+- `tests/support/e2e-evaluation-helper.ts`
+- `tests/support/e2e-environment.ts` (new)
+- `playwright.config.ts` (env defaults moved to the shared module; values unchanged)
+
+#### Verification Completed
+
+- Integration: 25/25 pass (was 14/25).
+- Unit: 603/603 pass.
+- E2E: 4/4 pass (both evaluation flows were failing).
+- Typecheck and lint pass.
+- Deterministic/fake providers only; no paid calls.
+
+#### Known Issues / Blockers
+
+- The shared `createCustomerSuccessFixtureOperations` Resume Match fixture cannot currently emit a valid `STRONG_MATCH` for a TOOL requirement. Strong matches always cite the DIRECT_EXPERIENCE profile reference, while a TOOL strong match needs SKILL or TRANSFERABLE_SKILL evidence. Codex may want to extend the fixture if tool strong matches need integration coverage.
+- When evaluator contracts change, also run `pnpm test:integration` and `pnpm test:e2e`. These harnesses have their own fake-provider wiring that unit tests do not exercise.
+
+#### Do Not Change Without Coordination
+
+- Unchanged from the previous handoff. No evaluator internals, schemas, routing, prompts, or validators were modified.
+
+### Handoff: Core Executor Lifecycle Guard — Review Requested
+
+**Date:** 2026-10-06  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Verification Needed (Codex review of one Core change)
+
+#### Completed
+
+Task 3 (opportunity lifecycle and user actions) is implemented on `claude/gallant-pasteur-y1ou3i`.
+
+One change touches Core evaluation orchestration and needs Codex review: the Core executor guard in `packages/evaluation/src/executor.ts` (`execute()` and `executeExisting()`).
+
+- **Before:** `subject.opportunity.status !== "NORMALIZED"` threw.
+- **After:** `!isNormalizedLifecycleState(status)` throws. The new domain-neutral predicate in `packages/core/src/opportunity.ts` means "normalization has happened", i.e. any state except `DISCOVERED`. The error message is now "Only a normalized Opportunity can be evaluated".
+- **Why:** `executeExisting()` runs on every worker pass. With the old guard:
+  - any opportunity past `NORMALIZED` could not be reevaluated (worker fails with `EVALUATION_WORKER_FAILED`);
+  - a user action during an in-flight evaluation would break that run.
+
+  Product rules about which states may *request* evaluation stay in `apps/web/src/server/evaluation-service.ts`: `ARCHIVED`/`CLOSED` → 409.
+- **Unchanged:** Core still never mutates the Opportunity lifecycle, and the existing assertions for that remain. `retryStage()`, stages, routing, prompts, schemas, validators, recommendation logic and evidence/provenance are all unchanged.
+
+#### Files Changed (Core / Codex-relevant)
+
+- `packages/evaluation/src/executor.ts` (two guards)
+- `packages/core/src/opportunity.ts` (`isNormalizedLifecycleState`)
+- `tests/unit/evaluation-executor.test.ts` (accepts post-normalization states, rejects `DISCOVERED`, in-flight run finishes after a user action, Core leaves status untouched)
+
+#### Product-side Changes Codex Should Know About
+
+- `apps/web/src/server/opportunity-lifecycle-sync.ts` wraps the production processor (`evaluation-worker.ts`). After `process()` resolves, it moves the system lifecycle forward. Sync errors are logged and never fail the task. Claim, lease, retry and processing semantics are unchanged.
+- `apps/web/src/server/evaluation-worker-cli.ts` runs `sweepSystemLifecycle()` once at startup.
+- `tests/support/e2e-evaluation-helper.ts` uses the same wrapper.
+- New additive table `OpportunityUserAction`, migration `20261006210110_opportunity_user_actions`. No evaluator tables changed.
+
+#### Verification Completed
+
+- Unit 665/665, integration 38/38, E2E 9/9; typecheck, lint, build and Prisma validate pass.
+- With the original guard restored, 9 new executor unit tests and 4 lifecycle integration tests fail (reevaluation, saved-reevaluation, restore-after-evaluation, in-flight-after-archive). This confirms the dependency.
+- Deterministic/fake providers only; no paid calls.
+
+#### Known Issues / Blockers
+
+- **Automatic lifecycle writes are not integration-ready** until Codex reviews the Core guard change above.
+- **Pre-existing schema drift (not changed).** `prisma migrate dev` detected that `schema.prisma` declares `Recommendation.evidenceReferences` without the `DEFAULT ARRAY[]::TEXT[]` that migration `20260817210000_production_evaluation_workflow` created. It tried to add `ALTER TABLE "Recommendation" ALTER COLUMN "evidenceReferences" DROP DEFAULT`; I removed that line from the Task 3 migration to keep it additive. Codex should decide whether the schema or the database is canonical.
+
+#### Do Not Change Without Coordination
+
+- Unchanged from previous handoffs.
+
+### Handoff: Foundation Pass — Provenance and Duplicate-Evaluation Guard (Awareness)
+
+**Date:** 2026-10-06  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+- `SourceRecord.applicationUrl` was added: additive migration `20261006232000_source_record_application_url` with a null-safe backfill.
+  - The pre-existing `Recommendation.evidenceReferences` default drift was again excluded from the migration.
+  - Manual capture can now record a source job ID and a reported source.
+- **Manual-source identity rule:** manually captured jobs always have `source = "manual-input"` and `sourceType = MANUAL`. The user's "where you found it" lives only in `sourceMetadata.reportedSource` and is informational. Future deduplication, source analytics and source adapters must key on `source`/`sourceType` (and `externalId` for real adapters), never on `reportedSource`.
+- **Product-layer guard:** `evaluation-service.requestEvaluation` returns 409 `EVALUATION_ALREADY_ACTIVE` when the opportunity's latest evaluation task is PENDING or RUNNING.
+
+#### Files Changed (Codex-relevant)
+
+- `tests/integration/production-evaluation-flow.test.ts`, test "creates a new historical evaluation instead of overwriting a completed run".
+  - It previously enqueued two evaluations back to back while the first was still PENDING, which is exactly the duplicate the new guard refuses.
+  - It now asserts the refusal, completes the first task through `tasks.claimNext`/`tasks.complete`, then requests the second.
+  - All original history assertions are unchanged.
+- No evaluator, queue, worker or evaluator-persistence code changed.
+
+#### Known Issues / Blockers
+
+- **Open boundary item (residual race).** The duplicate-evaluation guard is a check-then-enqueue in the product layer. Two truly concurrent requests for the same opportunity can both pass before either enqueues.
+  - A strict fix would belong in the queue/persistence layer: an active-task uniqueness check inside the `PrismaEvaluationTaskRepository.enqueue` transaction, or a partial unique constraint.
+  - Not changed here. Low risk for single-user use; the UI also prevents duplicate submits.
+
+#### Do Not Change Without Coordination
+
+- Unchanged from previous handoffs.
+
+### Handoff: Task 5 — Explicit Active Profile Version (Awareness)
+
+**Date:** 2026-10-07  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+- Profile and preferences management, with append-only versions and an explicit active version per domain:
+  - the `/profile` page;
+  - the `/api/profile`, `/api/profile/structured`, `/api/profile/active` and `/api/profile/versions/[id]` routes;
+  - the CLI `--activate` flag.
+- New additive table `ActiveUserProfile { domain @id, userProfileId → UserProfile (cascade), activatedAt }`, from migration `20261007120000_active_user_profile`. The `Recommendation.evidenceReferences` default drift was again excluded.
+
+#### Files Changed (shared-path awareness)
+
+- `database/src/evaluation-query-repository.ts`: `resolveUserProfile(userProfileId, domain?)`. Resolution is now:
+  1. an explicit ID;
+  2. `ActiveUserProfile` for the domain;
+  3. the previous newest-`updatedAt` fallback, unchanged and used only when nothing was ever activated.
+
+  Called with no domain, it behaves exactly as before.
+- `apps/web/src/server/evaluation-service.ts` passes the evaluation domain. Nothing else changed: the resolved version is pinned on the Evaluation at enqueue exactly as before.
+- `tests/support/e2e-evaluation-helper.ts`: `create-profile` now also makes its profile active, and `cleanup` restores the previously active version.
+
+#### Current Contract / Assumptions
+
+- `UserProfile` rows are never updated by product code. Saving always appends through `PrismaUserProfileImportRepository.import()`, unchanged.
+- The worker, executor, evidence (`user-profile:{id}:v{version}`), domain profile contract and validators are untouched. Validation reuses `validateCustomerSuccessUserProfileData()`.
+- The product additionally rejects unknown keys inside nested preference objects (salary, location, travel, workArrangement, roleFamilies), which the domain schema strips rather than rejects. This rejection happens in the product layer only; the domain schema is unchanged.
+
+#### Verification Completed
+
+- typecheck, lint, Prisma validate and build pass.
+- Unit 722/722, integration 54/54, E2E 14/14 (deterministic fixtures only, no paid calls).
+
+#### Do Not Change Without Coordination
+
+- Code that pins `userProfileId`/`userProfileVersion` on an Evaluation must keep pinning at enqueue. Historical evaluations must never be rebound to a newer active version.
+
+### Handoff: Task 6 — Budget Ledger, Deferral, and `enqueueAdmitted()` (Review Requested)
+
+**Date:** 2026-10-07  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (review requested during integration)  
+**Status:** Verification Needed (one narrow shared-persistence change)
+
+#### Completed
+
+- A product-level budget ledger, a pre-run budget gate, and a persistent deferred-evaluation backlog with resume and cancel.
+- Request-integrity admissions, which close the duplicate-active race recorded in the Foundation Pass handoff.
+- Migration `20261007200000_budget_ledger` is additive:
+  - tables `EvaluationAdmission`, `BudgetSetting`, `EvaluationBudgetReservation`, `DeferredEvaluation`;
+  - enums `BudgetPeriodType`, `DeferredEvaluationStatus`;
+  - a check constraint so an admission is never both consumed and abandoned.
+
+  The `Recommendation.evidenceReferences` default drift is again excluded.
+
+#### Files Changed (Codex-relevant)
+
+- **⚠ Shared queue persistence (review requested):** `database/src/evaluation-task-repository.ts`.
+  - `enqueue()` was refactored only to share a private `createEvaluationAndTask(tx, input)` helper. Its behaviour is identical: same rows, same `executionMetadata`, same `maxAttempts`/`availableAt`.
+  - New `enqueueAdmitted(input & { admissionId })`, used only by the product request path. It creates exactly what `enqueue()` creates and, in the same transaction, conditionally consumes one `EvaluationAdmission`: `UPDATE … SET evaluationId WHERE id = ? AND evaluationId IS NULL AND abandonedAt IS NULL`. If no row matches, it throws `AdmissionNotConsumableError`, so the whole transaction (Evaluation and Task) rolls back.
+  - Abandonment is the mirror conditional update. Postgres row locking makes "consumed" and "abandoned" mutually exclusive, so an abandoned admission can never produce an Evaluation.
+  - The shared `EvaluationTaskRepository` interface (`packages/evaluation`), `claimNext`, `complete`, `fail`, leases, retries, the worker and the executor are **unchanged**.
+- **Product layer:**
+  - `apps/web/src/server/evaluation-service.ts` runs the gate (optional `admissionGate` dependency) before enqueue; without a gate (evaluator-level tests) it behaves exactly as before;
+  - `apps/web/src/server/budget-service.ts`;
+  - `database/src/{evaluation-admission,budget,deferred-evaluation}-repository.ts`.
+- **Reads only:** the ledger reads `SemanticOperationAttempt`, `AiModelPricingConfiguration`, `Evaluation` and `EvaluationTask` read-only. Pricing, cost calculation, usage recording and `summarizeSemanticUsage()` are untouched.
+
+#### Current Contract / Assumptions
+
+- Spend is the direct sum of persisted attempt costs in the budget currency. Unknown and other-currency attempts are never treated as $0.
+- `executionMetadata` is unchanged; no new keys.
+- Deferred requests pin the profile version resolved at request time.
+
+#### Verification Completed
+
+- typecheck, lint, Prisma validate and build pass.
+- Unit 754/754, integration 79/79 (run twice), E2E 17/17 (deterministic fixtures, no paid calls).
+- The concurrency regression test fails 3 times in 4 with the old check order and passes 30 of 30 with the fix.
+
+#### Known Issues / Boundary Items
+
+- Already-queued tasks are not stopped when the budget is lowered or removed. That would need a pre-claim check in the shared worker; it is deliberately not done.
+- Evaluations created outside the product request path (direct `tasks.enqueue`, or the Core executor's `execute()`) have no admission or reservation. Their actual cost is still counted, and the duplicate guard still sees them.
+- The reserve is a user-set estimate; actual cost can exceed it (visible in the UI).
+
+#### Do Not Change Without Coordination
+
+- Keep `enqueueAdmitted()`'s consumption in the same transaction as Evaluation/Task creation, and keep the conditional `WHERE` clauses; the no-duplicate guarantee depends on both.
+
+### Handoff: Task 7 — Dashboard Reads Evaluation Result Fields (Awareness)
+
+**Date:** 2026-10-08  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness)  
+**Status:** Ready
+
+#### Completed
+
+- Dashboard search, filters, sorts, pagination and summaries, all read-only (`database/src/opportunity-list-repository.ts`, `database/src/opportunity-dashboard-repository.ts`).
+- Migration `20261008090000_dashboard_indexes` adds Opportunity indexes only. No evaluator tables are touched, and the known `Recommendation` drift is excluded again.
+
+#### Current Contract / Assumptions (read dependency)
+
+- The dashboard reads these persisted Customer Success result paths from the Evaluation linked to the **latest Recommendation row**:
+  - `domainResult.opportunityPriority.band`;
+  - `domainResult.hardFilters.role.classification`;
+  - `domainResult.companyAlignment.alignment.customerSegment.classification`.
+- It also reads `Recommendation.decision`, the latest `Evaluation`/`EvaluationTask` status, and open `DeferredEvaluation` rows.
+- **If these result field names or enum values change, the dashboard filters and labels need a matching update.** Unit tests assert the dashboard's option lists equal the current Customer Success schema enums, so a rename fails the build.
+- Values are never reinterpreted or inferred; a missing value is shown as "Not evaluated"/"Unknown".
+
+#### Carried Forward to Final Integration (unchanged)
+
+- Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change.
+- Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered.
+
+### Handoff: Task 8 — Application Tracker and Guarded Lifecycle Actions (Awareness)
+
+**Date:** 2026-10-09  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (for awareness; shared lifecycle path changed)  
+**Status:** Ready
+
+#### Completed
+
+- An application tracker beside the opportunity lifecycle: one `Application` per Opportunity, an append-only `ApplicationEvent` history, notes, contacts, follow-ups, interviews and outcomes.
+- Migration `20261009090000_application_tracker` is additive. No Opportunity, `OpportunityUserAction` or evaluator table is altered, and the known `Recommendation` drift is excluded again.
+
+#### Files Changed (shared lifecycle path)
+
+- `packages/core/src/opportunity-lifecycle.ts`: the RESTORE undo-stack replay is exported as `pendingUserActions(history)`. `restoreTarget` uses it with identical behaviour, and the transition table is unchanged.
+- `database/src/opportunity-lifecycle-repository.ts`: `applyUserActionInTransaction(tx, input)` is extracted from `applyUserAction`. The public method delegates with identical rules and the same `OpportunityUserAction` row. Tracker submission uses it to apply MARK_APPLIED in the same transaction as the application change.
+- `apps/web/src/server/opportunity-action-service.ts`: product lifecycle actions now run through `PrismaApplicationRepository.applyLifecycleActionGuarded`. Under an Opportunity row lock it refuses (409 `APPLICATION_BLOCKS_ACTION`):
+  - MARK_APPLIED while the application is unsubmitted;
+  - RESTORE from Applied while a submitted application exists;
+  - DISMISS while an application is active.
+
+  Otherwise it applies the action exactly as before.
+- **Dashboard (additive reads):** `opportunity-list-repository.ts` and `opportunity-dashboard-repository.ts` left-join the application tables. No existing filter changed.
+
+#### Current Contract / Assumptions
+
+- Evaluations, the worker's lifecycle sync, budget deferral and profile hints never read or write application tables, and the reverse holds too. Integration tests prove application rows stay identical across a reevaluation and a budget deferral.
+- The worker's `syncSystemLifecycle` only touches system states, so it cannot conflict with the guard. The guard covers user actions only.
+- The unguarded `PrismaOpportunityLifecycleRepository.applyUserAction` still exists, for tests and internal callers. Product requests use the guarded path.
+
+#### Carried Forward to Final Integration (unchanged)
+
+- Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change.
+- Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered.
+- The Task 7 dashboard reads `opportunityPriority.band`, role classification and customer segment from the persisted Customer Success result. If those field names change, dashboard queries must be updated.
+
+#### Do Not Change Without Coordination
+
+- Keep lifecycle user actions on the guarded path (Opportunity row lock, then guard, then `applyUserActionInTransaction`). Bypassing it could leave a planned application under an Applied lifecycle.
+
+### Handoff: Task 6 Completion — AI Budget, Throughput, Capacity and Backlog (Awareness)
+
+**Date:** 2026-10-15  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (awareness; one shared-boundary note)  
+**Status:** Completed (product-owned)
+
+#### Completed
+
+- Warning thresholds, daily and weekly evaluation-volume limits, a monthly output-token cap, and a user-lowerable per-evaluation AI call allowance.
+- All are enforced at admission as operational deferrals (`USAGE_LIMIT_REACHED`, or `AI_BUDGET_LIMIT` when the monetary budget is also reached).
+- `GET /api/budget/report` and the `/budget` "AI usage and capacity" section.
+- Details in `CURRENT_PROGRESS.md`.
+
+#### Shared-Boundary Note
+
+- **Call allowance at enqueue:** the per-evaluation call allowance is written by the product into the existing `executionMetadata.semanticCallBudget` at enqueue, as `min(AI_CALL_BUDGET, user allowance)`.
+  - The allowance is bounded below by `customerSuccessSemanticOperationIds.length`, read from the domain package and not changed.
+  - The processor already honours the persisted value.
+  - No evaluator code changed. If Codex changes the number of semantic operations, the lower bound follows automatically.
+- **Output-token limit:** a monthly cap on provider-reported output tokens that gates new admissions. Per-operation `maximumOutputTokens` (routing) is untouched.
+
+#### Contract Questions
+
+1. Already-queued evaluations are not cancelled when the budget or a limit is lowered or reached. Unchanged; still awaiting explicit acceptance (final integration checklist item 2).
+2. **Resolved (2026-10-14 naming cleanup): deferral reason name.**
+   - The monthly dollar budget now defers with the TDD name `AI_BUDGET_LIMIT`; non-dollar limits keep `USAGE_LIMIT_REACHED`.
+   - **Compatibility:** read-time only. `PrismaDeferredEvaluationRepository` maps a stored legacy `BUDGET_UNAVAILABLE` to `AI_BUDGET_LIMIT` (`normalizeDeferralReason` in `packages/core/src/budget.ts`). There is no migration or rewrite, and a legacy row is updated only by a normal resume recheck.
+   - Product-owned only; no evaluator code changed.
+3. **Resolved (2026-10-14 naming cleanup): eligibility wording.**
+   - Product wording is neutral: "eligible for evaluation" (a normalized, active opportunity in a domain the evaluator supports).
+   - There is no per-model eligibility concept.
+4. Source Analytics must exclude budget and limit deferrals when Source Analytics is built. Nothing records a deferral as a negative outcome today.
+   - **Resolved (2026-10-31, Feature 15):** Source Intelligence reads `AI_BUDGET_LIMIT` (and legacy `BUDGET_UNAVAILABLE` via `normalizeDeferralReason`) and `USAGE_LIMIT_REACHED` as the separate neutral states "Waiting: AI budget" and "Waiting: usage limit"; only a completed evaluation with a recommendation enters a source's quality rates (unit and integration tests assert it). Nothing is written.
+
+### Handoff: Profile Limitations Persistence Boundary (Review Requested)
+
+**Date:** 2026-10-14  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Verification Needed (shared persistence; post-integration acceptance pending)
+
+#### Completed
+
+- Product-owned persistence and delivery for structured profile `limitations`, so the accepted Resume Match contract (Genuine Gap requires a `PROFILE_LIMITATION` record) works on persisted production profiles, not only on the in-memory bundled profile.
+- No evaluator-owned schema, enum, prompt, Resume Match logic or bundled-profile content was ported, copied or changed. The installed strict profile contract was not loosened.
+
+#### Files Changed (Codex-relevant)
+
+- **⚠ `database/prisma/schema.prisma` and migration `20261014090000_user_profile_limitations`:** new nullable `UserProfile.limitations` JSONB. Existing rows stay NULL.
+- **⚠ `database/src/evaluation-repository.ts` `loadSubject()`:** adds `userProfile.data.limitations` only when the pinned version stores them. A version without limitations is delivered byte-for-byte as before, which keeps the currently installed strict schema valid.
+- **`database/src/user-profile-import-repository.ts`:**
+  - `VersionedUserProfileData.limitations` is optional.
+  - Hash and create use the version content with a null or absent `limitations` omitted, so pre-existing identities are unchanged.
+  - Your branch's import path (`{ ...data, version, contentHash }`) will persist the migrated bundled profile once both are merged. Before this change it would have failed with an unknown Prisma field.
+- **`database/src/user-profile-repository.ts`:** `getVersion().document.limitations` is present only when stored.
+
+#### Current Contract / Assumptions
+
+- The product treats limitations as opaque JSON. Its structure is decided only by `customerSuccessUserProfileDataSchema` / `validateCustomerSuccessUserProfileData`, so both the web save path and the import CLI validate with the domain contract before persisting.
+- Profile rows stay immutable and versions append-only. Evaluations and deferrals keep their pinned version; nothing is reassigned to a newer version.
+
+#### Post-Integration Acceptance (required once the evaluator branch is merged)
+
+Run these against an isolated test database for the automated checks, and as operator steps on the real installation. No paid calls except the explicitly authorized acceptance run.
+
+1. **Policy version:**
+   - Confirm the merged `packages/shared` `customerSuccessProductionSemanticPolicyVersion` is the evaluator's final version (Codex-owned; the product branch no longer pins one).
+   - Remove any `AI_EXECUTION_POLICY_VERSION` line from the real `.env`.
+   - `pnpm app:doctor` must show "Evaluation policy version" with PASS and that version.
+   - Restart the web app and worker together. Evaluations queued under the old policy fail closed with `SEMANTIC_EXECUTION_POLICY_MISMATCH`; request them again.
+2. **Migrated profile import:**
+   - `pnpm profile:import:customer-success` must create a new version from the migrated bundled profile (old versions unchanged).
+   - Read it back: `document.limitations` must equal the bundled limitations.
+   - Repeat for "Create from the starting profile" on an empty isolated database.
+3. **Profile activation:**
+   - `pnpm profile:import:customer-success --activate`, or activate on the Profile page.
+   - `pnpm app:doctor` must show the new version as active and "it stores structured limitations".
+4. **Old deferrals:**
+   - If `pnpm app:doctor` reports deferrals pinned to another profile version, review them on `/budget`. Resume keeps the pinned version; **Cancel request** then **Evaluate** uses the active one.
+   - Never update deferral or evaluation rows in place.
+5. **Limitations and Genuine Gap acceptance tests:**
+   - the JSON editor accepts valid and rejects invalid limitations per `profileLimitationSchema`;
+   - `tests/integration/profile-limitations.test.ts` passes unchanged;
+   - a deterministic (fixture-transport) evaluation of a persisted profile with a limitation produces a Genuine Gap only where the limitation's category and level cover the requirement, and Unknown without it;
+   - then the authorized live acceptance run on the activated migrated profile.
+
+### Handoff: Task 9 — Operations Hardening and Final Integration Checklist (Review Requested)
+
+**Date:** 2026-10-10  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream (review requested at the final integration checkpoint)  
+**Status:** Verification Needed (narrow shared-persistence additions)
+
+#### Completed
+
+- Setup and operations tooling: `pnpm app:setup`, `pnpm db:migrate`, `pnpm db:status`, `pnpm db:verify-migrations`, and the read-only `pnpm app:doctor`.
+- A database-checking `/api/health`.
+- A worker hardened with a single-worker lock, idle-only recovery, classified errors and graceful shutdown.
+- Honest queue states and safe public error output.
+- Navigation and coherence fixes.
+- Whole-product acceptance tests (integration and E2E).
+- No evaluator semantics, stages, routing, prompts, recommendation logic, evidence/provenance contracts, pricing or usage recording changed.
+
+#### Files Changed (Codex-relevant)
+
+- **⚠ `database/src/evaluation-task-repository.ts` (additive; review requested):**
+  - `failExpiredExhaustedTasks(now)` fails tasks that are `RUNNING`, have `leaseExpiresAt < now`, and have `attempt >= maxAttempts`. These are tasks `claimNext` can never pick up again. It also fails their running stages (`WORKER_INTERRUPTED`) and their evaluation, with code `EVALUATION_LEASE_EXPIRED`. It is called only by the product worker while it holds the single-worker lock and has no task in flight.
+  - `readQueueSnapshot` / `queueSnapshot` are read-only counts.
+  - `claimNext`, `complete`, `fail`, `enqueue` and `enqueueAdmitted` are unchanged.
+- **⚠ `database/src/evaluation-worker-lock.ts` (new):**
+  - a session-level advisory lock (`pg_try_advisory_lock(41220, 1)`) on a dedicated `pg` connection, held for the worker's lifetime;
+  - `isEvaluationWorkerConnected` reads `pg_locks` only.
+- **⚠ `database/src/client.ts`:** one Prisma client per process in every environment. Previously the client was cached only outside production, so `next start` opened a pool per repository.
+- **Product worker:**
+  - `apps/web/src/server/evaluation-worker-cli.ts`, `worker-loop.ts`, `worker-errors.ts`;
+  - `createEvaluationWorker`/`runOnce` (`packages/evaluation`) is unchanged.
+- **Public evaluation API (`evaluation-service.ts`):**
+  - no longer returns `task.errorMessage`, stage `errorMessage`, operation `errorMessage`/`providerRequestId`, or `error`;
+  - adds `queueState`;
+  - resolves AI configuration lazily, only to request or resume.
+  - Persisted data is unchanged.
+
+#### Current Contract / Assumptions
+
+- **Run exactly one worker** (now enforced).
+- Leases are 300 s with no renewal, while a full evaluation can take longer (16 calls × 120 s). An expired lease is shown as `RUNNING_STALE`, "may still be in progress, or the worker may have stopped". It is never reported as a stopped worker.
+- With one worker, `claimNext`'s existing reclaim of expired leases cannot take a live run.
+
+#### Documented, Not Fixed (queue/evaluator design — for Codex)
+
+- Lease renewal (heartbeat) and claim ownership in `complete`/`fail` are missing. Required before running more than one worker.
+- `Evaluation.status` can stay PENDING/RUNNING when a task fails before `finalize` (for example a policy mismatch). Product reads use the task status.
+- Task-level retries are effectively unused: every worker error is non-retryable, and `maxAttempts` only bounds lease reclaims.
+
+#### Final Integration Checklist (all carried forward unchanged)
+
+1. Codex review of the Task 6 `enqueueAdmitted()` shared-persistence change (narrow; `enqueue()` behaviour-identical; no evaluator-semantic change).
+2. Explicit review and acceptance that already-queued evaluations are not cancelled when the budget is later lowered (no worker-side cancellation added).
+3. Task 7 dashboard read dependency on `opportunityPriority.band`, `hardFilters.role.classification` and `companyAlignment.alignment.customerSegment.classification` from the persisted Customer Success result.
+4. Task 8 guarded lifecycle path (`applyUserActionInTransaction`, `pendingUserActions`, `applyLifecycleActionGuarded`).
+5. Core executor lifecycle guard review (earlier handoff).
+6. The `Recommendation.evidenceReferences` default drift decision. `pnpm db:verify-migrations` confirms it is the only schema/migration difference.
+7. Task 9 additions in this handoff (`failExpiredExhaustedTasks`, the worker lock, the Prisma singleton, the public API shape).
+8. Profile limitations persistence boundary (`loadSubject()` and `UserProfile.limitations`; handoff above) and its post-integration acceptance tests.
+9. Task 7: the evaluator subject withholds the newly normalized salary, position and residency fields (`fieldsWithheldFromEvaluator` in `loadSubject()`). Milestone 4 adopts them per the "Final Data Contract" in the Task 7 handoff below; migration `20261016090000_opportunity_residency_requirement` is part of the merge. *(October 25, 2026: `compensationBasis` is released with them, and the evaluator's temporary compensation-basis compatibility read is replaced by the native Core field; see "Milestone 4 compensation-basis correction → final-integration contract" at the end of this file. Migration `20261025090000_work_authorization_and_compensation_basis` is also part of the merge.)*
+10. Whole-product acceptance after merging: `pnpm db:verify-migrations`, unit, integration (includes `product-acceptance.test.ts`), build, and full E2E (includes the `acceptance` project).
+
+#### Before Scraper Work
+
+- See README "Ingestion boundary".
+- Every source must converge on adapter → `RawOpportunity` → `SourceRecord` → per-source normalizer → `Opportunity` + `FieldProvenance`.
+- Manual-only points to generalize:
+  - the normalizer;
+  - company matching;
+  - a unique `(source, externalId)`;
+  - re-observation;
+  - the evaluator reading the oldest `SourceRecord`;
+  - the unused `DuplicateReference`, discovery and deduplication packages.
+
+### Handoff: Task 7 Completion — Normalized Opportunity Fields and the Milestone 4 Data Contract (Review Requested)
+
+**Date:** 2026-10-14  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Verification Needed (shared persistence; evaluator inputs deliberately unchanged)
+
+#### Completed
+
+- Product normalization now populates explicit facts on `Opportunity`:
+  - `salaryMin`, `salaryMax`, `currency`;
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
+- Every populated value has a `FieldProvenance` row. The original text, the `SourceRecord` and the raw payload are unchanged.
+- Explicit residency / geographic eligibility is now normalized: `residencyRequirement` and `residencyRegions`. Migration `20261016090000_opportunity_residency_requirement` is additive; existing rows read as Unknown and nothing is backfilled.
+- Dashboard filters and sorts use these fields. Details are in `CURRENT_PROGRESS.md` ("Task 7 completion amendment").
+
+#### Final Data Contract for Codex Milestone 4 (salary eligibility)
+
+Task 7 stores facts only. It makes no Pass / Review / Skip decision, no FX conversion and no cost-of-living judgement; those belong to Milestone 4.
+
+| Fact | Column | Values | Unknown |
+|---|---|---|---|
+| Salary bounds | `salaryMin`, `salaryMax` (Decimal) | Stated annual amounts, in the stated currency. Open-ended ranges set one bound. | null (also for hourly/monthly pay, OTE, ambiguous figures) |
+
+*(Superseded October 25, 2026 for OTE: a stated OTE range now keeps its bounds, with `compensationBasis` = OTE; see the shared-normalization convergence record at the end of this file. The table above is preserved as written.)*
+
+| Currency | `currency` | ISO 4217 code. Explicit code or symbol, a user selection, or a bare "$" read as USD. | null (conflicting or ambiguous) |
+| Original compensation text | `salaryText` (+ `SourceRecord.rawSalaryText`) | Verbatim | null |
+| Location | `location` (+ `SourceRecord.rawLocation`) | Verbatim free text | null |
+| Work arrangement | `remoteStatus` | `REMOTE` / `HYBRID` / `ONSITE` | null |
+| Residency requirement | `residencyRequirement` | `US_REQUIRED`: residence restricted entirely to U.S. geography (the country, states, DC, Puerto Rico). `NON_US`: residence outside the U.S. explicitly permitted or required (e.g. "must be based in Spain", "EU residents only", "open to residents of Ontario", "US or Canada", "anywhere in the world") | null |
+| Eligible residence | `residencyRegions` (text[]) | Stated geographies: ISO 3166-1 alpha-2 countries; ISO 3166-2 subdivisions (`US-TX`, `US-DC`, `US-PR`, `CA-ON`, `GB-SCT`); or `WORLDWIDE`, `EU`, `EEA`, `EUROPE`, `EMEA`, `LATAM`, `APAC`, `NORTH_AMERICA`, `AMERICAS` | `[]` |
+
+- **Policy keys on residency, never on currency.** A USD salary does not imply a U.S. job, and "Remote" does not imply U.S.-remote.
+- **Residency sources, in precedence order:**
+  1. The user's stated choice (`FieldProvenance` kind `DIRECT`, `sourceField` `residencyRequirement`; the region list is `DETERMINISTIC` from `residencyRegions`).
+  2. Explicit statements only, each recorded with kind `DETERMINISTIC` and a marker:
+     - `rawText:explicit-residency-statement` for job-text sentences such as "must reside/live/be based/be located in X", "open to candidates in X", "X only", "X residents only", "anywhere in the world";
+     - `location:explicit-eligible-geography` for location fields such as "Remote - X", "Remote (X)", "X Remote", "Remote - Worldwide".
+  - One pair of provenance rows is written per contributing statement, with `sourceText` set to the exact sentence or field.
+- **Stays Unknown:**
+  - currency, company headquarters, nationality or citizenship, work authorization, and time zones;
+  - a bare "Remote", or an ordinary location field ("Chicago, IL", "Toronto, ON", "Berlin, Germany");
+  - cities ("New York City");
+  - ambiguous names (Georgia, a bare Washington, CA) and lists with an unreadable item;
+  - preferred, negated or qualified wording, and conflicting statements.
+- **Geographic levels:** state- or province-level eligibility is preserved in `residencyRegions` (for example `["US-TX", "US-FL"]`), so Milestone 4 can see the stated area. Classification only distinguishes U.S. from non-U.S.
+- **Mapping to the supplied policy (for Milestone 4 to implement, not done here):**
+  - `US_REQUIRED` → the U.S. policy: $60k+ Pass, below $60k Skip.
+  - `NON_US` → the non-U.S. policy, where `residencyRegions` names the geography for cost viability.
+  - null → residency Unknown; the policy says Unknown stays Unknown.
+  - FX for "USD equivalent" must be supplied by Milestone 4; Task 7 stores no converted amounts.
+
+#### Hand-over steps for Milestone 4
+
+- Remove fields from `fieldsWithheldFromEvaluator` (`database/src/evaluation-repository.ts`) once the evaluator handles them. The salary fields need currency-aware hard filters first.
+- `NormalizedOpportunity` already carries `residencyRequirement` and `residencyRegions`. They default to null / `[]`, so existing producers and fixtures stay valid.
+- Until adoption, the subject receives null / `[]` for them and no residency provenance rows. An integration test asserts this.
+
+#### ⚠ Evaluator boundary: inputs withheld, not changed
+
+- **Why:** the Customer Success extractor (`explicit-facts.ts`) prefers `opportunity.salaryMin` / `salaryMax` / `currency` over its own parsing. The salary hard filter does not compare currencies. Delivering, for example, a parsed "€60,000" would silently change hard-filter results and recommendations.
+- **What:** `PrismaEvaluationRepository.loadSubject()` sets `fieldsWithheldFromEvaluator` to their pre-amendment empty values (null, or `[]` for `residencyRegions`) in the subject and drops their provenance rows:
+  - `salaryMin`, `salaryMax`, `currency`;
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`;
+  - `residencyRequirement`, `residencyRegions`.
+- **Effect:**
+  - The evaluator receives exactly what it received before this amendment, because these fields were always null.
+  - `salaryText`, `location`, `jobDescription`, `postingDate` and all other inputs are unchanged.
+  - An integration test asserts the withholding.
+- **The evaluator ignores the new raw-payload keys:** the manual raw payload gains `workArrangement`, `seniority`, `employmentType`, `department`, `closingDate`, `compensationCurrency`, `residencyRequirement` and `residencyRegions`. The only evaluator reader of `rawPayload` is `ghost-job-risk.ts`, which reads `postingHistory` only.
+- **Decision for Codex:** whether and how the evaluator adopts these fields. Adopting the salary fields would at least need currency-aware salary hard filters. To adopt, remove a field from the list.
+
+#### Ingestion contract notes
+
+- `RawOpportunity` is unchanged.
+  - Manual stated details travel in `sourceMetadata.details` (`manualStatedDetailsSchema` in core).
+  - Employment type uses the existing `RawOpportunity.employmentType`.
+- Future source normalizers can reuse the parsers in `packages/normalization`: `parseCompensation`, `workArrangementFromLocation`, `seniorityFromTitle`, `standardizeEmploymentType` and `parseResidency`.
+- The domain-neutral geography vocabulary is in `packages/core/src/geography.ts`.
+- The vocabularies are product-owned constants in `packages/core/src/opportunity.ts`. The shared `normalizedOpportunitySchema` was not narrowed.
+
+#### Contract Questions (not blocking)
+
+1. **Decided (user, 2026-10-14):** a bare "$" is read as USD.
+   - It is recorded as derived: `FieldProvenance` kind `DETERMINISTIC`, `sourceField` `compensationText:bare-dollar-as-usd`. These rows can be found and revisited.
+   - An explicit currency (US$/USD, CA$/CAD, A$/AUD, €, £…) always takes precedence. The rule never overrides an explicit non-USD currency; a contradiction stays Unknown.
+   - This matches the evaluator's own `currency ?? "USD"` default.
+2. Salary range filters use overlap semantics. A range matches when it can reach the amount, and open-ended ranges match on their open side.
+3. A user-stated work arrangement or seniority takes precedence over the value read from location or title.
+   - A stated currency that conflicts with an explicit currency in the compensation text leaves the currency Unknown.
+
 ## Notes
 
 Update this file whenever work is explicitly transferred between Codex and Claude, especially when ownership crosses between evaluator internals, main-product UI/workflow, shared persistence, lifecycle/status handling, profile/preferences contracts, or retrieval/scraping integrations.
+
+---
+
+## Current-State Addendum — October 15, 2026
+
+Older handoffs above remain historical records. When a current-state statement below conflicts with an older handoff, use the newer handoff for active work and preserve the older entry as history.
+
+### Handoff: Task 7 normalized facts → Customer Success Milestone 4
+
+**Date:** 2026-10-15  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream  
+**Status:** Consumed / Completed
+
+#### Completed
+
+- Task 7 completed deterministic normalization, persistence, provenance, dashboard filtering/sorting, and compatibility handling for salary/currency and residency facts.
+- Final Task 7 commit: `754f956dc0860149760936a61bdace0489404b9a` on `claude/gallant-pasteur-y1ou3i`.
+- The normalized evaluator-facing contract established:
+  - `salaryMin: number | null`
+  - `salaryMax: number | null`
+  - `currency: string | null`
+  - `residencyRequirement: "US_REQUIRED" | "NON_US" | null`
+  - `residencyRegions: string[]`
+  - original salary/location text and provenance remain preserved.
+- Salary amounts remain as stated; they are not annualized or FX-converted in persistence.
+- Residency is derived only from explicit where-you-may-live eligibility/restriction evidence, never from salary currency, company HQ, nationality, work authorization, time zone, or ordinary city/location text.
+
+#### Current Contract / Assumptions
+
+- Empty or ambiguous residency remains Unknown.
+- `US_REQUIRED` means all supported stated residency geography is U.S. geography.
+- `NON_US` means residence outside the U.S. is explicitly allowed or required; mixed U.S. + non-U.S. eligibility is `NON_US`.
+- Open salary ranges preserve the stated bound. A single disclosed figure may populate both bounds.
+- Non-annual compensation, OTE, conflicting currencies, unsupported currency symbols, or other ambiguous compensation remains Unknown. *(October 25, 2026: OTE no longer makes the bounds Unknown in Core; the salary policy must read `compensationBasis`.)*
+- Explicit structured residency fields take precedence over deterministic parsing.
+- Older opportunities are not backfilled and therefore retain Unknown for newly introduced facts.
+
+#### Verification Completed
+
+- Final Task 7 verification passed typecheck, lint, Prisma validation, 1036 unit tests, 176 integration tests, 25 E2E tests, and build on the isolated test database.
+- No paid provider calls were made and the normal application database was not used.
+
+#### Next Task
+
+- Milestone 4 was required to adopt the salary/currency/residency facts only after its deterministic salary policy became currency- and residency-aware.
+
+#### Do Not Change Without Coordination
+
+- Do not infer residency from currency or general location.
+- Do not persist converted salary values.
+- Do not move Customer Success salary thresholds into Core/normalization.
+- Core owns factual normalization; the Customer Success domain owns salary decision policy.
+
+### Handoff: Milestone 4 Task 7 salary-policy alignment → Claude Task 8
+
+**Date:** 2026-10-15  
+**From:** Codex evaluator workstream  
+**To:** Claude main-product workstream  
+**Status:** Ready
+
+#### Completed
+
+- Customer Success Milestone 4 now consumes the Task 7 salary/currency/residency contract.
+- Commit `267124f` (`fix(cs): align Milestone 4 salary policy with Task 7`) is pushed to `origin/codex/evaluator-live-diagnostic`.
+- U.S.-residency-required roles use a hard `$60,000 USD-equivalent` minimum with no Review band and no maximum.
+- Non-U.S.-eligible roles use the accepted `$60k+` Pass, `$55k–$59,999.99` Review, `$50k–$54,999.99` conditional Review/Unknown, and `<$50k` Fail/Skip policy.
+- Residency requirement chooses the policy. Currency never chooses the residency policy.
+- Versioned FX policy: `cs-salary-policy-v2-ecb-2026-10-14`.
+- Released to evaluator with provenance: `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions`.
+- Still withheld from evaluator: `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`.
+- Current evaluator identifiers for this correction: evaluation `cs-evaluation-v1.2-m9`; domain `customer-success-v1.2`; rules `cs-rules-v1.2`; Hard Filters `cs-hard-filters-v2`.
+
+#### Current Contract / Assumptions
+
+- A disclosed minimum is the salary gate.
+- A max-only disclosure stays Unknown unless even the maximum is below the applicable floor.
+- Missing/unsupported currency remains Unknown; raw foreign-currency amounts are never compared directly to USD thresholds.
+- The `$50k–$54,999.99` non-U.S. band becomes Review only when explicit supported geography matches configured viable cost context; insufficient context remains Unknown.
+- No regional cost stereotypes or invented mappings are permitted.
+- Customer Success owns salary thresholds, affordability policy, and eligibility decisions. Core remains domain-neutral.
+- Final routing policy is locked as:
+  - deterministic — Hard Filters; Ghost Job Risk when posting history is unavailable; Final Recommendation;
+  - GPT-5.6 Terra — JD Reconstruction, Resume Match;
+  - GPT-5.6 Luna — Job Evaluation, Organizational Maturity, Alex Fit, Opportunity Priority;
+  - GPT-6 Luna — Company Alignment, Burnout Risk.
+
+#### Verification Completed
+
+- Milestone 4 correction passed 24 focused offline tests, workspace typecheck, changed-file ESLint, Prisma client generation/schema validation, and `git diff --check`.
+- No provider calls, normal-database connections/writes, migrations, or paid acceptance runs were performed during the correction.
+
+#### Known Issues / Blockers
+
+- DB-backed integration, migrations against a database, full evaluator/whole-product tests, web build, E2E, live provider calls, and final Task 7→evaluator acceptance were intentionally deferred.
+- Those checks belong to the final whole-product integration/acceptance pass after all intended main-product work is complete.
+
+#### Next Task
+
+- Claude Task 8 — Application Tracker completion pass on `claude/gallant-pasteur-y1ou3i`.
+- Audit the existing Task 8 implementation first; add only missing/incomplete requirements rather than redesigning working application-tracker code.
+- Task 9 completion pass follows Task 8, then any genuinely missing main-product features through feature 18.
+
+#### Do Not Change Without Coordination
+
+- Do not redesign evaluator stages, schemas, semantic contracts, prompts, routing, salary-policy semantics, evidence behavior, or recommendation logic merely to complete Task 8.
+- Do not move Customer Success salary thresholds into Core/shared normalization.
+- Do not run paid provider calls or use the normal application database for Task 8 testing.
+- Final evaluator/product integration, whole-product acceptance, evaluator freeze, and main merge occur only after all intended main-product work is complete.
+
+### Current-State Annotations — October 15, 2026 (Claude main-product workstream)
+
+**Date:** 2026-10-15  
+**From:** Claude main-product workstream  
+**To:** Codex evaluator workstream / final integration  
+**Status:** Ready (annotations only; the historical entries above are preserved verbatim)
+
+These annotations record current state against the preserved historical entries without editing them.
+
+#### Branch state of the Milestone 4 release
+
+- The Milestone 4 field release, the GPT-6 Luna routing for Company Alignment and Burnout Risk, and the version identifiers `cs-evaluation-v1.2-m9`, `customer-success-v1.2`, `cs-rules-v1.2` and `cs-hard-filters-v2` exist on `codex/evaluator-live-diagnostic` (`267124f`). They are not merged into `claude/gallant-pasteur-y1ou3i`.
+- On `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` in `database/src/evaluation-repository.ts` still withholds all ten Task 7 fields:
+  - `salaryMin`, `salaryMax`, `currency`;
+  - `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`;
+  - `residencyRequirement`, `residencyRegions`.
+- The Claude branch also still runs the earlier routing and version identifiers until the branches are combined.
+
+#### Final Integration Checklist (historical, above) — current status
+
+- **Item 2 (already-queued evaluations are not cancelled when the budget is lowered) has since been accepted** as a product decision. Recorded in the October 15 CHANGELOG, CURRENT_PROGRESS and PRODUCT_STATUS. The historical checklist text is left unchanged.
+- Every other item remains open as written.
+
+#### Additional final-integration requirements
+
+1. When the branches are combined, remove the five Codex-released fields from `fieldsWithheldFromEvaluator`:
+   - `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions`.
+   - Update the tests that assert withholding:
+     - `tests/integration/normalized-opportunity-filters.test.ts` ("delivers the evaluator exactly the pre-amendment subject…");
+     - `tests/integration/opportunity-residency.test.ts` ("withholds residency from the evaluator subject…").
+   - Keep `remoteStatus`, `seniority`, `department`, `employmentType` and `closingDate` withheld until a separately coordinated adoption.
+2. Whenever evaluator contracts change, re-run the full DB-backed integration and E2E suites, as well as unit tests, on the isolated test database. The historical "Evaluator Test-Harness Drift Repaired" handoff above records the same lesson.
+
+3. **Carry the evaluator branch's progress records into the canonical documentation.**
+   - The Codex branches keep their evaluator progress in a root-level `Md and README Docs/CURRENT_PROGRESS.md`. That path differs from this repository's `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md`, and those branches predate the `AI Job Assistant Project/` documentation folder.
+   - The file's October 10–15 records are:
+     - Organizational Maturity mixed-state stabilization;
+     - Resume Match evidence-partition stabilization;
+     - Provider-prose semantic closure;
+     - Structured requirement specialization and real-artifact replay;
+     - JD Reconstruction specialization category binding;
+     - Requirement-relative evidence relevance;
+     - Statement groups, reconciliation and requirement-relative INDUSTRY;
+     - Milestone 4 salary-policy contract update.
+   - At branch combination, merge these records into the canonical `CURRENT_PROGRESS.md` and `EVALUATOR_STATUS.md` (§19 already lists them).
+   - Neither file's records may be dropped or silently overwritten.
+
+#### Documentation preservation notes (October 15, 2026)
+
+- **PRD/TDD archive:**
+  - The complete formal PRD/TDD history (23 versions, plus the new Core AI Framework PRD v1.4) is in git.
+  - Superseded versions are frozen in `AI Job Assistant Project/Product Recommendation Documents/Archive/` and `AI Job Assistant Project/Technical Design Documents/Archive/`.
+  - The current authoritative versions are listed in the `AGENTS.md` "Documentation Locations" table: Core AI Framework PRD v1.4, Core Platform TDD v1.5, Customer Success PRD v1.3, Customer Success TDD v1.3, and Semantic Evaluation Playbook v1.2 (v1.1 kept beside it).
+- **Task 6 contract questions, original wording.** The historical Task 6 handoff above shows Contract Questions 2 and 3 only in their resolved form; the 2026-10-14 naming cleanup replaced the question text in place. The original wording, as committed in `267138a` under "Contract Questions (unresolved, not blocking)", is preserved here alongside the resolutions:
+  - Question 2 (original):
+    > The TDD names the deferral reason `AI_BUDGET_LIMIT`; the product persists `BUDGET_UNAVAILABLE` (Task 6) and now `USAGE_LIMIT_REACHED`. Decide whether to rename or update the TDD.
+    - Resolution: the dollar budget defers with `AI_BUDGET_LIMIT`; legacy `BUDGET_UNAVAILABLE` rows are mapped at read time.
+  - Question 3 (original):
+    > "Terra-eligible under the active model configuration" is reported as eligible for evaluation in an executable domain; there is no per-model eligibility concept.
+    - Resolution: neutral "eligible for evaluation" wording, adopted in Core Platform TDD v1.5 and Core AI Framework PRD v1.4.
+
+### Current-State Annotations — October 16, 2026 (Claude main-product workstream)
+
+**Date:** 2026-10-16\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Ready (annotations only; every entry above is preserved verbatim)
+
+#### Closure: "Milestone 4 Task 7 salary-policy alignment → Claude Task 8"
+
+- Consumed. Its "Next Task", the Task 8 Application Tracker completion pass, was completed and committed as `534a4c7` (`feat: complete application tracker`) on `claude/gallant-pasteur-y1ou3i` on October 16, 2026.
+- Its "Do Not Change Without Coordination" constraints were honored: no change to evaluator stages, schemas, semantic contracts, prompts, routing, salary policy, evidence behavior or recommendation logic; no paid calls; no normal-database use.
+- The entry's own "Status: Ready" line is left as written.
+
+#### Task 8 completion pass and the shared boundary
+
+- The Task 8 guarded lifecycle path is unchanged (Final Integration Checklist item 4 stays open as written): `pendingUserActions`, `applyUserActionInTransaction`, `applyLifecycleActionGuarded`.
+- The pass added one additive product migration, `20261017090000_application_follow_up_updated` (`ALTER TYPE "ApplicationEventType" ADD VALUE 'FOLLOW_UP_UPDATED'`). It contains no `Recommendation.evidenceReferences` change.
+
+#### Task 9 completion pass (in progress)
+
+- Status: implementation and isolated verification are complete; the documentation synchronization is under review; not yet committed.
+- All changes are product-only. There is no migration and no change to `claimNext`, `failExpiredExhaustedTasks`, `complete`, `fail`, `enqueue`, `enqueueAdmitted`, the worker lock, leases or evaluator code.
+- **Clarification for checklist item 7 (Task 9 additions)**, stated for the Codex review. The Task 9 handoff above says recovery runs only while the worker holds the single-worker lock and is idle, so it never touches a live run. That holds only while the lock's dedicated database connection stays up.
+  - If that connection drops during a run and a second worker starts, the second worker can take the lock.
+  - Its recovery can then fail a still-running task whose lease expired on its final attempt.
+  - This is the documented lack of lease renewal and claim ownership ("Documented, Not Fixed").
+  - The root `README.md` now states it, together with the one-worker rule. No code change is made before final integration.
+
+#### Final integration gates (unchanged)
+
+The historical checklist (with item 2 accepted) and the October 15 additional requirements stay open as written. The evaluator-branch contract history, residual risks and outstanding verification are recorded in `EVALUATOR_STATUS.md` §20. That includes the current-contract cost, which is still unmeasured.
+
+When that branch's progress records are carried into the canonical documents (October 15 requirement 3), note that its own routing table still shows GPT-5.6 Luna for Company Alignment and Burnout Risk; it predates the routing lock.
+
+### Closure Annotation — October 16, 2026: Task 9 completion pass (Claude main-product workstream)
+
+**Date:** 2026-10-16\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Closed (annotation only; every entry above, including the "Task 9 completion pass (in progress)" annotation, is preserved as written)
+
+- The Task 9 completion pass recorded above as in progress was reviewed and approved by the user, then committed as `feat: complete operational hardening` on `claude/gallant-pasteur-y1ou3i` and pushed to `origin`. `main` was not merged.
+- Its scope is unchanged from the annotation above: product-only changes, no migration, and no change to `claimNext`, `failExpiredExhaustedTasks`, `complete`, `fail`, `enqueue`, `enqueueAdmitted`, the worker lock, leases or evaluator code.
+- The checklist item 7 clarification (the single-worker lock's connection-loss caveat) stays open for the Codex review at final integration. The final integration gates are unchanged.
+- Evaluator routing and contracts remain branch-specific: the main-product branch runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2`, `cs-organizational-maturity-v6` with GPT-5.6 Luna for Company Alignment and Burnout Risk and all ten Task 7 fields withheld; `codex/evaluator-live-diagnostic` carries v7/v4/v7, the GPT-6 Luna routes and the five-field release (`267124f`). See `EVALUATOR_STATUS.md` §20.
+- Next on the main-product workstream: the separate post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update, then an audit of any remaining gaps in features 1–10, then features 11–18.
+
+### Features 1–10 Gap Closure — shared-boundary record (October 17, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-17\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+The read-only audit of main-product features 1–10 found that feature 9 (deduplication with provenance retention) was missing. The gap closure implements it at the existing ingestion boundary, together with smaller fixes. No evaluator stage, prompt, schema, routing, salary policy, evidence behavior or recommendation logic changed, and no change was made on `codex/evaluator-live-diagnostic`. These are the points that touch shared contracts:
+
+1. **Capture transaction and the `ManualOpportunityRepository` port** (`packages/core/src/manual-opportunity-service.ts`, `database/src/manual-opportunity-repository.ts`).
+   - `createDiscoveredOpportunity()` and `transitionOpportunityStatus()` are replaced by `ingestManualOpportunity()`, plus a read-only `checkDuplicates()`.
+   - Normalization runs first. One transaction under a capture advisory lock then writes the raw `SourceRecord`, decides duplicates, and either creates the `NORMALIZED` opportunity (with field provenance) or attaches the `SourceRecord` to the existing opportunity.
+   - A normalization failure still preserves the raw `SourceRecord`, unlinked, through `createManualSourceRecord()`.
+   - Both branches edit these files: expect merge conflicts at final integration.
+2. **`loadSubject()` raw sources.** The code is unchanged, but an opportunity can now have attached duplicate `SourceRecord`s, ordered after the original.
+   - The Customer Success evaluator reads `rawSources[0]` and `postingHistory` payloads. Manual payloads have none, so semantic inputs are unchanged.
+   - Retrieved sources that carry posting history will feed Ghost Job Risk on purpose once feature 11 exists.
+3. **`fieldsWithheldFromEvaluator` gains `timeZoneRequirements`** (now user-stated, optional), so the evaluator subject is unchanged.
+   - The evaluator branch rewrites the same list for the five-field release (`267124f`). At integration, keep `timeZoneRequirements` withheld unless the evaluator adopts it deliberately.
+4. **Company reuse.** New captures link to the oldest `Company` with the same normalized name.
+   - For such a capture, `opportunity.companyName`, which reaches the semantic operations, is that company's stored spelling (user decision D1). What the user typed stays in `SourceRecord.rawCompany` and the `company.name` field provenance.
+   - Existing opportunities and companies are never re-linked or renamed.
+5. **Duplicate-spend refusal** (`apps/web/src/server/evaluation-service.ts`).
+   - Before admission, a request or resume is refused with 409 `DUPLICATE_LISTING_ALREADY_EVALUATED` when all of the following hold:
+     - the opportunity has never completed an evaluation;
+     - an unresolved exact duplicate has a completed or active evaluation, a live admission, or an open deferral.
+   - The check and the admission it allows run under `withDuplicateSpendLock` (a session advisory lock, key 41220/3, on its own short-lived connection).
+   - The Task 6 admission gate, `enqueueAdmitted()`, the queue and the worker are unchanged.
+   - Like the worker lock, the guarantee holds while the lock's connection stays up.
+6. **Schema:** migration `20261017120000_deduplication`, additive. It adds enum `DuplicateResolution`, `DuplicateReference.resolution`/`resolvedAt`, and `SourceRecord.duplicateDecision`/`duplicateEvidence`. The `Recommendation.evidenceReferences` drift is excluded.
+7. **Data backfill:** `pnpm db:backfill-dedup [--dry-run]` is explicit, additive and idempotent, and is not part of `pnpm app:setup`. It has been run only on the isolated test database. Running it on the normal application database is the user's decision.
+
+Final Integration Checklist: add items 1–5 to the Codex review list. Feature 11 must reuse the capture transaction and the engine for retrieved sources.
+
+### Closure Annotation — October 17, 2026: Features 1–10 Gap Closure (Claude main-product workstream)
+
+**Date:** 2026-10-17\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Closed for review (annotation only; every entry above, including the shared-boundary record, is preserved as written)
+
+- The user reviewed and approved the implementation and verification. The closeout is complete:
+  - the documentation is synchronized;
+  - after a substantive check, the new versioned specifications document the implemented behavior: Core AI Framework PRD v1.6, Customer Success PRD v1.5, Core Platform TDD v1.7 (§51) and Customer Success TDD v1.5 (§40, §49);
+  - the previous versions are archived unchanged.
+- The checkpoint commit to `claude/gallant-pasteur-y1ou3i` follows the user's commit approval; `main` is not merged.
+- The shared-boundary items 1–5 in the record above stay open for the Codex review at final integration:
+  - the capture transaction and repository port;
+  - attached sources in `loadSubject()`;
+  - `timeZoneRequirements` withheld;
+  - the reused-company spelling;
+  - the duplicate-spend refusal and its lock.
+- Running `pnpm db:backfill-dedup` on the normal application database remains the user's decision.
+- Evaluator routing and contracts remain branch-specific, as recorded in the October 16 closure annotation and `EVALUATOR_STATUS.md` §20.
+- Next on the main-product workstream: features 11–18. Feature 11 reuses the capture transaction and the deduplication engine for retrieved sources.
+
+### Feature 11A — shared-boundary record (October 18, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-18\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+The Features 1–10 Gap Closure above was committed as `d573acf` (October 17, 2026). Feature 11A adds automated retrieval from the verified official API and feed sources at the existing ingestion boundary: Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas and Working Nomads. Adzuna is registered but unverified and disabled.
+
+No evaluator stage, prompt, schema, routing, salary policy, evidence behavior or recommendation logic changed, and no change was made on `codex/evaluator-live-diagnostic`. These are the points that touch shared contracts:
+
+1. **Capture repository** (`database/src/manual-opportunity-repository.ts`, `packages/core/src/retrieval-ingestion.ts`).
+   - `PrismaManualOpportunityRepository` also implements the new `RetrievalIngestionRepository` port: `ingestRetrievedListing()` and `preserveUnnormalizedListing()`.
+   - The body of `ingestManualOpportunity()` moved into a private `capture()` shared with retrieval. Manual capture behaves exactly as before, apart from the `recordedBy` label on duplicate references.
+   - Retrieved listings run in the same capture transaction and lock. A listing with the same source and source listing ID is a re-observation: an unchanged content hash moves only last-seen times, and a changed hash adds a `SourceRecord` linked through `previousSourceRecordId`. Any other listing takes the existing create/attach path, and an attach can upgrade `Opportunity.applicationUrl` to a higher-precedence source, with an added `applicationUrl` field-provenance row.
+   - The gap-closure merge-conflict warning for this file still applies.
+2. **Deduplication engine `core-dedup-v2`** (approved contract change).
+   - Retrieved listing IDs are compared as `<source>::<id>`; manual IDs keep their plain form.
+   - Differing listing IDs count as a conflict only when both come from the same source.
+   - The candidate SQL mirrors the scoping. Manual-only decisions are unchanged, and existing evidence keeps its `core-dedup-v1` label.
+3. **Evaluator boundary: no change.** Feature 11A changes no evaluator semantic logic, provider inputs, stage routing, or `loadSubject()` code or behavior.
+   - Retrieval creates and updates opportunities only through the existing ingestion/capture path. It never starts an evaluation.
+   - A retrieved opportunity becomes an evaluator subject only when the user requests an evaluation through the existing workflow. `loadSubject()` then loads it exactly as it loads any opportunity: its source records oldest first and its canonical description.
+   - For awareness at integration (data shape, not a code change):
+     - **Record order:** a retrieved opportunity's first record is the first retrieved one; attached duplicates and changed observations follow it. A changed observation does not alter the canonical description.
+     - **No posting history:** retrieved source items are stored under `rawPayload.source`, never as `postingHistory`, so Ghost Job Risk sees no retrieved posting history until feature 13. This deliberately supersedes the gap-closure expectation that retrieved posting history would feed it in feature 11.
+     - **Provenance labels:** retrieved field provenance uses the `retrieval:<source>` reference, `source.<field>` for structured facts, and `sourceConfiguration.company` where the company name comes from the source configuration (Lever, Ashby).
+4. **`fieldsWithheldFromEvaluator`** is unchanged. Retrieval never sets `timeZoneRequirements`, and the withheld fields stay withheld.
+5. **Schema:** migration `20261018090000_retrieval_sources`, additive.
+   - It adds the `RetrievalSource` and `RetrievalRun` models; the enums `RetrievalType`, `SourceCategory`, `RetrievalRunStatus` and `RetrievalTrigger`; and the `SourceRecord` columns `retrievalType`, `sourceCategory`, `retrievalSourceId`, `retrievalRunId`, `contentHash` and `previousSourceRecordId`.
+   - All new foreign keys are `RESTRICT`, so a source, run or earlier observation with dependent records cannot be deleted. The `Recommendation.evidenceReferences` drift is excluded.
+6. **Customer Success domain:** a new `src/discovery/discovery-config.ts` holds the role-family title terms and the default search phrase. It contains no evaluator code.
+7. **No paid-evaluation path changed.** Retrieval creates no `Evaluation`, `EvaluationAdmission` or `DeferredEvaluation`. The budget gate, limits and duplicate-spend refusal apply to retrieved opportunities exactly as to captured ones.
+8. **New single-worker lock:** advisory key 41220/4 for `pnpm worker:retrieval`, separate from the evaluation worker (41220/1) and the duplicate-spend lock (41220/3).
+
+Final Integration Checklist: add items 1 and 2 to the Codex review list. Item 3 is recorded for awareness only; Feature 11A changes nothing on the evaluator side. Feature 11B extends the same adapter contract and ingestion path.
+
+*(Annotation, October 18, 2026: Feature 11A was committed as `fad2341`. The record above is preserved as written.)*
+
+### Feature 11B — shared-boundary record (October 18, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-18\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+Feature 11B adds the verified public/guest-endpoint and public-HTML sources (Workday, Workable, Wellfound) to the Feature 11A adapter contract and ingestion path. No evaluator stage, prompt, schema, routing, salary policy, evidence behavior, recommendation logic or `loadSubject()` code changed, and nothing changed on `codex/evaluator-live-diagnostic`. There is no schema or migration change and no change to the capture repository, the retrieval worker's ingestion or deduplication engine `core-dedup-v2`.
+
+1. **Retrieval transport contract** (`packages/discovery/src/transport.ts`, `politeness.ts`). `RetrievalTransport` gains `post(url, jsonBody)`, used only by Workday, whose verified listing request is a stateless JSON POST. It shares the 10 MB ceiling, timeout, identifying User-Agent, no-cookie and no-redirect rules, per-host politeness queue and 401/403/429 stop. The fixture transport keys recorded POSTs by URL and body (`fixtureRequestKey`). Any other implementation of `RetrievalTransport` must add `post`.
+2. **Adapter options.** `SourceAdapter` may declare `minRequestIntervalMs` (Wellfound: 2 s), `maxPagesPerRun` (Wellfound: 11) and `verificationBody` (Workday's verification POST). The worker's transport factory now receives the adapter's interval; `pnpm sources:verify` sends a POST where a body is declared.
+3. **Listing identity.** Workday listing IDs are `<tenant>/<site>:<externalPath>`, so re-observation and source-scoped deduplication never confuse two career sites; the requisition stays in `requisitionId`, so the same requisition at the same company still matches across sites.
+4. **Welcome to the Jungle / Otta:** registered as Type #3 but unverified, so it cannot be enabled. On October 18, 2026 its logged-out search surface returned HTTP 200, unblocked, but showed a sign-up and matching flow: no listings in markup or embedded state, and no anonymous listing endpoint, GraphQL operation, paging, job IDs or listing fields. It was not reinterpreted as a per-company source. **Handoff:** Feature 14 (browser-assisted retrieval) may reconsider it if that feature provides a viable current retrieval path. This is not a claim that it can never be retrieved.
+5. **Workable contingency:** the JSON search endpoint is the sole production interface. Workable's official XML feed (`https://www.workable.com/boards/workable.xml`, about 850 MB, Range ignored) was verified as technically sufficient but is not implemented. Reconsider it deliberately only if the JSON endpoint proves persistently unusable from the actual production host; one Claude-cloud request was rate-limited (HTTP 429) while other networks succeeded. Retry-After handling and backoff belong to Feature 12.
+
+Final Integration Checklist: item 1 is a shared-contract change to note in the Codex review list; items 2–5 are recorded for awareness. Feature 11B changes nothing on the evaluator side.
+
+*(Annotation, October 18, 2026: Feature 11B was committed as `2a1d8c2`. The record above is preserved as written.)*
+
+### Feature 12 — shared-boundary record (October 18, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-18\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+Feature 12 adds source health and conservative retrieval around the existing adapters. No evaluator stage, prompt, schema, routing, salary policy, evidence behavior, recommendation logic or `loadSubject()` code changed, and ingestion and deduplication are unchanged.
+
+1. **Adapter error codes** (`packages/discovery/src/contract.ts`). `adapterErrorCodes` gains `SERVER_ERROR`: `ensureSuccess` now reports HTTP 5xx as `SERVER_ERROR` instead of `HTTP_STATUS` (other unexpected statuses keep `HTTP_STATUS`). `AdapterError.details` may carry `retryAfterSeconds`. A new `isStopError()` (429, 401/403, 5xx, or any Retry-After) is what adapters that make several requests use to stop.
+2. **Retrieval transport contract** (`transport.ts`, `politeness.ts`). `TransportResponse` gains an optional `retryAfterSeconds`, set by the fetch transport from a valid, future `Retry-After` on a 429 or 503 (`parseRetryAfter`; never capped). The politeness layer now stops a host for the rest of the run after any 5xx as well as after 429 and 401/403, and the stop error carries any Retry-After. Fixture transports can carry the field.
+3. **Schema** (migration `20261018120000_retrieval_source_health`, additive, nullable, no backfill): `RetrievalSource.nextEligibleAt` (the scheduling gate) and `RetrievalRun.retryAfterUntil` (the exact wait the source asked for). `PrismaRetrievalSourceRepository.finishRun` takes an optional `retryAfterSeconds` and writes the gate in the same transaction; `enqueueRun` takes `{ override, now }` and refuses a gated source with `SOURCE_RATE_LIMITED`, `SOURCE_PROVIDER_WAIT` or `SOURCE_BACKING_OFF` (with `until`); `enqueueDueRuns` skips gated sources; `update` clears only our own backoff on a settings change; `healthInputs` is new.
+4. **Run now API:** `POST /api/sources/<id>/runs` accepts an optional `{"override": true}` body; a refusal is HTTP 409 with `code` and `until`.
+
+Final Integration Checklist: items 1–3 are shared-contract changes to note in the Codex review list (any code that matched `HTTP_STATUS` for a 5xx now sees `SERVER_ERROR`); item 4 is recorded for awareness. Feature 12 changes nothing on the evaluator side.
+
+*(Annotation, October 19, 2026: Feature 12 was committed as `f10a02b`. The record above is preserved as written.)*
+
+### Feature 13 — shared-boundary record (October 19, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-19\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+Feature 13 records posting history for retrieved listings. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic or `loadSubject()` code changed.** Ghost Job Risk still receives no posting history, so it keeps returning its deterministic UNKNOWN, with unchanged cost and recommendations.
+
+1. **Adapter contract** (`packages/discovery/src/contract.ts`, `collection.ts`): `CollectResult.coverage?: { observedListingIds; complete }` (listing IDs before the title filter; complete only for a whole, consistent read, with unique IDs **equal** to any stated total); `SourceAdapter.listingCoverage?` (`complete-board`, `complete-when-total-fits` or, by default, `bounded`) and `trackingScope?(config)` (the retrieval-scope fields); `isRemovalCapable`, `listingCoverage`, `trackingScopeOf`, `itemId`; `canonicalJson` is now exported from `listing.ts`. Only Greenhouse, Lever, Ashby, Workday and SmartRecruiters set them. A future code change to a configuration-free adapter's fixed query or page must rotate its sources' tracking scopes explicitly.
+2. **Schema** (migration `20261019090000_retrieved_listing_history`, additive): enum `RetrievedListingState`, table `RetrievedListing` (FKs: source Cascade, opportunity SetNull, last-seen run SetNull), `RetrievalSource.trackingScopeKey` (an opaque generation key; null only for pre-feature-13 sources until their first run), `RetrievalRun.listingCoverageComplete`, and a HISTORICAL backfill of pre-feature-13 listings in the `''` baseline. `RetrievalRunCounts.listings` is optional.
+3. **Repository/worker/service:** `create` assigns a fresh scope key; `update(id, input, now, { rotateTrackingScope })` rotates it and makes earlier rows UNTRACKED (the service decides from `trackingScopeOf`); `claimNextRun` initialises a null key and adopts the baseline; `recordListingObservations` and `listingsForOpportunity` are new; `remove` also counts ledger rows; the sighting path moves `Opportunity.lastSeenAt` but never `SourceRecord.lastObservedAt`. The worker records observations after ingestion and before finishing the run.
+4. **Ready posting-history contract for Ghost Job Risk (withheld).** `derivePostingHistoryFacts` (`packages/core/src/posting-history.ts`) produces `{ type, description, occurredAt }` facts of the types ACTIVE_ATS, CURRENT_POSTING, REPOSTED, CLOSED_ATS_VISIBLE_ELSEWHERE, AGGREGATOR_VISIBILITY and UNCHANGED_OVER_TIME. A unit test parses every one with `sourcePostingHistoryFactSchema`. EVERGREEN_LANGUAGE, FARMING_INDICATOR, RECURRING_IDENTICAL_REQUISITION and new-ID reposts are not derived. Two adoption routes exist: (a) `loadSubject()` adds the derived facts as `rawPayload.postingHistory` on one source entry (one entry only, so facts are not duplicated per record); or (b) the facts are written into a SourceRecord's `rawPayload`. **The first question for the coordinated integration is whether Ghost Job Risk can become deterministic from these structured facts**, rather than activating the currently dormant paid semantic path (`customer-success.ghost-job-risk`, which has no approved route and would fall to the default model), and only then the routing, budget-estimate and recommendation effects.
+
+Final Integration Checklist: items 1–3 are shared-contract changes to note in the Codex review list; item 4 is the evaluator decision to take at final integration. Feature 13 changes nothing on the evaluator side.
+
+*(Annotation, October 19, 2026: Feature 13 was committed as `d1bf217`. The record above is preserved as written.)*
+
+### Feature 14 — shared-boundary record (October 19, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-19\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting user review; not committed (every entry above is preserved as written)
+
+Feature 14 adds browser-assisted retrieval for public, logged-out LinkedIn job pages and corrects two sources. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic or `loadSubject()` code changed; no migration.** The Feature 13 posting-history facts stay withheld, and Ghost Job Risk still returns its deterministic UNKNOWN.
+
+1. **Adapter contract** (`packages/discovery/src/contract.ts`, new `browser.ts`): `CollectContext.browser?: BrowserSession` (only `open(url)` and a navigation count: no click, type, submit or account API) and `CollectContext.pendingListings?(since)`; `CollectResult.discovered?` (title matches found this run) and `unavailable?` (pending listings whose page answered 404 or 410); `SourceAdapter.requiresBrowser?` and `browser?: { authCookieNames?, detectFriction?, maxNavigations }`. `createBrowserSession` enforces one page at a time, the adapter's minimum interval, a navigation cap, a timeout and a page-size limit, and maps 429 to `RATE_LIMITED` (with Retry-After), 401/403/999, sign-in walls, authwalls, checkpoints, CAPTCHAs, challenges and account cookies to `ACCESS_DENIED`, 5xx to `SERVER_ERROR` and load failures to `NETWORK`; after any stop every later `open` is refused without navigating. `verificationFollowUpUrl` receives the first page as a `Document` for a browser-assisted adapter.
+2. **Driver** (new `packages/browser-retrieval`, `playwright-core` and `jsdom`): `launchBrowserDriver({ executablePath })` starts headless Chromium with a fresh non-persistent context (asserted to start with no cookies; no service workers, downloads, profile or storage state; images, fonts and media not downloaded; any main-frame navigation the page starts by itself, such as a script reload or meta refresh, is refused) and `parseHtml` reads pages without running scripts. `BrowserNavigation.headers?` carries the response headers for diagnosis (Set-Cookie reduced to cookie names), which `sources:verify` saves. Only the retrieval worker CLI and `sources:verify` load it (dynamically, when `RETRIEVAL_BROWSER_EXECUTABLE` is set); the web app never does.
+3. **Worker/repository** (no schema change): for an adapter that requires a browser, the worker launches one driver per run, builds the session from the adapter's settings and always closes the driver; without a configured browser the run is `ADAPTER_UNAVAILABLE`, and a browser that cannot start is `INTERNAL` (neutral for Feature 12 health). `recordListingObservations` accepts `discovered` (creates current-scope `RetrievedListing` rows with no opportunity, LISTED, not removal-capable, if missing) and `unavailable` (deletes only such placeholder rows); `pendingListings(sourceId, scopeKey, since)` returns them oldest first. A placeholder gains its opportunity through the existing stored-listing path when its details are read. These rows have no opportunity, so posting-history facts, the dashboard badge and `listingsForOpportunity` are unaffected; a source with them is archived rather than deleted.
+4. **Sources:** the `linkedin` adapter (`BROWSER_ASSISTED`, `JOB_BOARD`, bounded, `verified: false` until a local-runtime verification, needs `RETRIEVAL_BROWSER_EXECUTABLE`; search URLs use `/jobs/search/`; a sign-in modal over present results is not friction); We Work Remotely on the all-jobs RSS feed (its tracking scope is now the constant `{ feed: "remote-jobs" }`; existing WWR sources keep their current generation, which is safe because WWR is bounded and never infers absence, so no explicit rotation was added; a stored legacy `category` is accepted and ignored); Wellfound `minRequestIntervalMs` 12,000; Welcome to the Jungle / Otta `retrievalType` changed from `PUBLIC_GUEST_INTERNAL_ENDPOINT` to `PUBLIC_HTML` (public logged-out webpage retrieval; still `verified: false` because its tested public pages expose no usable job records, so no source can run it; a source created earlier keeps its stored type). The shared environment schema adds optional `RETRIEVAL_BROWSER_EXECUTABLE`.
+
+Final Integration Checklist: items 1–4 are shared-contract changes to note in the Codex review list. Feature 14 changes nothing on the evaluator side.
+
+*(Annotation, October 20, 2026: Feature 14A, this record, was committed as `dd77d29` and accepted after the local-runtime LinkedIn adapter check (60 public jobs discovered; the first job page answered HTTP 429 and the run stopped with no retry). LinkedIn stays `verified: false` and disabled. Feature 14B, the browser-extension companion, is required main-product work, not yet implemented and next, so Feature 14 is not complete; its shared-boundary changes will be recorded here when it is built. The record above is preserved as written.)*
+
+### Feature 14B — shared-boundary record (October 20, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-20\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and local Chrome acceptance; not committed (every entry above is preserved as written) *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
+
+Feature 14B adds the browser-extension companion. It is a source-collection boundary only. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic or `loadSubject()` changed.**
+
+1. **Shared contract** (`packages/core/src/extension-capture.ts`, exported from `@ai-career/core`): `extensionCaptureSchema` (strict, `schemaVersion: 1`), `cleanCapturedText`, `cleanPageUrl` and `linkedInJobIdFromUrl`, plus `editedFields` (the preview fields the user corrected before saving, kept in `sourceMetadata.capture.editedFields`). The extension bundles this file; the server parses every capture again with it.
+2. **Ingestion:** a capture becomes a retrieved listing through the existing `buildRetrievedListing` and `createRetrievalIngestionService`. It carries:
+   - `source: "browser-extension"`, `sourceType: BROWSER_EXTENSION`, `retrievalType: BROWSER_ASSISTED`;
+   - the server-derived `sourceCategory`: known ATS, job-board and marketplace hosts, every other host AGGREGATOR;
+   - `retrievalSourceId` and `retrievalRunId` null, so there are no Feature 13 ledger rows;
+   - `externalId` `"linkedin:<id>"` (with the canonical `/jobs/view/<id>` URL) or `"<site>:<URL key>"`;
+   - `sourceMetadata.capture` holding `pairingId`, `extractor`, `capturedAt`, `extensionVersion`, `host`, `site`, `knownHost`, `siteJobId` and `notes`.
+
+   The evaluator reads such a record like any retrieved source record: its oldest `SourceRecord`, with the description as captured text.
+3. **Evaluation:** a capture never evaluates. The extension's evaluation request and status routes are credential-gated wrappers that call the existing `handleProductionEvaluationPost` and `handleProductionEvaluationGet` unchanged. Budget, duplicate-spend, queueing, retries and persistence are untouched.
+4. **Schema:** migration `20261020090000_extension_pairing` (additive): the `ExtensionPairing` table (`tokenHash` unique, no foreign keys).
+
+Final Integration Checklist: items 1–2 are shared-contract additions to note in the Codex review list. Feature 14B changes nothing on the evaluator side.
+
+*(Annotation, October 23, 2026: Feature 14B, this record, was committed as `e6bacc6` (October 20, 2026). Alex's local acceptance then found the shared normalization gap recorded below; 14B stays open. The record above is preserved as written.)*
+
+### Feature 14B correction — shared Core job-text fallback: shared-boundary record (October 23, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-23\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed (every entry above is preserved as written) *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
+
+Approved by Alex on October 23, 2026. It restores the Core requirement that structured values come first and the posting's own text is the fallback for already-supported normalized facts. Core Platform TDD v1.15 §51 and Core AI Framework PRD v1.14 specify it. **No evaluator stage, prompt, schema, routing, semantic operation, salary policy, evidence behaviour, recommendation logic, `loadSubject()` or `fieldsWithheldFromEvaluator` changed; no migration; no backfill.**
+
+1. **Shared normalization** (`packages/normalization`; exported from `@ai-career/normalization`):
+   - **The reader:** `readJobTextFacts({ text, title, pageTitle })`, `parseUnambiguousDate` and `jobTextSourceFields`, with the provenance markers listed in `job-text-facts.ts`.
+   - **Who calls it:** `createManualOpportunityNormalizer` and `createRetrievedOpportunityNormalizer` call it the same way, only for facts still missing.
+   - **Precedence:**
+     1. the user's stated or corrected value;
+     2. the structured value;
+     3. a dedicated-field reading;
+     4. the page title (company only);
+     5. the job text;
+     6. Unknown.
+   - **Provenance:** facts read from the text are DETERMINISTIC with `rawText:*` markers; the page-title company is marked `pageContext:page-title-company`.
+   - **Residency:** keeps `parseResidency` unchanged.
+2. **Currency rule (product-wide):** `parseCompensation(text, selected, geography?)` reads a bare "$" as USD only when the location, the residency regions or the statement name only U.S. geography. Otherwise the currency is null with `currencyUnknownReason: "BARE_DOLLAR_WITHOUT_US_EVIDENCE"`. The marker `compensationText:bare-dollar-as-usd` is unchanged. *(October 25, 2026: the location is read by `readLocationGeography`, where an explicit country in a full location settles an ambiguous region abbreviation, e.g. "Sunnyvale, CA, United States" is U.S. evidence.)*
+   - **For the Codex salary policy at final integration:** when Milestone 4 releases salary minimum and maximum, currency and residency to the evaluator (`267124f`, not merged), currency will be Unknown more often for bare-"$" postings outside clear U.S. geography. That includes city-only locations such as "NYC", because cities are not in the geography vocabulary. A hard filter must keep treating Unknown currency as Unknown, never as USD.
+3. **Evaluator subject (unchanged contract, richer data):**
+   - The Task 7 fields stay withheld. That now includes values read from the job text: `timeZoneRequirements`, `closingDate`, `remoteStatus`, `employmentType`, `department`, `seniority`, salary minimum and maximum, and currency.
+   - `companyName`, `location`, `salaryText` and `postingDate` were never withheld. When a source left them empty they may now carry values read from the same job text the evaluator already receives, and their provenance rows (with the markers) reach the subject.
+   - Review at final integration whether a text-derived `salaryText`, a compensation statement that may be OTE, is acceptable salary context for the salary policy.
+4. **Extension and server context:**
+   - `extensionCaptureSchema` gains an optional `pageTitle`. It is additive, `schemaVersion` stays 1, and an older envelope still validates.
+   - The envelope also gains an optional `pageText`: the job's bounded page content beside a structured description or a selection. It excludes navigation, header, footer, side panels, forms and recommendation or sharing widgets, is capped at 20,000 characters and is never sent from LinkedIn.
+   - The server stores `sourceMetadata.pageTitle` and `sourceMetadata.pageText` (neither for LinkedIn) and `sourceMetadata.userCorrectedFields`.
+   - Shared normalization reads page context only through labelled values, with `pageContext:*` markers, below structured values.
+   - The retrieved normalizer records corrected fields as DIRECT with `userCorrected:<field>`. Neither key enters the listing content hash.
+5. **Source facts and change detection:**
+   - `retrievedSourceFactsSchema` (Core) adds a neutral `sourceMetadata.sourceFacts` record: department, seniority labels, and a compensation text with no stated period. Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Himalayas, LinkedIn and Wellfound copy into it values they already hashed as material.
+   - The retrieved normalizer reads them: department DIRECT `source.department`; seniority `source.seniority`, which must agree with a title level, otherwise Unknown; compensation `source.compensation`, with amounts only with a stated annual period.
+   - Extension captures add `material.pageContext`, the canonical labelled page-context evidence from `pageContextEvidence`, to the content hash. No stored listing's hash changed.
+   - **Evaluator subject:** `department` and `seniority` stay withheld.
+6. **Unchanged on purpose:**
+   - the deduplication engine (`core-dedup-v2`), its thresholds and rules (re-run with the corrected inputs: a cross-site copy of one job is a PROBABLE_MATCH flag, the same title at a different company is NO_MATCH, and nothing auto-merges on similarity);
+   - the unknown-host site-ID rule;
+   - application-link precedence.
+
+**Known gaps recorded, not built (for planning and final integration):**
+- *(Decided and implemented October 25, 2026; see the convergence record below.)* **Work authorization and visa eligibility.** The normalized Opportunity has no field for it. Such language is deliberately never read as residency. A future contract decision should add a separate fact rather than overload residency.
+- *(Approved and implemented October 25, 2026.)* **Generic employer apply-link extraction from captured pages.** A possible future enhancement, kept separate because a wrong application URL could cause an incorrect automatic attachment.
+
+Final Integration Checklist: items 1–4 are shared-contract changes to note in the Codex review list, item 2 especially for the salary policy.
+
+### Feature 14B correction — current-version projection and the evaluated source version: shared-boundary record (October 23, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-23\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
+
+Alex approved this on October 23, 2026. It corrects the Core TDD v1.15 §51 re-observation contract: a CHANGED observation of an opportunity's originating listing re-projects the opportunity's current facts, and every version is kept. **It crosses the evaluator boundary in the integration layer only.** No stage logic, prompt, model, routing, semantic schema or recommendation rule changed, and there are no provider calls.
+
+1. **Schema** (migration `20261023090000_superseded_provenance_and_evaluated_source`, additive and nullable): `FieldProvenance.supersededAt` and `Evaluation.sourceRecordId` (foreign key to `SourceRecord`, `ON DELETE SET NULL`, indexed). Applied only to the isolated test database.
+2. **Evaluation binding:**
+   - `createEvaluation` and `createEvaluationAndTask` set `Evaluation.sourceRecordId` to the current originating version (`originatingVersion` in `database/src/manual-opportunity-repository.ts`; for a manual opportunity, its source record).
+   - **Contract additions** (`packages/evaluation/src/contracts.ts`):
+     - `EvaluationSubject.subjectSourceRecordId?`;
+     - `CoreEvaluationContext.subjectSourceRecordId`;
+     - `loadSubject`'s optional `evaluationId` input;
+     - the `evaluatedSource(context)` helper: the bound record, else `rawSources[0]`.
+   - The executor and the Customer Success processor pass `evaluationId: snapshot.id`.
+3. **`PrismaEvaluationRepository.loadSubject`:**
+   - With an evaluation, the subject is the bound version as it stood: provenance rows with `createdAt <= binding` and not superseded by then. If the listing changed later, the bound record's `rawDescription` and the as-of title, company, location, salary text and posting date replace the newer projection.
+   - Without an evaluation, it uses the current version and the non-superseded rows.
+   - `rawSources` still lists every record, oldest first. `fieldsWithheldFromEvaluator` is unchanged.
+4. **Customer Success domain (selection only):** `extraction/explicit-facts.ts`, `extraction/extractor.ts` and `evaluation/opportunity-priority.ts` read `evaluatedSource(context)` instead of `rawSources[0]`. For a single-record opportunity the behavior is identical.
+5. **Attempts:** `recordSemanticOperation` stores the evaluation's bound `sourceRecordId`, falling back to the oldest record for evaluations made before the binding existed, and the bound record's source as `jobSource`.
+6. **No automatic work:** a change never evaluates, queues or reserves budget. Reevaluation stays user-requested and additive. `findListingVersionHint(opportunityId)` drives the opportunity-page hint.
+
+Final Integration Checklist: items 2–5 must be carried into the Codex evaluator branch's `loadSubject`, executor and Customer Success extractor when the branches are combined, or that branch will again evaluate the oldest record of a changed listing. The salary-policy release of withheld fields (`267124f`) should read the as-of provenance the subject now supplies.
+
+### Feature 14B correction — shared-normalization convergence: shared-boundary record (October 25, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-25\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review; not committed *(Update 2026-10-31: committed; Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
+
+Approved by Alex on October 25, 2026. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
+
+1. **Compensation (contract change).**
+   - `parseCompensation` no longer returns null bounds for OTE (`TOTAL_COMPENSATION` is removed). It keeps the stated numbers in the stated currency and returns `basis` (BASE / OTE / null).
+   - The new normalized fact is `compensationBasis`, with provenance under the statement's marker.
+   - **For the Codex salary policy (`267124f`):** when `salaryMin`/`salaryMax` are released to the evaluator, it must read `compensationBasis` and must not treat an OTE range as qualifying base salary (CS PRD ¶241: OTE-only → Salary Unknown for the hard filter). The USD-equivalent conversion stays evaluator-only.
+   - `compensationBasis` is in `fieldsWithheldFromEvaluator` until then.
+   - *(Later on October 25, 2026: Codex implemented this on the evaluator worktree as `cs-hard-filters-v3`; see the next record.)*
+2. **Work authorization (new facts).**
+   - **Fields:** `workAuthorizationRequirement` (RIGHT_TO_WORK / CITIZENSHIP), `workAuthorizationRegions`, `visaSponsorship`, `relocationSupport` and `employerOfRecordRegions`.
+   - They are never derived from or into residency, which is unchanged. All are withheld from the evaluator.
+   - The user's own eligibility (`UserEligibility`: authorized and citizenship countries) is a separate table, outside the versioned profile, and never evaluator input.
+   - Any evaluator use of work authorization needs a coordinated decision; CS PRD ¶223 forbids inferring residency from it.
+3. **Department.** It may now carry an explicit team statement (`rawText:explicit-team-statement`). It stays withheld.
+4. **Application URL.**
+   - `sourceFacts.applicationUrlBasis` and the `applicationUrlProvenance` markers (Core).
+   - Job-board listing pages are no longer stored as application URLs.
+   - A changed originating listing updates the link only when it owned it.
+   - **Deduplication logic is unchanged.** Its inputs differ only where an extension capture now carries an explicit apply link; a posting-page application URL equals the canonical URL, which is already an input.
+5. **Schema:** migration `20261025090000_work_authorization_and_compensation_basis` (additive). Applied only to the isolated test database.
+
+Final Integration Checklist: item 1 is mandatory for the salary policy before salary bounds are released; items 2–4 are shared-contract additions.
+
+### Milestone 4 compensation-basis correction → final-integration contract (October 25, 2026)
+
+**Date:** 2026-10-25\
+**From:** Codex evaluator workstream (recorded by the Claude main-product workstream)\
+**To:** Final integration\
+**Status:** Evaluator side complete on the `codex/evaluator-live-diagnostic` worktree over `267124f`; not committed, not merged. Main-product docs synchronized; no main-product implementation changed.
+
+Core preserves OTE numeric facts. Milestone 4 treats OTE-only compensation as Unknown for confirmed base-salary eligibility.
+
+**Evaluator side (Codex):**
+- **Basis:** the evaluator consumes `salaryMin`, `salaryMax`, `currency`, `salaryText`, `compensationBasis`, `residencyRequirement` and `residencyRegions`.
+  - `BASE` and `null` are evaluated normally under the unchanged Customer Success bands.
+  - `OTE` keeps its bounds and makes salary eligibility Unknown unless separate confirmed base-salary evidence exists, with the OTE statement kept as evidence.
+- **Currency:** FX conversion stays evaluator-only, and nothing converted is written back. Core's bare-"$" rule is not reproduced.
+- **Residency:** residency selects the policy branch. Work authorization, sponsorship, relocation, citizenship and `UserEligibility` are never used.
+- **Identifiers:** `cs-hard-filters-v3` and `cs-salary-policy-v3-ecb-2026-10-14`. No semantic prompt, model or routing change.
+- **Compatibility boundary:** the evaluator reads the basis through a temporary compatibility path because that branch lacks the native Core field.
+
+**Integration contract (carry out at final integration):**
+1. Read the native shared-Core `compensationBasis` (`compensationBasisValues` in `packages/core/src/opportunity.ts`, on a nullable field), exactly `BASE` | `OTE` | `null`. Do not add a value such as `TOTAL_COMPENSATION`, or a second copy of the enum, unless the Core contract itself is revised first.
+2. Replace only the temporary evaluator compatibility read. Remove `compensationBasis` from `fieldsWithheldFromEvaluator` together with the five Task 7 fields that `267124f` releases, and update the withholding tests.
+3. Preserve the OTE numeric facts and the original source currency. FX stays evaluator-only.
+4. Keep residency separate from work authorization. The work-authorization fields stay in `fieldsWithheldFromEvaluator`, and `UserEligibility` is never sent to the evaluator.
+5. Do not recreate bare-"$" geography logic in the evaluator.
+6. Preserve the `cs-hard-filters-v3` and v3 salary-policy behavior.
+7. Keep semantic prompts, provider models and routing unchanged.
+8. Expect overlapping edits in `database/src/evaluation-repository.ts`, `packages/evaluation/src/contracts.ts` and `domains/customer-success/src/extraction/explicit-facts.ts`, which both branches change. Keep this branch's source-version binding (`evaluatedSource`), its withheld-field additions and the evaluator's basis evidence.
+
+**Resolved October 25, 2026 (Alex approved; Feature 14B v5): an OTE range that also mentions "base".** The record below is the finding as reported; the resolution follows it.
+- **The behavior:** Core's `parseCompensation` returns `basis: null` when a statement names both OTE/on-target and "base".
+  - Measured on this branch, "$120,000 - $150,000 OTE (base + commission)" and "OTE: $120,000 - $150,000; 60/40 base to variable" keep bounds 120000/150000 with a `null` basis.
+  - Under the evaluator's "`null` is evaluated normally" rule, such an OTE range would be treated as ordinary salary. With U.S. currency evidence that is a false Pass.
+  - Two separate ranges ("Base salary $80,000 - $100,000 plus commission; OTE $140,000") are already safe: the amounts are ambiguous, and the bounds stay Unknown.
+- **Recommended Core fix:** any OTE/on-target cue gives `OTE`; `BASE` only with a base cue and no OTE cue; otherwise `null`. It keeps the `BASE` | `OTE` | `null` values and needs no evaluator change. Its cost is a conservative miss: a base range that mentions OTE elsewhere becomes `OTE`, which is Unknown rather than a false Pass.
+- **Related, lower severity:** a structured source salary range takes a basis only from that source's own salary text when the text states the same range. OTE stated only in the job description leaves the structured range `null`.
+- **Status (as reported):** no implementation change until Alex decides; the fix would replace the v4 patch with a v5.
+- **Resolution (implemented in v5, shared Core only; no adapter or evaluator change):**
+  - **OTE precedence:** `parseCompensation` gives `OTE` whenever the statement uses OTE or on-target wording, `BASE` only for base wording without it, otherwise `null`. Both examples above now give 120000/150000 with `OTE`. Separate figures in one statement stay ambiguous, with the amounts Unknown.
+  - **Same-range OTE from the description** (`onTargetStatementFor` in `packages/normalization/src/job-text-facts.ts`, used by the retrieved and manual normalizers): when the amounts come from structured source fields, a source salary text or a user-stated salary text, and their basis is not already OTE, the basis becomes `OTE` only if a compensation statement in the posting's own description states that same range as OTE.
+    - Both bounds must be equal (an open end must match too), and the statement must state no other currency.
+    - It must name no other figure, since several figures parse as ambiguous.
+    - Page context never counts. OTE wording about any other figure leaves the basis as it was.
+    - Provenance is the description statement (`rawText:explicit-compensation-statement`); the bounds and currency keep their own provenance.
+  - **The values stay `BASE` | `OTE` | `null`.** The Codex evaluator contract is unchanged, and an OTE range now always reaches it as `OTE`.
+
+### Feature 14B final cross-source batch: shared-boundary record (October 27, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-27\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and committed on `claude/gallant-pasteur-y1ou3i`; awaiting the targeted live verification (Codex/local). *(Update 2026-10-31: Feature 14B's live acceptance passed on 2026-10-29, `2ccdc7f`; Feature 14 is complete.)*
+
+From Alex's final human cross-source retest. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
+
+1. **Two new normalized facts, withheld from the evaluator** (`fieldsWithheldFromEvaluator`, delivered as `[]` / `null`):
+   - `compensationTiers`: labelled pay ranges for several places, zones or bands ([{ label, minimum, maximum, currency }]); `salaryMin`/`salaryMax` stay null when there are tiers. Additive migration `20261027090000_compensation_tiers`.
+   - `bonus`: variable pay stated on its own ("Bonus potential up to $10,000"), previously always null. It is never part of the salary range.
+   At integration, decide how a tiered salary meets the salary policy (for example, the tier for the user's location) and whether variable pay counts.
+2. **Existing evaluator-visible fields carry corrected values** where this batch fixes them: the title (a posting heading instead of a careers site's own name), the location (a more precise labelled place; no default "Anywhere" over a stated one), `salaryText` (the agreed range's statement, or the tiers), the description (the page's full description instead of a shortened structured copy; the user's selected text after "Use my selected text instead"), the application URL and the requisition ID. The approximate posting date stays withheld.
+3. **Currency rule corrected (Alex, October 27, 2026):** a recognized currency symbol is read directly as its currency ("$" USD, "€" EUR, "£" GBP, "₹" INR, "¥" JPY) with no geography or other context, and a currency code or name the posting states takes precedence ("$100,000 CAD" is CAD). This supersedes the bare-"$" geography rule recorded on October 23, 2026, including its note that currency would be Unknown more often outside the U.S.: at integration, a bare-"$" posting arrives as USD wherever the job is. `currency` stays withheld from the evaluator until then.
+4. **Unchanged:** deduplication, the evaluator's input contract, version binding and the no-automatic-reevaluation rule. The extension popup now says when the latest evaluation is of an earlier listing version (the existing listing-version hint); requesting evaluation stays the user's choice.
+
+### Feature 14B cross-source correction: shared-boundary record (October 26, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-26\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented and verified on the isolated test database; awaiting Alex's review and the cross-source live retest; not committed. *(Update 2026-10-31: committed as checkpoint v7 `6536ef8`; Feature 14B's live acceptance passed on 2026-10-29.)*
+
+From the live acceptance of every supported source. **No evaluator stage, prompt, model, routing, semantic schema or recommendation rule changed.**
+
+1. **Residency is populated in more cases.**
+   - **Where from:**
+     - a source's remote-hiring places (`sourceFacts.remoteLocations`, read as the location "Remote (<places>)");
+     - a posting's own statement that the remote role is based somewhere ("This is a U.S.-based, full-time remote role."; `rawText:explicit-remote-base-statement`, the weakest reading: explicit eligibility statements replace it). An ordinary job or office location by itself never creates eligibility;
+     - eligible states listed one per line;
+     - "continental U.S.";
+     - the remote option of an "Office or Remote, <geography>" location.
+   - **For the Codex salary policy:** these are explicit eligible-geography facts under the existing contract, and residency still selects the salary branch. Expect more `US_REQUIRED` / `NON_US` and fewer `null` values once residency is released to the evaluator. Work authorization is still never read as residency.
+2. **Regional pay tiers.** When a posting states several ranges each labelled with its own place or zone, `salaryMin`/`salaryMax` are null even when a source field states one tier. The salary text is the tiers, each with its label ("U.S.: USD 63,000 - 75,000 / Canada: CAD 88,000 - 110,000"). `currency` is kept only when the tiers share one, and `compensationBasis` is null. Ranges that do not each name their place are not tiers: they are conflicting evidence and stay Unknown. The salary policy sees Unknown bounds, not one tier.
+3. **New withheld fields `seniorityLabel` and `workArrangements`** (migration `20261026090000_cross_source_normalization`, additive; applied only to the isolated test database). Both join `fieldsWithheldFromEvaluator`, like `seniority` and `remoteStatus`. `workArrangements` lists every arrangement the posting states, in its order ("Office or Remote" → `ONSITE`, `REMOTE`); `remoteStatus` is the single stated arrangement, and null when several are offered.
+4. **Other new readings (all still withheld from the evaluator):**
+   - a time-zone preference (`rawText:explicit-time-zone-preference`);
+   - a source-stated posting age (`postingDate:relative-posted-age`, `pageContext:relative-posted-age`), approximate at day precision. `postingDate` is evaluator input, so `loadSubject` withholds an approximate date (null, with its provenance row left out) until its evaluator use is approved;
+   - a labelled requisition ID (`*:labelled-requisition-id`; it also feeds the existing requisition-ID dedup match, whose logic is unchanged);
+   - a fuller labelled location (`rawText:labelled-location`);
+   - page metadata items (`pageContext:stated-*`).
+5. **Department** is no longer a product field: it is not shown, filtered on or entered. It was already withheld from the evaluator and stays so; the column remains.
+6. **Extension envelope:** two optional fields, `remoteLocations` and `seniority` (`schemaVersion` stays 1). Page context is now sent with every non-LinkedIn description, one visible item per line.
+
+Final Integration Checklist: items 1–2 matter when the Milestone 4 fields are released to the evaluator; items 3–6 are shared-contract additions with no evaluator change.
+
+### Feature 15 — Source Intelligence: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Source Intelligence (the approved Feature 15 contract; Customer Success PRD v1.13 §19, Core Platform TDD v1.16 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule or Ghost Job Risk logic changed; no migration; no new semantic call.**
+
+1. **What it reads from the evaluator side, as stored:** `Evaluation.status`, `Recommendation.decision` (`APPLY` / `REVIEW` = useful, `SKIP` = not useful; the latest COMPLETED evaluation per opportunity), and `SemanticOperationAttempt.estimatedCost` with its pricing currency (the same known/unknown rule as `/budget`). It writes nothing to these tables.
+2. **Evaluator versions:** rates span whatever evaluator versions produced the stored decisions. There is no filtering by evaluator version and no second "normalized historical recommendation" layer. At final integration, the integrated evaluator (for example the compensation-basis salary policy) may change the distribution of future Apply / Review / Skip decisions; Source Intelligence will report them as they occur. Decide then whether a version filter is wanted.
+3. **Source identity:** keys on `source`/`sourceType`/`externalId`, `retrievalSourceId` and the extension's `sourceMetadata.capture.site`, never on `reportedSource` (rule above, line 263).
+4. **Shared code touched (no behaviour change):** the known-site host table moved from `apps/web/src/server/extension-capture.ts` to `packages/core/src/known-sites.ts` (extension capture imports it); the dashboard's "No longer listed" SQL is exported once as `noLongerListedCondition`; `costBasis()` on the budget service shares the report currency.
+5. **Test infrastructure:** `vitest.integration.config.ts` and `playwright.config.ts` now refuse to start unless the target database's name ends in `_test`. Codex integration and E2E runs need `TEST_DATABASE_URL` set to an isolated `_test` database.
+6. **Deterministic first record (persistence only):** `PrismaEvaluationTaskRepository.recordSemanticOperation`'s fallback for an evaluation with no `sourceRecordId` now takes the opportunity's first source record by `createdAt ASC, id ASC` (was `createdAt` only), matching `originatingVersion`, which `loadSubject` already uses. It changes only which tied record an attempt is attributed to; no evaluator input, routing or result changes.
+
+Final Integration Checklist: item 2 matters when the evaluator branch is combined; items 1, 3–6 need no evaluator change.
+
+### Feature 16 — Job-Market Analytics: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Job-Market Analytics (the approved Feature 16 contract; Customer Success PRD v1.14 §19, Core Platform TDD v1.17 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic or deduplication changed; no migration; no new semantic call.**
+
+1. **What it reads from the evaluator side, as stored, from each opportunity's latest COMPLETED evaluation:** `Recommendation.decision`; `Evaluation.domainResult` at `{hardFilters,role,classification}`, `{companyAlignment,alignment,customerSegment,classification}` and `{hardFilters,reconstruction,requirements}` (each item's `requirement`, `category`, `strength`, `statedYears`, `statedYearsMaximum`, `statedYearsOpenEnded`); and the `promptVersion` of the evaluation's latest SUCCESS `SemanticOperationAttempt` with `operationId = "customer-success.jd-reconstruction"`. It never reads Resume Match, Genuine Gaps, Alex Fit, Opportunity Priority or any profile-relative result. If integration renames these paths, the operation id or the attempt telemetry, `database/src/market-analytics-repository.ts` is the one place to update.
+2. **JD Reconstruction version boundary (v3 → v7):** this branch produces `cs-jd-reconstruction-v3`. The evaluator branch carries a later reconstruction (v7: "JD Reconstruction specialization category binding" and requirement-relative INDUSTRY; see the records above), so the requirement categories it emits do not mean exactly what v3's mean. Feature 16 therefore combines requirement figures only within a declared compatibility group (`reconstructionCompatibilityGroups` in `packages/core/src/market-analytics.ts`, today `{ "cs-jd-reconstruction-v3": "cs-jd-reconstruction-v3" }`). Any other version is its own group, so after integration v7 evaluations are counted in coverage by version and shown on their own (the largest compatible group is displayed, with the reason), never merged with v3. Evaluations whose reconstruction call left no telemetry are "unrecorded" and shown apart. **Decision for final integration:** declare v7 compatible with v3 (if the category semantics are confirmed equivalent for market reporting) or leave it separate; either way, no stored result is rewritten or re-run. Pre-v3 evaluations recorded the reconstruction under the shared production prompt version `cs-m9-prompts-v1` and are a separate group too.
+3. **Evaluator versions in general:** recommendation mixes span whatever evaluator versions produced the stored decisions, as in Feature 15 (item 2 there); there is no version filtering and no re-normalization.
+4. **Shared code touched (no behaviour change):** Feature 15's `evaluationStateOf` now takes a narrower structural parameter (`SiEvaluationStateInput`); `Bars` is exported from `apps/web/src/components/sources/source-insights.tsx`; the main navigation gains "Market".
+5. **Domain input:** title groups come from `customerSuccessDiscoveryConfiguration.titleTerms`, passed in by the web service (Core does not import the domain).
+
+Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.
+
+### Feature 17 — Personal Job-Search Analytics: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Personal Job-Search Analytics (the approved Feature 17 contract; Customer Success PRD v1.15 §19, Core Platform TDD v1.18 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic or deduplication changed; no migration; no new semantic call; no accuracy metric.**
+
+1. **Evaluator outputs read, as stored** (`database/src/personal-analytics-repository.ts` is the one place to update if integration renames them): `Recommendation.decision`; `Evaluation.userProfileId` / `userProfileVersion`; `domainResult` at `{resumeMatch,evaluated}`, `{resumeMatch,band}`, `{resumeMatch,match,requirementAssessments}` (items with `classification = "GENUINE_GAP"`: `category`, `strength`, `decisionImpact`, `requirementText` — never `explanation` or `genuineGaps[].finding` prose), `{alexFit,evaluated}` / `{alexFit,fit,classification}`, `{hardFilters,role,classification}`, `{companyAlignment,alignment,customerSegment,classification}`, `{companyAlignment,alignment,customerType,classification}`; and the `promptVersion` of the evaluation's latest SUCCESS `SemanticOperationAttempt` with `operationId = "customer-success.resume-match"`.
+2. **Resume Match / Genuine Gap version boundary (v2 → v3/v4):** this branch runs `cs-resume-match-v2`. The evaluator branch's `cs-resume-match-v3` / `v4` make structured profile limitations the only Genuine Gap proof and add structured `gapEvidence` (`EVALUATOR_STATUS.md`, contract evolution), so a GENUINE_GAP does not mean exactly the same thing across these versions. Feature 17 combines gap and Resume Match band figures only within a declared compatibility group (`resumeMatchCompatibilityGroups` in `packages/core/src/personal-analytics.ts`, today `{ "cs-resume-match-v2": "cs-resume-match-v2" }`); any other version is its own group and is shown in coverage by version, never merged. **Decision for final integration:** declare v4 compatible with v2 for gap reporting, or keep it separate; if v4 moves gap structure (for example into `gapEvidence` or `requirementStatements`), update the repository's JSON paths. No stored result is rewritten or re-run.
+3. **Profile versions:** fit and gap figures are grouped by `userProfileId` (active profile by default; "profile not recorded" apart). Evaluations must keep recording the profile snapshot they used.
+4. **Evaluator versions in general:** recommendation and outcome figures span whatever evaluator versions produced the stored decisions (as in Features 15 and 16), disclosed; no normalization.
+5. **Shared code touched (no behaviour change):** Feature 15's `outcomeOf` takes a structural `SiOutcomeInput`; `sourceInfoOf` exported from `source-intelligence.ts`; the main navigation gains "My search".
+
+Final Integration Checklist: item 2 needs a decision when the evaluator branch is combined; items 1 and 3–5 need no evaluator change.
+
+### Feature 18 — Company Intelligence: shared-boundary record (October 31, 2026; Claude main-product workstream)
+
+**Date:** 2026-10-31\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream / final integration\
+**Status:** Implemented, verified on the isolated test database and accepted by Alex (October 31, 2026); committed
+
+Company Intelligence (the approved Feature 18 contract; Customer Success PRD v1.16 §19, Core Platform TDD v1.19 §51). **Read-only. No evaluator stage, prompt, model, routing, semantic schema, recommendation rule, Ghost Job Risk logic, deduplication, retrieval or listing-ledger behaviour changed; no migration; no new semantic call; no company score.** It completes main-product features 1–18.
+
+1. **Evaluator outputs read, as stored** (`database/src/company-intelligence-repository.ts` is the one place to update if integration renames them): from each role's latest completed evaluation, `domainResult` at `{companyAlignment,alignment,customerSegment,classification}`, `{companyAlignment,alignment,customerType,classification}` (both already read by Features 16 and 17) and, new, `{companyAlignment,alignment,businessModel,classification}`. Never the alignment summary, advantages or concerns, and no profile-relative output. If the evaluator branch changes these enums or paths, update the repository and the labels in `apps/web/src/components/companies/company-labels.ts`.
+2. **Ghost Job Risk is not consumed.** It returns its deterministic UNKNOWN on this branch (posting history withheld; Feature 13 record item 4), so a per-company summary would be meaningless. Feature 18 shows the Feature 13 posting-history facts instead. Any company-level summary of stored Ghost Job Risk is a new product decision after integration makes the stage meaningful, not part of Feature 18.
+3. **Main-product contracts now also read by analytics (no evaluator change):** `SourceRecord.duplicateEvidence.matchedOn` of MATCH attachments (for "relisted under a new listing ID with the same requisition"), the Feature 13 `RetrievedListing` fields, and the dashboard's company grouping `COALESCE(Company.normalizedName, Company.id)`. A change to the deduplication evidence shape or to company normalization should update `packages/core/src/company-intelligence.ts`.
+4. **Shared code touched (no behaviour change):** Feature 16's `latestCompletedEvaluation` is generic over the evaluation shape; Feature 17's calendar-day rule and first-discovery identity are exported as `dateOnlyDay` and `originIdentityOf` (typed on the fields they read; the private `sourceOf` was renamed), and `personalOutcomeOf` takes only the application fields it reads; the main navigation gains "Companies"; the opportunity page links its company.
+
+Final Integration Checklist: items 1 and 2 need only a check when the evaluator branch is combined (no change unless the paths or the Ghost Job Risk input change); items 3–4 need no evaluator change.
+
+### Handoff: Final Evaluator / Product Integration — Codex Work Package CX-1 to CX-4 (November 1, 2026)
+
+**Date:** 2026-11-01\
+**From:** Claude main-product workstream\
+**To:** Codex evaluator workstream\
+**Status:** Ready. Integration branch created; Codex work not started.
+
+The final integration audit was approved by Alex on November 1, 2026, with all recommended decisions. Alex assigned CX-1 to CX-4 to Codex. Claude prepared only the integration branch and this handoff: no merge, no code change, no migration, no database use, and no live, provider, paid or evaluator call.
+
+#### Completed
+
+- Integration branch `integration/final-evaluator-product` created from the product checkpoint `b1b15afd7119032d4932664b74f8ea37407691d8`. Features 1–18 are complete and accepted there. The full gate passed on that commit:
+  - unit: 76 files / 1,856 tests;
+  - integration: 43 files / 354 tests;
+  - E2E: 54/54;
+  - typecheck, lint, Prisma validate, verify-migrations (24), and the web and extension builds.
+- Decisions approved by Alex:
+  - **D1 Ghost Job Risk:** Option 1 at the freeze. Posting-history facts stay withheld, so the stage stays deterministic UNKNOWN. No route, prompt, schema, cost or recommendation change. Adoption is a later coordinated feature.
+  - **D2 Evaluator checkpoint:** integrate `origin/codex/evaluator-live-diagnostic` @ `7d1f4f01ca5637807794860d69daf38ce2ff0ae8` ("Update Milestone 4 compensation basis policy", 2026-10-25). It is committed and pushed. `EVALUATOR_STATUS.md` §19/§20 and the earlier records here still call it "uncommitted"; that note is obsolete (Claude corrects the docs in CL-5).
+  - **D3 JD Reconstruction:** `cs-jd-reconstruction-v3` and `-v7` stay separate compatibility groups. No entry is added to `reconstructionCompatibilityGroups`.
+  - **D4 Resume Match:** `cs-resume-match-v2` and `-v4` stay separate groups. Historical v2 Genuine Gaps are kept as stored. No entry is added to `resumeMatchCompatibilityGroups`.
+  - **D5 Withheld fields:** release exactly the six listed under CX-2 and keep the other 15 withheld.
+  - **D6 Bundled profile:** adopt the evaluator branch's limitations restructure (the `experience-scope-boundary` statement becomes an EXPERIENCE / DIRECT_SAAS_CUSTOMER_SUCCESS limitation). It is imported and activated as a new profile version (Claude, CL-2).
+  - **D7 Recommendation:** keep the `Recommendation.evidenceReferences` default drift as the documented known exception. No migration.
+  - **D9 Branch strategy:** one controlled `--no-ff` merge of `7d1f4f0` into `integration/final-evaluator-product`. No rebase, no force-push. The final target branch is not yet chosen.
+  - **D10 Specs:** one spec bump at the freeze (Core PRD v1.19, CS PRD v1.17, Core TDD v1.20, CS TDD v1.17).
+  - **D8 Live acceptance:** NOT authorized yet. No live, provider or paid call until Alex authorizes it separately.
+
+#### Files Changed
+
+- `HANDOFFS.md` (this record).
+- `AI Job Assistant Project/Md and README Docs/CURRENT_PROGRESS.md` (Current Objective).
+
+#### Current Contract / Assumptions
+
+- The product branch is never replaced by the evaluator branch. It forked at `5c132e8` (2026-10-05) and carries older copies of product-owned files.
+- A dry-run merge (`git merge-tree --write-tree b1b15af 7d1f4f0`, nothing written) gives 14 conflicted files:
+  - `database/prisma/schema.prisma`: the evaluator branch re-adds `residencyRequirement` / `residencyRegions`, which the product already has. Keep the product schema. The migration `20261016090000_opportunity_residency_requirement` is byte-identical on both sides.
+  - `database/src/evaluation-repository.ts`: keep the product's `loadSubject` (evaluated-source binding `evaluatedSource`, attached duplicate sources, as-of provenance, the full withheld list). Then apply only the CX-2 release.
+  - `packages/evaluation/src/contracts.ts`: keep the product contracts. CX-2 removes the evaluator's temporary `EvaluationCompensationBasis` in favour of the native Core field.
+  - `domains/customer-success/src/index.ts`: take the evaluator's exports and keep the product's (evaluated-source helpers).
+  - PRODUCT version wins (stale Task 7 copies on the evaluator branch):
+    - `packages/core/src/geography.ts`
+    - `packages/core/src/manual-opportunity.ts`
+    - `packages/core/src/manual-opportunity-service.ts`
+    - `packages/core/src/opportunity.ts`
+    - `packages/normalization/src/compensation.ts`, `index.ts`, `position.ts`, `residency.ts`
+    - `database/src/manual-opportunity-repository.ts`
+    - `tests/unit/manual-opportunity.test.ts`
+- Files that auto-merge but must be checked by hand:
+  - `domains/customer-success/src/extraction/explicit-facts.ts` and `extractor.ts`: keep the product's source binding; take the evaluator's salary and basis evidence.
+  - `packages/shared/src/server-environment.ts`: take policy `customer-success-semantic-policy-v4-final-terra-luna-gpt6` and `gpt6LunaPricingConfiguration`; keep the product's other settings.
+  - `tests/integration/production-evaluation-flow.test.ts`, `tests/unit/evaluation-api-worker.test.ts`, `pnpm-lock.yaml` (regenerate the lockfile with `pnpm install`; do not hand-edit it), `README.md`.
+- Do NOT add the evaluator branch's root-level `Md and README Docs/CURRENT_PROGRESS.md`. Claude merges its records into the canonical `CURRENT_PROGRESS.md` and `EVALUATOR_STATUS.md` (CL-5).
+- Evaluator side wins:
+  - `domains/customer-success/**`: v7 / v4 / v7 schemas, reconciliation, semantic closure, salary policy v3, hard filters v3, `profileLimitationSchema`, Recommendation dedup;
+  - `apps/web/src/server/semantic-execution-config.ts` routing overrides (Company Alignment and Burnout Risk on GPT-6 Luna; Job Evaluation, Organizational Maturity, Alex Fit and Opportunity Priority on GPT-5.6 Luna; JD Reconstruction and Resume Match on the GPT-5.6 Terra default);
+  - the bundled-profile limitations (D6).
+- Product consumers (Features 7 and 15–18) need no code change: every JSON path they read is unchanged (`schemas/results.ts` is identical on both branches).
+
+#### Next Task (Codex)
+
+1. **CX-1 — controlled merge.**
+   - On `integration/final-evaluator-product`, run `git merge --no-ff 7d1f4f0` and resolve the conflicts by the rules above.
+   - Run offline only: the Customer Success unit suites (`live-artifact-replay` skips without `LIVE_REPLAY_DIR`), the full unit suite, typecheck and lint.
+   - Done when the evaluator tests are green (apart from the CX-3 failures) and the product unit suite stays green.
+2. **CX-2 — field release and native `compensationBasis`.**
+   - Remove exactly `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, `residencyRegions` and `compensationBasis` from `fieldsWithheldFromEvaluator`.
+   - Keep the other 15 withheld: `remoteStatus`, `seniority`, `department`, `employmentType`, `closingDate`, `timeZoneRequirements`, `workAuthorizationRequirement`, `workAuthorizationRegions`, `visaSponsorship`, `relocationSupport`, `employerOfRecordRegions`, `seniorityLabel`, `workArrangements`, `compensationTiers`, `bonus`.
+   - Map `compensationBasis` from the native Core field and delete the temporary compatibility type.
+   - Confirm the released fields reach only the deterministic hard filters and salary evidence, not semantic prompt payloads. If any reaches a prompt, stop and report it.
+   - Integration tests, on `ai_career_assistant_test` only: `normalized-opportunity-filters`, `opportunity-residency`, `production-evaluation-flow`, `profile-limitations`.
+   - Expected results:
+     - OTE → salary Unknown;
+     - BASE or null basis → evaluated normally;
+     - residency selects the policy branch;
+     - work authorization unused;
+     - as-of provenance read.
+3. **CX-3:** reproduce the eight pre-existing unit failures (`EVALUATOR_STATUS.md` §20, reproduced on `267124f`) on the integration branch. Fix the evaluator-owned ones; document the rest.
+4. **CX-4:** review sign-off on Final Integration Checklist #1 (Task 6 `enqueueAdmitted`), #4 (Task 8 guarded lifecycle path), #5 (Core executor lifecycle guard; keep the product executor) and #7 (Task 9 additions).
+5. Hand back to Claude here with commit hashes and test results. Alex then accepts the evaluator contract on the integration branch.
+6. After that, Claude runs:
+   - CL-1: withholding tests and fixtures;
+   - CL-2: profile-limitations import, activation and doctor acceptance;
+   - CL-3: cross-feature regression;
+   - CL-4: the full gate;
+   - CL-5: documentation.
+   The final live acceptance (CX-6) comes only after that and only with Alex's separate authorization (D8).
+
+#### Verification Completed
+
+- Read-only only: `git fetch`, `git merge-tree` dry run, `git diff`. No tests run for this handoff; nothing changed in code.
+
+#### Known Issues / Blockers
+
+- D8 live acceptance is not authorized.
+- The final target branch for the integrated result (`claude/gallant-pasteur-y1ou3i` or `main`) is not yet chosen.
+- Evaluations queued under policy v3 will fail closed after the upgrade (`SEMANTIC_EXECUTION_POLICY_MISMATCH`) and must be re-requested. This is an operator step, not a defect.
+- Deferrals pinned to a profile version without limitations will run Resume Match v4 without them, so they show no Genuine Gaps. This is expected under pinning.
+
+#### Do Not Change Without Coordination
+
+- Database rules: never use the normal or the acceptance database. Integration tests run only on `ai_career_assistant_test`.
+- No live, provider, paid or evaluator call before D8.
+- Do not modify `apps/web/next-env.d.ts`.
+- Product-owned code wins in any conflict: `packages/core`, `packages/normalization`, `database` (except the identical migration), `apps/web` services, the budget code and the documentation layout.
+- Ghost Job Risk stays withheld (D1).
+- Do not add entries to `reconstructionCompatibilityGroups` or `resumeMatchCompatibilityGroups` (D3, D4).
+
+### Handoff: Post-`45d5fff` Pre-Evaluator Triage — Admission/Backlog and Later Extension Contract
+
+**Date:** November 2, 2026
+**From:** Codex / final-integration workstream
+**To:** Milestones 1–10 audit; later Claude extension workstream
+**Status:** Implementation complete and verified; extension follow-up explicitly not started
+
+#### Completed
+
+- Preserved `45d5fff` as the authoritative final evaluator/product integration state before triage.
+- Added the new implementation at `5ac3c9d`: normalization/deduplication → deterministic pre-evaluator triage → existing duplicate-spend/budget/admission/backlog → evaluator.
+- Exact outcomes are `EVALUATE`, `NEEDS_REVIEW`, `REJECT`. The evaluator's Apply / Review / Skip is separate and unchanged.
+- `NEEDS_REVIEW` and `REJECT` write only the triage assessment. They create zero Evaluation, EvaluationTask, EvaluationAdmission, DeferredEvaluation and SemanticOperationAttempt rows. Manual Evaluate releases through the ordinary production request path; manual Reject stays before spend.
+- Safe deterministic rules: accepted salary policy; normalized residency versus configured location policy; normalized work arrangements versus configured hard preferences; work authorization only as a conservative review signal. Unknown/conflicting/incomplete facts are review, never rejection. Seniority, employment type, travel, role fit and prose interpretation were deliberately excluded.
+- Added one `PreEvaluatorTriage` row per Opportunity with automatic outcome, reason JSON and causal fields, input fingerprint, domain, profile/version, assessment time, optional manual decision and decision time. Reassessment updates that row and preserves an explicit manual decision. Opportunity identity, `firstSeenAt`, SourceRecord history and field provenance are unchanged.
+- Added the main-app review workflow on opportunity pages and `/budget`, with exactly **Evaluate** and **Reject** actions.
+- No evaluator prompt, model route, semantic schema, six-released/fifteen-withheld input contract, Ghost Job Risk behavior or Final Recommendation logic changed.
+
+#### Verification Completed
+
+- Only `ai_career_assistant_test` was used for database work. The normal and acceptance databases were untouched. No live/provider/paid call was made.
+- Prisma schema valid; the test database is current through 25 migrations; a fresh temporary `ai_career_migration_check_*` database applied all 25 in order, matched the schema except the already documented Recommendation default, and was dropped.
+- Unit: 83 files passed, one replay file skipped; 2,036 passed, 6 skipped.
+- Integration: 44 files, 361 passed. The full constrained run's only failure was a Node/tsx `uv_os_get_passwd` ENOMEM in the source-version CLI subprocess; that unchanged 6-test file passed when rerun outside the constrained sandbox.
+- Focused admission/lifecycle/evaluator/normalization/dedup: 12 files, 229 passed. Triage DB integration: 7 passed. Dedicated Playwright triage scenario: passed.
+- Typecheck, lint, production web build and `git diff --check`: passed.
+
+#### Exact Later Extension Contract (Claude)
+
+Do not put triage policy, normalized-fact comparison or manual-decision persistence in `apps/extension`. The extension remains a thin authenticated client of the existing production evaluation endpoint.
+
+When later extension work is explicitly authorized:
+
+1. Keep `apps/web/src/server/extension-api.ts` as authentication plus delegation to `handleProductionEvaluationPost`; do not create an extension-only admission path.
+2. Extend the extension response/view contract to recognize `NEEDS_REVIEW` and `REJECT` in addition to `QUEUED` and `DEFERRED`.
+3. On `NEEDS_REVIEW`, say that evaluation is held, nothing was spent, and the job must be opened in the main app to choose **Evaluate** or **Reject**. Do not poll and do not add decision buttons to the extension.
+4. On `REJECT`, show the pre-evaluator rejection state, say nothing was spent, keep **Open in AI Job Assistant** available, and do not poll.
+5. Only `QUEUED` starts evaluation polling. `DEFERRED` retains its current budget/usage messaging and no-spend behavior.
+6. Never infer or display a different triage result locally. The server response and persisted main-app assessment are authoritative.
+7. Add extension unit/UI tests for all four response outcomes and a wrapper test proving the extension uses the same production gate. No provider call and no normal/acceptance database.
+
+#### Next Task
+
+- Run the Milestones 1–10 historical integrity audit against `45d5fff`. Do not backdate this enhancement into Milestone 9.
+- The extension follow-up above is later, separate work and has not started.
+
+### Handoff: Extension Mode B — Bounded Results-Page Ingestion (Claude; shared-boundary record)
+
+**Date:** November 3, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, F0, P1, live acceptance); Codex (boundary awareness only)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. Mode B is not complete for any real site until F0 and P1 pass.
+
+#### Completed
+
+- Implemented the approved Revision 5 plan on `integration/final-evaluator-product` after `e84c1cc`.
+  - Mode A ("Read this page") is unchanged and optional.
+  - Mode B ("Save jobs on this page") reads up to 25 already-loaded cards, with no autoscroll, paging, crawling, clicking or navigation. It shows a preview with per-job deselect and stages the selected jobs in the additive `PageCaptureItem` work queue.
+  - For a site with `detailVerified`, the retrieval worker reads each job's own page in a fresh logged-out headless browser (Feature 14A session rules) with the unchanged single-job reader. It ingests the job through the unchanged `capturedListing()` and retrieval ingestion, then hands each new opportunity once to `EvaluationService.requestEvaluation(id, {})`.
+- **Triage is consumed, not duplicated.** No triage policy, comparison, persistence or UI is in the extension or Mode B code. The hand-off skips an opportunity that already has a triage record, an open deferral or an evaluation. Needs Review decisions use Codex's existing opportunity-page panel.
+- **Mode A integration correction** (from the extension contract in the triage handoff above). The popup's **Request evaluation** now words `NEEDS_REVIEW` and `REJECT` from the server's outcome ("nothing was spent"), follows only `QUEUED`, and offers no decision buttons. `extension-api.ts` remains authentication plus delegation to `handleProductionEvaluationPost`.
+
+#### Current Contract / Assumptions
+
+- **Identity:** `capturedPageIdentity(card.url)` (unchanged), so a batch job and a Mode A capture of the same page meet on one opportunity (UNCHANGED or CHANGED). `discoveredAt` is the first batch sighting.
+- **Provenance:** `source: "browser-extension"`, `BROWSER_EXTENSION`, no `RetrievalSource`, no `RetrievedListing`, no opportunity-less `SourceRecord`. Analytics (Features 13 and 15–18) never read `PageCaptureItem`. Batch jobs count exactly as Mode A captures.
+- **Registry:** `packages/core/src/page-capture.ts`. LinkedIn and Welcome to the Jungle / Otta are `cardVerified: false` and `detailVerified: false`. The synthetic `e2e-results` site (host `jobs.e2e.invalid`) is enabled only by `PAGE_CAPTURE_TEST_SITE=1` (E2E). The extension status reports `pageCapture.sites` only when a site is enabled.
+- **Acquisition rules:** open-only, sequential, the site's interval (5 s LinkedIn, 12 s Welcome to the Jungle / Otta), at most 25 per pass. A 403, 429, 999, sign-in wall, challenge or account cookie stops the site for at least 24 h (or the Retry-After). A 404 or 410 gives UNAVAILABLE. An unreadable page is retried up to 3 times, then becomes AWAITING_DETAILS. With no browser, items become AWAITING_DETAILS (NO_BROWSER).
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md, "Extension Mode B — Bounded Results-Page Ingestion", for the full offline gate. Only `ai_career_assistant_test` was used. No live, provider, paid or evaluator call was made. The normal and acceptance databases were untouched.
+
+#### Known Issues / Blockers
+
+- No real site is enabled: F0 fixtures and the bounded P1 experiment (Alex, local runtime) are required per site. LinkedIn's prior evidence is negative (429 on the first job-detail request). Welcome to the Jungle / Otta has no verified logged-out job-detail path yet.
+- If P1 fails for a site, that site's Mode B stays incomplete. P2 (background tabs in Alex's Chrome) or any other mechanism needs Alex's separate decision. There is no further reverse-engineering.
+- **For Codex/Alex (pre-existing, not caused by Mode B):** four older web-app E2E tests fail identically on the untouched `e84c1cc` baseline:
+  - `evaluation-results` "material ambiguity … Review" and `dashboard` "search, filter, sort…": the deterministic helper worker ends FAILED;
+  - `golden-path` "golden path…" and "recovery…": no "Evaluation accepted and queued".
+
+  Their fixtures predate the triage/evaluator changes; they need a coordinated fixture decision and were not changed here.
+- The extension-owned `extension.spec` test whose fixture job triage now holds was updated narrowly to the triage contract (truthful held state, then release via the triage panel); see CURRENT_PROGRESS.md.
+
+#### Next Task
+
+- Alex: review; commit and push approval; F0 per site; authorize and run P1 per site; then each site's targeted live acceptance (`ai_career_assistant_acceptance` only, with authorization).
+
+#### Do Not Change Without Coordination
+
+- The triage gate and its persistence (Codex), the evaluator, `extract.ts`, `envelope.ts`, `capturedListing()` and the retrieval ingestion contract.
+
+### Handoff: Mode B — LinkedIn Enablement (D-A) and WTTJ Status (Claude; shared-boundary record)
+
+**Date:** November 4, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, targeted acceptance); Codex (boundary awareness only)
+**Status:** Committed as `77f7321`. LinkedIn Mode B is not complete until its targeted end-to-end acceptance. *(Status at writing: "Implemented and verified offline on `ai_career_assistant_test`, not committed.")* WTTJ P2 has since been implemented; see the next record.
+
+#### Completed
+
+- LinkedIn F0 (5 real logged-out cards) and P1 (PASS 5/5, Alex, local, at `c946e1b`) verified the card reader and the automatic detail mechanism.
+- `packages/core/src/page-capture.ts`: LinkedIn `cardVerified`/`detailVerified: true`, with the evidence recorded. All safeguards are unchanged: 5 s spacing, ≤ 25 per batch and per pass, the ≥ 24 h friction stop, the `li_at` stop and LinkedIn friction checks.
+- No other production code changed: the Mode B pipeline (6768598, 3ce9100, c946e1b) was already complete.
+- Real-fixture regression coverage:
+  - `tests/fixtures/page-capture/linkedin-f0-cards.json`;
+  - `tests/unit/page-capture-linkedin.test.ts`;
+  - `tests/integration/page-capture-linkedin.test.ts`;
+  - the synthetic public job-page builder `tests/support/linkedin-guest-pages.ts`;
+  - a narrow update of `tests/unit/page-capture.test.ts` (registry assertion).
+
+#### Current Contract / Assumptions
+
+- The triage is consumed unchanged: each new LinkedIn batch Opportunity is handed once to `EvaluationService.requestEvaluation(id, {})`.
+- Identity, provenance and analytics are exactly as in Mode A (`browser-extension`, `linkedin:<id>`); no RetrievalSource or RetrievedListing.
+- Welcome to the Jungle / Otta stays `cardVerified`/`detailVerified: false`:
+  - F0 done; P1 BLOCKED (HTTP 403); P3 unsupported (no job description in the cards);
+  - Current plan (Alex, November 4): P2 is the WTTJ mechanism — one Save action for up to 25 already-loaded jobs (no lower cap), fully automatic, sequential background tabs with WTTJ-only optional host permissions. Implementation is not yet approved; live acceptance follows implementation.
+  - Rules: a declined permission stages and processes nothing; an access restriction stops the batch, and the end of the 24 h backoff does not resume it automatically.
+  - Superseded the same day: a separate three-job proof-of-concept phase (including the correction that it would use three loaded jobs automatically) was removed from the plan.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md, "LinkedIn Mode B enabled". offline only, on `ai_career_assistant_test`, with no live LinkedIn or WTTJ request and no provider or evaluator call; the normal and acceptance databases do not exist in this container and were not touched. Typecheck, lint and `prisma validate` pass (no schema change, so no migration check was needed). Unit: 90 files passed, 1 replay file skipped (2,091 passed, 6 skipped), including the new `page-capture-linkedin` (4) and the updated `page-capture` registry test. Integration: 46 files, 368 tests passed, including the new `page-capture-linkedin` (3). `browser-driver` (4) needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to point at an installed Chromium; it failed when run without it and passed with it. E2E: the `extension` (8/8) and `page-capture` (4/4) projects pass; no E2E file was changed. `git diff --check` is clean and `apps/web/next-env.d.ts` is untouched; the test database was left clean.
+
+#### Known Issues / Blockers
+
+- LinkedIn's logged-in results markup (Alex's real Chrome) is covered by synthetic tests only; F0 was logged-out. This is checked in the targeted acceptance.
+- The four pre-existing Codex-owned E2E failures recorded on 6768598 are unchanged and not touched.
+
+#### Next Task
+
+- Alex: review and commit approval; then authorize LinkedIn's targeted end-to-end acceptance (the acceptance DB, the worker with `RETRIEVAL_BROWSER_EXECUTABLE`, a real results page). WTTJ P2 implementation needs separate approval.
+
+#### Do Not Change Without Coordination
+
+- Codex's triage and its persistence; the evaluator; `extract.ts`, `envelope.ts`, `capturedListing()`; the P1 runner contract.
+
+### Handoff: Mode B — Welcome to the Jungle / Otta Background-Tab Detail Reading, P2 (Claude; shared-boundary record)
+
+**Date:** November 4, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, live-acceptance authorization); Codex (boundary awareness only)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. Not live-accepted; WTTJ Mode B is not complete.
+
+#### Completed
+
+- **One action:** "Save selected jobs" (up to 25 loaded jobs, no lower cap) asks for the WTTJ-only optional host permission inside the click; declined, nothing is staged.
+- **Reading:** the extension's service worker then reads each job automatically in sequential background tabs of Alex's Chrome:
+  - ≥ 12 s between navigation starts, 30 s load timeout;
+  - a page check, then the unchanged Mode A reader, with re-reads at +2 s/+5 s and no reload;
+  - only its own tabs are closed.
+- **Server:** `apps/web/src/server/page-capture-tabs.ts` behind four pairing-authenticated routes (`items/<id>/start|details|result`, `stop`). It identity-checks each page, ingests through the shared `createPageCaptureIngestor` and hands off to the existing triage-gated evaluation request. Reports are idempotent.
+- **Safeguards:**
+  - access restriction → batch and site stopped for ≥ 24 h, with no automatic resume (a re-save after the wait reads again);
+  - identity mismatch → batch stopped;
+  - 404/410 → UNAVAILABLE; unreadable → UNREADABLE;
+  - closed tab → INTERRUPTED, never reopened;
+  - Stop and a removed permission stop the run;
+  - a browser restart ends the run (session storage), and items queued for 60 minutes become INTERRUPTED;
+  - an alarm backstop resumes after a service-worker restart.
+- **WTTJ card reader:** the F0 page path, a structural company selector and the posted date; the real F0 cards are a regression fixture.
+
+#### Files Changed
+
+- Core: `packages/core/src/page-capture.ts` (`tabAcquisition`, mechanism helpers, acceptance option, new reason, signal and result codes).
+- Database: `database/src/page-capture-repository.ts` (tab-only methods; optional `stageBatch` inputs). No schema change.
+- Web:
+  - `apps/web/src/server/page-capture.ts` (acceptance setting, tab intake);
+  - `page-capture-tabs.ts` (new);
+  - `page-capture-acquisition.ts` (shared ingestor; worker skips non-`server-browser` sites);
+  - `page-capture-progress.ts` (staleness, Retry refused, `retryable`);
+  - `extension-api.ts`;
+  - the routes under `app/api/extension/page-captures/items/[id]/*` and `stop`;
+  - `components/extension/page-capture-list.tsx`.
+- Extension: `manifest.json` (`alarms`, `optional_host_permissions`), `popup.html`, `chrome.d.ts`, `api.ts`, `popup.ts`, `page-capture-view.ts`, `service-worker.ts`, new `tab-acquisition.ts` and `tab-messages.ts`.
+- Tests:
+  - new: `tests/unit/page-capture-wttj.test.ts`, `tests/unit/page-capture-tab-acquisition.test.ts`, `tests/integration/page-capture-wttj.test.ts`, `tests/support/wttj-tab-pages.ts`, `tests/fixtures/page-capture/wttj-f0-cards.json`;
+  - updated: `tests/unit/page-capture-ui.test.tsx` (+2) and `tests/unit/extension-client.test.ts` (the 14B manifest and service-worker contract, narrowly, to P2).
+
+#### Current Contract / Assumptions
+
+- LinkedIn's behaviour and committed tests are unchanged. The two shared changes:
+  - the ingest-and-hand-off step moved verbatim into `createPageCaptureIngestor`;
+  - the worker skips sites whose mechanism is not `server-browser`.
+- WTTJ stays `cardVerified`/`detailVerified: false`. It is offered only with `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle` (server setting, live acceptance only).
+- Triage is consumed unchanged. No E2E, Playwright config, triage or evaluator file changed.
+
+#### Verification Completed
+
+- Offline only: test DB only; no WTTJ request, no host permission granted, no live browser, no provider or evaluator call.
+- Typecheck, lint, `prisma validate`, extension build and `git diff --check` pass; `next-env.d.ts` untouched.
+- Unit: 92 files passed, 1 skipped (2,144 passed, 6 skipped).
+- Integration: 47 files, 373 tests passed.
+- E2E not run: no E2E file changed; Codex's area.
+- The test DB was left clean.
+
+#### Known Issues / Blockers
+
+- Not live-tested:
+  - Chrome's permission prompt and popup behaviour;
+  - WTTJ's real job-page markup (synthetic pages only);
+  - WTTJ's response to background-tab loads in a logged-in session;
+  - service-worker lifetime across a 25-job run (about 5–15 minutes).
+- A job link with non-tracking query parameters (for example `?q=…&o=…`) is a different listing identity under the existing shared rule. A redirect that adds or removes such parameters would stop the batch as an identity mismatch (the safe direction). F0's links had none.
+
+#### Next Task
+
+- Alex: review and commit approval; then authorize WTTJ live acceptance (Alex's Chrome, the acceptance DB, `PAGE_CAPTURE_ACCEPTANCE_SITES=welcome-to-the-jungle`). On PASS, set WTTJ `cardVerified`/`detailVerified` with the evidence.
+
+#### Do Not Change Without Coordination
+
+- Codex's triage; the evaluator; `extract.ts`, `envelope.ts`, `capturedListing()`, `capturedPageIdentity()`; the safeguards above; the manifest's permission set.
+
+### Handoff: Consolidated Mode B Acceptance Fixes — Workstreams A, C, D, E (Claude; shared-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, evidence E1–E3); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, not committed. Workstream B (capture correctness) waits for evidence.
+
+#### Completed
+
+- **A — diagnostic.** Root causes are in CURRENT_PROGRESS.md under "Consolidated Mode B Acceptance Fixes".
+- **C — triage.**
+  - Triage at single-job save via the new `EvaluationService.assessTriage(opportunityId)`: triage only, with no admission, budget, queue or provider call.
+  - The no-profile state is reported, never invented.
+  - The dashboard view "To triage" is renamed **Not acted on**; a Needs Review count links to `/budget#pre-evaluator-review`; the opportunity page notes when triage has not run.
+- **D3 — capture history.** Additive `PageCaptureSession` and nullable `ExtensionPairing.lastExtensionVersion`, in migration `20261105090000_page_capture_session`.
+- **D — extension 0.3.0.** Side panel (`sidePanel` permission, no popup; the toolbar button is the activeTab grant), Single Job / Batch Capture modes, current/latest/previous captures.
+- **E — app pages.** Setup & Connection (`/extension`) and Captured Jobs (`/extension/jobs`).
+
+#### Current Contract / Assumptions
+
+- `requestEvaluation`, `triageGate`, the triage rules and the persistence are unchanged; `assessTriage` reuses them.
+- Captured Jobs creates no job records: it lists `PageCaptureItem` rows and, once per opportunity, single-job `browser-extension` source records with no batch item.
+- The extension sends `X-Extension-Version`; the pairing stores it only when it is a plain dotted version.
+
+#### Files Changed in Codex-Owned Areas (necessary, minimal)
+
+- `tests/e2e/extension.spec.ts`: three assertion lines, for the approved wording: h1 "Setup & Connection"; "Unpair / Revoke Access", then its confirmation.
+- `tests/e2e/extension-page-capture.spec.ts`: one assertion line (h1 "Captured Jobs").
+- `tests/support/e2e-page-capture-helper.ts`: one cleanup line removing capture sessions left with none of their items.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md.
+- Unit 2,158 passed; integration 378 passed.
+- E2E: `extension` 8/8, `page-capture` 4/4, `dashboard` 4/4, `pre-evaluator-triage` 1/1.
+- 27 migrations verified; test DB clean.
+
+#### Known Issues / Blockers
+
+- The side panel is not yet checked live in Alex's Chrome. The E2E tests open its page directly; Chrome's real toolbar-to-panel flow, tab changes and Incognito need Alex's live check.
+- Workstream B is pending E1 (acceptance-DB export), then E2/E3 as E1 shows necessary.
+
+#### Next Task
+
+- Alex: run E1 and return its output. On approval of this change set: commit, push and closeout.
+
+#### Do Not Change Without Coordination
+
+- The triage gate and rules; `requestEvaluation`'s order; the capture identity; `PageCaptureSession` semantics (history only).
+
+### Handoff: Pre-Acceptance Round — Pre-Evaluation Review, Overlapping Captures, Triage Policy Mapping (Claude; shared-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, profile decisions, E1); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `6795fe2`; not committed. Workstream B still waits for E1.
+
+#### Completed
+
+- The dashboard lifecycle view is renamed **Pre-Evaluation Review** (label only; the statuses and `?view=triage` are unchanged). This supersedes "Not acted on" in the record above.
+- Overlapping captures:
+  - `stageBatch` reports a job with a known opportunity as `ALREADY_SAVED`, where it previously reported `SEEN_AGAIN` for an already-ingested item;
+  - each session's `counts` records `alreadySaved`, `seenAgain` and `alreadySavedItemIds` at the save (JSON, no migration);
+  - the panel and Captured Jobs mark jobs "already saved before this capture".
+- Cross-method: `capturedListing` takes an optional `method` ("single" | "batch"), stored as `sourceMetadata.capture.method` (not hashed). Captured Jobs batch rows carry `alsoSingle`.
+- Triage policy mapping against a synthetic profile (`tests/unit/triage-profile-policy.test.ts`). No triage rule changed.
+
+#### Current Contract / Assumptions
+
+- The triage gate, rules, salary policy and `requestEvaluation` are unchanged.
+- `PageCaptureSession.itemIds` is never rewritten, so a later capture never changes an earlier capture's membership.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- Unit 2,181 passed; integration 49 files, 380 tests (new `overlapping-captures`); E2E `extension` 8/8, `page-capture` 4/4; test DB clean.
+
+#### Known Issues / Blockers
+
+- For Alex's decision: the U.S. $55–59.9k band (the engine rejects; the stated policy says review); non-U.S. below $50k in lower-cost countries (the engine rejects; the stated policy says may be considered); no deterministic rule for role relevance, working hours or mandatory travel.
+- The exact saved profile is unverified: that needs one read-only normal-database query, which needs Alex's authorization.
+- Workstream B waits for E1.
+
+#### Next Task
+
+- Alex: review; decide the two policy differences; authorize (or not) the read-only profile query; run E1.
+
+#### Do Not Change Without Coordination
+
+- The triage rules and salary policy (Codex/evaluator boundary); `PageCaptureSession` semantics.
+
+### Handoff: Salary Policy v4 — Approved D-P1 / D-P2 (Claude; evaluator-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Codex (evaluator boundary: the shared salary policy changed); Alex (review)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `39757c1`; approved by Alex and committed.
+
+#### Completed
+
+- `customerSuccessSalaryPolicy` → `cs-salary-policy-v4-ecb-2026-10-14`, with the new `usdReviewMinimum: 55_000`.
+- `classifyKnownAmount`:
+  - U.S. $55,000–$59,999 → `REVIEW` / `US_REVIEW`;
+  - non-U.S. below $50,000 in a configured lower-cost location → `REVIEW` / `NON_US_LOWER_COST_REVIEW`.
+- New messages and codes in the triage (`salary-us-review`, `salary-non-us-lower-cost-review`) and the hard-filter explanations. This was approved by Alex as a targeted policy correction.
+
+#### Current Contract / Assumptions
+
+- The triage and the hard filter still share one policy.
+- `SalaryPolicyDecision.reason` gained two values; any consumer with an exhaustive record of reasons must add them (both in-repo consumers are updated).
+- The hard-filter stage version is unchanged (`cs-hard-filters-v3`).
+
+#### Files Changed in Codex-Owned Areas
+
+- `domains/customer-success/src/config/salary-policy.ts` and `domains/customer-success/src/evaluation/hard-filters.ts`: policy and explanation text only.
+- `domains/customer-success/src/triage/pre-evaluator-triage.ts`: messages and codes only.
+- Tests that encoded the old bands: `customer-success`, `customer-success-priority-recommendation`, `customer-success-salary-policy`.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Salary Policy v4).
+
+#### Next Task
+
+- None for this change. Alex's decisions: no new deterministic triage rule for role titles, working hours or travel; no new salary floor.
+
+#### Do Not Change Without Coordination
+
+- The salary thresholds, the FX table, and residency selecting the policy.
+
+### Handoff: Workstream B — Capture Correctness from E1/E2/E3 (Claude; shared-boundary record)
+
+**Date:** November 5, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review, commit approval, live round); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `d88a83d`; approved by Alex (Decisions 1–2) and committed to `integration/final-evaluator-product`. No production merge.
+
+#### Completed
+
+- `extract.ts`:
+  - `postingSections` adds the rendered posting blocks after the structured description (heading allowlist; company, workplace and other-job blocks end it), with a JSON-LD `qualifications`/`responsibilities`/`skills`/`education` fallback;
+  - a repeated location part is stated once.
+- `tab-acquisition.ts`:
+  - a posting read with no page context is held while re-reads remain (registry: re-reads +2/+5/+10 s);
+  - the job-page check counts only shown challenge markup.
+- `results.ts`: a sign-in/checkpoint address or a shown challenge (never `.grecaptcha-badge`) is FRICTION. A shown sign-in modal (shown sign-in controls or password field) is FRICTION only when no loaded card can be read; over readable cards, the cards are read, links inside the modal are excluded, and the reading carries `notice: "SIGN_IN_PROMPT_SHOWN"` (Decision 2). Hidden markup never counts.
+- `job-text-facts.ts`:
+  - page-metadata remote tags;
+  - `#LI-` workplace tags;
+  - in-person days;
+  - remote-first with optional offices;
+  - "Work from anywhere" lines;
+  - explicit seniority statements;
+  - time-zone clauses in run-on text.
+- Opportunity page: a note when the stated closing date precedes the posting date.
+
+#### Current Contract / Assumptions
+
+- Mode B is unchanged: one Save of up to 25 loaded jobs, then automatic per-job reading; nothing is clicked or dismissed.
+- Captures stay additive. The capture schema is unchanged.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Workstream B).
+
+#### Known Issues / Blockers
+
+- The central LinkedIn sign-in modal and the app promotion are not in the E3 markup (the exporter's 40-element cap); their handling needs the live round. E3 does not prove full job-detail retrieval while the modal is shown (server-side fresh logged-out read; live only).
+- Background-tab render timing in real Chrome is verified only by the fake orchestrator.
+
+#### Next Task
+
+- Alex: the single live acceptance round (full integrated regression passed: E2E 59/59), including the real-Chrome LinkedIn checks with the central sign-in modal shown.
+
+#### Do Not Change Without Coordination
+
+- The friction contract (fail closed on a sign-in wall, a shown challenge or a prompt with no readable cards; a prompt over loaded cards is read through and reported; never dismiss); the capture identity; `PageCaptureSession` semantics.
+
+### Handoff: Workstream B — Mode B Live-Round Fixes (Claude; shared-boundary record)
+
+**Date:** November 6, 2026
+**From:** Claude main-product workstream
+**To:** Alex (E4 evidence, then the source-specific fixes, one coordinated closeout, acceptance-DB migration and live round authorization); Codex (boundary awareness)
+**Status:** Structural work and every E4-independent gap from the November 6 completion audit implemented and verified offline on `ai_career_assistant_test`, on top of `144fa6c`; committed and pushed as `58ef504` (earlier: "not committed"). No production merge. Continued by the Rev 3 final review record below.
+
+#### Completed
+
+- Worker resilience in the Mode B acquisition pass (`page-capture-acquisition.ts`, `worker-errors.ts`): per-job database failure classes (contention, permanent, transient, unknown); provisional `DB_PENDING` accounting finalized by the next ingestion or a capture-lock probe (`probeCaptureLock`); best-effort writes with the existing interrupted-job recovery as the fallback; P2028 and 55P03 transient for the retrieval worker loop only (`classifyRetrievalWorkerError`; the evaluation worker's `classifyWorkerError` is unchanged from `144fa6c`); whitelisted P2028 diagnostics; stage-named logs; post-save failures (`PageCaptureSavedError`) never charged; refresh failures requeued as refreshes (`requeueUncounted`).
+- Capture-lock transactions (`manual-opportunity-repository.ts`): one set of options (15 s / 30 s), a 20 s `lock_timeout` on the global capture lock, transaction names on errors; `stageBatch` lookups batched.
+- Selective re-observation (`packages/core/src/page-capture.ts` refresh policy; `page-capture-repository.ts` `refreshReasons`, `restoreRefreshes`, `markIngested` refresh outcome): R1 outdated reader revision, R2 incomplete read after 24 h (max 3 in a row), R3 14 days; refresh state lives in `lastReason` (no schema change); no hand-off on refresh.
+- Evidence-based re-projection for browser-extension reads by field group; a partial salary never overwrites saved amounts; explicit withdrawal via provenance `explicit-withdrawal:<closingDate|salary|workArrangement>` from the posting's own description (`packages/normalization/src/withdrawal.ts`).
+- Restriction durability: a deferred refresh keeps the stop (`nextAttemptAt`), read by `siteStoppedUntil`; refresh timing uses the read's own capture time and `sourceMetadata.lastRead` from unchanged re-reads.
+- LinkedIn listing fallback (`LISTING_PAGE_FALLBACK`, sourceField `listing:apply-on-site`, "Apply on LinkedIn (listing page)") with precedence below any employer/ATS link; careers-front-page guard.
+- `Opportunity.residencyExclusions` (additive; migration `20261106090000_opportunity_residency_exclusions`, test DB only) with parsing, display and source-version plumbing.
+- Country salary tiers and an evidence-supported primary (`packages/normalization/src/salary-tiers.ts`); geography list-connector fix.
+- Captured Jobs / history / panel hydrate company and location from the saved job.
+
+#### Current Contract / Assumptions
+
+- The capture envelope gains optional `readerRevision` (absent = 0). Bump `pageReaderRevision` and a site's `refresh.minReaderRevision` only when an extraction fix for that site ships.
+- Page-capture counts gain `refreshing`; outcomes gain `REFRESHING`. Both additive.
+- Triage and the evaluator are unchanged. Exclusions are not yet consumed by triage (needs a user residence field).
+
+#### Files Changed in Codex-Owned Areas
+
+- None. (`evaluation-repository.ts` only passes `residencyExclusions` through to the opportunity view.)
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Workstream B — Mode B Live-Round Fixes): unit 2,260, integration 411, E2E 60/60, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- The P2028 root cause (H1–H3), the logged-out LinkedIn apply link (H4), AlertMedia (H5), Critical Start (H6), Juniper Square's eligibility and the FourKites trace on the real records wait for Alex's read-only E4 evidence (revision-2 pack; runs from the `144fa6c` checkout, compatible with the unmigrated acceptance database).
+- The acceptance database needs the `residencyExclusions` migration (authorization) before the next round.
+
+#### Next Task
+
+- Alex: E4; then the source-specific fixes, full verification and one coordinated closeout commit; then the controlled live round (recovery of the 20 LinkedIn jobs first, then the LinkedIn and WTTJ refresh saves, then repeat saves).
+
+#### Do Not Change Without Coordination
+
+- The provisional accounting contract (an outage never counts an attempt; a job-specific failure counts once); the refresh eligibility rules and their registry values; the withdrawal rule (only explicit source statements clear a field); the application-link precedence.
+
+### Handoff: Mode B Rev 3 — Final Review, Persistent Diagnostics and Offline Acceptance (Claude; shared-boundary record)
+
+**Date:** November 6, 2026
+**From:** Claude main-product workstream
+**To:** Alex (approval and closeout; optional stored E4 texts; acceptance-DB migration and live round authorization); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `58ef504`; not committed. No production merge.
+
+#### Completed
+
+- E4/E4b conclusion recorded: TENEX.AI (LinkedIn 4372638963) was the sixth job, left ACQUIRING with no Opportunity or SourceRecord; the P2028's transaction is unproven; historical search closed.
+- Received-HTML LinkedIn apply link (approved precedence step 2): `BrowserPage.servedHtml` (`packages/discovery/src/browser.ts`, `packages/browser-retrieval/src/index.ts`), used in `page-capture-acquisition.ts` for LinkedIn only when the rendered page has a posting but no employer link.
+- Persistent diagnostics (`apps/web/src/server/worker-diagnostics.ts`), opt-in page evidence (`page-capture-evidence.ts`), wired in `retrieval-worker-cli.ts` and `runRetrievalWorkerLoop` (`events`); read-only failure evidence package (`diagnostics-package.ts`, `diagnostics-package-cli.ts`, `pnpm diagnostics:package`).
+- Hardening: `database/src/transaction-diagnostics.ts` (`namedTransaction`, `workerTransactionOptions`) for `claimNextRun`, `finishRun`, `recordListingObservations` and `stageBatch`; the capture repository uses the same naming helper.
+
+#### Current Contract / Assumptions
+
+- Diagnostics files hold ids, decisions, timings and sanitized error fields only; page evidence is never on by default; both refuse folders inside the repository. The evidence package reads only a database whose name says test or acceptance.
+- `DiagnosticsSink` and `PageCaptureEvidence` are optional dependencies of the acquisition pass; without them it behaves as at `58ef504`.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Mode B Rev 3 — Final E4/E4b Evidence …): unit 2,288, integration 416 (incl. `mode-b-tenex-diagnostics.test.ts`), E2E 60/60, 14B historical suites unchanged, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- Resolved in the final check: the Juniper Square, AlertMedia and Critical Start fixes now pass on their stored November 5 texts (`tests/unit/mode-b-e4-real-texts.test.ts`); the diagnostic artifacts were security-reviewed (Git-checkout refusal, owner-only files, broader redaction, `pnpm diagnostics:cleanup`).
+- The acceptance database needs the 28th migration (`residencyExclusions`) before the live round (authorization).
+
+#### Next Task
+
+- Alex: approve and close out; then the controlled live round with `RETRIEVAL_WORKER_LOG_DIR` default on and `PAGE_CAPTURE_EVIDENCE_DIR` set.
+
+#### Do Not Change Without Coordination
+
+- The diagnostics' content limits (no page content or secrets in the event file) and the evidence package's database restriction.
+
+### Handoff: Mode B — November 7 Live Round Follow-up (Claude; shared-boundary record)
+
+**Date:** November 8, 2026
+**From:** Claude main-product workstream
+**To:** Alex (approval and closeout; the controlled LinkedIn live round); Codex (boundary awareness)
+**Status:** Implemented, verified offline on `ai_career_assistant_test` and approved by Alex on November 8, on top of `4847751`; committed and pushed as `ddf5937`. WTTJ Mode B Rev 3 accepted by Alex on November 7; LinkedIn Mode B not yet accepted.
+
+#### Completed
+
+- L1: the November 7 LinkedIn stop was LinkedIn's HTTP 429 to the fourth logged-out job page in about five minutes (one request per pass, 1–3 minutes apart, no overlap or retry); the restriction handling matched the contract. The no-browser run opened no page.
+- No Retry per job without a browser (`page-capture-acquisition.ts`; `PrismaPageCaptureRepository.holdForBrowser` / `releaseBrowserHold`; waiting labels in `page-capture-labels.ts`).
+- TENEX.AI office-first Hybrid with remote by exception (`job-text-facts.ts` `remoteByException`, both normalizers, `formatArrangementWithExceptions`).
+- Nearmap: "Role Location:" label; continental U.S. as U.S. residence excluding Alaska and Hawaii (`residency.ts`, display in `opportunity-facts.ts`).
+- Thomson Reuters: target total cash as on-target pay (`compensation.ts`); OTE display spelled out.
+- WTTJ refresh dates (`page-capture-acquisition.ts` ingestor; `opportunity-provenance.tsx`).
+
+#### Current Contract / Assumptions
+
+- `NO_BROWSER` on a QUEUED item means "waiting for a worker with a browser"; such items are never claimed or counted.
+- A `remoteStatus` provenance row with sourceField `…:remote-by-exception` (value `REMOTE_BY_EXCEPTION`) qualifies a HYBRID arrangement; triage is unchanged and reads HYBRID.
+- Continental-U.S. eligibility is stored as `US_REQUIRED` + `["US"]` with exclusions `["US-AK", "US-HI"]`.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Mode B Rev 3 — November 7 Live Round Follow-up): unit 2,303, integration 418, E2E 60/60, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- LinkedIn's logged-out page budget is small and varies (429 on request 1 on October 20, on request 4 on November 7); a 25-job batch may need several automatic resumptions a day apart. Options for Alex: read the page as sent without running its scripts (fewer requests per job; live test needed), or read details in the user's own signed-in Chrome (account-level risk; product decision).
+
+#### Next Task
+
+- Approved by Alex on November 8 (repairs only; not LinkedIn acceptance). Next: scope Option A for approval; a controlled LinkedIn live round after 2026-11-08 19:15Z needs separate authorization, and all 17 waiting jobs completing in one run is not guaranteed (LinkedIn HTTP 429).
+
+#### Do Not Change Without Coordination
+
+- The restriction handling (a 429 or a challenge stops the site for at least a day; nothing counted); the batch-only contract (no per-job manual step).
+
+### Handoff: LinkedIn Mode B — Option A, Script-Disabled Job Pages (Claude; shared-boundary record)
+
+**Date:** November 8, 2026
+**From:** Claude main-product workstream
+**To:** Alex (review and closeout; the controlled LinkedIn live test); Codex (boundary awareness)
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `ddf5937`; approved by Alex on November 8 and committed as `42a647c` (not LinkedIn acceptance; no live test authorized). No live LinkedIn or WTTJ request was made.
+
+#### Completed
+
+- Site setting `detail.pageScripts` ("run" | "skip"; LinkedIn "skip") and the server override `PAGE_CAPTURE_<SITE>_PAGE_SCRIPTS` (`packages/core/src/page-capture.ts` `pageCaptureDetailPageScripts`).
+- Driver mode (`packages/browser-retrieval`): `launchBrowserDriver({ pageScripts: "skip" })` turns JavaScript off and lets only the requested main-frame document (and its redirects) leave the browser. Per-navigation `BrowserRequestCounts` (`packages/discovery/src/browser.ts`), carried on pages and stop errors.
+- Acquisition (`page-capture-acquisition.ts`): launches with the site's mode, records the counts per job and per pass, and refuses incomplete scriptless pages (`scriptlessPageIncomplete`; `INCOMPLETE_PAGE`).
+- Evidence package `retrieval-summary.json` (`diagnostics-package.ts` `retrievalSummary`).
+- Reduced real-page fixture `tests/fixtures/real-captures/linkedin-nov7-job-pages.json`, plus the scripted-versus-scriptless comparison tests.
+
+#### Current Contract / Assumptions
+
+- A scriptless read is saved only with a title and a description of at least 200 characters (a heuristic: an unusually short legitimate posting is a possible false positive, shown with its reason and Retry). A lone incomplete page is that job's counted attempt; two in a row defer the site's queued jobs one hour with `lastReason` `INCOMPLETE_PAGE`, uncounted.
+- `INCOMPLETE_PAGE` is a non-restriction deferral (not in the repository's friction list): `siteStoppedUntil` ignores it; the jobs' own `nextAttemptAt` holds them.
+- Feature 14's browser sources launch with scripts on (default), and WTTJ is read in the user's Chrome: neither is affected.
+
+#### Files Changed in Codex-Owned Areas
+
+- None.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (LinkedIn Mode B — Option A): unit 2,317, integration 427, E2E 60/60, gate and migration check clean.
+
+#### Known Issues / Blockers
+
+- Whether LinkedIn's logged-out limit counts subresource requests is unknown. Offline work proves extraction parity and one request per job, not avoidance of HTTP 429.
+
+#### Next Task
+
+- The controlled LinkedIn live test, separately authorized. It measures extraction correctness and retrieval reliability: jobs completed before any restriction, total page requests, failed attempts, automatic recovery and elapsed time. It keeps the one-action, up-to-25-job workflow; multi-day recovery alone is not acceptable performance.
+
+#### Do Not Change Without Coordination
+
+- The incomplete-page guard (no scriptless page is saved as a full read without a complete posting), and the default `skip` for LinkedIn with its `run` override.
+
+### Handoff: Final Pre-Live Corrections — D1, Salary Accuracy and Capture Parity (Claude; shared-boundary record)
+
+**Date:** November 8, 2026
+**From:** Claude main-product workstream
+**To:**
+- Alex: review and closeout, separate review of the proposed TDD amendment below, and the local acceptance sequence.
+- Codex: boundary awareness.
+
+**Status:** Implemented and verified offline on `ai_career_assistant_test`, on top of `42a647c`. Approved by Alex on November 8, 2026 for repository closeout and committed with this record. The D1 contract is adopted in Core Platform TDD v1.20 (Section 51; v1.19 archived unchanged). No live request and no paid call were made. Live acceptance is pending.
+
+#### Completed
+
+- **Salary, in the employer's terms.**
+  - `packages/core/src/compensation-arrangement.ts` holds the shared reading and labels: OTE only for explicit wording, target total in its own terms, base, base plus named variable pay, and includes variable pay. The formatters are in `apps/web/src/components/opportunity-facts.ts`.
+  - `packages/normalization/src/compensation.ts`: every variable-inclusive total is internally basis OTE; variable-only statements are not a salary.
+  - `job-text-facts.ts` keeps a target total's defining sentence (or a following "This range includes …" sentence) with its statement, and keeps an explicit "in addition to base salary … eligible for …" sentence with its base statement.
+  - Structured ranges (correction after Alex's review): `statementsForRange` links the description's wording to the range only through a statement of exactly that range. Unconnected wording is ignored; conflicting wording shows no label and is not confirmed base.
+- **D1** (approved November 8, 2026), in `database/src/manual-opportunity-repository.ts`: an unchanged browser-extension re-observation of the originating, current version re-normalizes the same evidence and corrects only stated, differing fact groups.
+  - It keeps user corrections, other listings' evidence, application-link precedence and age-derived posting dates.
+  - Its provenance cites the same source record.
+  - It records `sourceMetadata.normalizationCorrections` and returns `normalizationCorrected`.
+  - It is idempotent and makes no evaluation request.
+- **The three events** come from Core `reobservationEvent()` / `correctedFactLabels()` / `normalizationCorrectionsOf()` and are shown in:
+  - the Mode B status (`REFRESHED:CORRECTED`);
+  - the popup message;
+  - the job page source panel and provenance rows;
+  - the evaluation hint (`findListingVersionHint` `correctedAt`);
+  - the worker diagnostics (`reobservation`, `corrected`).
+- Residency: a U.S. requirement and an exclusion in one sentence now keep both (`residency.ts`).
+- Tests:
+  - `tests/integration/mode-a-mode-b-parity.test.ts` (44 tests, including structured-salary parity: parity, duplicates, D1 synthetic contract cases, D1 on the saved November 5–7 facts in Mode A, Mode B LinkedIn and the WTTJ tabs);
+  - `tests/unit/salary-display-contract.test.tsx` (26);
+  - `tests/unit/d1-reobservation-events.test.tsx` (6);
+  - updated `source-version-check` and display-string tests.
+
+#### Current Contract / Assumptions
+
+- `compensationBasis` keeps its vocabulary (BASE, OTE or null). Its meaning widened: OTE now means "includes variable pay, not confirmed base salary" (explicit OTE, target total or including bonuses). The display reads the employer's wording, never the basis alone.
+- Mode A and Mode B share one reader, envelope builder, capture mapping, normalizer and repository, so D1 and any normalization change reach both.
+- D1 is limited to browser-extension re-observations of the originating listing. Automated adapters, attached copies and manual jobs are unchanged, and there is no backfill.
+
+#### Files Changed in Codex-Owned Areas
+
+- `domains/customer-success/src/triage/pre-evaluator-triage.ts` and `domains/customer-success/src/evaluation/hard-filters.ts`: only the user-visible sentence for `OTE_NOT_CONFIRMED_BASE`. It now reads "includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary", so a non-OTE total is never called OTE.
+- The reason code, the policy, the evaluator stages, models, prompts, routing and schemas are unchanged.
+- `tests/unit/customer-success.test.ts`: one expectation updated for that sentence.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS.md (Final Pre-Live Corrections): unit 2,353, integration 471, E2E 60/60; the gate and migration check are clean.
+- A temporary probe on the unredacted stored versions (private evidence, test database, deleted afterwards) gave, for every record:
+  - the stored hash reproduced;
+  - one correction;
+  - one version;
+  - zero evaluations.
+
+#### Known Issues / Blockers
+
+- Nothing is live-verified.
+- WTTJ November 4 record gaps are extraction gaps: they arrive as changed postings (new versions), not as D1 corrections.
+
+#### Next Task
+
+- The Phase 1 runbook against the new commit, with each live step separately authorized by Alex.
+
+#### Do Not Change Without Coordination
+
+- The Salary wording and shared reading.
+- The BASE/OTE/null vocabulary of `compensationBasis` and its widened OTE meaning.
+- The D1 rules: evidence-only, no new version, idempotent, no evaluation.
+
+#### AMENDMENT RECORD — Core Platform TDD v1.19 → v1.20, Section 51 (D1)
+
+Status: APPROVED by Alex on November 8, 2026 and adopted as Core Platform TDD v1.20, with v1.19 archived unchanged. The adopted text below was proposed; v1.20 differs from it in two approved clarifications:
+- Paragraph B says "the same content hash: the hash over the listing's material fields defined above, which page noise such as layout, navigation or widget changes does not alter". The implementation uses one content hash.
+- Paragraph C says "Version 1.20 records D1", with no "(proposed)".
+Behaviour: D1 was approved on November 8, 2026 and is implemented on integration/final-evaluator-product (uncommitted). It is verified offline only; live acceptance is pending.
+Scope: Section 51, Automated Retrieval (Feature 11A): the re-observation paragraph, the current-version projection paragraph and its "History of this rule" paragraph. No other section, and not the Core AI Framework PRD v1.18, which does not state this rule.
+
+##### A. Re-observation paragraph
+
+Old (v1.19, verbatim):
+> "Unchanged content (the same hash over the listing's material fields, which excludes volatile metadata such as fetch times, counters, tracking parameters and source update stamps) moves only the last-seen times."
+
+Replacement:
+> "Unchanged content (the same hash over the listing's material fields, which excludes volatile metadata such as fetch times, counters, tracking parameters and source update stamps) moves the last-seen times. It never adds a source record.
+>
+> Normalization correction (D1, approved November 8, 2026). This applies to a browser-extension re-observation: a Single Capture, or a Mode B refresh that the selective re-observation rules made eligible. The re-observation must be of the listing the opportunity was found from, and its stored version must be the listing's current one.
+>
+> The stored evidence is then normalized again by the current shared normalizer and compared with the opportunity's current facts, field group by field group. A group is replaced only when all of the following hold:
+>
+> - the current reading states a value for it, or recognizes an explicit withdrawal;
+> - that value differs from the saved one;
+> - no fact in the group is user-corrected;
+> - no fact in the group is currently backed by another listing's evidence.
+>
+> A posting date computed from a stated age is never corrected, and a fact the current reading does not state is never cleared. The application link keeps its precedence rules.
+>
+> Corrected facts cite the same source record. The rows they replace are marked superseded, and the correction is recorded on that source record as a normalization-correction event (its time and the facts it changed).
+>
+> A repeat re-observation of the same evidence corrects nothing and writes no fact or provenance. Nothing is evaluated or requested.
+>
+> Automated adapters, attached copies from other sources and manual opportunities are not corrected this way, and there is no global backfill. The three events (an unchanged observation, a normalization correction and a source-content change) are distinguished in persistence, provenance, diagnostics and the user interface."
+
+##### B. Current-version projection paragraph, last sentence
+
+Old (v1.19, verbatim):
+> "Unchanged re-observations (the same content hash, including page noise) change nothing."
+
+Replacement:
+> "Unchanged re-observations (the same content hash, including page noise) never add a version. They change the opportunity's facts only as a normalization correction (above). Any other unchanged re-observation changes nothing."
+
+##### C. History of this rule, last sentence
+
+Old (v1.19, verbatim):
+> "Opportunities saved earlier keep their facts until their originating listing is next observed as changed; nothing is backfilled."
+
+Replacement:
+> "Opportunities saved earlier keep their facts until their originating listing is next observed, either changed (a new version) or, for a browser-extension listing, unchanged (a normalization correction of the same version). Nothing is backfilled globally. Version 1.20 (proposed) records D1: the November 5–7 acceptance records showed that the rule 'unchanged changes nothing' kept facts an earlier normalizer had misread, even after the user captured the same posting again."
+
+##### D. Rationale
+
+1. **The evidence.** All 14 saved records from November 5–7 reproduce their stored content hash exactly today. So under v1.19, capturing them again would be UNCHANGED, and they would keep their misread facts for as long as the employer leaves the posting untouched:
+   - TENEX.AI: arrangement "Unknown", which should be Hybrid with remote only by exception;
+   - Nearmap: arrangement and residency;
+   - Thomson Reuters: no compensation basis, and its target total cash range shown without its terms;
+   - Critical Start: closing date;
+   - AlertMedia: arrangement and residency exclusions;
+   - Juniper Square: tiers;
+   - several application links.
+
+   The user's own re-capture, the natural corrective action, did nothing.
+2. **Bounded and user-initiated.**
+   - Only a capture the user performs, or a Mode B refresh the existing eligibility rules already select, re-reads a job. There is no sweep, schedule or global backfill.
+   - Mode B eligibility is unchanged.
+   - Automated adapters are excluded, so routine feed runs never rewrite facts.
+3. **Evidence-safe.**
+   - The same evidence rules as a changed version apply:
+     - only stated values;
+     - groups changed as a unit;
+     - never clearing for absence;
+     - user corrections kept;
+     - another source's evidence kept.
+   - Two further protections apply:
+     - only genuinely different values are written, so the correction is idempotent and makes no needless writes;
+     - observation-time-dependent dates are excluded.
+4. **History and evidence preserved.**
+   - No source record is added or altered, apart from the additive correction event and its normalized time.
+   - Superseded provenance stays queryable.
+   - Duplicate relationships, first-discovered data and evaluation bindings are untouched.
+   - An evaluation made before a correction is flagged on the job page (informational only).
+5. **Changed-page versioning is unchanged.** A changed posting still adds a linked version and re-projects from it.
+
+##### E. Verification (offline only)
+
+- Isolated test database `ai_career_assistant_test`:
+  - Mode A (the real capture route and service);
+  - Mode B LinkedIn (results-page save, worker pass, scriptless reader);
+  - Mode B WTTJ (background-tab ingestor).
+- Real saved facts for: TENEX.AI, Nearmap, Thomson Reuters, Critical Start, AlertMedia, Juniper Square, Dataminr, FourKites (LinkedIn and WTTJ) and Beam.
+- A probe on the unredacted stored versions:
+  - every stored hash was reproduced;
+  - each record was corrected once;
+  - one version each;
+  - zero evaluations.
+- No live site and no other database was used. Live acceptance remains pending.
+
+### Handoff: LinkedIn Option A Phase 1 — P2028 Fixes F1–F4 (Claude; shared-boundary record)
+
+- **Date / base:** November 9, 2026, on top of `e2a8049` (`integration/final-evaluator-product`). Implemented and verified offline; approved by Alex for repository closeout and committed with this change. Root cause not identified.
+- **Why:** in the Phase 1 LinkedIn run, job 4476234680's capture transaction failed with P2028 "expired" (36,578 ms against 30,000 ms). It was handled as approved: counted once, retry after an hour, nothing saved, no evaluation.
+- **Root cause is not identified.** Confirmed:
+  - the transaction's own work is about 25 ms (p95 under 0.5 s);
+  - one step overran;
+  - a single lock wait cannot explain it.
+  Open hypotheses: H1 database or WSL stall; H2 worker process stall (JSDOM windows a possible contributor); H3 contention plus a second wait.
+- **What changed:**
+  - `database/src/capture-timing.ts` (new): AsyncLocalStorage per-step timing recorder.
+  - `manual-opportunity-repository.ts`:
+    - `captureLockTransaction`, now shared by all four capture-lock transactions;
+    - step timings;
+    - `statement_timeout` set transaction-locally after the lock (`captureStatementTimeoutFor`);
+    - the armed value is attached to errors.
+  - `page-capture-repository.ts`: read-only `describeCaptureOutcome`.
+  - `worker-errors.ts`: `isCaptureStatementTimeout` (57014 is transient only from an armed capture-lock transaction and never for a user-request cancellation); `statementTimeoutMs` and `cancelReason` in sanitized fields.
+  - `page-capture-acquisition.ts`:
+    - `observeIngestion` (timings, event-loop delay, memory);
+    - one bounded retry: 1 per job, 3 per pass, none while a job is `DB_PENDING` or after a failed retry; `ingestRetrievedListing` only;
+    - uncertain-commit resolution (`resolveUncertainCommit`);
+    - `job.retry` events and retry fields on `job.ingested` / `job.failed`;
+    - `closeParsedPage`, so JSDOM windows are closed in `finally`.
+  - `packages/discovery/src/browser.ts`: the window is closed on friction.
+- **Unchanged:** deduplication, normalization, D1, source versions, provenance, the 30 s / 15 s transaction options, the 20 s lock timeout, `DB_PENDING`, outage and probe accounting, the 1 h / 3-attempt rules, LinkedIn Option A, WTTJ Mode B, Single Capture otherwise (no recorder or retry there; only F2's 10 s statement limit applies to its capture transaction) and the evaluation worker's classification.
+- **Tests:**
+  - New: `tests/integration/p2028-capture-transactions.test.ts` (real 57014 stall, held capture lock, lost commit reply), `tests/unit/p2028-fixes.test.ts`, `tests/unit/p2028-jsdom-cleanup.test.ts`.
+  - Extended: `page-capture-db-failures.test.ts` (F3 rules).
+  - Adjusted: `mode-b-tenex-diagnostics.test.ts` (two failures for the old contract cases, plus a new one-off retry case).
+- **Next (each separately authorized by Alex):**
+  1. the Phase 1 follow-up restricted to job 4476234680;
+  2. a Single Capture regression pass.
+  Phase 2 stays blocked until those are done. On the next failure, read `job.retry` / `job.failed` `transactions`, `inFlight`, `eventLoopMaxMs` and `rssMb` to tell H1–H3 apart.
+
+### Handoff: November 9 LinkedIn Diagnostic Corrections (Claude; shared-boundary record)
+
+- **Date / base:** November 10, 2026, on top of `03aa99e` (`integration/final-evaluator-product`). Implemented and verified offline, including the six stored Q4 descriptions; approved by Alex for repository closeout and committed with this change.
+- **Evidence:**
+  - The November 9 LinkedIn Mode B round: one save, 25/25 ingested.
+  - The read-only diagnostic and Alex's Q1–Q4 on `ai_career_assistant_acceptance` found:
+    - Mode B (50) and Easyship used LinkedIn's job-page reader;
+    - Kerv and Staffr used its structured data (literal HTML; closing date = posted + 30 days);
+    - Papirfly and Kerv stated role-level hybrid working that no rule read.
+- **What changed (shared code only; nothing per workflow):**
+  - `apps/extension/src/extract.ts` `htmlText`: escaped structured markup is read once more, guarded.
+  - `packages/normalization/src/job-text-facts.ts`: office frequency and office-first attendance; `roleHybridRequirement`.
+  - `packages/core/src/extension-capture.ts`:
+    - `listingExpiryValidThroughSites` (adds LinkedIn to WTTJ and Otta);
+    - `pageReaderRevision` 2.
+  - `apps/web/src/server/extension-capture.ts`: uses the Core set.
+  - `database/src/manual-opportunity-repository.ts` `reprojectCurrentFacts`: listing-expiry closing-date retraction (`listingExpiryRetractionSourceField`).
+- **Unchanged:**
+  - Mode B orchestration, worker resilience, transactions and P2028 F1–F4.
+  - Refresh eligibility: no `minReaderRevision` raised.
+  - Deduplication; D1 otherwise; evaluator boundary.
+  - Other sources' validThrough.
+- **Decisions recorded:**
+  - SWEEP stays Unknown: company-model prose plus a London location satisfies no approved role-level rule.
+  - Busuu stays Unknown.
+- **Tests:**
+  - `tests/unit/nov9-linkedin-corrections.test.ts` (12);
+  - `tests/unit/nov9-linkedin-real-descriptions.test.ts` (12, on the six stored Q4 descriptions in `tests/fixtures/real-captures/linkedin-nov9-q4-descriptions.json`);
+  - `tests/integration/nov9-linkedin-closing-date.test.ts` (7, incl. the stored Kerv and Staffr records with Q2's provenance).
+- **Spec:** Core Platform TDD v1.21 adopts these corrections (approved by Alex on November 10, 2026; v1.20 archived unchanged); amendment record below.
+- **Next (each separately authorized by Alex):** the 25-record audit and any targeted live confirmation.
+
+#### AMENDMENT RECORD — Core Platform TDD v1.20 → v1.21 (November 9 LinkedIn corrections)
+
+Status: APPROVED by Alex on November 10, 2026 and adopted as Core Platform TDD v1.21, with v1.20 archived unchanged (byte-identical, `Archive/Core Platform TDD v1.20.docx`). The adopted text is the proposal below (A–D), unchanged. One correction was made at adoption, by Alex's instruction: the implementation status.
+- As proposed: "implemented on `integration/final-evaluator-product` on top of `03aa99e` (uncommitted, awaiting review)".
+- As adopted in v1.21's revision history:
+  - implemented on `integration/final-evaluator-product` at commit `eaf1cdfff45cdb4463e3375fb1f5c7ccf2a45665`;
+  - local and remote SHAs verified to match, working tree clean after the implementation closeout;
+  - offline regression verification complete;
+  - final live acceptance pending separate authorization.
+v1.21 also sets its own cover table to Version 1.21 / November 10, 2026. v1.20's cover table still reads 1.19 / October 31, 2026 and is kept as it is.
+Scope: Section 51 (the job-text fallback ¶856–857; re-observation ¶890) and the browser-extension paragraph (¶924). No other section, and not the Core AI Framework PRD v1.18.
+
+##### A. Bounded job-specific constructions (¶856)
+
+Old (v1.20, verbatim, the constructions sentence in part):
+> "… and bounded job-specific constructions: "This position is based in New York.", "This role is located in Chicago.", "Work from our Boston office.", "This is a full-time, NYC-Hybrid position." (employment type, work arrangement and location), "This position is hybrid.", "This is a fully remote role.", …"
+
+Insert after "This is a fully remote role.",:
+> "office attendance stated as a weekly count or frequency, with the office before or after it ("2 days a week in the office", "in the office twice a week", "attend our Richmond office twice a week"; one to four days is hybrid, five is on-site; never with "up to", "may", "occasionally", "optional" or a negation), a requirement the sentence opens with to work in a hybrid environment or model ("Must … be excited about working in a hybrid, collaborative environment.", "Comfortable working within a hybrid model …"),"
+
+Append to the sentence listing what the fallback never uses:
+> "… nor an employer's description of its own working model ("We are a hybrid working company", "Our hybrid work model …"), past experience ("Experience working in a hybrid environment") or offered alternatives ("a hybrid or remote model"), which state no arrangement for the role."
+
+##### B. Closing date (¶857, new sentence after the date rules)
+
+Insert:
+> "A source's structured closing date is an application deadline only where the source means one: a schema.org validThrough that is the listing's expiry states no closing date. These are LinkedIn (its JobPosting validThrough is datePosted plus 30 days, with no deadline label; November 9, 2026 acceptance records) and Welcome to the Jungle and Otta (a rolling expiry, October 27, 2026). A deadline the posting states in its own words is still read, and other sources' validThrough remains the closing date. No deadline is ever inferred from a posting date, a listing lifetime, benefit dates or a contract's length."
+
+##### C. Re-observation: retraction of an expiry read as a deadline (¶890, after the D1 paragraph's "… the application link keeps its precedence rules.")
+
+Insert:
+> "One reclassification is applied on any browser-extension re-observation of a listing (changed, or a normalization correction): a closing date whose current provenance is that same listing's source.closingDate, on a site whose validThrough is the listing's expiry (B), was never a deadline. When the new reading states no deadline, the closing date becomes Unknown, its row is superseded and a provenance row listing-expiry:source.closingDate records the retraction with the retracted value as its text. A deadline the reading states replaces it as usual. A closing date from the posting's words, from another listing, or from any other site is never retracted this way, and absence alone still clears nothing."
+
+##### D. Browser-extension reader (¶924, appended)
+
+Insert:
+> "A structured description whose HTML markup is itself escaped (LinkedIn's JobPosting, November 9, 2026) is read as the same text as that description on the page: when one parse holds no element and its text is markup, it is read once more, never a third time; text that merely contains "<", or real HTML with escaped tags in its prose, is read as written, and nothing in it runs. The capture's reader revision is 2 from November 10, 2026; no site's refresh minimum was raised for it, so saved jobs are corrected when next read (a Single Capture, or a refresh the existing rules select), never by a sweep."
+
+##### E. Rationale
+
+1. Evidence (Q1–Q4 on ai_career_assistant_acceptance, November 9–10, 2026):
+   - Mode B (50 records) and one Single Capture used LinkedIn's job-page reader: no literal HTML and no source closing date.
+   - Two Single Captures (Kerv, Staffr) used LinkedIn's structured data: literal HTML and a source closing date exactly 30 days after posting.
+   - Papirfly and Kerv stated role-level hybrid working that no rule read; Easyship and Staffr were read Hybrid; Busuu (company-wide "hybrid or remote") was correctly Unknown.
+2. One shared path: the reader and the normalizer are shared by Single Capture and Mode B; the corrections are made there, never per workflow.
+3. Evidence-safe:
+   - the new constructions are role-level and bounded, with the existing negation and indefinite-wording guards;
+   - company prose stays Unknown (SWEEP, Busuu);
+   - the retraction (C) touches only a value its own listing's expiry supplied, records why, and keeps the history.
+4. No refresh storm: no refresh minimum is raised; Mode B's job-page reader output is unchanged, so its records need no re-read.

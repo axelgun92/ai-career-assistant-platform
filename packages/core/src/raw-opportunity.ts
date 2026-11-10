@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { opportunitySourceTypeSchema } from "./opportunity";
+import { retrievalProvenanceSchema } from "./retrieval";
 
 const nullableText = z
   .string()
@@ -25,6 +26,9 @@ export const rawOpportunitySchema = z.object({
   sourceMetadata: z.record(z.string(), z.unknown()).nullable(),
   rawPayload: z.unknown().nullable(),
   discoveredAt: z.coerce.date(),
+  // Present only on listings produced by automated retrieval; manual
+  // capture never sets it.
+  retrieval: retrievalProvenanceSchema.optional(),
 });
 
 export type RawOpportunity = z.infer<typeof rawOpportunitySchema>;

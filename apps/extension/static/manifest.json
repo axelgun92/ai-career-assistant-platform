@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "AI Job Assistant Companion",
+  "version": "0.3.0",
+  "description": "Saves the job posting you are viewing into your local AI Job Assistant, when you ask it to.",
+  "minimum_chrome_version": "120",
+  "action": {
+    "default_title": "AI Job Assistant: open the side panel and read this page"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "scripting",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "optional_host_permissions": [
+    "https://www.welcometothejungle.com/*",
+    "https://app.welcometothejungle.com/*"
+  ]
+}

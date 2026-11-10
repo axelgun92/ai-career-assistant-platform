@@ -1,0 +1,349 @@
+import {
+  classifyRunOutcome,
+  emptyRetrievalRunCounts,
+  type DiscoveryConfiguration,
+  type RawOpportunity,
+  type RetrievalIngestionService,
+  type RetrievalRunCounts,
+} from "@ai-career/core";
+import type { PrismaRetrievalSourceRepository, RetrievalRunRecord, RetrievalSourceRecord } from "@ai-career/database";
+import {
+  AdapterError,
+  createBrowserSession,
+  createTitleMatcher,
+  isRemovalCapable,
+  missingEnvironment,
+  type AdapterRegistry,
+  type BrowserDriver,
+  type BrowserSession,
+  type RetrievalTransport,
+} from "@ai-career/discovery";
+import { classifyRetrievalWorkerError, formatWorkerError } from "./worker-errors";
+
+// The retrieval worker (feature 11). Each iteration queues scheduled runs
+// that are due, claims one queued run, executes its source's adapter and
+// ingests each kept listing in its own capture transaction. A listing that
+// fails is counted and the run continues. Retrieval never starts an
+// evaluation: retrieved opportunities arrive unevaluated, and evaluation
+// stays the user's explicit action through the budget and admission path.
+
+export type RetrievalRunStore = Pick<
+  PrismaRetrievalSourceRepository,
+  "enqueueDueRuns" | "claimNextRun" | "finishRun" | "failInterruptedRuns" | "recordListingObservations"
+>;
+
+export interface RetrievalWorkerDependencies {
+  store: RetrievalRunStore;
+  ingestion: RetrievalIngestionService;
+  registry: AdapterRegistry;
+  // A fresh (polite) transport for each run, with the adapter's minimum
+  // request interval where it declares one.
+  transport: (options: { minIntervalMs?: number }) => RetrievalTransport;
+  discovery: DiscoveryConfiguration;
+  env: () => Readonly<Record<string, string | undefined>>;
+  now: () => Date;
+  log: { info(message: string): void; warn(message: string): void };
+  // When listings already stored from a source (by adapter key) were last
+  // checked; adapters use it to send detail requests to unseen listings
+  // first. See PrismaRetrievalSourceRepository.lastCheckedListings.
+  lastChecked?: (source: string, externalIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
+  // Feature 14: the source's discovered listings still waiting for their
+  // details. See PrismaRetrievalSourceRepository.pendingListings.
+  pendingListings?: (sourceId: string, trackingScopeKey: string, since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date }>>;
+  // Feature 14: launches a fresh logged-out browser for one run of an
+  // adapter that requires one (see packages/browser-retrieval), and turns
+  // its pages into documents. Without it such an adapter cannot run.
+  browser?: {
+    launch(): Promise<BrowserDriver>;
+    parse(html: string, url: string): Document;
+    // How the session waits between page loads (tests pass a fake).
+    sleep?: (ms: number) => Promise<void>;
+  };
+  maxPages?: number;
+  maxDetailRequests?: number;
+  leaseSeconds?: number;
+}
+
+export interface RetrievalRunOutcome {
+  runId: string;
+  sourceId: string;
+  status: "COMPLETED" | "PARTIAL" | "FAILED";
+  counts: RetrievalRunCounts;
+  errorCode: string | null;
+}
+
+export const defaultMaxPagesPerRun = 5;
+export const defaultMaxDetailRequestsPerRun = 25;
+
+const safeMessages: Record<string, string> = {
+  NETWORK: "The source could not be reached.",
+  HTTP_STATUS: "The source returned an unexpected response.",
+  SERVER_ERROR: "The source had a server error; retrieval stopped.",
+  ACCESS_DENIED: "The source refused access; retrieval stopped.",
+  RATE_LIMITED: "The source rate-limited retrieval; retrieval stopped.",
+  RESPONSE_TOO_LARGE: "The source's response was larger than allowed.",
+  CONTRACT_MISMATCH: "The source's response no longer matches the expected format.",
+  CONFIG: "The source is not configured correctly.",
+  LISTING_FAILURES: "Some listings could not be stored.",
+  ADAPTER_UNAVAILABLE: "This source cannot run (unknown, unverified or missing settings).",
+  INTERNAL: "Retrieval failed unexpectedly.",
+};
+
+// The expiry a source states for a listing (We Work Remotely and Himalayas
+// expiresAt, Workday endDate): display-only evidence, never removal.
+function sourceExpiresAt(listing: RawOpportunity): Date | null {
+  const metadata = (listing.sourceMetadata ?? {}) as Record<string, unknown>;
+  const value = metadata.expiresAt ?? metadata.endDate;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies) {
+  const keepTitle = createTitleMatcher(dependencies.discovery.titleTerms);
+
+  // The run's outcome; a failure from the source carries any Retry-After it
+  // sent, which sets how long the source waits (feature 12).
+  async function finish(
+    run: RetrievalRunRecord,
+    status: RetrievalRunOutcome["status"],
+    counts: RetrievalRunCounts,
+    errorCode: string | null,
+    failure?: AdapterError,
+  ) {
+    const retryAfterSeconds = failure?.details.retryAfterSeconds;
+    await dependencies.store.finishRun(run.id, {
+      status,
+      counts,
+      errorCode,
+      errorMessage: errorCode ? (safeMessages[errorCode] ?? safeMessages.INTERNAL!) : null,
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      now: dependencies.now(),
+    });
+    return { runId: run.id, sourceId: run.retrievalSourceId, status, counts, errorCode };
+  }
+
+  async function execute(run: RetrievalRunRecord, source: RetrievalSourceRecord): Promise<RetrievalRunOutcome> {
+    const counts = emptyRetrievalRunCounts();
+    const adapter = dependencies.registry.get(source.adapterKey);
+    if (!adapter || !adapter.verified || missingEnvironment(adapter, dependencies.env()).length) {
+      return finish(run, "FAILED", counts, "ADAPTER_UNAVAILABLE");
+    }
+    if (adapter.requiresBrowser && !dependencies.browser) return finish(run, "FAILED", counts, "ADAPTER_UNAVAILABLE");
+    const config = adapter.configSchema.safeParse(source.config);
+    if (!config.success) return finish(run, "FAILED", counts, "CONFIG");
+
+    // A browser-assisted adapter gets a fresh browser for this run only,
+    // closed whatever happens.
+    let driver: BrowserDriver | null = null;
+    let browser: BrowserSession | undefined;
+    if (adapter.requiresBrowser && dependencies.browser) {
+      try {
+        driver = await dependencies.browser.launch();
+      } catch (error) {
+        dependencies.log.warn(`run ${run.id} could not start the browser ${formatWorkerError(error)}`);
+        return finish(run, "FAILED", counts, "INTERNAL");
+      }
+      browser = createBrowserSession(driver, {
+        minIntervalMs: adapter.minRequestIntervalMs ?? 5_000,
+        maxNavigations: adapter.browser?.maxNavigations ?? 1,
+        ...(adapter.browser?.authCookieNames ? { authCookieNames: adapter.browser.authCookieNames } : {}),
+        ...(adapter.browser?.detectFriction ? { detectFriction: adapter.browser.detectFriction } : {}),
+        parse: dependencies.browser.parse,
+        ...(dependencies.browser.sleep ? { sleep: dependencies.browser.sleep } : {}),
+      });
+    }
+    const trackingScopeKey = source.trackingScopeKey;
+
+    let result;
+    try {
+      result = await adapter.collect(
+        {
+          transport: dependencies.transport(adapter.minRequestIntervalMs ? { minIntervalMs: adapter.minRequestIntervalMs } : {}),
+          discovery: dependencies.discovery,
+          keepTitle,
+          env: dependencies.env(),
+          now: dependencies.now,
+          maxPages: adapter.maxPagesPerRun ?? dependencies.maxPages ?? defaultMaxPagesPerRun,
+          maxDetailRequests: dependencies.maxDetailRequests ?? defaultMaxDetailRequestsPerRun,
+          ...(dependencies.lastChecked ? { lastChecked: (ids: readonly string[]) => dependencies.lastChecked!(adapter.key, ids) } : {}),
+          ...(browser ? { browser } : {}),
+          ...(dependencies.pendingListings && trackingScopeKey
+            ? { pendingListings: (since: Date) => dependencies.pendingListings!(source.id, trackingScopeKey, since) }
+            : {}),
+        },
+        config.data,
+      );
+    } catch (error) {
+      if (error instanceof AdapterError) return finish(run, "FAILED", counts, error.code, error);
+      dependencies.log.warn(`run ${run.id} failed in the adapter ${formatWorkerError(error)}`);
+      return finish(run, "FAILED", counts, "INTERNAL");
+    } finally {
+      if (driver) {
+        await driver.close().catch((error: unknown) => dependencies.log.warn(`run ${run.id} could not close the browser ${formatWorkerError(error)}`));
+      }
+    }
+
+    counts.fetched = result.fetched;
+    counts.keptByTerms = result.listings.length + result.issues.length;
+    counts.failed = result.issues.length;
+    const stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }> = [];
+    for (const listing of result.listings) {
+      try {
+        const ingested = await dependencies.ingestion.ingest({
+          ...listing,
+          retrieval: { ...listing.retrieval!, retrievalSourceId: source.id, retrievalRunId: run.id },
+        });
+        if (listing.externalId) {
+          stored.push({ externalId: listing.externalId, opportunityId: ingested.opportunityId ?? null, sourceExpiresAt: sourceExpiresAt(listing) });
+        }
+        if (ingested.outcome === "CREATED") {
+          counts.created += 1;
+          if (ingested.decision === "PROBABLE_MATCH") counts.probable += 1;
+        } else if (ingested.outcome === "ATTACHED") counts.attached += 1;
+        else if (ingested.outcome === "UNCHANGED") counts.unchanged += 1;
+        else counts.changed += 1;
+      } catch (error) {
+        counts.failed += 1;
+        dependencies.log.warn(`run ${run.id} could not store a listing ${formatWorkerError(error)}`);
+      }
+    }
+
+    const storedCount = counts.created + counts.attached + counts.unchanged + counts.changed;
+    const status: RetrievalRunOutcome["status"] = result.halted || counts.failed ? (storedCount ? "PARTIAL" : "FAILED") : "COMPLETED";
+    const errorCode = result.halted ? result.halted.code : counts.failed ? "LISTING_FAILURES" : null;
+    await recordObservations(run, source, adapter, result, stored, { status, errorCode }, counts);
+    return finish(run, status, counts, errorCode, result.halted ?? undefined);
+  }
+
+  // Feature 13: what the run saw, after its listings are stored. Absence
+  // counts only on a complete run of a removal-capable source that was a
+  // successful retrieval; a failure here never fails the run.
+  async function recordObservations(
+    run: RetrievalRunRecord,
+    source: RetrievalSourceRecord,
+    adapter: NonNullable<ReturnType<AdapterRegistry["get"]>>,
+    result: {
+      coverage?: { observedListingIds: string[]; complete: boolean };
+      halted: AdapterError | null;
+      discovered?: string[];
+      unavailable?: string[];
+    },
+    stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }>,
+    outcome: { status: RetrievalRunOutcome["status"]; errorCode: string | null },
+    counts: RetrievalRunCounts,
+  ) {
+    if (!source.trackingScopeKey) return;
+    const removalCapable = isRemovalCapable(adapter);
+    const complete = result.coverage?.complete === true && !result.halted;
+    try {
+      const recorded = await dependencies.store.recordListingObservations({
+        sourceId: source.id,
+        runId: run.id,
+        trackingScopeKey: source.trackingScopeKey,
+        removalCapable,
+        stored,
+        observedListingIds: result.coverage?.observedListingIds ?? [],
+        ...(result.discovered?.length ? { discovered: result.discovered } : {}),
+        ...(result.unavailable?.length ? { unavailable: result.unavailable } : {}),
+        coverageComplete: result.coverage ? complete : null,
+        qualifying: removalCapable && complete && classifyRunOutcome(outcome) === "success",
+        at: dependencies.now(),
+      });
+      if (recorded.applied) {
+        counts.listings = { observed: recorded.observed, missing: recorded.missing, removed: recorded.removed, reappeared: recorded.reappeared };
+      }
+    } catch (error) {
+      dependencies.log.warn(`run ${run.id} could not record listing observations ${formatWorkerError(error)}`);
+    }
+  }
+
+  return {
+    // Startup recovery: called while holding the single-worker lock, with
+    // nothing in flight, so any RUNNING run was interrupted.
+    recover: () => dependencies.store.failInterruptedRuns(dependencies.now(), { regardlessOfLease: true }),
+
+    async runOnce(): Promise<RetrievalRunOutcome | null> {
+      const queued = await dependencies.store.enqueueDueRuns(dependencies.now());
+      if (queued) dependencies.log.info(`queued ${queued} scheduled run(s)`);
+      const claimed = await dependencies.store.claimNextRun(dependencies.now(), dependencies.leaseSeconds);
+      if (!claimed) return null;
+      return execute(claimed.run, claimed.source);
+    },
+  };
+}
+
+export type RetrievalWorker = ReturnType<typeof createRetrievalWorker>;
+
+// The worker loop: single-worker lock, startup recovery, then claim and run
+// until stopped. Database errors that look transient back off and retry;
+// anything else exits.
+export async function runRetrievalWorkerLoop(input: {
+  worker: RetrievalWorker;
+  lock: { isHeld(): boolean; acquire(): Promise<boolean> };
+  sleep(ms: number): Promise<void>;
+  shouldStop(): boolean;
+  log: { info(message: string): void; warn(message: string): void; error(message: string): void };
+  pollMs: number;
+  once?: boolean;
+  maxBackoffMs?: number;
+  // Persistent diagnostics (worker-diagnostics.ts): the lock, recovery,
+  // transient back-offs and the fatal exit, as structured events.
+  events?: { event(name: string, fields?: Record<string, unknown>): void };
+}): Promise<number> {
+  const maxBackoffMs = input.maxBackoffMs ?? 60_000;
+  const emit = (name: string, fields?: Record<string, unknown>) => input.events?.event(name, fields);
+  let failures = 0;
+  let recovered = false;
+  while (!input.shouldStop()) {
+    try {
+      if (!input.lock.isHeld()) {
+        if (!(await input.lock.acquire())) {
+          input.log.error("another retrieval worker is already running; exiting");
+          emit("worker.lock", { held: false, decision: "EXIT_ANOTHER_WORKER" });
+          return 1;
+        }
+        input.log.info("holding the single retrieval-worker lock");
+        emit("worker.lock", { held: true });
+      }
+      if (!recovered) {
+        const interrupted = await input.worker.recover();
+        if (interrupted) input.log.warn(`closed ${interrupted} interrupted run(s) as FAILED`);
+        emit("worker.recovery", { interruptedRetrievalRuns: interrupted });
+        recovered = true;
+      }
+      const outcome = await input.worker.runOnce();
+      failures = 0;
+      if (outcome) {
+        input.log.info(
+          `run finished runId=${outcome.runId} sourceId=${outcome.sourceId} status=${outcome.status} ` +
+            `errorCode=${outcome.errorCode ?? "-"} counts=${JSON.stringify(outcome.counts)}`,
+        );
+        emit("run.finished", { runId: outcome.runId, sourceId: outcome.sourceId, status: outcome.status, errorCode: outcome.errorCode, counts: outcome.counts });
+        if (input.once) return 0;
+        continue;
+      }
+      if (input.once) return 0;
+      await input.sleep(input.pollMs);
+    } catch (error) {
+      if (classifyRetrievalWorkerError(error) === "fatal") {
+        input.log.error(`fatal error; exiting ${formatWorkerError(error)}`);
+        emit("worker.fatal", { classification: "fatal", decision: "EXIT", error });
+        return 1;
+      }
+      failures += 1;
+      const delay = Math.min(input.pollMs * 2 ** failures, maxBackoffMs);
+      input.log.warn(`transient error (attempt ${failures}); retrying in ${delay}ms ${formatWorkerError(error)}`);
+      emit("worker.transient", {
+        classification: "transient",
+        attempt: failures,
+        delayMs: delay,
+        nextRetryAt: new Date(Date.now() + delay),
+        decision: "BACKOFF_KEEP_LOCK",
+        error,
+      });
+      await input.sleep(delay);
+    }
+  }
+  return 0;
+}

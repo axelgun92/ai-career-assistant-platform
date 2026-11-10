@@ -8,6 +8,705 @@ This changelog summarizes major implementation milestones and evaluator evolutio
 
 ## Unreleased
 
+Entries are newest first. The October 15 entries below describe the project as of October 15, 2026. The entries marked "added October 16, 2026" were recovered from Git history and the branch records. The Task 9 entry was added when Task 9 closed on October 16, 2026. The Features 1–10 Gap Closure entry was added at its closeout on October 17, 2026. The Feature 11A entry was added at its closeout on October 18, 2026. The Feature 11B entry was added at its closeout on October 18, 2026. The Feature 12 entry was added when Feature 12 was implemented and verified, awaiting review, on October 18, 2026. The Feature 13 entry was added when Feature 13 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14 entry was added when Feature 14 was implemented and verified, awaiting review, on October 19, 2026. The Feature 14B correction entry was added when it was implemented and verified, awaiting review, on October 23, 2026. The Feature 14B cross-source correction entry was added on October 26, 2026. The Feature 14B final cross-source batch and currency symbol correction entries were added on October 27, 2026. The Feature 14B live acceptance batch and round 2 entries were added on October 29, 2026. The Feature 15 entry was added when Feature 15 was implemented and verified, awaiting review, on October 31, 2026.
+
+### November 9 LinkedIn Diagnostic Corrections (November 10, 2026; verified offline on top of `03aa99e`; approved and committed at `eaf1cdf`; adopted in Core Platform TDD v1.21)
+
+- **November 9 LinkedIn Mode B live round:** one save of 25 loaded jobs, 25 claimed and 25 ingested (core one-action requirement passed).
+- **Shared reader:** a structured description whose HTML markup is itself escaped (LinkedIn's JobPosting) is read as the same text as the job page: no literal tags, the same content hash on either reader branch, and reader revision 2. No refresh minimum was raised.
+- **Shared arrangement reader:**
+  - office attendance as a weekly frequency ("twice a week"), with the office before or after it;
+  - a role requirement to work in a hybrid environment or model is Hybrid (Papirfly, Kerv).
+  - Company prose, past experience, alternatives and benefits stay Unknown (Busuu, SWEEP).
+- **LinkedIn validThrough is the listing's expiry, not a closing date** (with Welcome to the Jungle and Otta). A deadline the posting states is read.
+  - A closing date an earlier read took from it is retracted by the next read of the same job, with labelled provenance (`listing-expiry:source.closingDate`).
+  - Nothing else is cleared.
+- **Specs:** Core Platform TDD v1.21 adopts these corrections (§51 constructions, closing-date sources, retraction; extension reader and reader revision 2), approved by Alex on November 10, 2026. v1.20 is archived unchanged.
+- **Real evidence:** the six complete stored November 9 descriptions (Q4) are regression fixtures. Papirfly and Kerv read Hybrid; Easyship and Staffr stay Hybrid; Busuu and SWEEP stay Unknown. Kerv and Staffr give the same clean description and content hash on both reader branches, and their stored expiry dates are retracted on the next read.
+
+### LinkedIn Option A Phase 1 — P2028 Fixes F1–F4 (November 9, 2026; verified offline on top of `e2a8049`; approved and committed; root cause unconfirmed; live follow-up pending)
+
+The November 9 P2028 (LinkedIn job 4476234680, 36,578 ms against 30,000 ms, handled as approved: counted once, retry after an hour) has **no identified root cause**. Hypotheses H1 (database or WSL stall), H2 (worker process stall) and H3 (contention plus a second wait) remain open. These fixes make the next occurrence diagnosable and recover a one-off stall.
+
+- **F1 — per-step timing.** Every capture-lock transaction records fixed-name step timings (connection and begin, capture lock, statement timeout, each body step, commit). The record survives rollback, 57014, P2028 and failed commits, and names the step in flight and an uncertain commit. Per attempt the worker adds event-loop delay and memory. Recorded in `job.ingested`, `job.failed` and `job.retry`; integers and fixed names only.
+- **F2 — statement timeout after the capture lock.** min(10 s, the time left minus 2 s), at least 1 s, transaction-local. Lock waits keep their 20 s `lock_timeout` and 55P03 contention meaning. A 57014 is transient only from an armed capture-lock transaction and never for PostgreSQL's "user request" cancellation; any other 57014 stays fatal.
+- **F3 — one immediate retry.** A transient failure of a job's capture transaction is retried once after 2 s with the same capture (no new page request). Retries are limited to one per job and three per pass, and suppressed while a job is `DB_PENDING` or after a failed retry. If the retry fails, today's provisional, outage and probe handling is unchanged. An uncertain first commit is resolved from the database (listing identity, content version, opportunity, linkage, write time), never from an UNCHANGED outcome alone; the hand-off stays single.
+- **F4 — JSDOM windows closed** after every read, including on reader errors, unavailable pages and sign-in walls. Saved captures are identical with and without closing.
+- **Fixed during verification:** the step whose own statement failed was not reported in flight; it now is.
+- **Tests:**
+  - New real-database tests: statement stall → 57014 → retried and saved once; capture lock held → 55P03, not retried; lost commit reply → UNCHANGED, `FIRST_ATTEMPT_COMMITTED`, no duplicate.
+  - New unit tests: timing, classification, retry rules and JSDOM cleanup.
+  - The TENEX diagnostics cases were adjusted for the retry.
+
+### Final Pre-Live Corrections — D1, Salary Accuracy and Capture Parity (November 8, 2026; verified offline on top of `42a647c`; approved and committed; live acceptance pending)
+
+- **Salary field (one field, in the employer's terms).** Each amount carries its currency sign and code. What the range is follows the amounts:
+  - "(Base salary)";
+  - "base + commission";
+  - "+ bonus";
+  - "(Includes bonuses)";
+  - "(Target total cash: base + incentives)";
+  - "(OTE)", only when the employer says OTE or on-target.
+
+  Target total cash is never relabelled OTE. A target total's defining sentence (Thomson Reuters) is kept with its statement. "Pay equity", "internal equity" and negated variable pay add nothing. A shared Core reading (`compensation-arrangement.ts`) serves every Salary view.
+- **Structured salary and job-description wording.** A structured range (or a source salary field) takes the description's wording only from a statement of exactly that range, which becomes the Salary text; the source's own text stays in the source record. Wording elsewhere is never applied. Conflicting statements show no label and are not confirmed base. A base salary statement keeps the employer's explicit "in addition to base salary … eligible for …" sentence: FourKites shows "base + bonus + incentives + equity".
+- **Compensation basis (internal).** Every variable-inclusive total (OTE, target total, "including bonuses") is recorded as OTE internally, so the salary policy never treats it as base salary. The two user-visible reason sentences now say "includes variable pay (such as OTE, target total cash or bonuses)". Variable pay alone is never a salary.
+- **D1: normalization correction on an unchanged recapture (approved November 8, 2026).** It applies to Single Capture and eligible Mode B refreshes of the originating browser-extension listing.
+  - The same evidence is re-normalized, and only stated, genuinely different fact groups are updated, from the same source version (no new version), with superseded provenance kept.
+  - User corrections, other sources' evidence, application-link precedence and age-derived posting dates are kept. Nothing is cleared for being unread.
+  - It is idempotent and makes no evaluation request.
+  - The event is recorded on the source record, and the three events are shown distinctly in the popup, the Mode B status, the job page, the evaluation hint and the worker diagnostics.
+  - Automated adapters, attached copies and manual jobs are unchanged, and there is no backfill.
+- **Specs:** Core Platform TDD v1.20 adopts D1 in Section 51 (approved by Alex on November 8, 2026). It carries amendments A–C, the clarified unchanged-content hash and no provisional wording. v1.19 is archived unchanged.
+- **Mode A / Mode B parity** is proven through the real paths, with D1, on real LinkedIn and WTTJ pages and the saved November 5–7 facts. Duplicates: exact matches are reused, possible duplicates stay flagged and unmerged, and different listings stay separate.
+- **Residency:** a U.S. requirement and an "unable to hire in …" exclusion in one sentence now keep both.
+- Verified offline: unit 2,353, integration 471, E2E 60/60.
+
+### LinkedIn Mode B — Option A, Script-Disabled Job Pages (November 8, 2026; implemented and verified offline on top of `ddf5937`; approved and committed as `42a647c`; not LinkedIn acceptance)
+
+- **LinkedIn job pages are read without their scripts:** JavaScript off, and only the job page's own document is requested, its redirects followed. Every stylesheet, image, font, frame and other subresource is refused in the browser. Reversible with `PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS=run`. WTTJ (background tabs) and feature 14's browser sources are unchanged.
+- **Per-job request counts** (document requests, redirects, requests sent, requests refused by type) in the worker's diagnostics, page evidence, pass results and log line. The evidence package gains `retrieval-summary.json`: jobs saved before any restriction, request totals, attempts counted, recovery and elapsed time.
+- **An incomplete scriptless page is never saved:** a lone one is that job's attempt (`INCOMPLETE_PAGE`); two in a row stop the pass with nothing counted, and every LinkedIn job waits an hour, with the reason shown. The 200-character minimum is a heuristic; an unusually short legitimate posting could be refused (false positive), visibly, with Retry.
+- **Real November 7 pages compared offline:** the scriptless read matches the script-enabled read field by field (same capture, content hash and facts) with one request per job. Reduced real-page fixture `linkedin-nov7-job-pages.json`.
+- Verified offline: unit 2,317, integration 427, E2E 60/60. No live request; LinkedIn's response to the change is for the controlled live test.
+
+### Mode B — November 7 Live Round Follow-up (November 8, 2026; implemented, verified offline and approved; committed as `ddf5937`; LinkedIn acceptance pending)
+
+- **WTTJ Mode B Rev 3 accepted** (November 7 live round). LinkedIn not yet: LinkedIn answered HTTP 429 to the fourth logged-out page in five minutes.
+- **No Retry per job without a browser:** a worker with no browser leaves the batch waiting ("Waiting: No browser is configured…") and a worker with one reads it automatically, including jobs an earlier version parked in Awaiting details. Jobs behind a site stop say why they wait.
+- **TENEX.AI:** an office-first posting that offers remote work only to exceptional candidates is Hybrid, "with remote availability only by exception" (no office days inferred).
+- **Nearmap:** "Role Location:" is a location label; the continental U.S. is U.S. residence excluding Alaska and Hawaii.
+- **Thomson Reuters:** target total cash compensation is on-target pay; OTE is shown as "base salary plus target variable pay".
+- **WTTJ refresh dates:** a refresh records the read's time; "latest change found" uses when the version was stored.
+- Verified offline: unit 2,303, integration 418, E2E 60/60.
+
+### Mode B Rev 3 — Final Review and Persistent Diagnostics (November 6, 2026; implemented and verified offline on top of `58ef504`; awaiting approval)
+
+- **E4/E4b conclusion recorded:** the sixth LinkedIn job of the November 5 batch was TENEX.AI (4372638963), left ACQUIRING with nothing saved; the P2028's transaction remains unproven.
+- **LinkedIn apply link from the page as received** (approved precedence step 2) when the rendered page no longer has it; the browser driver returns the served HTML from the same response.
+- **Persistent retrieval-worker diagnostics** (sanitized JSON lines, crash-safe, local, 30-day retention), **opt-in page evidence** (`PAGE_CAPTURE_EVIDENCE_DIR`, 7-day retention) and **`pnpm diagnostics:package`** (read-only failure evidence package; test or acceptance database only).
+- Hardening: explicit options and names for the retrieval-run transactions; `stageBatch` named.
+- **Real-text fixes from the E4 archive:** Critical Start's "The application deadline for this position is …"; AlertMedia's "Location: Position is fully remote …", U.S. residence and "do not hire candidates residing in the following states: …"; Juniper Square's U.S. tier no longer made primary when Canada is open ("2 Canadian Provinces"). Regression fixture of the three public descriptions.
+- **Diagnostic security:** folders inside any Git checkout refused (through links, from any working folder); owner-only files enforced on existing files and folders; broader secret redaction in every logged string; `pnpm diagnostics:cleanup`; `.gitignore` backstop.
+- Verified offline: unit 2,288, integration 416, E2E 60/60, including the 25-job TENEX.AI scenarios and the real-text cases.
+
+### Workstream B — Mode B Live-Round Fixes (November 6, 2026; structural work and E4-independent gaps implemented and verified offline; E4-dependent fixes and the live round pending)
+
+- **Worker resilience:** one job's database error no longer ends the pass or the worker. Lock contention requeues uncounted; a job's own refused data counts one attempt; a transient failure (incl. Prisma P2028) is provisional until the next job or a capture-lock probe proves it, and an outage counts nothing. Diagnostics name the P2028 form and transaction.
+- **One set of capture-transaction options** (15 s / 30 s, 20 s lock wait) for every capture-lock transaction; batch staging takes two queries per batch.
+- **Selective re-observation:** a later save re-reads a saved job only when its last read is outdated (reader revision), incomplete for 24 h or more (at most 3 in a row) or 14 days old; same job, no second hand-off; failures restore it untouched.
+- **Evidence-based updates:** stated values update their field group; unstated values are kept; a partial salary never overwrites a saved one; only the posting's own explicit words withdraw (closing date, salary "not disclosed", work arrangement "to be determined"), never a "Not specified" label.
+- **Refresh and post-save recovery:** a transient database failure during a refresh is uncounted and the saved job untouched; a job saved before its item could be marked is never charged and is re-read onto the same job; a restriction met while reading saved jobs again keeps the site stopped; an unchanged re-read and the read's own time stop needless re-reads.
+- **Evaluation worker unchanged:** only the retrieval worker retries P2028 and lock timeouts.
+- **LinkedIn "Apply on LinkedIn (listing page)"** when no employer link is found; never replaces an employer link. Careers front pages are never application links.
+- **Residency exclusions** (additive field and migration), **country salary tiers** with an evidence-supported primary, the ", Oregon" list-parsing fix, and saved-job company/location on Captured Jobs.
+- Verified offline: unit 2,260, integration 411, E2E 60/60.
+
+### Workstream B — Capture Correctness (November 5, 2026; implemented and verified offline from E1/E2/E3 evidence; approved and committed; live confirmation pending)
+
+- **WTTJ descriptions complete:** the reader adds the posting's own rendered blocks after its structured description ("We're looking for", "How we hire"), or the structured data's qualifications when the page has not rendered. Generic, never doubled.
+- **Batch background tabs** wait for the page to render (re-reads +2 s, +5 s, +10 s) before taking a structured-data-only read, so Apply links and header tags are captured.
+- **WTTJ header remote tags** normalized: "No remote" → On-site, "A few days home" → Hybrid, "Fully-remote" → Remote.
+- **LinkedIn friction:** only a sign-in/checkpoint address, a shown challenge, or a shown sign-in prompt with no loaded card behind it count. A shown sign-in modal over loaded cards is read through and reported (Decision 2). The hidden reCAPTCHA badge (the cause of the false FRICTION), hidden sign-in dialogs, the scroll lock and the app promotion never stop a read. Nothing is dismissed, clicked or bypassed.
+- **Real-evidence regression fixtures** for all 20 E1 records, 9 E2 pages and 3 E3 states.
+
+### Salary Policy v4 (November 5, 2026; implemented, verified offline and approved)
+
+- **U.S. review band (D-P1):** a U.S.-residence minimum of $55,000–$59,999 is Review / Needs Review, not Reject; below $55,000 is still rejected.
+- **Lower-cost exception (D-P2):** a non-U.S. minimum below $50,000 is Review / Needs Review only in a configured lower-cost country; elsewhere it is still rejected.
+- One shared policy (`cs-salary-policy-v4-ecb-2026-10-14`) for the triage and the evaluator's hard filter. No schema, prompt, model or routing change.
+- No new deterministic rule for role titles, working hours or travel (Alex's decision; role and travel stay with the evaluator).
+
+### Pre-Evaluation Review, Overlapping Captures and Triage Policy Mapping (November 5, 2026; implemented and verified offline; committed as `39757c1`)
+
+- **Dashboard:** the lifecycle view is renamed **Pre-Evaluation Review** (same meaning, statuses and URL).
+- **Overlapping captures:** a later batch reports jobs an earlier capture already added as **already in AI Job Assistant**, not "already in progress". Each capture records which of its jobs were already saved. The side panel and Captured Jobs mark them. Two overlapping batches (10 + 10, 3 shared) give 17 jobs, and both captures stay intact.
+- **Cross-method:** a job saved as a Single Job and on a results page is one opportunity and one row, labelled "Results page and single job". New extension source records carry `capture.method` (provenance only; the content hash is unchanged).
+- **Triage policy mapping:** 21 synthetic-profile cases map Alex's stated requirements to the existing triage. No rule was added or changed. Two differences are reported for decision (the U.S. $55–59.9k band; non-U.S. below $50k in lower-cost countries), and three constraints have no deterministic rule (role relevance, working hours, mandatory travel).
+- **Verified:** offline, on `ai_career_assistant_test` only.
+  - Unit: 2,181 passed, 6 skipped.
+  - Integration: 49 files, 380 tests.
+  - E2E: `extension` 8/8, `page-capture` 4/4.
+
+### Extension Side Panel, Captured Jobs, Setup & Connection and Triage at Save (November 5, 2026; implemented and verified offline; committed as `6795fe2`)
+
+- **Side panel (extension 0.3.0):** the toolbar button opens a Chrome side panel (no popup).
+  - Explicit **Single Job | Batch Capture** modes: Single Job never reads a results page; Batch Capture never shows the single-job fields.
+  - It follows the page shown and asks for a toolbar click where it has no access. The only new permission is `sidePanel`; no new host permission.
+  - **View current capture** / **View results** / **Previous captures**, with each capture's jobs and links to the app.
+- **Capture history:** additive `PageCaptureSession` (each results-page save and its staged items, in page order, with counts; no job copied) and nullable `ExtensionPairing.lastExtensionVersion`, in migration `20261105090000_page_capture_session`.
+- **Captured Jobs** (`/extension/jobs`, formerly "Jobs from results pages"): single-job and results-page captures in one list, one row per job, with method, status, site and session filters, and capture history.
+- **Setup & Connection** (`/extension`): Pair New Extension; paired browsers with last use and reported version; **Unpair / Revoke Access** with a confirmation naming the pairing (captured jobs kept); troubleshooting; installation/updates; supported sites and modes from the registry.
+- **Triage at single-job save:** `EvaluationService.assessTriage`, triage only (no admission, budget, queue or provider call). With no active profile the job is saved and reported not triaged. Batch rows with no profile read "Added; not triaged yet: no active profile".
+- **Dashboard:** "To triage" is now **Not acted on** (URL unchanged; since renamed **Pre-Evaluation Review**); a **Needs Review before evaluation** count links to the triage queue; the opportunity page says when triage has not run.
+- **Diagnostic (Workstream A):** root causes recorded in CURRENT_PROGRESS. The WTTJ extraction, Apply-link, normalization and LinkedIn friction fixes (Workstream B) wait for evidence.
+- **E2E:** four Codex-owned assertion lines updated for the approved wording, and one helper cleanup line for orphaned sessions.
+- **Verified:** offline, on `ai_career_assistant_test` only.
+  - Unit: 93 files passed, 1 skipped (2,158 passed, 6 skipped).
+  - Integration: 48 files, 378 tests passed.
+  - E2E: `extension` 8/8, `page-capture` 4/4, `dashboard` 4/4, `pre-evaluator-triage` 1/1.
+  - 27 migrations verified in order.
+
+### Codex E2E Cleanup — Grouped 59-Test Verification Complete (November 4, 2026; accepted for closeout)
+
+- Corrected four stale triage-era E2E fixtures and their deterministic helper data while preserving the production triage gate, evaluator contract, and exact Apply / Review / Skip expectations.
+- Added narrow Windows/runtime test-harness corrections for Chromium extension-ID hashing, portable `tsx` invocation, and measured asynchronous UI transitions. No assertion was removed, no retry or skip was added, and no product behavior was weakened.
+- Corrected the shared browser-session timestamp so the driver invocation itself begins the locked minimum interval; stabilized an integration comparison by sorting otherwise unordered evidence rows by immutable ID.
+- Post-synchronization evidence includes 2,144 unit tests passed (6 skipped), focused coverage for both integration corrections, and 12/12 extension plus page-capture E2E tests.
+- **Grouped E2E result:** all 59 tests have passing evidence on the unchanged final implementation and deterministic configuration. The latest uninterrupted attempt was 31 passed, 1 failed and 27 unexecuted; the failed daily-budget case then passed unchanged, the ordered downstream group passed 25 tests, and the two Companies tests passed in focused verification after their first-use Next.js routes compiled.
+- Traces and server logs showed a 6.9-second slow-filesystem benchmark, cache compactions of 31.6–66 seconds, the dynamic company page spending 14.8 of 15.7 seconds in Next.js rather than application code, and successful HTTP responses. The resulting failures were environmental compilation/stalled-server events, not application regressions.
+- Verification used only `ai_career_assistant_test` and deterministic fixtures. No live/provider/paid call was made; normal and acceptance databases were untouched.
+- **Acceptance wording:** grouped E2E verification is complete and Alex accepted it as sufficient for this closeout. A complete uninterrupted 59/59 run did not pass and was deliberately waived; it must not be described as a full-suite pass.
+
+### Mode B — Welcome to the Jungle / Otta Background-Tab Detail Reading, P2 (November 4, 2026; committed `17d2a32`; verified offline; not live-accepted)
+
+- **One action:** "Save selected jobs" on a Welcome to the Jungle results page (up to 25 loaded jobs) asks for the WTTJ-only optional host permission inside the click; declined, nothing is staged. Granted, the service worker sends the batch and reads every job automatically in sequential background tabs of Alex's Chrome (≥ 12 s apart, 30 s load timeout, re-reads at +2 s/+5 s without reload), closing only its own tabs.
+- **Server:** new pairing-authenticated routes `POST /api/extension/page-captures/items/<id>/{start,details,result}` and `POST /api/extension/page-captures/stop` (`page-capture-tabs.ts`). Each page is checked to be the staged job before it goes through the shared ingestion path (moved verbatim out of the worker pass into `createPageCaptureIngestor`) and the existing triage-gated evaluation request.
+- **Safeguards:**
+  - an access restriction stops the batch and the site for ≥ 24 h, with no automatic resume (only a new save reads again);
+  - an identity mismatch stops the batch;
+  - 404/410 → No longer available, and an unreadable page → Awaiting details, continuing;
+  - a closed tab → Interrupted, never reopened;
+  - Stop and a removed permission stop the run;
+  - a run never survives a browser restart, and jobs left queued for 60 minutes become Interrupted.
+- **WTTJ card reader:** `/en/get-started/jobs-preview` is a results page; a structural company selector and the posted date, from the real F0 cards (now a regression fixture).
+- **Not offered by default:** WTTJ stays `cardVerified`/`detailVerified: false`. The new `PAGE_CAPTURE_ACCEPTANCE_SITES` setting enables it for live acceptance only. The worker never fetches a background-tab site.
+- **Extension 0.2.0 manifest:** adds `alarms` and the two optional WTTJ host permissions.
+- **No change to LinkedIn's behaviour, the schema, E2E files, triage or the evaluator.**
+- **Verified:** offline only, on `ai_career_assistant_test`, with no WTTJ request, no permission grant and no live browser.
+  - Typecheck, lint, `prisma validate`, extension build and `git diff --check` pass.
+  - Unit: 92 files passed, 1 skipped (2,144 passed, 6 skipped).
+  - Integration: 47 files, 373 tests passed.
+
+### Mode B — LinkedIn Enabled; Welcome to the Jungle / Otta Not Complete (November 4, 2026; committed `77f7321`)
+
+- **LinkedIn enabled** for Mode B on its verified evidence: F0 (5 real logged-out results cards, read exactly) and P1 (PASS, 5/5 job pages read in a fresh logged-out browser at `c946e1b`). Only the registry flags changed; every safeguard is unchanged (5 s spacing, ≤ 25 per batch and pass, ≥ 24 h friction stop, `li_at` stop, LinkedIn friction checks). Not complete until LinkedIn's targeted end-to-end acceptance.
+- **Real-fixture regression coverage:** the F0 cards in `tests/fixtures/page-capture/linkedin-f0-cards.json`; unit coverage of exact card reading, the production registry and intake, and the LinkedIn job-detail reader path; integration coverage on the test DB from real cards through acquisition, ingestion and the real triage, plus idempotency, Mode A re-observation and the interstitial stop.
+- **Welcome to the Jungle / Otta:** F0 done; P1 BLOCKED (HTTP 403 on the first job page; not repeated); P3 unsupported (cards carry no job description). Not offered, not complete. P2 is the chosen mechanism (single Save action for up to 25 loaded jobs, sequential background tabs, fully automatic); its implementation needs separate approval and is followed by live acceptance. A separate three-job proof-of-concept phase was planned and then removed the same day.
+- **Verified:** offline only, on `ai_career_assistant_test`, with no live LinkedIn or WTTJ request and no provider or evaluator call; the normal and acceptance databases do not exist in this container and were not touched. Typecheck, lint and `prisma validate` pass (no schema change, so no migration check was needed). Unit: 90 files passed, 1 replay file skipped (2,091 passed, 6 skipped), including the new `page-capture-linkedin` (4) and the updated `page-capture` registry test. Integration: 46 files, 368 tests passed, including the new `page-capture-linkedin` (3). `browser-driver` (4) needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to point at an installed Chromium; it failed when run without it and passed with it. E2E: the `extension` (8/8) and `page-capture` (4/4) projects pass; no E2E file was changed. `git diff --check` is clean and `apps/web/next-env.d.ts` is untouched; the test database was left clean.
+
+### Extension Mode B — Bounded Results-Page Ingestion (November 3, 2026; implemented and verified offline; not yet committed or live-accepted)
+
+- **Two extension modes.**
+  - **Mode A**, "Read this page": the single-job capture. It is unchanged and optional.
+  - **Mode B**, "Save jobs on this page": reads up to 25 already-loaded job cards on a supported results page (`apps/extension/src/results.ts`), with no autoscroll, paging, crawling, clicking or navigation and no request to the site. It shows a preview with per-job deselect and sends nothing before Save.
+- **Ingestion, not bookmarking.**
+  - Saved jobs are staged in the additive `PageCaptureItem` work queue (migration `20261103090000_page_capture_item`; `POST /api/extension/page-captures`).
+  - For a site whose detail reading is verified, the retrieval worker reads each job's own page in a fresh logged-out headless browser. The Feature 14A session rules apply: sequential, the site's interval, at most 25 per pass, and a friction stop with a backoff of at least a day.
+  - The page is read with the unchanged single-job reader and ingested through the unchanged capture path, with Mode A identity, `BROWSER_EXTENSION` provenance and `discoveredAt` = the first batch sighting.
+  - Each new opportunity is handed once to the existing triage-gated evaluation request: Evaluate goes to admission; Needs Review and Reject create no evaluator work.
+- **Per-job fallback:** Awaiting details, with Retry, Dismiss, Restore and Open job, on the new **Jobs from results pages** page (`/extension/jobs`). Such a job is never an opportunity and never evaluable.
+- **Sites:** LinkedIn and Welcome to the Jungle / Otta are the V1 sites; Wellfound is excluded. Both stay unverified and not offered until their F0 results-page fixtures (`tests/support/page-capture-fixture-export.js`) and the bounded P1 detail experiment (`pnpm page-capture:verify`, local runtime, Alex's authorization) pass. Mode B is not complete for either site yet.
+- **Mode A triage outcomes** (the triage handoff's extension contract): the popup's Request evaluation now words Needs Review and Reject ("nothing was spent"), follows only a queued evaluation, and offers no decision buttons.
+- **Unchanged:** the evaluator, the triage, the single-job reader and envelope, `capturedListing()`, ingestion, normalization, deduplication, and Features 13 and 15–18. No configured retrieval source is created.
+- **Verified:** offline only, on `ai_career_assistant_test`; no live, provider, paid or evaluator call; the normal and acceptance databases do not exist in this container and were not touched; typecheck, lint, `prisma validate`, production web build, extension build, `git diff --check`; `apps/web/next-env.d.ts` untouched.; `db:verify-migrations`: all 26 migrations applied in order to a temporary database; only the documented Recommendation default drift; temporary database dropped.; Unit: 87 files passed, 1 replay file skipped (2,072 passed, 6 skipped). New suites: `page-capture` 17, `page-capture-reader` 10, `page-capture-ui` 6, `extension-triage-outcomes` 3.; Integration: 45 files / 365 tests, including `page-capture` (4): staging creates nothing; acquisition → real ingestion → real triage, with EVALUATE admitted and NEEDS_REVIEW/REJECT creating no admission, evaluation or semantic attempt; idempotent repeats; Mode A re-observation; no RetrievalSource or RetrievedListing.; E2E, every project run sequentially (`--no-deps`), plus each formerly blocked test run on its own: 55 passed, 4 failed, 0 not run (59 tests). The new `page-capture` project passed 4/4: read loaded cards, deselect, stage, Awaiting details with Retry/Dismiss/Restore, automatic acquisition, Evaluate/Needs Review/Reject, the Needs Review decision in the triage panel, and Mode A re-observation plus a Mode A REJECT message with no polling. The `extension` project passed 8/8; **one extension test was updated narrowly to the triage contract:** `extension.spec` "pair, read, … request an evaluation, and capture again". Its fixture job is legitimately held as Needs Review, and the test had encoded the pre-triage "queued" step. It now asserts the truthful held message: not queued, no polling, no evaluation. It then releases the job with **Evaluate** in the existing triage panel and checks that the reopened popup follows the queued evaluation to its recommendation. The later test "running and failed states" passed unchanged, proving that a `QUEUED` request still starts the normal polling flow.; **All 4 remaining failures reproduce identically on the untouched `e84c1cc` baseline**, in older web-app specs whose fixtures predate the post-`45d5fff` triage/evaluator changes: `evaluation-results` "material ambiguity … Review" and `dashboard` "search, filter, sort…": the deterministic helper worker ends FAILED; `golden-path` "golden path…" and "recovery…": triage holds the fixture, so there is no "Evaluation accepted and queued". They need a coordinated fixture decision (Codex / Alex) and are not fixed here.
+
+### Pre-Evaluator Triage Admission/Backlog Enhancement (November 2, 2026; committed as `5ac3c9d`)
+
+- Added a conservative deterministic gate after normalization/deduplication and before budget admission or evaluator enqueue. The exact outcomes are `EVALUATE`, `NEEDS_REVIEW` and `REJECT`.
+- `NEEDS_REVIEW` and `REJECT` create no evaluator, task, admission, deferral or semantic-operation rows. Review-held jobs appear on `/budget` and opportunity pages with exactly **Evaluate** and **Reject** actions; Evaluate enters the existing admission/backlog path and Reject stops before spend.
+- Triage uses structured normalized salary, residency, work-arrangement and conservative work-authorization facts with existing profile policies. Unknown, incomplete, ambiguous or conflicting hard prerequisites are held for review; only definite incompatibility rejects. Seniority, employment type, role fit, travel and other semantic judgments remain outside triage.
+- Added the additive `PreEvaluatorTriage` persistence model and migration `20261102090000_pre_evaluator_triage`. One record per Opportunity keeps reasons, causal fields, an input fingerprint, profile/version, assessment timestamp and optional manual decision. Reassessment refreshes the automatic result without duplicating the opportunity, corrupting provenance/history or silently erasing a manual choice.
+- Preserved the evaluator boundary: no prompt, route, semantic schema, six-released/fifteen-withheld field decision, Ghost Job Risk behavior or deterministic Apply / Review / Skip logic changed.
+- Verified offline only against `ai_career_assistant_test`: all 25 migrations in order; 83 unit files passed plus one replay file skipped (2,036 passed, 6 skipped); 44 integration files / 361 tests; focused admission/lifecycle/evaluator/normalization/dedup tests; dedicated Playwright E2E; typecheck, lint, production web build, Prisma validation and diff check. No live/provider/paid calls; normal and acceptance databases untouched.
+- Historical boundary: `45d5fff` remains the authoritative final-integration state before triage. Historical/versioned specifications and `MILESTONES_1_10.md` were not rewritten.
+
+### Feature 18 — Company Intelligence (October 31, 2026; implemented, verified and accepted; committed)
+
+Built to the approved Feature 18 contract (October 31, 2026; Customer Success PRD v1.16 §19). It completes main-product features 1–18.
+- **Companies** (`/companies`, a top-level navigation entry after Market), a page per company (`/companies/[id]`), `GET /api/companies` and `GET /api/companies/[id]`; the opportunity page links its company. Read-only: no migration, no stored aggregate, no evaluation, retrieval or provider call.
+- **Identity:** a company is the Company rows sharing an exact normalized name (the dashboard filter grouping); any member id opens it; different legal entities or brands stay separate and the page says so; no fuzzy matching; jobs without a company are counted only. A role is one canonical opportunity.
+- **Observed postings** by month first seen (never "hires"); listed / no longer listed / unknown from Feature 13; listed again after confirmed removal, relisted under a new listing ID with the same requisition (stored MATCH evidence), closed on the employer board but seen elsewhere, unchanged ≥ 30 days; recurring role groups (≥ 2 roles in one title group) kept apart from reposts; Ghost Job Risk not summarized.
+- **Arrangement and regions** as separate distributions (no "remote-friendly" label); **your history** with the Feature 17 outcomes (a recorded "no response" apart from nothing recorded); **timing** in whole days — observed listing duration per listing (each listing's own first sighting to its own confirmed removal; still-listed listings as lower bounds) and application-process timing (progress dates are when you recorded them), values below 5, median from 5 — instead of "hiring speed"; company type (segment, customer type, business model) from each role's latest completed evaluation; salary only as stated text.
+- **Index:** companies with at least one role first observed in the window (applications alone never add a company; a company page opened directly still shows its applications by application date, even with no role in the window); observed roles, currently listed, listed again after removal (Feature 13 reappearance only; a same-requisition relisting is a separate company-page signal), recurring role groups, remote of known arrangements, applications, interviews, offers, last observed; filters by name, window (30/90/180 days, 1 year, all time, custom), title group, arrangement, listed roles, applications, signals; ordered by counts or name, 50 per page; no score, rank or rate ordering.
+- **Shared code:** Feature 16's `latestCompletedEvaluation` generic over the evaluation shape; Feature 17's `dateOnlyDay` and `originIdentityOf` exported and `personalOutcomeOf` typed on the fields it reads (no behaviour change).
+- **Unchanged:** evaluator stages, prompts, models, routing, schemas, recommendation logic and Ghost Job Risk; deduplication; the listing ledger; budget; retrieval; schema (24 migrations).
+- **Verified:** October 31, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 76 files / 1,856 tests; integration 43 files / 354 tests; E2E 54/54 (2 new in the `companies` project); web and extension builds; `git diff --check` clean; `apps/web/next-env.d.ts` restored.
+- **Specs:** Core AI Framework PRD v1.18, Customer Success PRD v1.16, Core Platform TDD v1.19, Customer Success TDD v1.16 (previous versions archived unchanged); HANDOFFS records the evaluator paths read and that Ghost Job Risk is not consumed.
+
+### Feature 17 — Personal Job-Search Analytics (October 31, 2026; implemented, verified and accepted; committed)
+
+Built to the approved Feature 17 contract (October 31, 2026; Customer Success PRD v1.15 §19).
+- **My search** (`/my-search`, a top-level navigation entry) and `GET /api/my-search`. Read-only: no migration, no stored aggregate, no evaluation, retrieval or provider call.
+- **Cohorts:** applications by application date (Feature 15 `outcomeOf`, once per job), evaluations by completion date; windows 30/90/180 days, all time (default), custom.
+- **Outcomes:** 30-day maturity; interview rate over mature applications; offer rate over resolved applications (screening/interviewing/final round still open are "In process" and excluded); interview → offer over concluded interviews.
+- **Recommendation at application:** exact Mark-as-applied time, else calendar-day comparison; same-day order unknown kept apart; no end-of-day assumption.
+- **Roles, gaps, sources:** evaluator view beside outcomes by title group (no composite, rank only n ≥ 5); structured Genuine Gaps by category and exact wording within one profile version and compatible Resume Match version (v2); personal outcomes by first-discovering source (user-collected apart).
+- **Also:** where applications are not progressing (≥ 5 mature, no interview), Apply recommendations not applied (neutral), company type by customer segment and type; no accuracy, effort or learning figures; the outcome disclosure.
+- **Shared code:** Feature 15's `outcomeOf` takes only the fields it reads; `sourceInfoOf` exported (no behaviour change).
+- **Unchanged:** evaluator stages, prompts, models, routing, schemas, recommendation logic and Ghost Job Risk; deduplication; budget; retrieval; schema (24 migrations).
+- **Verified (isolated test database only; no live or provider calls):** October 31, 2026; isolated test database `ai_career_assistant_test` only; no live or provider calls; the normal and acceptance databases were not touched: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 74 files / 1,824 tests; integration 42 / 348; E2E 52/52 on the first full run (including the new `my-search` project); web and extension builds; `git diff --check`; `apps/web/next-env.d.ts` restored.
+- **Specs:** Core AI Framework PRD v1.17, Customer Success PRD v1.15, Core Platform TDD v1.18, Customer Success TDD v1.15 (previous versions archived unchanged); HANDOFFS records the Resume Match v2 → v3/v4 Genuine Gap boundary.
+
+### Feature 16 — Job-Market Analytics (October 31, 2026; implemented, verified and accepted; committed)
+
+Built to the approved Feature 16 contract (October 31, 2026; Customer Success PRD v1.14 §19).
+- **Market** (`/market`, a top-level navigation entry) and `GET /api/market`. Read-only: no migration, no stored aggregate, no evaluation, retrieval or provider call; it never ranks sources or aggregates companies.
+- **Cohort:** one canonical opportunity per job (every lifecycle status) by first-seen date, weekly trends; **Automated only** by default (a job whose originating source record, earliest by createdAt and id, came from automated retrieval; a job the user captured first stays out even if later found automatically), **All collected** adds the jobs the user captured first with "These are user-selected captures and may introduce selection bias."; unresolved probable pairs both counted, pairs shown; optional "Exclude no longer listed" (the shared Feature 13 condition); historical note before October 18, 2026.
+- **Salary:** one currency and one basis (BASE / OTE / Unknown) at a time, never converted or combined; median minimum, maximum and midpoint (both bounds; exact = own midpoint) with n and sample label; exact / range / min-only / max-only counts; 10k midpoint bands; breakdowns by title group, seniority, arrangement and job region within one currency and basis; tiered pay listed tier by tier, never in medians; an amount without a stated currency counts toward coverage only ("Currency not stated") and never enters a median, band or breakdown.
+- **Roles:** title groups = longest whole-phrase Customer Success discovery term (stable list order on ties), else "Other title"; top exact titles; evaluator role classification as a separate evaluated-only view.
+- **Geography and seniority:** job location, hiring eligibility, work authorization, sponsorship, relocation, EOR and time zones kept apart (Feature 15 buckets, Unknown visible); Remote / Hybrid / On-site / Several options / Unknown; persisted seniority only.
+- **Evaluated jobs only:** job-side JD Reconstruction requirements (headline categories, required vs preferred, the highest stated minimum experience requirement per job, top phrases; versions combined only within a declared compatible group, `cs-jd-reconstruction-v3` today), customer segment, and the Apply / Review / Skip mix over completed evaluations with coverage, overall and per first-seen week (rates with n and coverage, plus counts), separate waiting/in-progress/failed/not-yet/no-recommendation states and the evaluation disclosure.
+- **Shared code:** Feature 15's `evaluationStateOf` takes only the fields it reads (no behaviour change); `Bars` is exported from the Source insights components.
+- **Unchanged:** evaluator stages, prompts, models, routing, schemas, recommendation logic and Ghost Job Risk; deduplication; retrieval; schema (24 migrations).
+- **Verified (isolated test database only; no live or provider calls):** after the pre-commit corrections: typecheck and lint; `prisma validate`; `db:verify-migrations` (24, unchanged); unit 72 files / 1,790 tests; integration 41 / 341; E2E 50/50 (including the `market` project) on the first full run; web and extension builds; `git diff --check`; `apps/web/next-env.d.ts` restored. (Before the corrections, one full E2E run had a single timing failure in `budget.spec.ts`, unrelated to this diff — no budget, evaluation or worker code changed — and the unchanged suite then passed 50/50.)
+- **Specs:** Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17, Customer Success TDD v1.14 (previous versions archived unchanged); HANDOFFS records the JD Reconstruction v3 → v7 compatibility boundary.
+
+### Feature 15 — Source Intelligence (October 31, 2026; implemented, verified and accepted; committed)
+
+Built to the approved Feature 15 contract (October 31, 2026; Customer Success PRD v1.13 §19).
+- **Source insights** (`/sources/insights`, part of Sources) and a drill-down per source (`/sources/[id]/insights`), plus a last-30-days line on each `/sources` card; `GET /api/sources/insights` and `GET /api/sources/[id]/insights`. Read-only: no migration, no new data, no evaluation, retrieval or provider call.
+- **Rows:** one per configured source (adapter grouping secondary); Browser extension (per site) and Manual entry in a separate user-collected section, never ranked against automated sources.
+- **Attribution:** first discovery (earliest record) gets new-job credit, evaluation cost and outcomes; other sources are presence ("also listed", "also listed before the outcome"), never summed. A configured source that wrote no record because the listing was already stored is counted from its ledger row.
+- **Metrics:** listings, new, already known on arrival (duplicate rate), repost on the same source, possible duplicates, exclusive, platform duplicate rate; useful = Apply or Review over completed evaluations, Apply rate; neutral states (Waiting: AI budget, Waiting: usage limit, Evaluation in progress, Evaluation failed, User dismissed/archived, No longer listed before evaluation, Not yet evaluated); applications, interviews (screening or later, or a non-cancelled interview) and offers, once each, with a 30-day "awaiting response" rule; cost per useful job from completed-evaluation spend, failed and unknown cost shown apart; geography (US, Canada, UK, Europe excl. UK, Latin America, APAC, Global, Other, Unknown; multi-valued); ATS mix and direct ATS coverage; Feature 12 reliability and run success rate.
+- **No verdicts:** every rate shows its counts; under 5 is an insufficient sample and never orders or highlights a source; 5–19 a small sample. Nothing ranks, colours, judges or disables a source.
+- **Shared code:** the known-site table moved to Core (`known-sites.ts`; extension capture uses it, behaviour unchanged); the dashboard's "No longer listed" SQL is one exported condition; the budget service's report currency is shared through `costBasis()`.
+- **Test-DB guard:** integration and E2E runs refuse any database whose name does not end in `_test` (the normal and acceptance databases included), before any test starts.
+- **Unchanged:** evaluator stages, prompts, models, routing, schemas, recommendation logic and Ghost Job Risk; deduplication; retrieval; schema (24 migrations).
+- **Deterministic first record (pre-commit):** the unbound-evaluation attempt attribution and the opportunity detail's source records now order by `createdAt ASC, id ASC`, like `originatingVersion`; the flaky `foundation-provenance` snapshot is fixed the same way; regression test `origin-ordering`. Non-double-counting of records and ledger presence and the sample-ordering rule have explicit tests.
+- **Verified (isolated test database only; no live or provider calls):** typecheck and lint; `prisma validate`; `db:verify-migrations`; unit 70 files / 1,752 tests; integration 40 / 332; E2E 48/48; web and extension builds; `git diff --check`.
+- **Specs:** Core AI Framework PRD v1.15, Customer Success PRD v1.13, Core Platform TDD v1.16, Customer Success TDD v1.13 (previous versions archived unchanged). They also record the currency rule Alex accepted on October 27, 2026 (a recognized currency symbol is its currency; a stated code or name wins), which Core Platform TDD v1.15 and Core AI Framework PRD v1.14 still stated in its superseded form.
+
+### Feature 14B live acceptance, round 2 (October 29, 2026; committed; live acceptance passed)
+
+Traced on real evidence (Alex's stored extension captures, exported read-only from the acceptance database, and the live pages rendered and read in Chromium on his machine) and verified by Alex through the installed Chrome extension into the live acceptance app; all eight blocker cases pass.
+- **Shared normalizer:** leading icons ignored before labels and items ("📍 Locations (Remote): …"); the most specific of two compatible places kept ("United States (East Coast)" over "United States"); "Remote <title> at <Company>" page titles; labelled page Region/Country values read for residency (`pageContext:explicit-residency-statement`); a posting's own range over a page's coarser salary bucket; labelled zone tiers in one statement, on label and amount lines, or as sentences, with every stored tier statement required to parse.
+- **Extension:** hidden apply controls and controls inside another job's container (another heading of the title's level, or a heading linking to another posting) are not counted; the job container widens past a header to the posting body without reaching another job; "Related Jobs" headings with a nested link are recognized; a metadata sidebar stays out of the description; the page's line-structured description is preferred over a run-on structured copy (compared without whitespace, also by its first sentence).
+- **Not used:** a round-1 SmartRecruiters `?oga=true` application-entry guess, disproved by the live click.
+- **Unchanged:** evaluator prompts, schemas, models, routing and policy; no migration. Known non-blocking edge cases recorded in CURRENT_PROGRESS.
+
+### Feature 14B live acceptance batch (October 29, 2026; committed; its live round led to round 2 above)
+
+From Alex's latest full live round; fixed as one end-to-end contract, not per posting.
+- **Extension:** page context adds the job's own metadata sidebar (two or more job-metadata labels, no other jobs); apply links in the job's own side panel or a sticky header repeating the job count, other postings' rows no longer make the job's own Apply ambiguous, and buttons carrying their destination in an attribute are read; on LinkedIn, the top card's posted age and the employer's Apply link fill what the page's JSON-LD leaves out (also from the signed-in view's description row).
+- **Shared normalizer:** several zones stated in one statement, or as a label line followed by an amount line, become labelled `compensationTiers`; a salary followed by a variable-pay clause keeps its range and the clause becomes the `bonus`; a spaced dash separates a label from its value; labelled WFH or office options are arrangements, and posting options that include the source's single value are kept; a dashed header item gives its one employment type; a refined labelled location also refines "Remote, United States" and a remote role's hiring places; "Only US" and "Anywhere in the US" are U.S. places; the page-title company is read from "<title> | <Company> | <platform>" and "<Company> - <title>".
+- **Capture mapping:** Welcome to the Jungle and Otta `validThrough` (a rolling expiry) is no closing date; `datePosted` is kept.
+- **Unchanged:** evaluator prompts, schemas, models, routing and policy; no migration. Monthly pay stays Unknown as a salary (product decision recorded).
+
+### Feature 14B currency symbol correction (October 27, 2026; committed; awaiting the targeted live verification)
+
+- **Product rule:** a recognized currency symbol is read directly as its currency ("$" US dollars, "€" euros, "£" pounds sterling, "₹" rupees, "¥" yen), with no geography or other context; a currency code or name the posting states ("$100,000 CAD", "Canadian dollars") takes precedence over the symbol. The user's selected currency also takes precedence over a symbol.
+- **Supersedes** the bare-"$" geography rule (October 23, 2026) and the final batch's U.S. work-authorization evidence for it. One shared function (`parseCompensation`) for every path.
+- Healthie, Mongoose, PeopleGrove, AlphaSense and New Law Business Model now read as USD. Core Platform TDD v1.15 and Core AI Framework PRD v1.14 still state the old rule (not edited).
+
+### Feature 14B final cross-source batch (October 27, 2026; committed; awaiting the targeted live verification)
+
+From Alex's final human cross-source retest; fixed as shared contracts along the capture path, not per posting.
+- **Shared normalizer:** page metadata read with or without a colon and without layout separators, and split salary ranges rejoined; an arrangement-only labelled location states the arrangement, not a place; a more precise labelled location replaces the source's; bounded explicit statements (fully remote, Virtual First's primary remote experience, a labelled Flexible or Remote work persona, employment classification lines, zone abbreviations and required overlap, "End Date" and "posting will close" dates, labelled posted ages); rounded and exact statements of one range agree; variable pay stated on its own is the `bonus` fact, never the salary; hourly pay with its stated annual equivalent gives that range; a U.S. work-authorization requirement is U.S. context for a bare "$" (superseded the same day by the currency symbol correction above); labelled regional tiers become `compensationTiers` (additive migration `20261027090000_compensation_tiers`).
+- **Extension collection:** the posting's own heading over a careers-site title (and h2-titled pages now get page context); the job's own header and footer kept in page context; microdata `baseSalary`; apply links with typographic apostrophes, in the job's own header or footer, and one destination per address; the page's full description over a shortened structured copy; a default "Anywhere" never replaces a stated location.
+- **Display:** Salary shows labelled tiers side by side, never merged; the opportunity shows its requisition ID; the popup says when the evaluation shown is of an earlier listing version.
+- **Evaluator:** no prompt, schema, model, routing or policy change; `compensationTiers` and `bonus` are withheld from the evaluator subject.
+- **Replay helper:** compares tiers and bonus; `--evidence <file>` saves a stored version's evidence for offline replay.
+
+### Feature 14B original-JD retest helper (October 26, 2026; acceptance tooling only)
+
+- `pnpm acceptance:check-source-version` re-normalizes one stored source version's exact evidence with the production normalizer, and prints it beside the opportunity's stored facts.
+- It is read-only by construction (read-only session and `READ ONLY` transaction), never calls the evaluator, a provider or the network, and refuses a database other than the one named.
+- It is for original postings that a recapture reports as unchanged during the cross-source live retest.
+
+### Feature 14B cross-source correction (October 26, 2026; committed `6536ef8` as checkpoint v7; awaiting the cross-source live retest)
+
+**Why.** Live acceptance captures across every supported source showed defects on every source except Greenhouse. The failures sat in collection, transport and shared normalization, and were corrected as one contract.
+
+- **Shared normalization:**
+  - Remote-hiring geography (`sourceFacts.remoteLocations`) becomes the role's location ("Remote (United States)") and eligible geography; an office is never a remote role's location.
+  - A posting's statement that the remote role is based somewhere counts as eligibility, below explicit statements; an ordinary job or office location never does. A posting's fuller labelled location replaces a narrower one it contains.
+  - One pay range agrees with its own OTE or breakdown detail. Regional tiers or zones, each labelled with its place, have no single range, even over a source field, and are kept with their labels.
+  - Time-zone preferences are kept, and a Pacific-to-Eastern span is geography. Source-stated posting ages are dated at day precision and marked.
+  - Stated seniority labels are kept (`Opportunity.seniorityLabel`) and several stated work arrangements are kept as options (`Opportunity.workArrangements`), in one additive migration. Labelled requisition IDs are read.
+  - "Office or Remote" keeps both options (On-site / Remote), and one to four office days a week reads as hybrid. Compound employment labels and eligible-state lists are read, and "continental U.S." is U.S. geography.
+- **Extension collection:**
+  - JobPosting microdata, and structured data without a description;
+  - the job's own container, never another job's `<article>`, with other-jobs lists excluded;
+  - page context one item per line with every description;
+  - the application page ranked above `directApply`;
+  - the LinkedIn criteria list and posted age;
+  - two optional envelope fields, `remoteLocations` and `seniority`.
+- **Adapters:** Wellfound and Himalayas map their remote geography into the shared fact. Adapter content hashes are unchanged.
+- **Product:** Salary (the normalized range, or Unknown) replaces the separate Compensation row; the arrangement filter matches each offered option. An approximate posting date is withheld from the evaluator subject. Department is removed from the opportunity, the dashboard filter and manual entry.
+- **Unchanged:** deduplication logic, and the evaluator's stages, prompts, models and routing (`seniorityLabel` is withheld from the evaluator).
+
+### Feature 14B correction — shared-normalization convergence (October 25, 2026; implemented and verified, awaiting review; not committed)
+
+**Why.** The Greenhouse Healthie acceptance capture left stated facts Unknown: an OTE salary range, the department, work authorization and the application URL.
+
+**Changed (domain-neutral, every ingestion path):**
+- **Compensation.** A stated range keeps its numbers whatever its basis, with a new `compensationBasis` (BASE / OTE), in the original currency; no conversion is stored. OTE is no longer a reason for Unknown bounds; the evaluator decides what qualifies as base salary. *(Supersedes "OTE is never stored as base salary; bounds Unknown".)* OTE wording takes precedence over a mention of base in the same statement, and a source-stated range (structured amounts or a salary field) is OTE when the job description states that same range as OTE (v5).
+- **Work authorization.** A new normalized fact for every job and country, separate from residency: the requirement and its countries, sponsorship, relocation, and employer-of-record countries. A separate relevance layer (`workAuthorizationRelevance`, with the user's `UserEligibility`, set on the profile page) decides what to surface: a requirement the user meets raises no warning, non-U.S. issues are shown for review, and an unstated non-U.S. job is flagged "worth checking".
+- **Department.** An explicit team statement counts ("join Healthie's Customer Success team"), without inference.
+- **Application URL.**
+  - It is captured with its basis on every path. The extension detects an on-page application form, JSON-LD `directApply` and explicit Apply links.
+  - Adapters declare their basis.
+  - A job board's own listing page is no longer stored as an application URL; the hash is unchanged.
+  - A changed originating listing updates the link only when it owned it.
+- **Closing date.** JSON-LD `validThrough` and Greenhouse `application_deadline`.
+- **UI.** Salary basis, a Work authorization row, Location eligibility only when stated, an application-URL basis note, and an eligibility note and "Check work eligibility" badge.
+- **Migration.** `20261025090000_work_authorization_and_compensation_basis` is additive. It was applied only to the isolated test database, with no backfill.
+
+**Adapter regression check (same day):**
+- Every implemented adapter's fixture was followed through normalization and persistence, with a content-hash snapshot: 36 listings, none changed.
+- Fixed: Remote OK and Himalayas listing pages repeated in their apply fields are no longer stored as application URLs.
+- Fixed: LinkedIn's "$90,000.00/yr - $110,000.00/yr" ranges keep their numbers.
+- Fixed (shared geography): an explicit country in a full location settles an ambiguous region abbreviation for bare-"$" currency. "Sunnyvale, CA, United States" → USD, derived; "Sunnyvale, CA" and "Toronto, ON, Canada" unchanged; explicit currencies always win.
+- Totals after the check: unit 62 files, 1,587 tests; integration 35 files, 306 tests.
+
+**Unchanged:** deduplication logic; the evaluator's prompts, models and routing; the new fields are withheld from evaluator input.
+
+**Verified:** typecheck, lint, unit (61 files, 1,554), integration (34 files, 293), the full E2E chain: 44/44 (5.2 min), including the extension project, both builds, `db:verify-migrations`, `git diff --check`.
+
+### Feature 14B correction — current-version projection of changed listings (October 23, 2026; implemented and verified, awaiting review; not committed)
+
+**Why.** The Feature 14 closeout found stale current facts: a CHANGED re-observation (Hybrid → Remote) was recorded, but the opportunity still showed Hybrid. Task 7 had anticipated re-normalizing changed listings and left it incomplete; Feature 11A then deliberately left the opportunity unchanged (Core TDD v1.8–v1.14). Alex approved correcting the contract in Core TDD v1.15 §51.
+
+**Changed:**
+- **Re-projection.** A CHANGED observation of the opportunity's originating listing (its first source record's source and listing ID) is re-normalized and becomes the opportunity's current facts, including the description. A fact the new version no longer supports becomes Unknown. Every version stays stored.
+- **Who may write facts.** Attached copies from other sources and manual opportunities are never re-projected; link precedence is unchanged. Values with `userCorrected:*` provenance stay unless the capture is the user's own edit of them.
+- **Superseded provenance.** New `FieldProvenance.supersededAt`. Replaced rows are marked, never deleted or rewritten. Current views show only non-superseded rows, and the opportunity page lists "Earlier provenance".
+- **Evaluated source version.** New `Evaluation.sourceRecordId`, bound when the user requests the evaluation.
+  - `loadSubject({ evaluationId })` reconstructs that version as it stood, and Customer Success stages read the bound record (`evaluatedSource`) instead of `rawSources[0]`.
+  - Semantic attempts record the bound record.
+  - No automatic evaluation, and no new lifecycle status.
+- **UI.** A version hint when the latest evaluation used an earlier listing version. The "Listing changed since first seen" notice and the dashboard badge tooltip are reworded: current facts show the latest version, earlier versions are kept, an evaluation may describe an earlier version, and reevaluating is optional.
+- **Migration.** `20261023090000_superseded_provenance_and_evaluated_source` is additive, nullable and carries rollback comments. It was applied only to the isolated test database, with no backfill.
+
+**Unchanged:** deduplication; content hashing and change detection; the evaluator's stages, models, prompts, routing, schemas and recommendation logic; `fieldsWithheldFromEvaluator`.
+
+**Verified:** typecheck, lint, unit (59 files, 1,519), integration (33 files, 288; new `listing-version-projection` suite of 12 covering the 26 approved cases), the full E2E chain: 44/44 (5.8 min), including the extension project, both builds, `db:verify-migrations`, `git diff --check`.
+
+### Feature 14B correction — shared Core job-text fallback (October 23, 2026; implemented and verified, awaiting review; not committed)
+
+**Why.** Alex's local acceptance of Feature 14B showed that the shared normalizers left already-supported facts Unknown when a page stated them only in its job description. That happened on a Greenhouse, a Lever and an employer careers page. This restores the Core requirement in shared Core. It is not an extension, adapter or site patch.
+
+**Changed:**
+- **New shared reader.** `readJobTextFacts` in `packages/normalization` is used by both the manual and retrieved normalizers, and so by every ingestion path. It fills only facts the source left missing, from explicit labelled lines and bounded job-specific statements. The facts are company, location, work arrangement, employment type, salary text with base amounts, posting and closing dates, time-zone requirement, and labelled seniority and department.
+- **Precedence:**
+  1. user-stated or corrected;
+  2. structured;
+  3. dedicated field;
+  4. page title (company only);
+  5. job text;
+  6. Unknown.
+
+  A fallback never overwrites, and conflicting statements stay Unknown.
+- **Provenance.** Text-derived facts are DETERMINISTIC with `rawText:*` markers; a company from the page title is marked `pageContext:page-title-company`. Fields corrected in the extension preview are DIRECT with `userCorrected:<field>`.
+- **Compensation.** A statement needs a compensation cue, and business metrics and perks are excluded. OTE is never stored as base salary; "plus commission" keeps the base range. The whole statement is kept as salary text. *(Superseded October 25, 2026: OTE bounds are kept, with basis OTE.)*
+- **Currency, product-wide.** A bare "$" is USD only with clear U.S. evidence (location, residency regions or the statement itself). Otherwise it is Unknown, and CAD or AUD are never inferred from a place. *(October 25, 2026: an explicit country in a full location settles an ambiguous region abbreviation, so "Sunnyvale, CA, United States" is U.S. evidence while "Sunnyvale, CA" stays ambiguous.)* *(Previously a bare "$" was always USD, a product decision of October 14, 2026, now superseded by Alex's October 23 decision.)*
+- **Time zone.** `timeZoneRequirements` is an existing normalized fact, so an explicit requirement in the job text is now read. It is never read from a place.
+- **Browser extension.** The extension sends the tab's title as neutral `pageTitle` context, never on LinkedIn, and the envelope change is additive. The server keeps `sourceMetadata.pageTitle` and `sourceMetadata.userCorrectedFields`.
+- **Bounded job-page context.** With a structured-data or selection capture, the extension also sends `pageText`: the job's main content or heading container, without navigation, header, footer, side panels, forms or recommendation, related-job, sharing and cookie widgets. It is capped and never sent on LinkedIn. Shared normalization reads it only through labelled values ("Remote Type: Hybrid", "Location: …"), with `pageContext:*` markers, below structured values; disagreement leaves the fact Unknown.
+- **Source facts, product-wide.** A department, seniority or experience level, or a compensation text that a retrieval source states in its own fields, was collected but never normalized (Greenhouse, Lever, Ashby, SmartRecruiters, Workable, Himalayas, LinkedIn, Wellfound). It now reaches the shared normalizer through a neutral `sourceFacts` record, with no content-hash change. Wellfound's compensation text yields amounts only when it states an annual period.
+- **Page-context change detection.** The canonical labelled page-context evidence, not the page text, takes part in a capture's content hash. Noise is no change; a changed labelled fact is a CHANGED re-observation.
+- **Page-title company.** A part naming a place, arrangement, employment type or department is never the employer, and a dash-separated name must appear in the posting.
+
+**Unchanged:**
+- deduplication (engine, thresholds and rules; re-run with the corrected inputs and behaving as specified);
+- the unknown-host site-ID rule and link precedence;
+- the evaluator, `loadSubject()` and the withheld fields.
+
+There is no schema change and no backfill.
+
+**Tests.** New unit `job-text-fallback` (42) and integration `job-text-fallback` (6) suites. Tests encoding the superseded bare-"$" and "time zone never from text" rules were updated deliberately.
+
+**Specifications.** Core Platform TDD v1.15 and Core AI Framework PRD v1.14. The Customer Success PRD and TDD are unchanged.
+
+### Feature 14B — browser-extension companion (October 20, 2026; committed `e6bacc6`; still open after the local acceptance described above)
+
+*(Heading updated on October 23, 2026; it read "implemented and verified, awaiting review and local acceptance; not committed". The entry below is as written.)*
+
+Built to the approved Feature 14B plan (decisions D1–D4 and O1–O4) and the Feature 14B implementation prompt (decisions D1–D8).
+
+- **Extension** (`apps/extension`, TypeScript, Manifest V3, esbuild, `pnpm extension:build`, loaded unpacked):
+  - a popup that reads the job page you are viewing only on "Read this page", shows an editable preview (title, company, location, description; corrected fields named in `editedFields`), and sends it only on "Save";
+  - a self-contained page reader that takes no arguments and has no storage, cookie or network access;
+  - local envelope validation with the server's schema;
+  - one API client limited to `/api/extension/*` on a local backend;
+  - options that keep the backend address and pairing credential in `chrome.storage.local` only, restricted to the extension's own pages with `setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })`;
+  - a minimal service worker that only applies that restriction on installation and browser start.
+  - Permissions: `activeTab`, `scripting` and `storage`, plus host access to `127.0.0.1` and `localhost` only. No content scripts.
+- **Extraction:**
+  - schema.org JobPosting data first;
+  - on LinkedIn job pages only, a reader limited to the job-detail areas, then the user's selection, with no whole-page fallback, and never account, profile, messaging, feed or cookies;
+  - the user's selection;
+  - everywhere except LinkedIn, the page's main content.
+  - Welcome to the Jungle and Otta go through the generic path. Nothing is invented.
+- **Capture API** (`POST /api/extension/captures`):
+  - a strict envelope (128 KB, 50,000-character description, no HTML);
+  - server-side site classification: known ATS, job-board and marketplace hosts, every other host AGGREGATOR with its real host kept;
+  - LinkedIn canonical job URLs;
+  - mapped to a retrieved listing with `BROWSER_EXTENSION` / `BROWSER_ASSISTED` provenance and ingested through `createRetrievalIngestionService`: created, attached, unchanged or changed, with existing link precedence.
+  - Captures never evaluate.
+  - Also `GET /api/extension/status` and `GET /api/extension/lookup`.
+- **Evaluation from the extension:**
+  - the explicit "Request evaluation" and the status read go through credential-gated wrappers (`/api/extension/opportunities/:id/evaluation-requests` and `…/evaluation`);
+  - the wrappers call the existing `handleProductionEvaluationPost` and `handleProductionEvaluationGet` unchanged;
+  - the popup shows only the persisted state and recommendation.
+- **Pairing:**
+  - an Extension page (`/extension`, in the header) to create, list and revoke pairings;
+  - the credential (`aija_` plus 32 random bytes) is shown once and stored only as a SHA-256 hash;
+  - a constant-time check, web origins refused (403), no CORS (`OPTIONS` → 405);
+  - pairing management is same-origin only and refuses Bearer credentials.
+- **Migration:** `20261020090000_extension_pairing` (additive; one table, no foreign keys), applied only to the isolated test database.
+- **Doctor:** names the connected database (name and host only) and counts paired browsers.
+- **Checks made during implementation:**
+  - Chrome storage restriction: supported, Chrome 102 and later (the manifest requires 120). In Chromium 141 a page-injected script reads `chrome.storage.local` by default and is refused after the restriction.
+  - Shell `DATABASE_URL` precedence over `.env`: proved for `app:doctor`, Prisma, `next dev` and `dotenv/config` with a temporary decoy `.env`.
+- **Acceptance runbook** (`apps/extension/README.md`), with a local fixture page (`apps/extension/fixtures/acceptance-job.html`):
+  - a dedicated `ai_career_assistant_acceptance` database, selected in the shell;
+  - the doctor's database line checked before and after migrating;
+  - an offline evaluation mode with no provider call.
+- **Tests:**
+  - unit: `extension-extract` (13), `extension-client` (16), `extension-server` (41), plus doctor and navigation checks; 1,433 unit tests in all;
+  - integration: `extension-capture` (7, on the test database); 265 integration tests in all;
+  - E2E: a new Playwright `extension` project (6) that loads the built extension into Chromium through `launchPersistentContext`, with DNS limited to `127.0.0.1` and `localhost`. It covers:
+    - the service worker and storage closed to page scripts;
+    - pairing, the editable preview, and no capture request before Save;
+    - created, unchanged and possible-duplicate results;
+    - Open in AI Job Assistant;
+    - Request evaluation with its queued, running, completed and failed states (the deterministic helper worker, fixture transport);
+    - a page with no job;
+    - the LinkedIn reader with decoys and Welcome to the Jungle in real Chromium (pages answered by Playwright);
+    - revocation and route refusals.
+  - Full E2E chain on the test database: 43/43 passed (7.2 min), including the 6 extension tests.
+  - The production web build passes.
+- **Unchanged:** evaluator internals, model routing, semantic schemas and recommendation logic.
+- **Spec versions:** Core Platform TDD v1.14, Customer Success TDD v1.12, Core AI Framework PRD v1.13 and Customer Success PRD v1.12; the previous versions moved unchanged into `Archive/`. TDD v1.14 also:
+  - corrects Section 9's stale "verified browser-assisted sources include LinkedIn and Upwork": LinkedIn's browser-assisted support is implemented, but the source is unverified and disabled after HTTP 429; Upwork is Freelance-domain;
+  - records the approved pairing-credential exception and the user-requested evaluation rule.
+- **Remaining:** Alex's review, Alex's local Chrome acceptance on the acceptance database, and the commit (on approval).
+
+### Feature 14A — browser-assisted LinkedIn retrieval and source corrections (October 19, 2026; awaiting review)
+
+*(Correction, October 20, 2026: heading changed from "Feature 14 — …". This entry covers Feature 14A. Feature 14B, the browser-extension companion, is required main-product work, is not yet implemented and is next, so Feature 14 is not complete. New specification versions record this: Core Platform TDD v1.13, Core AI Framework PRD v1.12, Customer Success AI Assistant PRD v1.11 and Customer Success Assistant TDD v1.11, with the previous versions moved to `Archive/`.)*
+
+*(Annotation, October 20, 2026: committed as `dd77d29` and Feature 14A accepted. On October 20, 2026 the committed adapter (`dd77d29`) was run from the local WSL runtime with one search page and one job page: the public search page returned HTTP 200 and 60 public job cards were discovered (the "Sign in to view more jobs" modal did not prevent it); the first job-detail page returned HTTP 429, and the run stopped at once as RATE_LIMITED, with no retry and no listing emitted. Feature 14A was accepted on that result; LinkedIn itself stays unverified and disabled (a source-side rate limit, not an implementation defect) and is not retried.)*
+
+- **Browser-assisted runner** (`packages/discovery/src/browser.ts`, new `packages/browser-retrieval`): a fresh, logged-out headless Chromium context per run (Playwright), with no account, cookies, profile or stored state; navigation only; one page at a time with the adapter's minimum interval; per-run navigation caps, a 30-second timeout and a 5 MB page limit; images, fonts and media not downloaded; a page can never navigate by itself (a script reload or meta refresh is refused), so a challenge page cannot cause a further request; response headers are kept for diagnosis with cookie values dropped. Any 403, 429, 999, sign-in wall, authwall, checkpoint, CAPTCHA, challenge or account cookie stops the run with no further request and reaches Feature 12 backoff. No login, proxy rotation, stealth, fingerprint changes or CAPTCHA solving.
+- **LinkedIn** (`linkedin`, browser-assisted, job board): public job search pages paged by the actual result count (default 4 pages and 100 results; hard caps 8 and 200) with the Customer Success title filter, then at most 20 public job pages per run (hard cap 25). Title matches whose details are not stored are kept as pending rows in the existing `RetrievedListing` ledger (no migration) and read first in later runs, oldest first, for up to 30 days; stored jobs are re-read only after 7 days; a gone page leaves the queue. Parsing uses the page's schema.org JobPosting data, then its public fields; the source URL is the public job page and an application URL only when the page states one. Bounded, never removal-capable. **Unverified:** the environment first denied www.linkedin.com by network policy; once it was reachable, the single logged-out verification request was answered with HTTP 429 and LinkedIn's anti-bot interstitial (an obfuscated cookie script and a meta refresh), and the run stopped there with no retry. That result is specific to the Claude cloud environment: a separate local logged-out browser check loaded normal public results (about 11,000 United States Customer Success jobs) under a "Sign in to view more jobs" modal, so LinkedIn remains a viable source; the adapter no longer treats that modal as a login wall while results are present, and uses the verified `/jobs/search/` form. The adapter was built against synthetic pages, now also detects that interstitial whatever its status, and cannot be enabled until a live logged-out check of the adapter itself passes from a local runtime (`pnpm sources:verify linkedin`, which now supports a browser).
+- **We Work Remotely:** the official all-jobs RSS feed (`remote-jobs.rss`) with the local title filter, instead of one category feed; still RSS only. Verified live on October 20, 2026 with one request (91 items, all parsed, 3 kept by the title filter) and the fixture re-captured from it.
+- **Final live smoke checks (October 20, 2026, one request each, production routes):** Wellfound, Working Nomads, Remote OK, Himalayas and the SmartRecruiters posting list all answered 200 and parsed with the existing adapters; no defect was found.
+- **Wellfound:** at least 12 seconds between requests (was 2), sequential, embedded state unchanged.
+- **Audited, unchanged:** Greenhouse, Lever, Ashby, SmartRecruiters, Himalayas and Remote OK (official APIs or feeds); Working Nomads (the public `exposed_jobs` feed; the internal `/jobsapi/_search` is not used); Workday (tenant career-site JSON); Workable (anonymous search JSON, not the large XML feed); Adzuna (disabled). No adapter reads `robots.txt`.
+- **Welcome to the Jungle / Otta (revised B11):** reclassified as public logged-out webpage retrieval (`PUBLIC_HTML`; no public jobs API), an active candidate rather than disabled because of its terms. Live check on October 19, 2026: one plain GET of the public search page answered 200 with a sign-up and matching landing page (no listings, no job links, the query ignored), and one logged-out headless-browser load was refused by its CloudFront firewall (HTTP 403), a stop condition; no further request was made. Then a local WSL browser check run by Alex then loaded the public company jobs page (`/en/companies/wttj/jobs`, which ends at `/en/companies-v1/wttj/jobs`) logged out with no 403, 429, CAPTCHA, sign-in wall or challenge, and with JavaScript rendering showed the company shell and a "Jobs 16" tab but "We didn’t find any jobs for your search": no job cards, links, IDs, descriptions, locations, employment types or dates. The cloud 403 was environment-specific, but no tested public surface exposes usable job records, so it stays unverified and cannot be enabled; no internal API discovery was done and no other route was tried.
+- **Not built in this task:** the Manifest V3 manual-capture extension (no manifest, popup, permissions, local bridge or pairing were built). *(Corrected October 20, 2026: this line called it "deferred" and "an optional future idea". An October 19, 2026 implementation instruction incorrectly treated Feature 14B, the required browser-extension companion, as deferred, an optional future idea and not required. No approved roadmap or authoritative product-scope revision removed Feature 14B from the main product. This correction (October 20, 2026) resolves that inconsistency while preserving Feature 14A's accepted implementation. Feature 14B is required main-product work and is next.)*
+- **New versioned specifications:** Core Platform TDD v1.12 (§51 "Browser-Assisted Retrieval and Source Corrections (Feature 14)"), Core AI Framework PRD v1.11, Customer Success AI Assistant PRD v1.10 and Customer Success Assistant TDD v1.10 (status, revision history and dependencies). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged.
+
+### Feature 13 — posting history and listing removal (October 19, 2026; awaiting review)
+
+*(Annotation, October 19, 2026: committed as `d1bf217`.)*
+
+- **Listing coverage** (`packages/discovery`): `CollectResult` may carry `coverage: { observedListingIds, complete }`. The IDs are every listing the source listed, read **before** the title filter (which still decides ingestion), so a stored listing whose title changes is still seen. A run is complete only when it read the whole listing, every item had a usable ID, it was not halted or capped, and, where the source states a total, the unique IDs **equal** it exactly. Adapters declare `listingCoverage` and `trackingScope` (their retrieval-scope fields).
+- **Removal-capable sources:** Greenhouse, Lever and Ashby (a whole-board response), and Workday and SmartRecruiters (when the stated total fits the page cap and is read in full). Wellfound, Himalayas, Remote OK, Working Nomads, Workable and We Work Remotely only record sightings.
+- **Listing ledger** (migration `20261019090000_retrieved_listing_history`, additive): `RetrievedListing`, with one row per stored listing per tracking-scope generation (states HISTORICAL, LISTED, MISSING, REMOVED, UNTRACKED), and `RetrievalSource.trackingScopeKey`, an opaque generation key. A retrieval-scope settings change starts a fresh generation and makes earlier rows UNTRACKED, so A → B → A never inherits A₁'s history; display-only changes keep the scope. Pre-feature-13 listings are backfilled as HISTORICAL (last observed, never currently listed); a source's first run adopts that baseline unless a scope change came first. `RetrievalRun.listingCoverageComplete` records each run's coverage.
+- **Transitions:** a sighting makes a listing LISTED and moves the opportunity's last-seen time (`SourceRecord.lastObservedAt` still means content observed). One qualifying complete miss gives MISSING; two, at least 24 hours after the first, give REMOVED; REMOVED seen again is a reappearance. Bounded, incomplete, partial or failed runs never infer absence. There is no automatic lifecycle change.
+- **Facts** (`packages/core/src/posting-history.ts`): ACTIVE_ATS, CURRENT_POSTING, REPOSTED (after a confirmed removal), CLOSED_ATS_VISIBLE_ELSEWHERE, AGGREGATOR_VISIBILITY and UNCHANGED_OVER_TIME (from content observations, at least 30 days). They are contract-tested against the Customer Success posting-history schema but **withheld** from `loadSubject()`: no evaluator, routing, cost or recommendation change.
+- **UI:** a "Posting history" section on the opportunity page, a current-scope "No longer listed" dashboard badge, an evaluation warning (not a block), and coverage plus listing counts in `/sources` run history.
+- **New versioned specifications:** Core Platform TDD v1.11 (§51 "Posting History and Listing Removal (Feature 13)"), Core AI Framework PRD v1.10, Customer Success AI Assistant PRD v1.9 and Customer Success Assistant TDD v1.9 (status, revision history, and the §45 and §49 Ghost Job Risk notes annotated). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged (v1.3).
+
+### Feature 12 — source health and conservative retrieval (October 18, 2026; awaiting review)
+
+*(Annotation, October 19, 2026: committed as `f10a02b`.)*
+
+- **Within a run** (`packages/discovery`): HTTP 5xx is now its own adapter error code, `SERVER_ERROR` (other unexpected statuses stay `HTTP_STATUS`), and any server error, like a 429 or a 401/403, stops further requests to that host for the run; SmartRecruiters and Workday stop requesting details on the same failures (`isStopError`). A valid Retry-After on a 429 or 503 (delta-seconds or a future HTTP date) is parsed by the transport and carried with the failure; invalid or past values are ignored. No retries within a run.
+- **Between runs** (`packages/core/src/retrieval-health.ts`, migration `20261018120000_retrieval_source_health`, additive and nullable): one gate per source, `RetrievalSource.nextEligibleAt`, written with each run's outcome in the same transaction; `RetrievalRun.retryAfterUntil` keeps the source's requested wait. A successful retrieval (COMPLETED, or PARTIAL only through our listing failures) clears it; a source failure backs off by its streak (rate limit: the schedule doubled per failure; transient: the normal schedule first, then doubling; access/contract/settings/oversized: at least a day, then doubling), capped at 7 days, with a valid Retry-After honoured in full; neutral outcomes on our side never count. No automatic disabling.
+- **Run now and settings:** the scheduler and Run now respect the gate. A rate limit (`SOURCE_RATE_LIMITED`) and a wait the source asked for on another response (`SOURCE_PROVIDER_WAIT`) can never be overridden; our own backoff (`SOURCE_BACKING_OFF`) only with an explicit "Run now anyway" (`{"override": true}`), for one run. When our backoff outlasts the source's Retry-After, the gate is a provider wait until that date and backoff after it. A settings change clears only our own backoff; enabling or disabling a source never changes the gate.
+- **Health:** derived from runs, shown on `/sources` (status badge, last attempt, last successful retrieval, next run and why, latest failure, stale and empty-result notes, distinct "Rate limited until …" and "Retry after … (requested by the source)" wording) and as read-only `pnpm app:doctor` warnings.
+- **Scope:** listing expiry/removal detection moved from feature 12 to feature 13.
+- **New versioned specifications:** Core Platform TDD v1.10 (§51 "Source Health and Conservative Retrieval (Feature 12)"), Core AI Framework PRD v1.9, Customer Success AI Assistant PRD v1.8 and Customer Success Assistant TDD v1.8 (status and revision history). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged (v1.3).
+
+### Feature 11B — automated retrieval from the verified public/guest-endpoint and public-HTML sources (October 18, 2026)
+
+- **Sources** (each verified with individually approved live requests; committed fixtures of at most three items with metadata; raw responses outside Git):
+  - **Workday** (employer ATS, public/guest endpoint): configured by the employer's career-site address. A stateless JSON POST list with offset paging (the total is reported on the first page only), capped detail requests with unseen postings first, listing IDs qualified by tenant and site, the company from the detail, the absolute start date as the posting date, and only Remote/Onsite mapped to a workplace type. Pay ranges stay in the description; daily-changing fields are not material.
+  - **Workable** (job board, public/guest endpoint): the Jobs by Workable search for "customer success", paged by `pageToken`, with the complete text (description, requirements, benefits) inline, so no detail requests. Its official whole-feed XML export (about 850 MB) was verified as a contingency only and is not used.
+  - **Wellfound** (marketplace, public HTML): the embedded Next.js state of the public Customer Success role page, up to 11 pages at least 2 s apart, complete descriptions converted from Markdown-style text; compensation kept as source data.
+  - **Welcome to the Jungle / Otta** keeps its Type #3 classification but is registered unverified and cannot be enabled: its logged-out search now shows a sign-up and matching flow with no listings or anonymous listing endpoint. Deferred to browser-assisted retrieval (feature 14) for reconsideration.
+- **Framework:** a JSON POST transport method with the existing ceiling, politeness, 401/403/429 handling and no-redirect rule; source-specific request intervals and page caps; the unseen-first detail priority shared by SmartRecruiters and Workday; an embedded-state reader. No schema change, no worker or deduplication change.
+- **New versioned specifications:** Core AI Framework PRD v1.8, Customer Success AI Assistant PRD v1.7, Core Platform TDD v1.9 (§51 "Automated Retrieval: Type #3 and Type #4 Sources (Feature 11B)") and Customer Success Assistant TDD v1.7 (the §8 implementation note). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged (v1.3).
+
+### Feature 11A — automated retrieval from the verified official API and feed sources (October 18, 2026)
+
+- **Collection framework** (`packages/discovery`): the source-adapter contract.
+  - **Transport:** injectable, with an identifying User-Agent, a 20 s timeout, a hard 10 MB ceiling (refused, never truncated), no cookies and no redirects followed.
+  - **Politeness:** at least 1 s between requests to a host, and a stop on 429 (`RATE_LIMITED`) or 401/403 (`ACCESS_DENIED`).
+  - **Other pieces:** credential redaction, an RSS reader, title-term matching and a material-field content hash.
+- **Verified adapters:** Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas (cursor paging) and Working Nomads. Each was verified with one approved live request and a committed fixture of at most three items with metadata; SmartRecruiters with `BoschGroup` after `Visa` returned an empty board. SmartRecruiters pages its list by offset (verified with one approved page-2 request) up to the 5-page cap, so a run sees at most the newest 500 postings, and spends its 25 detail requests per run on unseen postings first (oldest first), then on stored postings by oldest last check. Adzuna is registered but unverified and disabled.
+- **Discovery and normalization:** only listings whose title contains a Customer Success role-family term are kept, with the full description. A retrieved-listing normalizer records DIRECT provenance for structured facts. Salary is normalized only as one annual range with a known currency; residency only from explicit statements; time zones never.
+- **Storage and ingestion** (migration `20261018090000_retrieval_sources`, additive):
+  - `RetrievalSource` and `RetrievalRun`. Sources or runs with history are archived, never deleted.
+  - Re-observation: an unchanged listing only moves last-seen times, and a changed one adds a linked observation while the original description stays.
+  - Canonical-link precedence: employer ATS over job board over aggregator, and a manual link is never replaced.
+- **Deduplication engine `core-dedup-v2`:** source-scoped listing IDs, with listing-ID conflicts only within one source.
+- **Worker, UI and tooling:**
+  - `pnpm worker:retrieval`: a single worker, a 12-hour default schedule, sources disabled until enabled, per-listing failure isolation and no automatic evaluation.
+  - `/sources` with run history; "Found via" and "Listing changed" on the dashboard and opportunity page.
+  - `pnpm sources:verify`, and read-only retrieval checks in `pnpm app:doctor`.
+- **New versioned specifications:** Core AI Framework PRD v1.7, Customer Success AI Assistant PRD v1.6, Core Platform TDD v1.8 (§51 "Automated Retrieval (Feature 11A)") and Customer Success Assistant TDD v1.6 (dated implementation notes in §6–§8 and §49). The previous versions moved unchanged into `Archive/`; the Semantic Evaluation Playbook is unchanged (v1.3).
+
+### Features 1–10 Gap Closure (October 17, 2026)
+
+- A read-only audit of main-product features 1–10 against the current PRDs/TDDs found that feature 9 (deduplication with provenance retention) was missing, plus smaller gaps in features 2, 3, 6, 7 and 8. The gap closure addresses them; there is no task number by decision.
+- **Deduplication** (`packages/deduplication`, engine `core-dedup-v1`):
+  - **MATCH:** the same listing URL with nothing conflicting, or the same job/requisition ID at the same company. An exact re-capture is attached to the saved opportunity as another source instead of becoming a second opportunity.
+  - **PROBABLE_MATCH:** confidence-scored. The opportunity is created and the pair is recorded for review; nothing is merged on a probable match.
+  - Capture is one transaction (raw source record, decision, create or attach); a normalization failure still preserves the raw record.
+  - "Not the same job" (`DISTINCT`) is reversible.
+  - Existing opportunities are never merged retroactively.
+- **Duplicate-spend guard:** a paid evaluation request or deferred resume is refused (409 `DUPLICATE_LISTING_ALREADY_EVALUATED`) while an exact duplicate already has an evaluation, admission or deferral. The check and admission are serialized by an advisory lock, closing the race between simultaneous requests. The Task 6 admission gate is unchanged.
+- **Companies:** reused by normalized name, with the typed spelling kept in provenance; one dashboard company-filter entry per company. `pnpm db:backfill-dedup [--dry-run]` is explicit, additive and idempotent, and is not part of `pnpm app:setup`; `pnpm app:doctor` reports when it is needed.
+- **Also:**
+  - versions on evaluation-history rows;
+  - an optional user-stated time-zone requirement, withheld from the evaluator;
+  - AI usage and spend by domain and source on `/budget`;
+  - phone-width overflow fixes on the opportunity page and `/profile`.
+- **Migration:** `20261017120000_deduplication`, additive only.
+- **New versioned specifications:** Core AI Framework PRD v1.6, Customer Success AI Assistant PRD v1.5, Core Platform TDD v1.7 and Customer Success Assistant TDD v1.5. Their status sections and the Core TDD §51 deduplication summary are updated; the requirements are unchanged. The previous versions moved unchanged into `Archive/`. The Semantic Evaluation Playbook is unchanged (v1.3).
+- **Verification** (isolated test database, no paid calls): unit 1,128, integration 223, E2E 32/32. No evaluator internals, routing, prompts or recommendation logic changed.
+- Commit: `feat: close features 1–10 gaps` on `claude/gallant-pasteur-y1ou3i`.
+
+### Post-Task-9 versioned specification update (October 16, 2026)
+
+- New current versions: Core AI Framework PRD v1.5, Customer Success AI Assistant PRD v1.4, Core Platform TDD v1.6, Customer Success Assistant TDD v1.4 and Semantic Evaluation Playbook v1.3.
+- The previous current PRD/TDD versions moved unchanged into the `Archive/` folders; Playbooks v1.1 and v1.2 stay beside v1.3.
+- Core AI Framework PRD v1.5 and Customer Success PRD v1.4: current status after the Task 1–9 completion pass, and the evaluator-branch semantic-contract repairs noted as effective at final integration. Product requirements are unchanged.
+- Core Platform TDD v1.6:
+  - documents the `USAGE_LIMIT_REACHED` deferral reason and the legacy `BUDGET_UNAVAILABLE` mapping;
+  - completes the neutral "eligible for evaluation" wording;
+  - adds implementation-status summaries for the application tracker and for the operations and worker model.
+- Customer Success TDD v1.4: a per-branch table of evaluator contract versions and the October 10–13 evaluator-branch rules, effective at final integration. The evaluation design body is unchanged until then.
+- Semantic Evaluation Playbook v1.3 adds §14 with the October 10–13 semantic-contract rules (on `codex/evaluator-live-diagnostic`), plus dated notes in §11 and §13.
+- `AGENTS.md` and `CLAUDE.md` point to the new versions. Documentation only; no code, test, database or provider activity.
+
+### Task 9 completion — operational hardening (October 16, 2026)
+
+- Completed the audit-first completion pass over the October 10 Task 9 operations work. The worker loop, single-worker lock, task claiming, recovery, error classification, backoff, shutdown, queue states, AI-configuration handling, health behavior, public evaluation API, navigation and acceptance tests were audited as complete and left unchanged.
+- `POST /api/opportunities` and `GET /api/opportunities/[id]` now log only the error name, like every other route; response bodies are unchanged.
+- `pnpm app:doctor` reports requests waiting for the AI budget (including legacy `BUDGET_UNAVAILABLE` rows) separately from those waiting for usage limits (`USAGE_LIMIT_REACHED`). It remains a single read-only query.
+- E2E runs always use a deterministic, non-live `OPENAI_API_KEY` (`playwright.config.ts`, `e2eEnvironment()`), so the runner, its helpers and the web server never inherit a real key from `.env`.
+- New unit tests cover `/api/health` (200 and 503 with no error detail), error-name-only logging in both routes, and the E2E credential; the integration suite checks the doctor's per-reason deferral counts. `vitest.config.ts` resolves the web app's `@/` alias.
+- The root `README.md` documents usage-limit deferrals, the E2E credential, and the single-worker lock's connection-loss caveat (the lock holds only while its database connection stays up; documented, not changed).
+- No migration; no queue, worker, lease, routing, prompt or evaluator change. Verified on an isolated test database with no paid calls: unit 1,086, integration 192, E2E 27/27.
+- Commit: `feat: complete operational hardening` on `claude/gallant-pasteur-y1ou3i`.
+
+### Task 8 completion — application tracker (October 16, 2026)
+
+- Completed the audit-first completion pass over the October tracker; the stages, outcomes and lifecycle model are unchanged.
+- Calendar dates:
+  - applied and closed dates cannot be later than the current UTC date;
+  - a close cannot precede the applied date;
+  - an applied-date correction cannot follow the closed date;
+  - refusals return `APPLICATION_DATE_INVALID` (400) with no trace.
+- Follow-ups can be rescheduled and reworded through the versioned `updateFollowUp` command, recorded as a `FOLLOW_UP_UPDATED` event. Additive migration: `20261017090000_application_follow_up_updated`.
+- Interviews have full editing; the status can be chosen when adding; "Move to Interviewing?" appears only for a non-cancelled interview.
+- Only open applications of non-archived opportunities have a next action. The rule applies consistently to follow-up filters, tracker tiles, the next-action sort, dashboard badges and the "Follow-ups due" count.
+- `/applications`:
+  - an outcome or Closed filter under Active widens the view to All;
+  - empty results recover inside the tracker.
+- Stale writes:
+  - typed input is kept on every refusal;
+  - "Load latest" is offered only for state and concurrency conflicts.
+- Tracking refusals name the opportunity's state; the opportunity page shows a load-error notice.
+- The guarded lifecycle path and the evaluator are unchanged. Verified on an isolated test database with no paid calls (E2E 27/27).
+- Commit: `534a4c7` on `claude/gallant-pasteur-y1ou3i`.
+
+### Final evaluator routing lock (October 15, 2026)
+
+- Kept deterministic execution for Hard Filters, Ghost Job Risk when objective posting-history evidence is unavailable, and Final Recommendation.
+- Kept GPT-5.6 Terra for JD Reconstruction and Resume Match.
+- Kept GPT-5.6 Luna for Job Evaluation, Organizational Maturity, Alex Fit, and Opportunity Priority.
+- Routed Company Alignment and Burnout Risk to GPT-6 Luna.
+- Rejected GPT-6 Luna for Job Evaluation after the isolated benchmark changed Strategic Bridge Value from `HIGH` to `MODERATE` and omitted established process-development evidence.
+- Skipped the remaining GPT-6 stage benchmarks by explicit product decision and locked the routing policy rather than continuing paid experimentation.
+- Final live/whole-product acceptance remains deferred until the evaluator and all intended main-product work are integrated.
+- Branch state: the GPT-6 Luna routes are implemented on `codex/evaluator-live-diagnostic`; `claude/gallant-pasteur-y1ou3i` keeps the earlier accepted routing until final integration.
+
+### Task 6 completion — AI budget and usage controls (October 14, 2026)
+
+- Completed the persistent monthly AI budget ledger, atomic reservation/reconciliation, configurable warning thresholds, daily/weekly evaluation-volume limits, monthly output-token limits, budget deferral/resume/cancel flow, usage reporting, and dashboard capacity/cost visibility.
+- Standardized dollar-budget deferrals on `AI_BUDGET_LIMIT`; throughput/token limits use `USAGE_LIMIT_REACHED`.
+- Preserved unknown provider usage as Unknown rather than coercing it to zero.
+- Accepted the product decision that already-admitted queued/running evaluations are not retroactively cancelled when limits are lowered.
+- Checkpoints: `267138a` and naming cleanup `8d3993a`.
+
+### Task 7 completion — normalized opportunity facts (October 14, 2026)
+
+- Added deterministic normalization and persistence for salary minimum/maximum, currency, work arrangement, seniority, department, employment type, closing date, residency requirement, and residency regions while preserving raw text and field provenance.
+- Added supported residency geography codes for countries, U.S. states/DC/Puerto Rico, Canadian provinces/territories, UK nations, and broad regions such as EU, EEA, EMEA, APAC, LATAM, and WORLDWIDE.
+- Preserved Unknown for ambiguous geography, ordinary city/location text, conflicting currencies, non-annual compensation, OTE, and unsupported cases.
+- Added the bare-`$` USD provenance marker while keeping explicit currency authoritative.
+- Added dashboard salary/filter/sort support and residency-aware persisted data without silently changing evaluator behavior during Task 7.
+- Final Task 7 checkpoint: `754f956dc0860149760936a61bdace0489404b9a` on `claude/gallant-pasteur-y1ou3i`.
+
+### Milestone 4 completion alignment — salary policy and Task 7 contract (October 15, 2026)
+
+- Updated Customer Success Hard Filters to consume the Task 7 salary/currency/residency contract.
+- U.S.-residency-required roles now use a hard `$60,000 USD-equivalent` minimum: `$60,000+` Pass; below `$60,000` Fail/Skip; no U.S. Review band and no salary maximum.
+- Non-U.S.-eligible roles use: `$60,000+` Pass; `$55,000–$59,999.99` Review; `$50,000–$54,999.99` conditional Review only when explicit configured location/cost context supports viability, otherwise Unknown; below `$50,000` Fail/Skip.
+- Residency requirement selects the policy; salary currency does not.
+- Added versioned FX handling under `cs-salary-policy-v2-ecb-2026-10-14` using reproducible ECB euro-reference cross-rates. No converted salary values are persisted.
+- A disclosed minimum is the salary gate. Max-only salary remains Unknown unless the stated maximum is itself below the applicable floor.
+- Released `salaryMin`, `salaryMax`, `currency`, `residencyRequirement`, and `residencyRegions` with provenance to the evaluator; `remoteStatus`, `seniority`, `department`, `employmentType`, and `closingDate` remain withheld pending later coordinated adoption.
+- Version identifiers advanced to `cs-evaluation-v1.2-m9`, `customer-success-v1.2`, `cs-rules-v1.2`, and `cs-hard-filters-v2` (on `codex/evaluator-live-diagnostic`) without changing prompt/model versions as part of this correction.
+- Focused offline verification passed without provider calls or normal-database use. Broader DB-backed integration, E2E, web build, live calls, and final Task 7→evaluator acceptance remain intentionally deferred to the later whole-product integration pass.
+- Commit: `267124f fix(cs): align Milestone 4 salary policy with Task 7` on `codex/evaluator-live-diagnostic`. Not yet merged: on `claude/gallant-pasteur-y1ou3i`, `fieldsWithheldFromEvaluator` still withholds all ten Task 7 fields and the earlier version identifiers remain until final branch combination.
+
+### Product completion planning (October 15, 2026)
+
+- Main-product scope is features 1–18. Retrieval, source health, posting-history intelligence, the browser extension, source intelligence, market analytics, personal job-search analytics, and company intelligence are part of the intended main product rather than optional post-product add-ons.
+- Only features 19–23 remain later add-ons: company watchlists, proactive notifications/follow-ups, calendar integration, email integration, and application-assistance features.
+- The current sequence is: finish the Task 1–9 completion pass (Task 8 next, then Task 9), build any still-missing main-product features 1–18, then perform final evaluator/product integration, whole-product acceptance, and deliberate freeze/merge.
+- Retrieval work may begin after the evaluator and manual product are stable enough to support it, but final product acceptance does not occur until all intended main-product features are complete.
+- Kept evaluator and main-product workstreams separated to reduce architectural drift.
+
+### Profile limitations and policy readiness (October 14, 2026; added October 16, 2026 from Git)
+
+- Persisted optional structured profile `limitations` (`UserProfile.limitations`) and delivered them to the evaluator subject without loosening the installed profile contract. Commit `96c6eb1`.
+- Removed a stale execution-policy pin and prepared the profile/policy integration; `pnpm app:doctor` reports the evaluator's built-in policy version. Commit `35b8265`.
+
+### Evaluator semantic-contract stabilization (October 10–13, 2026; evaluator branch, not merged; added October 16, 2026 from Git)
+
+- Recorded on `codex/evaluator-live-diagnostic`; not part of the main-product branch until final integration.
+- Changes:
+  - provider prose is display-only;
+  - Genuine Gap proof uses structured `gapEvidence` and structured profile limitations;
+  - requirement-relative experience levels;
+  - structured `requirementStatements` with deterministic reconciliation;
+  - requirement-relative INDUSTRY evidence;
+  - Unknown without supported or unsupported portions;
+  - a fail-closed `RESUME_MATCH_PREREQUISITE_OUTDATED` gate.
+- Contract identifiers on that branch: `cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`.
+- Commits:
+  - `ba95d76` (Oct 11, work-in-progress handoff; introduces the GPT-6 Luna policy code);
+  - `04611af` and `1c09924` (Oct 11);
+  - `7149563` and `f29530c` (Oct 12);
+  - `067c5dc` (Oct 13).
+- Offline verification only. Final paid acceptance and current-contract cost measurement remain outstanding. See `EVALUATOR_STATUS.md` §20.
+
+### Main-product Tasks 1–9: initial implementation (October 6–7, 2026; added October 16, 2026 from Git)
+
+Commit dates are from Git. The task records in `CURRENT_PROGRESS.md` and `HANDOFFS.md` carry dates from October 6 to October 10; those record dates are preserved as written.
+
+- October 6:
+  - opportunity dashboard and Domain default (`ccd3761`);
+  - evaluator test-harness repair (`a0e225c`);
+  - evaluation-experience correctness under failure and delay (`0639785`);
+  - evaluation of any normalized opportunity (`27c897e`);
+  - opportunity lifecycle and user actions (`f129d40`);
+  - AI usage and estimated-cost display (`440306a`);
+  - job provenance foundation (`26dbdb5`);
+  - agent-guide documentation paths (`e3e6d5e`).
+- October 7:
+  - Task 5, profile and preferences management with an explicit active version (`68f25c9`);
+  - Task 6, AI budget ledger with deferral and request-integrity admissions (`ccd80c9`);
+  - Task 7, dashboard search, filters, sorting, pagination and summaries (`a0d99a5`);
+  - Task 8, application tracker beside the opportunity lifecycle (`f884b72`);
+  - Task 9, final setup, operations hardening and whole-product acceptance (`b7f7e87`).
+
+---
+
+## Earlier Unreleased Entries (recorded before October 15, 2026; added to the repository October 6, 2026)
+
+*Preserved as recorded before the October 15, 2026 updates above. The remaining evaluator sequence and development order below have since been completed or superseded (October 15 routing lock; main-product scope of features 1–18).*
+
 ### Evaluator finalization
 
 - Accepted Resume Match Optimization #2 as the current Resume Match baseline.

@@ -6,7 +6,7 @@ import { getEvaluationService } from "./evaluation-service";
 function safeError(error: unknown) {
   if (error instanceof EvaluationApiError) {
     return Response.json(
-      { error: error.message, code: error.code },
+      { error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },
       { status: error.status },
     );
   }
@@ -47,12 +47,29 @@ export function createEvaluationApiHandlers(service: EvaluationService) {
       }
       try {
         const result = await service.requestEvaluation(opportunityId, body);
+        // A deferred request is accepted and persisted but not queued.
+        if (result.outcome !== "QUEUED") return Response.json(result, { status: 200 });
         return Response.json(result, {
           status: 202,
           headers: {
             Location: `/api/opportunities/${opportunityId}/evaluation`,
           },
         });
+      } catch (error) {
+        return safeError(error);
+      }
+    },
+    async resume(deferredId: string) {
+      try {
+        const result = await service.resumeDeferred(deferredId);
+        return Response.json(result, { status: result.outcome === "QUEUED" ? 202 : 200 });
+      } catch (error) {
+        return safeError(error);
+      }
+    },
+    async cancel(deferredId: string) {
+      try {
+        return Response.json(await service.cancelDeferred(deferredId));
       } catch (error) {
         return safeError(error);
       }
@@ -83,6 +100,33 @@ export async function handleProductionEvaluationPost(
   }
 }
 
+export async function handlePreEvaluatorTriagePost(
+  request: Request,
+  opportunityId: string,
+) {
+  try {
+    let body: unknown = {};
+    try {
+      const text = await request.text();
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      return Response.json(
+        { error: "Request body must be valid JSON", code: "REQUEST_INVALID" },
+        { status: 400 },
+      );
+    }
+    const result = await getEvaluationService().decideTriage(opportunityId, body);
+    return Response.json(result, {
+      status: result.outcome === "QUEUED" ? 202 : 200,
+      ...(result.outcome === "QUEUED"
+        ? { headers: { Location: `/api/opportunities/${opportunityId}/evaluation` } }
+        : {}),
+    });
+  } catch (error) {
+    return safeError(error);
+  }
+}
+
 export async function handleProductionEvaluationGet(
   request: Request,
   opportunityId: string,
@@ -93,6 +137,15 @@ export async function handleProductionEvaluationGet(
       opportunityId,
       evaluationId,
     );
+  } catch (error) {
+    return safeError(error);
+  }
+}
+
+export async function handleDeferredEvaluationAction(action: "resume" | "cancel", deferredId: string) {
+  try {
+    const handlers = createEvaluationApiHandlers(getEvaluationService());
+    return await (action === "resume" ? handlers.resume(deferredId) : handlers.cancel(deferredId));
   } catch (error) {
     return safeError(error);
   }

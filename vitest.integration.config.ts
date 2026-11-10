@@ -1,10 +1,20 @@
 import "dotenv/config";
+
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { assertIsolatedTestDatabase } from "./tests/support/test-database-guard";
+
+// Run integration tests against a separate database (TEST_DATABASE_URL), and
+// refuse any target that is not an isolated test database.
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+assertIsolatedTestDatabase(process.env.DATABASE_URL, "Integration tests");
 
 export default defineConfig({
   resolve: {
     alias: {
+      "@ai-career/browser-retrieval": fileURLToPath(
+        new URL("./packages/browser-retrieval/src/index.ts", import.meta.url),
+      ),
       "@ai-career/core": fileURLToPath(
         new URL("./packages/core/src/index.ts", import.meta.url),
       ),
@@ -13,6 +23,12 @@ export default defineConfig({
       ),
       "@ai-career/database": fileURLToPath(
         new URL("./database/src/index.ts", import.meta.url),
+      ),
+      "@ai-career/deduplication": fileURLToPath(
+        new URL("./packages/deduplication/src/index.ts", import.meta.url),
+      ),
+      "@ai-career/discovery": fileURLToPath(
+        new URL("./packages/discovery/src/index.ts", import.meta.url),
       ),
       "@ai-career/evaluation": fileURLToPath(
         new URL("./packages/evaluation/src/index.ts", import.meta.url),

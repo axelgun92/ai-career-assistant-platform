@@ -1,0 +1,422 @@
+import { deriveSourceHealth, type HealthRun } from "@ai-career/core";
+import { normalizeCompanyName } from "@ai-career/deduplication";
+import { defaultAdapterRegistry, missingEnvironment } from "@ai-career/discovery";
+import type { QueueSnapshot } from "@ai-career/database";
+import {
+  customerSuccessProductionSemanticPolicyVersion,
+  readEvaluationWorkerEnvironment,
+  readServerEnvironment,
+} from "@ai-career/shared";
+import { ZodError } from "zod";
+import { aiConfigurationStatus, describeConfigurationProblem } from "./ai-configuration";
+
+// `pnpm app:doctor`: strictly read-only diagnostics. It only reads environment
+// variables, files and the database (SELECT queries). It never writes,
+// never runs recovery, and never prints values of variables, with one
+// exception: the database name and host it connected to (never the user or
+// password), so you can confirm which database you are about to use, such as
+// a separate acceptance database (feature 14B).
+
+export type CheckLevel = "PASS" | "WARN" | "FAIL";
+
+export interface DoctorCheck {
+  level: CheckLevel;
+  label: string;
+  detail: string;
+}
+
+// The only database access the doctor has: reads.
+export interface DoctorReads {
+  ping(): Promise<void>;
+  // The name of the database connected to.
+  databaseName?(): Promise<string>;
+  appliedMigrations(): Promise<Array<{ name: string; finished: boolean }>>;
+  activeCustomerSuccessProfile(): Promise<{ version: number; storesLimitations: boolean } | null>;
+  workerConnected(): Promise<boolean>;
+  queueSnapshot(now: Date): Promise<QueueSnapshot>;
+  // Open deferrals; those not waiting for a usage limit wait for the AI budget
+  // (including legacy BUDGET_UNAVAILABLE rows).
+  openDeferrals(): Promise<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
+  // Companies `pnpm db:backfill-dedup` would give a normalized name.
+  companiesNeedingBackfill(): Promise<number>;
+  // Browsers paired with the extension companion (feature 14B), unrevoked.
+  activeExtensionPairings?(): Promise<number>;
+  // Automated retrieval (feature 11): enabled sources, failed runs in the
+  // last 24 hours and whether the retrieval worker holds its lock; with
+  // feature 12, what each enabled source's health is derived from.
+  retrieval?(now: Date): Promise<{
+    workerConnected: boolean;
+    enabledSources: Array<{ adapterKey: string; name: string; health?: DoctorSourceHealthInputs }>;
+    failedRunsLastDay: number;
+  }>;
+}
+
+export interface DoctorSourceHealthInputs {
+  scheduleMinutes: number;
+  lastRunAt: Date | null;
+  nextEligibleAt: Date | null;
+  // Recent runs, newest first.
+  runs: HealthRun[];
+  lastSuccess: HealthRun | null;
+}
+
+const doctorTime = (value: Date) => `${value.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+
+export interface DoctorInputs {
+  environment: NodeJS.ProcessEnv;
+  nodeVersion: string;
+  migrationFolders: string[];
+  prismaClientGenerated: boolean;
+  // Null when the database package could not be loaded.
+  reads: DoctorReads | null;
+  now: Date;
+}
+
+const variableNames = (error: unknown) =>
+  error instanceof ZodError ? [...new Set(error.issues.map((issue) => String(issue.path[0])))].join(", ") : "unknown";
+
+function nodeAtLeast(version: string, major: number, minor: number) {
+  const [actualMajor = 0, actualMinor = 0] = version.split(".").map(Number);
+  return actualMajor > major || (actualMajor === major && actualMinor >= minor);
+}
+
+// Host and port only, never the user or password.
+function databaseHost(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host || null;
+  } catch {
+    return null;
+  }
+}
+
+function minutes(ms: number) {
+  return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)} min`;
+}
+
+export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const add = (level: CheckLevel, label: string, detail: string) => checks.push({ level, label, detail });
+
+  add(
+    nodeAtLeast(inputs.nodeVersion, 20, 9) ? "PASS" : "FAIL",
+    "Node.js",
+    `version ${inputs.nodeVersion} (requires >= 20.9)`,
+  );
+
+  let databaseConfigured = true;
+  try {
+    readServerEnvironment(inputs.environment);
+    add("PASS", "DATABASE_URL", "set");
+  } catch (error) {
+    databaseConfigured = false;
+    add("FAIL", "DATABASE_URL", `missing or invalid (${variableNames(error)}); copy .env.example to .env and set it`);
+  }
+
+  add(
+    inputs.prismaClientGenerated ? "PASS" : "FAIL",
+    "Prisma client",
+    inputs.prismaClientGenerated ? "generated" : "not generated; run pnpm prisma:generate",
+  );
+
+  const ai = aiConfigurationStatus(inputs.environment);
+  add(
+    ai.state === "configured" ? "PASS" : "WARN",
+    "AI evaluation configuration",
+    ai.state === "configured"
+      ? "configured (real evaluations make paid provider calls)"
+      : `${describeConfigurationProblem(ai)} The app runs, but evaluations cannot be requested.`,
+  );
+
+  // The policy version is defined by the evaluator; the environment variable
+  // only overrides its label. A stale override mislabels new evaluations and
+  // weakens the worker's queued-policy check, so it is reported (by name).
+  const policyOverride = inputs.environment.AI_EXECUTION_POLICY_VERSION?.trim();
+  if (!policyOverride || policyOverride === customerSuccessProductionSemanticPolicyVersion) {
+    add("PASS", "Evaluation policy version", `${customerSuccessProductionSemanticPolicyVersion} (built into the evaluator)`);
+  } else {
+    add(
+      "WARN",
+      "Evaluation policy version",
+      `AI_EXECUTION_POLICY_VERSION overrides the evaluator's built-in version ${customerSuccessProductionSemanticPolicyVersion}. ` +
+        "Remove it from .env unless you are deliberately pinning a different policy.",
+    );
+  }
+
+  try {
+    readEvaluationWorkerEnvironment(inputs.environment);
+    add("PASS", "Worker settings", "EVALUATION_JOB_* and EVALUATION_WORKER_POLL_MS are valid");
+  } catch (error) {
+    add("WARN", "Worker settings", `invalid: ${variableNames(error)}`);
+  }
+
+  const reads = inputs.reads;
+  if (!databaseConfigured || !reads) return checks;
+
+  try {
+    await reads.ping();
+    const name = reads.databaseName ? await reads.databaseName().catch(() => null) : null;
+    const host = databaseHost(inputs.environment.DATABASE_URL);
+    add("PASS", "Database", name ? `reachable: database ${name}${host ? ` on ${host}` : ""}` : "reachable");
+  } catch {
+    add("FAIL", "Database", "not reachable; start PostgreSQL and check DATABASE_URL");
+    return checks;
+  }
+
+  try {
+    const applied = await reads.appliedMigrations();
+    const finished = new Set(applied.filter((item) => item.finished).map((item) => item.name));
+    const pending = inputs.migrationFolders.filter((name) => !finished.has(name));
+    const unknown = [...finished].filter((name) => !inputs.migrationFolders.includes(name));
+    if (pending.length) {
+      add("FAIL", "Migrations", `${pending.length} not applied (${pending.join(", ")}); run pnpm db:migrate`);
+    } else {
+      add(unknown.length ? "WARN" : "PASS", "Migrations",
+        `${finished.size} applied${unknown.length ? `; unknown to this checkout: ${unknown.join(", ")}` : ""}`);
+    }
+  } catch {
+    add("FAIL", "Migrations", "none applied; run pnpm db:migrate");
+    return checks;
+  }
+
+  const activeProfile = await reads.activeCustomerSuccessProfile();
+  add(
+    activeProfile ? "PASS" : "WARN",
+    "Active profile",
+    activeProfile
+      ? `version ${activeProfile.version} is active for Customer Success; ` +
+          (activeProfile.storesLimitations ? "it stores structured limitations" : "it stores no structured limitations")
+      : "none active; run pnpm profile:import:customer-success --activate or use the Profile page",
+  );
+
+  const connected = await reads.workerConnected();
+  add(connected ? "PASS" : "WARN", "Evaluation worker", connected ? "connected" : "not running; start pnpm worker:evaluations");
+
+  const queue = await reads.queueSnapshot(inputs.now);
+  const oldest = queue.oldestPendingAt ? ` (oldest waiting ${minutes(inputs.now.getTime() - queue.oldestPendingAt.getTime())})` : "";
+  add("PASS", "Queue", `${queue.pending} queued${oldest}, ${queue.running} running`);
+  const expired = queue.expiredReclaimable + queue.expiredExhausted;
+  if (expired > 0) {
+    add(
+      "WARN",
+      "Stale evaluations",
+      `${expired} evaluation(s) exceeded their worker lease (${queue.expiredReclaimable} will be retried, ` +
+        `${queue.expiredExhausted} have no attempts left). This does not prove the worker stopped. ` +
+        (connected
+          ? "The worker is connected; they may still be running."
+          : "If no worker is running, start pnpm worker:evaluations; it recovers them on startup."),
+    );
+  }
+
+  const deferrals = await reads.openDeferrals();
+  const waitingForBudget = deferrals.open - deferrals.waitingForUsageLimits;
+  add(
+    deferrals.pinnedToOtherVersion > 0 ? "WARN" : "PASS",
+    "Deferred evaluations",
+    `${deferrals.open} waiting (${waitingForBudget} for the AI budget, ${deferrals.waitingForUsageLimits} for usage limits)` +
+      (deferrals.pinnedToOtherVersion > 0
+        ? `; ${deferrals.pinnedToOtherVersion} will run with a profile version other than the active one. ` +
+          "Review them on /budget: resume keeps the pinned version; cancel and request again to use the active one."
+        : ""),
+  );
+
+  // Reported only: the backfill changes data, so it is always run
+  // deliberately, never by the doctor or setup.
+  const companiesNeedingBackfill = await reads.companiesNeedingBackfill();
+  add(
+    companiesNeedingBackfill > 0 ? "WARN" : "PASS",
+    "Company names",
+    companiesNeedingBackfill > 0
+      ? `${companiesNeedingBackfill} compan${companiesNeedingBackfill === 1 ? "y has" : "ies have"} no normalized name, so the ` +
+          "company filter cannot group them yet. Run pnpm db:backfill-dedup --dry-run, then pnpm db:backfill-dedup, " +
+          "against this database when you choose (it also records duplicates among existing opportunities)."
+      : "normalized",
+  );
+
+  if (reads.activeExtensionPairings) {
+    const paired = await reads.activeExtensionPairings().catch(() => null);
+    if (paired === null) {
+      add("WARN", "Browser extension", "paired browsers could not be read; run pnpm db:migrate");
+    } else {
+      add(
+        "PASS",
+        "Browser extension",
+        paired > 0 ? `${paired} browser${paired === 1 ? "" : "s"} paired; manage pairings on /extension` : "no browser paired (optional; pair one on /extension)",
+      );
+    }
+  }
+
+  if (reads.retrieval) {
+    const retrieval = await reads.retrieval(inputs.now);
+    const enabled = retrieval.enabledSources.length;
+    const blocked = retrieval.enabledSources.flatMap((source) => {
+      const adapter = defaultAdapterRegistry.get(source.adapterKey);
+      if (!adapter) return [`${source.name} (unknown source type)`];
+      if (!adapter.verified) return [`${source.name} (awaiting verification)`];
+      const missing = missingEnvironment(adapter, inputs.environment);
+      return missing.length ? [`${source.name} (needs ${missing.join(" and ")})`] : [];
+    });
+    add(
+      blocked.length ? "WARN" : "PASS",
+      "Retrieval sources",
+      enabled === 0
+        ? "none enabled; nothing is retrieved until you enable a source on /sources"
+        : `${enabled} enabled` + (blocked.length ? `; cannot run: ${blocked.join(", ")}` : ""),
+    );
+    add(
+      enabled > 0 && !retrieval.workerConnected ? "WARN" : "PASS",
+      "Retrieval worker",
+      retrieval.workerConnected
+        ? "connected"
+        : enabled > 0
+          ? "not running; start pnpm worker:retrieval to run enabled sources"
+          : "not running (not needed until a source is enabled)",
+    );
+    // Source health (feature 12): read-only; the doctor never clears a gate.
+    const attention = retrieval.enabledSources.flatMap((source) => {
+      if (!source.health) return [];
+      const health = deriveSourceHealth({
+        enabled: true,
+        archivedAt: null,
+        blockedReason: null,
+        scheduleMinutes: source.health.scheduleMinutes,
+        lastRunAt: source.health.lastRunAt,
+        nextEligibleAt: source.health.nextEligibleAt,
+        runsNewestFirst: source.health.runs,
+        lastSuccess: source.health.lastSuccess,
+        now: inputs.now,
+      });
+      const reasons: string[] = [];
+      if (health.status === "rate_limited" && health.gate) reasons.push(`rate limited until ${doctorTime(health.gate.until)}`);
+      if (health.status === "provider_wait" && health.gate) reasons.push(`the source asked to wait until ${doctorTime(health.gate.until)}`);
+      if (health.status === "needs_attention") reasons.push(`needs attention (${health.lastFailure?.code ?? "source failure"})`);
+      if (health.status === "failing") reasons.push(`failing (${health.streak} source failures in a row)`);
+      if (health.stale) reasons.push("no successful retrieval for more than two schedule intervals");
+      return reasons.length ? [`${source.name} (${reasons.join("; ")})`] : [];
+    });
+    if (enabled > 0) {
+      add(
+        attention.length ? "WARN" : "PASS",
+        "Retrieval source health",
+        attention.length ? `${attention.join(", ")}; see /sources` : "no enabled source needs attention",
+      );
+    }
+    add(
+      retrieval.failedRunsLastDay > 0 ? "WARN" : "PASS",
+      "Retrieval runs",
+      retrieval.failedRunsLastDay > 0
+        ? `${retrieval.failedRunsLastDay} run(s) failed in the last 24 hours; see each source's run history on /sources`
+        : "no failed runs in the last 24 hours",
+    );
+  }
+  return checks;
+}
+
+export function formatDoctorChecks(checks: DoctorCheck[]): string {
+  return checks.map((check) => `${check.level.padEnd(4)}  ${check.label}: ${check.detail}`).join("\n");
+}
+
+// Read-only implementation over a Prisma client: SELECTs and read model
+// methods only.
+export function createDoctorReads(client: {
+  $queryRaw: (query: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+}, helpers: {
+  workerConnected(): Promise<boolean>;
+  queueSnapshot(now: Date): Promise<QueueSnapshot>;
+  retrievalWorkerConnected?(): Promise<boolean>;
+}): DoctorReads {
+  return {
+    async ping() {
+      await client.$queryRaw`SELECT 1`;
+    },
+    async databaseName() {
+      const rows = (await client.$queryRaw`SELECT current_database() AS "name"`) as Array<{ name: string }>;
+      return rows[0]?.name ?? "";
+    },
+    async appliedMigrations() {
+      const rows = (await client.$queryRaw`
+        SELECT "migration_name" AS "name", ("finished_at" IS NOT NULL AND "rolled_back_at" IS NULL) AS "finished"
+        FROM "_prisma_migrations" ORDER BY "started_at"`) as Array<{ name: string; finished: boolean }>;
+      return rows;
+    },
+    async activeCustomerSuccessProfile() {
+      const rows = (await client.$queryRaw`
+        SELECT p."version", (p."limitations" IS NOT NULL) AS "storesLimitations"
+        FROM "ActiveUserProfile" a JOIN "UserProfile" p ON p."id" = a."userProfileId"
+        WHERE a."domain" = 'customer-success'`) as Array<{ version: number; storesLimitations: boolean }>;
+      return rows[0] ?? null;
+    },
+    workerConnected: () => helpers.workerConnected(),
+    async companiesNeedingBackfill() {
+      const rows = (await client.$queryRaw`
+        SELECT "name" FROM "Company" WHERE "normalizedName" IS NULL`) as Array<{ name: string }>;
+      return rows.filter((row) => normalizeCompanyName(row.name) !== null).length;
+    },
+    queueSnapshot: (now) => helpers.queueSnapshot(now),
+    async activeExtensionPairings() {
+      const rows = (await client.$queryRaw`
+        SELECT count(*)::int AS "count" FROM "ExtensionPairing" WHERE "revokedAt" IS NULL`) as Array<{ count: number }>;
+      return rows[0]?.count ?? 0;
+    },
+    async retrieval(now) {
+      const sources = (await client.$queryRaw`
+        SELECT "id", "adapterKey", "name", "scheduleMinutes", "lastRunAt", "nextEligibleAt" FROM "RetrievalSource"
+        WHERE "enabled" AND "archivedAt" IS NULL ORDER BY "createdAt" ASC, "id" ASC`) as Array<{
+        id: string;
+        adapterKey: string;
+        name: string;
+        scheduleMinutes: number;
+        lastRunAt: Date | null;
+        nextEligibleAt: Date | null;
+      }>;
+      type RunRow = HealthRun & { retrievalSourceId: string };
+      const recentRuns = (await client.$queryRaw`
+        SELECT r."retrievalSourceId", r."status", r."errorCode", r."errorMessage", r."createdAt", r."finishedAt", r."counts", r."retryAfterUntil"
+        FROM (
+          SELECT run.*, row_number() OVER (PARTITION BY run."retrievalSourceId" ORDER BY run."createdAt" DESC, run."id" DESC) AS "position"
+          FROM "RetrievalRun" run JOIN "RetrievalSource" s ON s."id" = run."retrievalSourceId"
+          WHERE s."enabled" AND s."archivedAt" IS NULL
+        ) r
+        WHERE r."position" <= 20
+        ORDER BY r."retrievalSourceId", r."createdAt" DESC, r."id" DESC`) as RunRow[];
+      const lastSuccesses = (await client.$queryRaw`
+        SELECT DISTINCT ON (run."retrievalSourceId") run."retrievalSourceId", run."status", run."errorCode", run."errorMessage",
+          run."createdAt", run."finishedAt", run."counts", run."retryAfterUntil"
+        FROM "RetrievalRun" run JOIN "RetrievalSource" s ON s."id" = run."retrievalSourceId"
+        WHERE s."enabled" AND s."archivedAt" IS NULL AND run."finishedAt" IS NOT NULL
+          AND (run."status" = 'COMPLETED' OR (run."status" = 'PARTIAL' AND run."errorCode" = 'LISTING_FAILURES'))
+        ORDER BY run."retrievalSourceId", run."finishedAt" DESC, run."id" DESC`) as RunRow[];
+      const enabledSources = sources.map((source) => ({
+        adapterKey: source.adapterKey,
+        name: source.name,
+        health: {
+          scheduleMinutes: source.scheduleMinutes,
+          lastRunAt: source.lastRunAt,
+          nextEligibleAt: source.nextEligibleAt,
+          runs: recentRuns.filter((run) => run.retrievalSourceId === source.id),
+          lastSuccess: lastSuccesses.find((run) => run.retrievalSourceId === source.id) ?? null,
+        },
+      }));
+      const failed = (await client.$queryRaw`
+        SELECT COUNT(*)::int AS "count" FROM "RetrievalRun"
+        WHERE "status" = 'FAILED' AND "finishedAt" >= ${new Date(now.getTime() - 24 * 60 * 60 * 1000)}`) as Array<{ count: number }>;
+      return {
+        workerConnected: helpers.retrievalWorkerConnected ? await helpers.retrievalWorkerConnected() : false,
+        enabledSources,
+        failedRunsLastDay: failed[0]?.count ?? 0,
+      };
+    },
+    async openDeferrals() {
+      // A deferral resumes with the version it was requested with; count the
+      // open ones whose version is not the active one (or no longer exists).
+      const rows = (await client.$queryRaw`
+        SELECT COUNT(*)::int AS "open",
+          COUNT(*) FILTER (WHERE d."reasonCode" = 'USAGE_LIMIT_REACHED')::int AS "waitingForUsageLimits",
+          COUNT(*) FILTER (WHERE d."userProfileId" IS DISTINCT FROM a."userProfileId")::int AS "pinnedToOtherVersion"
+        FROM "DeferredEvaluation" d
+        LEFT JOIN "ActiveUserProfile" a ON a."domain" = d."domain"
+        WHERE d."status" = 'DEFERRED'`) as Array<{ open: number; waitingForUsageLimits: number; pinnedToOtherVersion: number }>;
+      return rows[0] ?? { open: 0, waitingForUsageLimits: 0, pinnedToOtherVersion: 0 };
+    },
+  };
+}

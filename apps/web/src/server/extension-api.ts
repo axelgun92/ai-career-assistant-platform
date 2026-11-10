@@ -1,0 +1,350 @@
+import { createRetrievalIngestionService, extensionCaptureMaxBytes, extensionCaptureSchemaVersion, pageCaptureMaxBytes } from "@ai-career/core";
+import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
+import {
+  findListingVersionHint,
+  PrismaExtensionLookupRepository,
+  PrismaExtensionPairingRepository,
+  PrismaManualOpportunityRepository,
+  PrismaPageCaptureRepository,
+  type ExtensionPairingRecord,
+} from "@ai-career/database";
+import { createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
+import { z } from "zod";
+import { EvaluationApiError } from "./evaluation-errors";
+import { handleProductionEvaluationGet, handleProductionEvaluationPost } from "./evaluation-api";
+import { getEvaluationService, type EvaluationService, type TriageAssessment } from "./evaluation-service";
+import {
+  createExtensionCaptureService,
+  ExtensionCaptureError,
+  type CaptureTriage,
+  type EvaluationSummary,
+  type ExtensionCaptureService,
+} from "./extension-capture";
+import {
+  extensionError,
+  extensionJson,
+  generatePairingCredential,
+  readJsonBody,
+  requirePairing,
+  requireSameOrigin,
+  type ExtensionPairingStore,
+} from "./extension-auth";
+import { createPageCaptureService, type PageCaptureService } from "./page-capture";
+import { createPageCaptureIngestor, evaluationHandoff } from "./page-capture-acquisition";
+import { createPageCaptureTabService, PageCaptureTabError, type PageCaptureTabService } from "./page-capture-tabs";
+import { extensionCaptureSession, extensionCaptureSessions } from "./page-capture-progress";
+
+// The browser extension companion's API (feature 14B). Two groups of
+// routes:
+// - the extension's own routes (captures, status, lookup, and the
+//   evaluation request and status wrappers), authenticated by the pairing
+//   credential and nothing else;
+// - pairing management (create, list, revoke), for the app's Extension page
+//   only: same-origin, and refused when a pairing credential is presented.
+// The evaluation wrappers only authenticate and then call the existing
+// production evaluation handlers unchanged; admission, budget,
+// duplicate-spend, queueing, retries, persistence and recommendation all
+// stay there.
+
+export interface ExtensionPairingManager extends ExtensionPairingStore {
+  create(input: { label: string; tokenHash: string; tokenHint: string }): Promise<ExtensionPairingRecord>;
+  list(): Promise<ExtensionPairingRecord[]>;
+  revoke(id: string, at: Date): Promise<ExtensionPairingRecord | null>;
+}
+
+export interface ExtensionApiDependencies {
+  pairings: ExtensionPairingManager;
+  captures: ExtensionCaptureService;
+  // Mode B, results-page capture (optional for the single-job tests).
+  pageCaptures?: PageCaptureService;
+  // Mode B background-tab detail reading (P2), reported by the extension.
+  pageCaptureTabs?: PageCaptureTabService;
+  // Capture history for the side panel.
+  captureHistory?: {
+    sessions(limit: number): Promise<unknown>;
+    session(id: string): Promise<unknown | null>;
+  };
+  evaluation: {
+    request(request: Request, opportunityId: string): Promise<Response>;
+    status(request: Request, opportunityId: string): Promise<Response>;
+  };
+  now?: () => Date;
+}
+
+const pairingLabelSchema = z
+  .object({ label: z.string().trim().min(1).max(60).optional() })
+  .strict();
+
+export function pairingView(pairing: ExtensionPairingRecord) {
+  return {
+    id: pairing.id,
+    label: pairing.label,
+    tokenHint: pairing.tokenHint,
+    createdAt: pairing.createdAt.toISOString(),
+    lastUsedAt: pairing.lastUsedAt?.toISOString() ?? null,
+    revokedAt: pairing.revokedAt?.toISOString() ?? null,
+    extensionVersion: pairing.lastExtensionVersion ?? null,
+  };
+}
+
+function captureFailure(error: unknown): Response {
+  if (error instanceof PageCaptureTabError) return extensionError(error.code, error.message);
+  if (error instanceof ExtensionCaptureError) {
+    return extensionError(error.code, error.message, error.issues.length ? { issues: error.issues } : {});
+  }
+  console.error("Extension request failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
+  return extensionError("INTERNAL_ERROR", "The request could not be completed");
+}
+
+export function createExtensionApiHandlers(dependencies: ExtensionApiDependencies) {
+  const now = dependencies.now ?? (() => new Date());
+  const authenticate = (request: Request) => requirePairing(request, dependencies.pairings, now);
+
+  async function tabRoute(request: Request, maxBytes: number, run: (body: unknown, tabs: PageCaptureTabService) => Promise<unknown>) {
+    const auth = await authenticate(request);
+    if (!auth.ok) return auth.response;
+    if (!dependencies.pageCaptureTabs) return extensionError("UNSUPPORTED_PAGE", "Reading job details in the browser is not available");
+    const body = await readJsonBody(request, maxBytes);
+    if (!body.ok) return body.response;
+    try {
+      return extensionJson(await run(body.body, dependencies.pageCaptureTabs), 200);
+    } catch (error) {
+      return captureFailure(error);
+    }
+  }
+
+  return {
+    async capture(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      const body = await readJsonBody(request, extensionCaptureMaxBytes);
+      if (!body.ok) return body.response;
+      try {
+        const { status, result } = await dependencies.captures.capture(body.body, auth.pairing);
+        return extensionJson(result, status);
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
+    async status(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      // The sites where "Save jobs on this page" is offered (verified only);
+      // absent while none is, so the status is then exactly as before.
+      const pageCaptureSites = dependencies.pageCaptures?.enabledSites().cards ?? [];
+      return extensionJson({
+        paired: true,
+        pairing: { label: auth.pairing.label, tokenHint: auth.pairing.tokenHint },
+        captureSchemaVersion: extensionCaptureSchemaVersion,
+        ...(pageCaptureSites.length ? { pageCapture: { sites: pageCaptureSites } } : {}),
+      });
+    },
+
+    // Mode B: stages the job cards the extension read from a results page.
+    async pageCapture(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.pageCaptures) return extensionError("UNSUPPORTED_PAGE", "Saving jobs from results pages is not available");
+      const body = await readJsonBody(request, pageCaptureMaxBytes);
+      if (!body.ok) return body.response;
+      try {
+        return extensionJson(await dependencies.pageCaptures.capture(body.body, auth.pairing), 200);
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
+    // Mode B background-tab reading (P2): the extension asks before opening
+    // a job's tab, then reports the job page's capture or why it gave none,
+    // or the rest of a batch it stopped. Pairing credential only.
+    async pageCaptureTabStart(request: Request, itemId: string) {
+      return tabRoute(request, 1024, (_body, tabs) => tabs.start(itemId));
+    },
+    async pageCaptureTabDetails(request: Request, itemId: string) {
+      return tabRoute(request, extensionCaptureMaxBytes + 8 * 1024, (body, tabs) => tabs.details(itemId, body));
+    },
+    async pageCaptureTabResult(request: Request, itemId: string) {
+      return tabRoute(request, 8 * 1024, (body, tabs) => tabs.result(itemId, body));
+    },
+    async pageCaptureTabStop(request: Request) {
+      return tabRoute(request, 8 * 1024, (body, tabs) => tabs.stop(body));
+    },
+
+    // Capture history for the extension's side panel: recent saves from
+    // results pages, and one save's jobs with their current state.
+    async pageCaptureSessions(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.captureHistory) return extensionJson({ sessions: [] });
+      const limit = Number.parseInt(new URL(request.url).searchParams.get("limit") ?? "10", 10);
+      try {
+        return extensionJson(await dependencies.captureHistory.sessions(Number.isFinite(limit) ? limit : 10));
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+    async pageCaptureSession(request: Request, id: string) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.captureHistory || !z.uuid().safeParse(id).success) return extensionError("NOT_FOUND", "Capture not found");
+      try {
+        const session = await dependencies.captureHistory.session(id);
+        return session ? extensionJson(session) : extensionError("NOT_FOUND", "Capture not found");
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
+    async lookup(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      try {
+        return extensionJson(await dependencies.captures.lookup(new URL(request.url).searchParams.get("url")));
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
+    // Wrapper: authentication only, then the existing production handler.
+    async requestEvaluation(request: Request, opportunityId: string) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      const type = (request.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+      if (type !== "application/json") return extensionError("UNSUPPORTED_MEDIA_TYPE", "The request body must be JSON");
+      return dependencies.evaluation.request(request, opportunityId);
+    },
+
+    // Wrapper: authentication only, then the existing latest-evaluation read.
+    async evaluationStatus(request: Request, opportunityId: string) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      return dependencies.evaluation.status(request, opportunityId);
+    },
+
+    async listPairings(request: Request) {
+      const refused = requireSameOrigin(request);
+      if (refused) return refused;
+      try {
+        return extensionJson({ pairings: (await dependencies.pairings.list()).map(pairingView) });
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
+    // The credential is in this response only; it is never stored or shown
+    // again.
+    async createPairing(request: Request) {
+      const refused = requireSameOrigin(request);
+      if (refused) return refused;
+      const body = await readJsonBody(request, 4 * 1024);
+      if (!body.ok) return body.response;
+      const parsed = pairingLabelSchema.safeParse(body.body);
+      if (!parsed.success) return extensionError("INVALID_REQUEST", "The pairing label is invalid");
+      try {
+        const { credential, tokenHash, tokenHint } = generatePairingCredential();
+        const pairing = await dependencies.pairings.create({ label: parsed.data.label ?? "Browser", tokenHash, tokenHint });
+        return extensionJson({ pairing: pairingView(pairing), credential }, 201);
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
+    async revokePairing(request: Request, id: string) {
+      const refused = requireSameOrigin(request);
+      if (refused) return refused;
+      if (!z.uuid().safeParse(id).success) return extensionError("NOT_FOUND", "Pairing not found");
+      try {
+        const pairing = await dependencies.pairings.revoke(id, now());
+        if (!pairing) return extensionError("NOT_FOUND", "Pairing not found");
+        return extensionJson({ pairing: pairingView(pairing) });
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+  };
+}
+
+export type ExtensionApiHandlers = ReturnType<typeof createExtensionApiHandlers>;
+
+// The persisted evaluation state through the existing latest-evaluation
+// read; null when the opportunity has no evaluation.
+export function evaluationSummaryReader(
+  service: Pick<EvaluationService, "getLatestEvaluation">,
+  // Whether the latest completed evaluation evaluated an earlier version of
+  // the listing (the opportunity page's listing-version hint).
+  evaluatedEarlierVersion: (opportunityId: string) => Promise<boolean> = async () => false,
+) {
+  return async (opportunityId: string): Promise<EvaluationSummary | null> => {
+    try {
+      const latest = await service.getLatestEvaluation(opportunityId);
+      return {
+        evaluationId: latest.evaluationId,
+        status: latest.status,
+        queueState: latest.queueState,
+        recommendation: latest.recommendation
+          ? { decision: latest.recommendation.decision, explanation: latest.recommendation.explanation ?? null }
+          : null,
+        ...(latest.status === "COMPLETED" && (await evaluatedEarlierVersion(opportunityId)) ? { evaluatedEarlierVersion: true } : {}),
+      };
+    } catch (error) {
+      if (error instanceof EvaluationApiError && error.code === "EVALUATION_NOT_FOUND") return null;
+      throw error;
+    }
+  };
+}
+
+// A saved job's triage as the extension shows it: the effective outcome
+// (a manual decision wins) with its reasons' messages.
+export function captureTriageFrom(assessment: TriageAssessment): CaptureTriage {
+  if (assessment.status !== "ASSESSED") return assessment;
+  return { status: "ASSESSED", outcome: assessment.triage.outcome, reasons: assessment.triage.reasons.map((reason) => reason.message) };
+}
+
+let handlers: ExtensionApiHandlers | undefined;
+
+export function getExtensionApi(): ExtensionApiHandlers {
+  if (handlers) return handlers;
+  const ingestion = createRetrievalIngestionService({
+    repository: new PrismaManualOpportunityRepository(),
+    normalizer: createRetrievedOpportunityNormalizer(),
+  });
+  const pageCaptureRepository = new PrismaPageCaptureRepository();
+  const pageCaptures = createPageCaptureService({ repository: pageCaptureRepository });
+  // The evaluation service is reached only when a job is handed off.
+  const handoff = () => evaluationHandoff(getEvaluationService());
+  handlers = createExtensionApiHandlers({
+    pairings: new PrismaExtensionPairingRepository(),
+    captures: createExtensionCaptureService({
+      ingestion,
+      lookup: new PrismaExtensionLookupRepository(),
+      latestEvaluation: (opportunityId) =>
+        evaluationSummaryReader(getEvaluationService(), async (id) => {
+          // A changed posting only; a correction of the same posting's saved
+          // details is reported by the capture itself (D1).
+          const hint = await findListingVersionHint(id);
+          return hint !== null && !("correctedAt" in hint);
+        })(opportunityId),
+      // Triage only at save (D2): never admission or evaluation.
+      triage: async (opportunityId) => captureTriageFrom(await getEvaluationService().assessTriage(opportunityId)),
+      discovery: customerSuccessDiscoveryConfiguration,
+    }),
+    pageCaptures,
+    pageCaptureTabs: createPageCaptureTabService({
+      repository: pageCaptureRepository,
+      ingestor: createPageCaptureIngestor({
+        repository: pageCaptureRepository,
+        ingestion,
+        handoff: { alreadyHandled: (id) => handoff().alreadyHandled(id), request: (id) => handoff().request(id) },
+        discovery: customerSuccessDiscoveryConfiguration,
+      }),
+      enabledSites: pageCaptures.enabledSites,
+    }),
+    captureHistory: {
+      sessions: (limit) => extensionCaptureSessions(limit, pageCaptureRepository),
+      session: (id) => extensionCaptureSession(id, pageCaptureRepository),
+    },
+    evaluation: { request: handleProductionEvaluationPost, status: handleProductionEvaluationGet },
+  });
+  return handlers;
+}

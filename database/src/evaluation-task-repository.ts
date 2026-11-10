@@ -10,6 +10,7 @@ import {
 import { Prisma } from "../generated/prisma/client";
 import { randomUUID } from "node:crypto";
 import { getDatabaseClient } from "./client";
+import { originatingVersion } from "./manual-opportunity-repository";
 
 function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -29,48 +30,84 @@ function persistenceCategory(error: unknown) {
   return "UNKNOWN_DATABASE_ERROR" as const;
 }
 
+export interface EnqueueEvaluationInput {
+  opportunityId: string;
+  userProfileId: string;
+  userProfileVersion: number;
+  evaluator: DomainEvaluatorDefinition<unknown, unknown>;
+  executionMetadata: Record<string, JsonValue>;
+  maxAttempts: number;
+}
+
+export class AdmissionNotConsumableError extends Error {
+  constructor(readonly admissionId: string) {
+    super("The evaluation admission was already used or abandoned");
+    this.name = "AdmissionNotConsumableError";
+  }
+}
+
+async function createEvaluationAndTask(
+  transaction: Prisma.TransactionClient,
+  input: EnqueueEvaluationInput,
+) {
+  const version = await originatingVersion(transaction, input.opportunityId);
+  const evaluation = await transaction.evaluation.create({
+    data: {
+      opportunityId: input.opportunityId,
+      // Bound to the version being evaluated (Core TDD §51, v1.15).
+      sourceRecordId: version?.currentId ?? null,
+      userProfileId: input.userProfileId,
+      domain: input.evaluator.domain,
+      evaluationVersion: input.evaluator.evaluationVersion,
+      domainVersion: input.evaluator.domainVersion,
+      ruleVersion: input.evaluator.ruleVersion,
+      promptVersion: input.evaluator.promptVersion,
+      userProfileVersion: input.userProfileVersion,
+      executionMetadata: asInputJson(input.executionMetadata),
+      stageResults: {
+        create: input.evaluator.stages.map((stage, position) => ({
+          stageId: stage.id,
+          position,
+          stageVersion: stage.version,
+          ruleVersion: stage.ruleVersion,
+          promptVersion: stage.promptVersion,
+        })),
+      },
+    },
+    select: { id: true },
+  });
+  return transaction.evaluationTask.create({
+    data: {
+      evaluationId: evaluation.id,
+      maxAttempts: input.maxAttempts,
+      availableAt: new Date(),
+    },
+  });
+}
+
 export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository {
   private readonly database = getDatabaseClient();
 
-  async enqueue(input: {
-    opportunityId: string;
-    userProfileId: string;
-    userProfileVersion: number;
-    evaluator: DomainEvaluatorDefinition<unknown, unknown>;
-    executionMetadata: Record<string, JsonValue>;
-    maxAttempts: number;
-  }) {
+  async enqueue(input: EnqueueEvaluationInput) {
+    const task = await this.database.$transaction((transaction) =>
+      createEvaluationAndTask(transaction, input),
+    );
+    return evaluationTaskSchema.parse(task);
+  }
+
+  // Product request path only. Creates exactly what enqueue() creates and, in
+  // the same transaction, consumes one live EvaluationAdmission. If the
+  // admission was already consumed or abandoned, the transaction rolls back,
+  // so an abandoned admission can never produce an Evaluation.
+  async enqueueAdmitted(input: EnqueueEvaluationInput & { admissionId: string }) {
     const task = await this.database.$transaction(async (transaction) => {
-      const evaluation = await transaction.evaluation.create({
-        data: {
-          opportunityId: input.opportunityId,
-          userProfileId: input.userProfileId,
-          domain: input.evaluator.domain,
-          evaluationVersion: input.evaluator.evaluationVersion,
-          domainVersion: input.evaluator.domainVersion,
-          ruleVersion: input.evaluator.ruleVersion,
-          promptVersion: input.evaluator.promptVersion,
-          userProfileVersion: input.userProfileVersion,
-          executionMetadata: asInputJson(input.executionMetadata),
-          stageResults: {
-            create: input.evaluator.stages.map((stage, position) => ({
-              stageId: stage.id,
-              position,
-              stageVersion: stage.version,
-              ruleVersion: stage.ruleVersion,
-              promptVersion: stage.promptVersion,
-            })),
-          },
-        },
-        select: { id: true },
+      const created = await createEvaluationAndTask(transaction, input);
+      const consumed = await transaction.evaluationAdmission.updateMany({
+        where: { id: input.admissionId, evaluationId: null, abandonedAt: null },
+        data: { evaluationId: created.evaluationId, attachedAt: new Date() },
       });
-      return transaction.evaluationTask.create({
-        data: {
-          evaluationId: evaluation.id,
-          maxAttempts: input.maxAttempts,
-          availableAt: new Date(),
-        },
-      });
+      if (consumed.count !== 1) throw new AdmissionNotConsumableError(input.admissionId);
+      return created;
     });
     return evaluationTaskSchema.parse(task);
   }
@@ -138,6 +175,64 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
     });
   }
 
+  // Worker-owned recovery for tasks orphaned on their final attempt: RUNNING,
+  // lease expired, and no attempts left, so claimNext can never pick them up
+  // again. They become FAILED (EVALUATION_LEASE_EXPIRED) with their running
+  // stages and evaluation. Only the evaluation worker that holds the
+  // single-worker lock calls this, and only while it has no task in flight,
+  // so it can never fail a run that is still executing. claimNext, complete
+  // and fail are unchanged.
+  async failExpiredExhaustedTasks(now: Date = new Date()): Promise<string[]> {
+    return this.database.$transaction(async (transaction) => {
+      const orphaned = await transaction.$queryRaw<Array<{ id: string; evaluationId: string }>>(
+        Prisma.sql`
+          SELECT "id", "evaluationId"
+          FROM "EvaluationTask"
+          WHERE "status" = 'RUNNING'
+            AND "leaseExpiresAt" < ${now}
+            AND "attempt" >= "maxAttempts"
+          FOR UPDATE SKIP LOCKED
+        `,
+      );
+      for (const task of orphaned) {
+        await transaction.stageResult.updateMany({
+          where: { evaluationId: task.evaluationId, status: "RUNNING" },
+          data: {
+            status: "FAILED",
+            retryable: false,
+            failureCode: "WORKER_INTERRUPTED",
+            errorMessage: "Worker execution ended before the stage completed",
+            completedAt: now,
+          },
+        });
+        await transaction.evaluation.updateMany({
+          where: { id: task.evaluationId, status: { in: ["PENDING", "RUNNING"] } },
+          data: {
+            status: "FAILED",
+            errorMessage: "The evaluation worker lease expired after the final attempt",
+            completedAt: now,
+          },
+        });
+        await transaction.evaluationTask.updateMany({
+          where: { id: task.id, status: "RUNNING", leaseExpiresAt: { lt: now } },
+          data: {
+            status: "FAILED",
+            completedAt: now,
+            leaseExpiresAt: null,
+            errorCode: "EVALUATION_LEASE_EXPIRED",
+            errorMessage: "The evaluation worker lease expired after the final attempt",
+          },
+        });
+      }
+      return orphaned.map((task) => task.evaluationId);
+    });
+  }
+
+  // Read-only queue figures for operational checks (pnpm doctor).
+  async queueSnapshot(now: Date = new Date()) {
+    return readQueueSnapshot(this.database, now);
+  }
+
   async complete(taskId: string) {
     const task = await this.database.evaluationTask.update({
       where: { id: taskId },
@@ -202,11 +297,14 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
           select: {
             opportunityId: true,
             domain: true,
+            sourceRecordId: true,
+            sourceRecord: { select: { source: true } },
             opportunity: {
               select: {
                 source: true,
                 sourceRecords: {
-                  orderBy: { createdAt: "asc" },
+                  // The first source record by (createdAt, id), as originatingVersion.
+                  orderBy: [{ createdAt: "asc" }, { id: "asc" }],
                   select: { id: true, source: true },
                   take: 1,
                 },
@@ -289,8 +387,11 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
             evaluationId,
             opportunityId: evaluation.opportunityId,
             domain: evaluation.domain,
-            sourceRecordId: evaluation.opportunity.sourceRecords[0]?.id ?? null,
+            // The version this evaluation is bound to; an evaluation from
+            // before the binding evaluated the first source record.
+            sourceRecordId: evaluation.sourceRecordId ?? evaluation.opportunity.sourceRecords[0]?.id ?? null,
             jobSource:
+              evaluation.sourceRecord?.source ??
               evaluation.opportunity.sourceRecords[0]?.source ??
               evaluation.opportunity.source,
             operationId: attempt.operationId,
@@ -356,4 +457,37 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
       }),
     );
   }
+}
+
+export interface QueueSnapshot {
+  pending: number;
+  oldestPendingAt: Date | null;
+  running: number;
+  // RUNNING with an expired lease and attempts left: claimNext reclaims them.
+  expiredReclaimable: number;
+  // RUNNING with an expired lease and no attempts left: worker recovery fails them.
+  expiredExhausted: number;
+}
+
+// One read-only SELECT; usable with any client that supports $queryRaw.
+export async function readQueueSnapshot(
+  client: { $queryRaw: ReturnType<typeof getDatabaseClient>["$queryRaw"] },
+  now: Date = new Date(),
+): Promise<QueueSnapshot> {
+  const [row] = await client.$queryRaw<QueueSnapshot[]>(Prisma.sql`
+    SELECT
+      COUNT(*) FILTER (WHERE "status" = 'PENDING')::int AS "pending",
+      MIN("createdAt") FILTER (WHERE "status" = 'PENDING') AS "oldestPendingAt",
+      COUNT(*) FILTER (WHERE "status" = 'RUNNING')::int AS "running",
+      COUNT(*) FILTER (WHERE "status" = 'RUNNING' AND "leaseExpiresAt" < ${now} AND "attempt" < "maxAttempts")::int AS "expiredReclaimable",
+      COUNT(*) FILTER (WHERE "status" = 'RUNNING' AND "leaseExpiresAt" < ${now} AND "attempt" >= "maxAttempts")::int AS "expiredExhausted"
+    FROM "EvaluationTask"
+  `);
+  return {
+    pending: row?.pending ?? 0,
+    oldestPendingAt: row?.oldestPendingAt ?? null,
+    running: row?.running ?? 0,
+    expiredReclaimable: row?.expiredReclaimable ?? 0,
+    expiredExhausted: row?.expiredExhausted ?? 0,
+  };
 }

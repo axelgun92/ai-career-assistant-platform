@@ -5,20 +5,23 @@ import {
 import { StageExecutionError } from "@ai-career/evaluation";
 import { z } from "zod";
 import {
+  customerSuccessExperienceLadder,
   requirementCategorySchema,
   requirementMapSchema,
   requirementStrengthSchema,
+  type RequirementExperienceLevel,
 } from "./maps";
 import {
   companyAlignmentUnknownSchema,
   supportedAlignmentFindingSchema,
 } from "./company-alignment";
+import { profileLimitationEvidenceType } from "../profile/user-profile";
 
 const requiredText = z.string().trim().min(1);
 const optionalText = requiredText.nullable();
 const evidenceReferences = z.array(requiredText);
 
-export const customerSuccessResumeMatchPromptVersion = "cs-resume-match-v2";
+export const customerSuccessResumeMatchPromptVersion = "cs-resume-match-v4";
 
 export const requirementMatchClassificationSchema = z.enum([
   "STRONG_MATCH",
@@ -29,10 +32,10 @@ export const requirementMatchClassificationSchema = z.enum([
 ]);
 
 export const matchedExperienceSpecificitySchema = z.enum([
-  "DIRECT_SAAS_CUSTOMER_SUCCESS",
-  "DIRECT_CUSTOMER_SUCCESS",
-  "RELATED_CUSTOMER_RELATIONSHIP",
-  "BROADER_CUSTOMER_FACING",
+  ...customerSuccessExperienceLadder,
+  // Evidence directly demonstrates a requirement whose subject is not a
+  // Customer Success level, such as remote work or process improvement.
+  "REQUIREMENT_SPECIFIC",
   "TRANSFERABLE",
   "UNSUPPORTED",
   "UNKNOWN",
@@ -359,10 +362,8 @@ const transportStrongRequirementSchema = z
     ...transportNonGapFields,
     classification: z.literal("STRONG_MATCH"),
     matchedExperienceSpecificity: z.enum([
-      "DIRECT_SAAS_CUSTOMER_SUCCESS",
-      "DIRECT_CUSTOMER_SUCCESS",
-      "RELATED_CUSTOMER_RELATIONSHIP",
-      "BROADER_CUSTOMER_FACING",
+      ...customerSuccessExperienceLadder,
+      "REQUIREMENT_SPECIFIC",
     ]),
     experienceEvidenceBasis: z.enum([
       "DIRECT_OR_RELATED_WORK_EXPERIENCE",
@@ -474,6 +475,15 @@ const broaderOrTransferableWorkEvidenceTypes = new Set([
   "TRANSFERABLE_EXPERIENCE",
   "TRANSFERABLE_SKILL",
 ]);
+// Actual work-experience records, by declared basis, for INDUSTRY matching.
+const industryWorkEvidenceTypes = {
+  DIRECT_OR_RELATED_WORK_EXPERIENCE: directOrRelatedWorkEvidenceTypes,
+  BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE: new Set([
+    "DIRECT_EXPERIENCE",
+    "RELATED_EXPERIENCE",
+    "TRANSFERABLE_EXPERIENCE",
+  ]),
+} as const;
 const requirementRelevantKnowledgeEvidenceTypes = new Set([
   "SKILL",
   "TRANSFERABLE_SKILL",
@@ -491,14 +501,111 @@ type PositiveRequirementClassification =
   | "PARTIAL_MATCH";
 
 const positiveSpecificities = {
-  STRONG_MATCH: [
-    "DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS",
-    "RELATED_CUSTOMER_RELATIONSHIP", "BROADER_CUSTOMER_FACING",
-  ],
+  STRONG_MATCH: [...customerSuccessExperienceLadder, "REQUIREMENT_SPECIFIC"],
   TRANSFERABLE_MATCH: ["TRANSFERABLE"],
   // Preserve the existing partial-match contract, including unresolved portions.
   PARTIAL_MATCH: matchedExperienceSpecificitySchema.options,
 } satisfies Record<PositiveRequirementClassification, string[]>;
+
+// A Genuine Gap needs affirmative proof: a structured profile limitation, never
+// mere absence of evidence and never wording. A limitation proves a gap only
+// for a requirement of its own category; for EXPERIENCE, only when the level it
+// disclaims covers every level that satisfies the requirement.
+export interface ResumeMatchLimitation {
+  category: z.infer<typeof requirementCategorySchema>;
+  disclaimedExperienceSpecificity: RequirementExperienceLevel | null;
+}
+
+function profileLimitation(evidence: AvailableResumeMatchEvidence) {
+  return evidence.sourceType === "USER_PROFILE" &&
+    evidence.evidenceType === profileLimitationEvidenceType
+    ? evidence.limitation
+    : undefined;
+}
+
+function ladderRank(level: string) {
+  return (customerSuccessExperienceLadder as readonly string[]).indexOf(level);
+}
+
+// An EXPERIENCE requirement without a level asserts no experience-level
+// semantics: deterministic extraction never states one. No level is assumed;
+// such a requirement gets no ladder gating and admits no gap proof. Maps from
+// JD Reconstruction must carry the level (the Resume Match stage enforces it).
+function requirementExperienceLevel(requirement?: ResumeMatchRequirement) {
+  return requirement?.category === "EXPERIENCE"
+    ? requirement.minimumExperienceSpecificity
+    : undefined;
+}
+
+function establishesGenuineGap(
+  evidence: AvailableResumeMatchEvidence,
+  requirement: ResumeMatchRequirement,
+) {
+  const limitation = profileLimitation(evidence);
+  if (!limitation || limitation.category !== requirement.category) return false;
+  if (requirement.category !== "EXPERIENCE") return true;
+  const required = requirementExperienceLevel(requirement);
+  const disclaimed = limitation.disclaimedExperienceSpecificity;
+  // Without a structured level on both sides, relevance is not established.
+  if (required === undefined || disclaimed === null) return false;
+  if (required === "ANY_WORK_EXPERIENCE" || disclaimed === "ANY_WORK_EXPERIENCE") {
+    return required === disclaimed;
+  }
+  // Disclaiming a rung also disclaims every more specific rung.
+  return ladderRank(required) <= ladderRank(disclaimed);
+}
+
+// A limitation without a ladder level (any non-EXPERIENCE category, or
+// EXPERIENCE disclaiming ANY_WORK_EXPERIENCE) is relevant by category alone:
+// limitations carry no subject key, so it cannot say which same-category
+// requirement it disclaims. It proves a gap only when it is the sole such
+// limitation and the requirement the sole assessed requirement under that
+// key; otherwise the requirement fails safe to Unknown. This is a conservative
+// residual until limitations and requirements carry subject keys.
+function categoryOnlyRelevanceKey(
+  category: string,
+  level: RequirementExperienceLevel | null | undefined,
+) {
+  if (category !== "EXPERIENCE") return category;
+  return level === "ANY_WORK_EXPERIENCE" ? "EXPERIENCE:ANY_WORK_EXPERIENCE" : undefined;
+}
+
+function genuineGapProofByRequirement(
+  availableEvidence: AvailableResumeMatchEvidence[],
+  requirements: ReadonlyArray<ResumeMatchRequirement>,
+): ReadonlyMap<number, ReadonlySet<string>> {
+  const count = (keys: Array<string | undefined>) => {
+    const counts = new Map<string, number>();
+    for (const key of keys) {
+      if (key !== undefined) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  };
+  const assessed = requirements
+    .map((requirement, index) => ({ requirement, index }))
+    .filter(({ requirement }) => !requirement.ambiguity.isAmbiguous);
+  const requirementCounts = count(assessed.map(({ requirement }) =>
+    categoryOnlyRelevanceKey(requirement.category, requirementExperienceLevel(requirement))));
+  const limitationCounts = count(availableEvidence.map((evidence) => {
+    const limitation = profileLimitation(evidence);
+    return limitation
+      ? categoryOnlyRelevanceKey(limitation.category, limitation.disclaimedExperienceSpecificity)
+      : undefined;
+  }));
+  return new Map(assessed.map(({ requirement, index }) => {
+    const key = categoryOnlyRelevanceKey(
+      requirement.category,
+      requirementExperienceLevel(requirement),
+    );
+    const unique = key === undefined ||
+      (requirementCounts.get(key) === 1 && limitationCounts.get(key) === 1);
+    return [index, new Set(unique
+      ? availableEvidence
+          .filter((evidence) => establishesGenuineGap(evidence, requirement))
+          .map((evidence) => evidence.referenceId)
+      : [])];
+  }));
+}
 
 function createPositiveRequirementSchema(input: {
   classification: "STRONG_MATCH" | "TRANSFERABLE_MATCH" | "PARTIAL_MATCH";
@@ -565,28 +672,20 @@ const providerUnknownRequirementSchema = z.object({
   matchedExperienceSpecificity: z.literal("UNKNOWN"),
   experienceEvidenceBasis: z.literal("UNKNOWN"),
   decisionImpact: z.literal("NON_DECISIVE"),
-  supportedPortion: transportOptionalText,
-  unsupportedPortion: transportOptionalText,
+  supportedPortion: z.null(),
+  unsupportedPortion: z.null(),
   profileEvidenceReferences: transportEvidenceReferences,
 }).strict();
 
-function requiresDirectWork(requirement?: ResumeMatchRequirement) {
-  return requirement?.category === "INDUSTRY" || (
-    requirement?.category === "EXPERIENCE" &&
-    /\bdirect\b/i.test(
-      [requirement.requirement, requirement.experienceSpecificity].filter(Boolean).join(" "),
-    )
-  );
-}
+// Experience-level and startup legality come only from the structured
+// requirement fields authored by JD Reconstruction; requirement wording is
+// never consulted.
 
 const startupSpecializationPattern = /\b(?:startup|start-up|startups|start-ups)\b/i;
 
 function requiresStartupSpecialization(requirement?: ResumeMatchRequirement) {
-  return requirement?.category === "EXPERIENCE" && startupSpecializationPattern.test(
-    [requirement.requirement, requirement.experienceSpecificity]
-      .filter(Boolean)
-      .join(" "),
-  );
+  return requirement?.category === "EXPERIENCE" &&
+    requirement.requiresStartupExperience === true;
 }
 
 function supportsStartupSpecialization(evidence: AvailableResumeMatchEvidence) {
@@ -602,8 +701,21 @@ function supportsStartupSpecialization(evidence: AvailableResumeMatchEvidence) {
   );
 }
 
+// The most specific ladder rung each profile record type can establish. Profile
+// relationship labels are relative to Customer Success, as is the ladder.
+const evidenceLadderReach: Readonly<Record<string, number>> = {
+  DIRECT_EXPERIENCE: ladderRank("DIRECT_SAAS_CUSTOMER_SUCCESS"),
+  RELATED_EXPERIENCE: ladderRank("RELATED_CUSTOMER_RELATIONSHIP"),
+  TRANSFERABLE_EXPERIENCE: ladderRank("BROADER_CUSTOMER_FACING"),
+  TRANSFERABLE_SKILL: ladderRank("BROADER_CUSTOMER_FACING"),
+};
+
 // One relational model for provider variants and pre-domain conversion checks.
-// These are the existing evidence rules, not a new interpretation of match quality.
+// Compatibility is relative to the requirement. For a requirement on the
+// Customer Success ladder, a ladder label must be one the cited record can
+// establish and a strong match must reach the requirement's minimum level.
+// REQUIREMENT_SPECIFIC describes requirements whose subject is not a ladder
+// level; their ladder labels keep the existing direct-label rule.
 function positiveRequirementCompatibility(
   classification: PositiveRequirementClassification,
   specificity: string,
@@ -615,20 +727,48 @@ function positiveRequirementCompatibility(
     (classification === "TRANSFERABLE_MATCH" && basis !== "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE") ||
     (requirement?.category === "EXPERIENCE" && basis === "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE")
   ) return new Set();
-  if (
-    requiresDirectWork(requirement) ||
-    specificity === "DIRECT_CUSTOMER_SUCCESS" ||
-    specificity === "DIRECT_SAAS_CUSTOMER_SUCCESS"
-  ) {
-    return basis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
-      ? new Set(["DIRECT_EXPERIENCE"])
+  // INDUSTRY is relative to its own subject, not the Customer Success ladder:
+  // actual work-experience records establish it whatever their Customer
+  // Success relationship, and whether the cited work belongs to the industry
+  // is the provider's bounded judgment. Skills, certifications, coursework,
+  // tools, self-study and readiness never establish it, nor does transfer.
+  if (requirement?.category === "INDUSTRY") {
+    return specificity === "REQUIREMENT_SPECIFIC" &&
+      classification !== "TRANSFERABLE_MATCH" &&
+      basis !== "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE"
+      ? industryWorkEvidenceTypes[basis]
       : new Set();
   }
-  return basis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
+  const basisTypes = basis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
     ? directOrRelatedWorkEvidenceTypes
     : basis === "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"
       ? broaderOrTransferableWorkEvidenceTypes
       : requirementRelevantKnowledgeEvidenceTypes;
+  const level = requirementExperienceLevel(requirement);
+  const required = level === undefined ? -1 : ladderRank(level);
+  if (specificity === "REQUIREMENT_SPECIFIC") {
+    return required < 0 ? basisTypes : new Set();
+  }
+  if (required >= 0) {
+    if (classification === "STRONG_MATCH" && ladderRank(specificity) > required) {
+      return new Set();
+    }
+    // Direct Customer Success employment cannot be met by transfer.
+    if (
+      classification === "TRANSFERABLE_MATCH" &&
+      required <= ladderRank("DIRECT_CUSTOMER_SUCCESS")
+    ) return new Set();
+  }
+  const labelRank = ladderRank(specificity);
+  if (labelRank < 0) return basisTypes;
+  if (labelRank <= ladderRank("DIRECT_CUSTOMER_SUCCESS")) {
+    return basis === "DIRECT_OR_RELATED_WORK_EXPERIENCE"
+      ? new Set(["DIRECT_EXPERIENCE"])
+      : new Set();
+  }
+  if (required < 0) return basisTypes;
+  return new Set([...basisTypes].filter((type) =>
+    (evidenceLadderReach[type] ?? Number.POSITIVE_INFINITY) <= labelRank));
 }
 
 function providerProfileReferenceSchema(
@@ -653,25 +793,44 @@ function providerProfileReferenceSchema(
   return z.array(element).min(1);
 }
 
-// Each reference is authored once, in the part of the assessment it supports.
-// Cross-field compatibility and required evidence cardinality remain enforced
-// by the unchanged transport/domain validators after provider-local references
-// are restored. Factoring those deterministic relationships out of the JSON
-// Schema avoids expanding the same assessment object into runtime-specific
-// branches while retaining the source-separated evidence catalogs.
+// One source-local collection gives each selected evidence identity exactly one
+// authored purpose. JSON Schema cannot enforce uniqueness by one object field,
+// so conversion still rejects repeated identities, but the provider can no
+// longer select the same reference independently in two sibling partitions.
 function providerAssessmentEvidenceSchema(
   references: z.ZodArray | null,
   id: string,
+  required: boolean,
 ) {
-  const choices = references
-    ? z.array(references.element)
-    : z.array(z.literal("NO_REFERENCES_AVAILABLE")).max(0);
+  const assignment = z.object({
+    evidenceReference: references
+      ? references.element
+      : z.literal("NO_REFERENCES_AVAILABLE"),
+    purpose: z.enum(["DECISION_IMPACT", "ASSESSMENT_ONLY"]),
+  }).strict();
+  const assignments = references
+    ? z.array(assignment)
+    : z.array(assignment).max(0);
   return z.object({
-    decisionImpactReferences: choices.describe(
-      "Unique references supporting this assessment's decision impact. A reference selected here MUST NOT appear in assessmentOnlyReferences. Each reference belongs to exactly one partition within this source and requirement.",
+    evidenceAssignments: (required ? assignments.min(1) : assignments).describe(
+      "Evidence assignments for one source and requirement. Include each evidenceReference at most once and assign exactly one purpose: DECISION_IMPACT when it changes the decision, otherwise ASSESSMENT_ONLY. Never repeat or reassign one reference.",
     ),
-    assessmentOnlyReferences: choices.describe(
-      "Unique references supporting only the assessment, excluding EVERY reference selected in decisionImpactReferences. These references do not become decision-impact evidence. Never repeat a reference within or across the two partitions.",
+  }).strict().meta({ id });
+}
+
+// A Genuine Gap must cite at least one relevant profile limitation. Those
+// records get their own collection, bound per requirement, so the provider
+// grammar carries both the proof and the relevance rule. The ordinary gap
+// profileEvidence catalog excludes limitations, keeping one identity in exactly
+// one collection.
+function providerGapEvidenceSchema(references: z.ZodArray, id: string) {
+  const assignment = z.object({
+    evidenceReference: references.element,
+    purpose: z.enum(["DECISION_IMPACT", "ASSESSMENT_ONLY"]),
+  }).strict();
+  return z.object({
+    evidenceAssignments: z.array(assignment).min(1).describe(
+      "Profile evidence that explicitly establishes this requirement is absent. Include at least one; list each evidenceReference at most once with exactly one purpose: DECISION_IMPACT when it changes the decision (a decisive gap needs at least one), otherwise ASSESSMENT_ONLY.",
     ),
   }).strict().meta({ id });
 }
@@ -712,18 +871,25 @@ function providerRequirementAssessmentSchema(
   if (semanticRequirements === undefined) groups.set("unspecified", {});
   for (const { requirement, index } of semanticRequirements ?? []) {
     if (predeterminedStartupUnknownIndexes.has(index)) continue;
-    const key = requiresStartupSpecialization(requirement)
-      ? "startup"
-      : requiresDirectWork(requirement)
-        ? "direct"
-        : requirement.category === "EXPERIENCE"
-          ? "experience"
-          : "ordinary";
+    // Requirements share variants exactly when they share an evidence contract.
+    const key = requirement.category === "INDUSTRY"
+      ? "industry"
+      : requirement.category === "EXPERIENCE"
+        ? `experience:${requirementExperienceLevel(requirement) ?? "unspecified"}:${requiresStartupSpecialization(requirement)}`
+        : "ordinary";
     const group = groups.get(key) ?? { requirement, indexes: [] };
     group.indexes!.push(index);
     groups.set(key, group);
   }
   const schemas: z.ZodObject[] = [];
+  // Requirements in different groups often admit identical variants; each
+  // distinct variant is emitted once with the union of its requirement indexes.
+  const variants = new Map<string, {
+    classification: PositiveRequirementClassification;
+    evidenceBasis: PositiveExperienceEvidenceBasis;
+    catalog: { specificities: string[]; profileReferenceIds: string[] };
+    indexes?: number[];
+  }>();
   for (const group of groups.values()) {
     for (const evidenceBasis of bases) {
       for (
@@ -760,15 +926,28 @@ function providerRequirementAssessmentSchema(
           catalogs.set(key, catalog);
         }
         for (const catalog of catalogs.values()) {
-          const schema = createPositiveRequirementSchema({
-            classification,
-            evidenceBasis,
-            ...catalog,
-            referenceCatalogs,
-          });
-          if (schema) schemas.push(constrainIndexes(schema, group.indexes));
+          const key = JSON.stringify([classification, evidenceBasis, catalog]);
+          const variant = variants.get(key);
+          if (variant) {
+            variant.indexes = variant.indexes && group.indexes
+              ? [...variant.indexes, ...group.indexes]
+              : undefined;
+          } else {
+            variants.set(key, { classification, evidenceBasis, catalog, indexes: group.indexes });
+          }
         }
       }
+    }
+  }
+  for (const { classification, evidenceBasis, catalog, indexes } of variants.values()) {
+    const schema = createPositiveRequirementSchema({
+      classification,
+      evidenceBasis,
+      ...catalog,
+      referenceCatalogs,
+    });
+    if (schema) {
+      schemas.push(constrainIndexes(schema, indexes && [...indexes].sort((a, b) => a - b)));
     }
   }
   const allIndexes = semanticRequirements?.map(({ index }) => index);
@@ -778,24 +957,11 @@ function providerRequirementAssessmentSchema(
   const jdReferences = providerProfileReferenceSchema(availableEvidence
     .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
     .map((evidence) => evidence.referenceId), referenceCatalogs);
-  for (const schema of providerGapRequirementSchema.options) {
-    const indexes = schema.shape.decisionImpact.value ===
-      "DECISIVE_DISQUALIFIER"
-      ? semanticRequirements
-        ?.filter(({ requirement, index }) =>
-          requirement.strength === "REQUIRED" &&
-          !predeterminedStartupUnknownIndexes.has(index))
-        .map(({ index }) => index)
-      : allIndexes?.filter(
-        (index) => !predeterminedStartupUnknownIndexes.has(index),
-      );
-    if (profileReferences && (indexes === undefined || indexes.length > 0)) {
-      schemas.push(
-        constrainIndexes(
-          schema.extend({ profileEvidenceReferences: profileReferences }),
-          indexes,
-        ),
-      );
+  if (semanticRequirements === undefined) {
+    for (const schema of providerGapRequirementSchema.options) {
+      if (profileReferences) {
+        schemas.push(schema.extend({ profileEvidenceReferences: profileReferences }));
+      }
     }
   }
   if (allIndexes === undefined || allIndexes.length > 0) {
@@ -809,35 +975,103 @@ function providerRequirementAssessmentSchema(
     ));
   }
 
-  const groupedEvidenceByElement = new Map<unknown, z.ZodType>();
+  const groupedEvidenceByElement = new Map<
+    unknown,
+    { required?: z.ZodObject; optional?: z.ZodObject }
+  >();
+  let groupedEvidenceSchemaCount = 0;
+  let emptyAssessmentEvidence: z.ZodObject | undefined;
   const groupedEvidence = (
     references: z.ZodArray | null,
-  ): z.ZodType => {
+    required: boolean,
+  ): z.ZodObject => {
     if (!references) {
-      return providerAssessmentEvidenceSchema(
+      emptyAssessmentEvidence ??= providerAssessmentEvidenceSchema(
         null,
         "resumeMatchEmptyAssessmentEvidence",
+        false,
       );
+      return emptyAssessmentEvidence;
     }
     const cached = groupedEvidenceByElement.get(references.element);
-    if (cached) return cached;
+    const cacheKey = required ? "required" : "optional";
+    const cachedSchema = cached?.[cacheKey];
+    if (cachedSchema) return cachedSchema;
     const created = providerAssessmentEvidenceSchema(
       references,
-      "resumeMatchAssessmentEvidence" + groupedEvidenceByElement.size,
+      "resumeMatchAssessmentEvidence" + groupedEvidenceSchemaCount++,
+      required,
     );
-    groupedEvidenceByElement.set(references.element, created);
+    groupedEvidenceByElement.set(references.element, {
+      ...cached,
+      [cacheKey]: created,
+    });
     return created;
   };
   const bindEvidence = (schema: z.ZodObject) =>
     schema
       .omit({ jdEvidenceReferences: true, profileEvidenceReferences: true })
       .extend({
-        jdEvidence: groupedEvidence(jdReferences),
+        jdEvidence: groupedEvidence(jdReferences, true),
         profileEvidence: groupedEvidence(
           schema.shape.profileEvidenceReferences as z.ZodArray,
+          schema.shape.classification.value !== "UNKNOWN",
         ),
       });
-  const sourcedSchemas = schemas.map(bindEvidence);
+  const boundGapSchemas: z.ZodObject[] = [];
+  // Limitation records are only ever gap proof, never ordinary gap context.
+  const contextReferences = providerProfileReferenceSchema(
+    availableEvidence
+      .filter((evidence) =>
+        evidence.sourceType === "USER_PROFILE" && !profileLimitation(evidence))
+      .map((evidence) => evidence.referenceId),
+    referenceCatalogs,
+  );
+  const gapEvidenceByElement = new Map<unknown, z.ZodObject>();
+  const gapProof = requirementMap === undefined
+    ? new Map<number, ReadonlySet<string>>()
+    : genuineGapProofByRequirement(availableEvidence, requirementMap);
+  for (const schema of providerGapRequirementSchema.options) {
+    if (semanticRequirements === undefined) break;
+    const decisive = schema.shape.decisionImpact.value === "DECISIVE_DISQUALIFIER";
+    // Each requirement may cite as gap proof only the limitations relevant to
+    // it; requirements with the same relevant limitations share one variant.
+    const groupsByProof = new Map<string, { proof: string[]; indexes: number[] }>();
+    for (const { requirement, index } of semanticRequirements) {
+      if (
+        predeterminedStartupUnknownIndexes.has(index) ||
+        (decisive && requirement.strength !== "REQUIRED")
+      ) continue;
+      const proof = [...(gapProof.get(index) ?? [])];
+      if (proof.length === 0) continue;
+      const key = JSON.stringify(proof);
+      const group = groupsByProof.get(key) ?? { proof, indexes: [] };
+      group.indexes.push(index);
+      groupsByProof.set(key, group);
+    }
+    for (const { proof, indexes } of groupsByProof.values()) {
+      const references = providerProfileReferenceSchema(proof, referenceCatalogs)!;
+      let gapEvidence = gapEvidenceByElement.get(references.element);
+      if (!gapEvidence) {
+        gapEvidence = providerGapEvidenceSchema(
+          references,
+          `resumeMatchGapEvidence${gapEvidenceByElement.size}`,
+        );
+        gapEvidenceByElement.set(references.element, gapEvidence);
+      }
+      boundGapSchemas.push(constrainIndexes(
+        schema
+          .omit({ jdEvidenceReferences: true, profileEvidenceReferences: true })
+          .extend({
+            jdEvidence: groupedEvidence(jdReferences, true),
+            gapEvidence,
+            profileEvidence: groupedEvidence(contextReferences, false),
+          }),
+        indexes,
+      ));
+    }
+  }
+  const sourcedSchemas = [...schemas.map(bindEvidence), ...boundGapSchemas];
   return sourcedSchemas.length === 0
     ? bindEvidence(providerUnknownRequirementSchema)
     : sourcedSchemas.length === 1
@@ -970,10 +1204,76 @@ export function createSemanticResumeMatchTransportSchema(
   const requirements = authoritativeRequirementMap === undefined
     ? undefined : requirementMapSchema.parse(authoritativeRequirementMap);
   const assessments = z.array(providerRequirementAssessmentSchema(availableEvidence, requirements));
+  const referenceElement = (referenceIds: string[], id: string) => {
+    const unique = [...new Set(referenceIds)];
+    if (unique.length === 0) return null;
+    return (unique.length === 1
+      ? z.literal(unique[0]!)
+      : z.enum(unique as [string, ...string[]]))
+      .meta({ id });
+  };
+  const jdReference = referenceElement(
+    availableEvidence
+      .filter((evidence) => evidence.sourceType !== "USER_PROFILE")
+      .map((evidence) => evidence.referenceId),
+    "resumeMatchJdEvidenceReference",
+  );
+  const profileReference = referenceElement(
+    availableEvidence
+      .filter((evidence) => evidence.sourceType === "USER_PROFILE")
+      .map((evidence) => evidence.referenceId),
+    "resumeMatchProfileEvidenceReference",
+  );
+  const allReference = referenceElement(
+    availableEvidence.map((evidence) => evidence.referenceId),
+    "resumeMatchAnyEvidenceReference",
+  );
+  const sourceReferences = z.object({
+    jdEvidenceReferences: jdReference
+      ? z.array(jdReference).min(1)
+      : transportEvidenceReferences.max(0),
+    profileEvidenceReferences: profileReference
+      ? z.array(profileReference).min(1)
+      : transportEvidenceReferences.max(0),
+  }).strict();
+  const anyReferences = allReference
+    ? z.array(allReference)
+    : transportEvidenceReferences.max(0);
+  const supportedFinding = transportSupportedFindingSchema.extend({
+    evidenceReferences: anyReferences.min(1),
+  });
+  const unknown = transportUnknownSchema.extend({
+    evidenceReferences: anyReferences,
+  });
+  const contradiction = transportContradictionSchema.extend({
+    evidenceReferencesA: anyReferences.min(1),
+    evidenceReferencesB: anyReferences.min(1),
+  });
+  const seniorityDimension = transportSeniorityDimensionSchema.extend({
+    evidenceReferences: anyReferences,
+  });
+  const effectiveSeniority = semanticResumeMatchTransportSchema.shape
+    .effectiveSeniority.extend({
+      statedYears: seniorityDimension,
+      requirementStrength: seniorityDimension,
+      experienceSpecificity: seniorityDimension,
+      evidence: sourceReferences,
+    });
   return semanticResumeMatchTransportSchema.extend({
     requirementAssessments: requirements?.every((requirement) => requirement.ambiguity.isAmbiguous) ||
       !availableEvidence.some((evidence) => evidence.sourceType !== "USER_PROFILE")
       ? assessments.max(0) : assessments,
+    scoreEvidence: sourceReferences,
+    effectiveSeniority,
+    strongStrengths: z.array(supportedFinding),
+    partialMatches: z.array(supportedFinding),
+    unknowns: z.array(unknown),
+    positioningRecommendations: z.array(z.object({
+      recommendation: transportRequiredText,
+      evidence: sourceReferences,
+    }).strict()),
+    evidenceReferences: anyReferences.min(1),
+    contradictions: z.array(contradiction),
   });
 }
 
@@ -983,7 +1283,13 @@ export function semanticResumeMatchRequirementsForProvider(
 ) {
   return requirementMapSchema
     .parse(authoritativeRequirementMap)
-    .map((requirement, requirementIndex) => ({
+    // The historical direct-work key carries no semantics and is not shown.
+    // Statement provenance is application bookkeeping.
+    .map(({
+      requiresDirectWorkExperience: _historical,
+      sourceStatement: _sourceStatement,
+      ...requirement
+    }, requirementIndex) => ({
       requirementIndex,
       ...requirement,
       evidenceReferences: providerReferenceByCoreReference
@@ -1012,7 +1318,7 @@ type ResumeMatchProviderInputEvidence = Pick<
   | "evidenceType"
   | "origin"
   | "evidenceLevel"
->;
+> & { limitation?: ResumeMatchLimitation };
 
 export interface ResumeMatchProviderEvidenceCatalogEntry {
   evidenceIndex: number;
@@ -1023,6 +1329,8 @@ export interface ResumeMatchProviderEvidenceCatalogEntry {
   sourceField: string | null;
   origin: EvidenceRecordDraft["origin"];
   evidenceLevel: EvidenceRecordDraft["evidenceLevel"];
+  limitationCategory?: ResumeMatchLimitation["category"];
+  disclaimedExperienceSpecificity?: ResumeMatchLimitation["disclaimedExperienceSpecificity"];
 }
 
 export interface ResumeMatchProviderJdEvidenceCatalogEntry
@@ -1086,17 +1394,28 @@ export function createResumeMatchProviderInputProjection(
       referenceId: evidenceReference,
       sourceType: evidence.sourceType,
       evidenceType: evidence.evidenceType,
+      claim: evidence.claim,
+      sourceText: evidence.sourceText,
       startupSpecialization:
         evidence.sourceType === "USER_PROFILE" &&
         broaderOrTransferableWorkEvidenceTypes.has(evidence.evidenceType) &&
         startupSpecializationPattern.test(
           [evidence.claim, evidence.sourceText].filter(Boolean).join(" "),
         ),
+      ...(evidence.limitation ? { limitation: evidence.limitation } : {}),
     });
     const entry = {
       evidenceIndex,
       evidenceReference,
       ...compactEvidenceContent(evidence),
+      // Limitation semantics are structured profile data shown with the record.
+      ...(isProfile && profileLimitation(evidence)
+        ? {
+            limitationCategory: evidence.limitation!.category,
+            disclaimedExperienceSpecificity:
+              evidence.limitation!.disclaimedExperienceSpecificity,
+          }
+        : {}),
     };
     if (isProfile) {
       profileEvidenceCatalog.push(entry);
@@ -1162,6 +1481,7 @@ type AvailableResumeMatchEvidence = Pick<
 > &
   Partial<Pick<EvidenceRecordDraft, "claim" | "sourceText">> & {
     startupSpecialization?: boolean;
+    limitation?: ResumeMatchLimitation;
   };
 
 type ResumeMatchJobEvidenceCatalog = ReturnType<
@@ -1185,40 +1505,224 @@ function evidenceReferencesFromIndexes(
   });
 }
 
-type AssessmentEvidencePartition = {
-  decisionImpactReferences: string[];
-  assessmentOnlyReferences: string[];
+type AssessmentEvidenceAssignment = {
+  evidenceReference: string;
+  purpose: "DECISION_IMPACT" | "ASSESSMENT_ONLY";
+};
+type AssessmentEvidenceSelection = {
+  evidenceAssignments: AssessmentEvidenceAssignment[];
 };
 type ProviderRequirementAssessment = {
   requirementIndex: number;
   decisionImpact: string;
-  jdEvidence: AssessmentEvidencePartition;
-  profileEvidence: AssessmentEvidencePartition;
+  jdEvidence: AssessmentEvidenceSelection;
+  gapEvidence?: AssessmentEvidenceSelection;
+  profileEvidence: AssessmentEvidenceSelection;
   [key: string]: unknown;
 };
 
+type LegacyAssessmentEvidencePartition = {
+  decisionImpactReferences: string[];
+  assessmentOnlyReferences: string[];
+};
+
+function legacyPartitionToAssignments(
+  partition: LegacyAssessmentEvidencePartition,
+  requirementIndex: number,
+  source: "JD" | "profile",
+) {
+  if (
+    !Array.isArray(partition.decisionImpactReferences) ||
+    !Array.isArray(partition.assessmentOnlyReferences) ||
+    partition.decisionImpactReferences.some((reference) => typeof reference !== "string") ||
+    partition.assessmentOnlyReferences.some((reference) => typeof reference !== "string")
+  ) {
+    evidenceResultViolation(
+      `Requirement ${requirementIndex} ${source} evidence contains malformed evidence assignments`,
+    );
+  }
+  return {
+    evidenceAssignments: [
+      ...partition.decisionImpactReferences.map((evidenceReference) => ({
+        evidenceReference,
+        purpose: "DECISION_IMPACT" as const,
+      })),
+      ...partition.assessmentOnlyReferences.map((evidenceReference) => ({
+        evidenceReference,
+        purpose: "ASSESSMENT_ONLY" as const,
+      })),
+    ],
+  };
+}
+
+function normalizeLegacyAssessmentEvidence(input: unknown) {
+  if (
+    input === null ||
+    typeof input !== "object" ||
+    !("requirementAssessments" in input) ||
+    !Array.isArray(input.requirementAssessments)
+  ) {
+    return input;
+  }
+  return {
+    ...input,
+    requirementAssessments: input.requirementAssessments.map((candidate) => {
+      if (candidate === null || typeof candidate !== "object") return candidate;
+      const assessment = candidate as Record<string, unknown>;
+      const requirementIndex =
+        typeof assessment.requirementIndex === "number"
+          ? assessment.requirementIndex
+          : -1;
+      const convert = (source: "jdEvidence" | "profileEvidence") => {
+        const selection = assessment[source];
+        if (selection === null || typeof selection !== "object") return selection;
+        if ("evidenceAssignments" in selection) return selection;
+        if (
+          "decisionImpactReferences" in selection ||
+          "assessmentOnlyReferences" in selection
+        ) {
+          return legacyPartitionToAssignments(
+            selection as LegacyAssessmentEvidencePartition,
+            requirementIndex,
+            source === "jdEvidence" ? "JD" : "profile",
+          );
+        }
+        return selection;
+      };
+      return {
+        ...assessment,
+        ...(Object.hasOwn(assessment, "jdEvidence")
+          ? { jdEvidence: convert("jdEvidence") }
+          : {}),
+        ...(Object.hasOwn(assessment, "profileEvidence")
+          ? { profileEvidence: convert("profileEvidence") }
+          : {}),
+      };
+    }),
+  };
+}
+
+// Historical grouped outputs predate the separate gapEvidence collection.
+// Move only the selected limitations relevant to the requirement, keeping
+// identity and purpose; never add, drop or reassign one.
+function normalizeLegacyGapEvidence(
+  input: unknown,
+  availableEvidence: AvailableResumeMatchEvidence[],
+  requirements: z.infer<typeof requirementMapSchema>,
+) {
+  if (
+    input === null ||
+    typeof input !== "object" ||
+    !("requirementAssessments" in input) ||
+    !Array.isArray(input.requirementAssessments)
+  ) {
+    return input;
+  }
+  const gapProof = genuineGapProofByRequirement(availableEvidence, requirements);
+  return {
+    ...input,
+    requirementAssessments: input.requirementAssessments.map((candidate) => {
+      if (candidate === null || typeof candidate !== "object") return candidate;
+      const assessment = candidate as Record<string, unknown>;
+      const requirement =
+        typeof assessment.requirementIndex === "number"
+          ? requirements[assessment.requirementIndex]
+          : undefined;
+      const profileEvidence = assessment.profileEvidence as
+        | { evidenceAssignments?: unknown }
+        | undefined;
+      if (
+        assessment.classification !== "GENUINE_GAP" ||
+        Object.hasOwn(assessment, "gapEvidence") ||
+        !requirement ||
+        profileEvidence === null ||
+        typeof profileEvidence !== "object" ||
+        !Array.isArray(profileEvidence.evidenceAssignments)
+      ) {
+        return candidate;
+      }
+      const eligible = gapProof.get(assessment.requirementIndex as number) ??
+        new Set<string>();
+      const assignments = profileEvidence.evidenceAssignments as Array<{
+        evidenceReference?: unknown;
+      }>;
+      const isGapProof = (assignment: { evidenceReference?: unknown }) =>
+        typeof assignment.evidenceReference === "string" &&
+        eligible.has(assignment.evidenceReference);
+      if (!assignments.some(isGapProof)) {
+        evidenceResultViolation(
+          `Requirement ${assessment.requirementIndex} claims a Genuine Gap without a relevant profile limitation`,
+        );
+      }
+      return {
+        ...assessment,
+        gapEvidence: { evidenceAssignments: assignments.filter(isGapProof) },
+        profileEvidence: {
+          ...profileEvidence,
+          evidenceAssignments: assignments.filter(
+            (assignment) => !isGapProof(assignment),
+          ),
+        },
+      };
+    }),
+  };
+}
+
 function restoreAssessmentEvidence(input: unknown) {
-  const providerTransport = input as Record<string, unknown> & {
+  const groupedTransport = input as Record<string, unknown> & {
     requirementAssessments: ProviderRequirementAssessment[];
   };
-  // Strict JSON Schema cannot compare sibling arrays. Check every partition
-  // before restoring any assessment; never deduplicate or guess intended use.
-  // Keep this outside provider Zod refinements: unchanged invalid selections
-  // must fail non-retryably, not consume the semantic executor's retry budget.
+  // Genuine Gap proof records are profile evidence with their authored
+  // purpose. Their provider catalog is disjoint from the ordinary gap profile
+  // catalog, so merging cannot create a duplicate except through an alias that
+  // restores to the same Core identity, which the check below rejects.
+  const providerTransport = {
+    ...groupedTransport,
+    requirementAssessments: groupedTransport.requirementAssessments.map(
+      ({ gapEvidence, ...assessment }) => gapEvidence === undefined
+        ? assessment
+        : {
+            ...assessment,
+            profileEvidence: {
+              evidenceAssignments: [
+                ...gapEvidence.evidenceAssignments,
+                ...assessment.profileEvidence.evidenceAssignments,
+              ],
+            },
+          },
+    ),
+  };
+  // JSON Schema cannot enforce uniqueness by one object field. Validate the
+  // selected provider identity after authoritative restoration so aliases that
+  // collapse to one Core identity are rejected too. Never deduplicate or guess.
   const duplicatePartitions: string[] = [];
   for (const assessment of providerTransport.requirementAssessments) {
-    for (const [source, partition] of [
+    for (const [source, selection] of [
       ["JD", assessment.jdEvidence],
       ["profile", assessment.profileEvidence],
     ] as const) {
-      const impact = new Set(partition.decisionImpactReferences);
-      const assessmentOnly = new Set(partition.assessmentOnlyReferences);
+      const purposes = new Map<string, Set<AssessmentEvidenceAssignment["purpose"]>>();
+      for (const assignment of selection.evidenceAssignments) {
+        const assigned = purposes.get(assignment.evidenceReference) ?? new Set();
+        assigned.add(assignment.purpose);
+        purposes.set(assignment.evidenceReference, assigned);
+      }
       const reasons: string[] = [];
-      if (impact.size !== partition.decisionImpactReferences.length) reasons.push("within decision-impact partition");
-      if (assessmentOnly.size !== partition.assessmentOnlyReferences.length) reasons.push("within assessment-only partition");
-      if (partition.assessmentOnlyReferences.some((reference) => impact.has(reference))) reasons.push("across decision-impact and assessment-only partitions");
+      for (const [reference, assignedPurposes] of purposes) {
+        const assignments = selection.evidenceAssignments.filter(
+          (assignment) => assignment.evidenceReference === reference,
+        );
+        if (assignments.length <= 1) continue;
+        if (assignedPurposes.size > 1) {
+          reasons.push("across decision-impact and assessment-only purposes");
+        } else if (assignedPurposes.has("DECISION_IMPACT")) {
+          reasons.push("within decision-impact purpose");
+        } else {
+          reasons.push("within assessment-only purpose");
+        }
+      }
       if (reasons.length > 0) {
-        duplicatePartitions.push(`Requirement ${assessment.requirementIndex} ${source} evidence contains duplicate evidence references (${reasons.join("; ")})`);
+        duplicatePartitions.push(`Requirement ${assessment.requirementIndex} ${source} evidence contains duplicate evidence references (${[...new Set(reasons)].join("; ")})`);
       }
     }
   }
@@ -1228,24 +1732,34 @@ function restoreAssessmentEvidence(input: unknown) {
     requirementAssessments: providerTransport.requirementAssessments.map(
       (assessment) => {
         const { jdEvidence, profileEvidence, ...rest } = assessment;
-        const restore = (partition: AssessmentEvidencePartition) => {
-          const references = [...partition.decisionImpactReferences, ...partition.assessmentOnlyReferences];
-          return references;
-        };
-        const jdEvidenceReferences = restore(jdEvidence);
-        const profileEvidenceReferences = restore(profileEvidence);
+        const referencesFor = (
+          selection: AssessmentEvidenceSelection,
+          purpose?: AssessmentEvidenceAssignment["purpose"],
+        ) => selection.evidenceAssignments
+          .filter((assignment) => purpose === undefined || assignment.purpose === purpose)
+          .map((assignment) => assignment.evidenceReference);
+        const jdEvidenceReferences = referencesFor(jdEvidence);
+        const profileEvidenceReferences = referencesFor(profileEvidence);
+        const jdDecisionImpactReferences = referencesFor(
+          jdEvidence,
+          "DECISION_IMPACT",
+        );
+        const profileDecisionImpactReferences = referencesFor(
+          profileEvidence,
+          "DECISION_IMPACT",
+        );
         return {
           ...rest,
           jdEvidenceReferences,
           profileEvidenceReferences,
           ...(assessment.decisionImpact === "DECISIVE_DISQUALIFIER"
             ? { decisionImpactEvidence: {
-                jdEvidenceReferences: jdEvidence.decisionImpactReferences,
-                profileEvidenceReferences: profileEvidence.decisionImpactReferences,
+                jdEvidenceReferences: jdDecisionImpactReferences,
+                profileEvidenceReferences: profileDecisionImpactReferences,
               } }
             : { decisionImpactEvidenceReferences: [
-                ...jdEvidence.decisionImpactReferences,
-                ...profileEvidence.decisionImpactReferences,
+                ...jdDecisionImpactReferences,
+                ...profileDecisionImpactReferences,
               ] }),
         };
       },
@@ -1262,6 +1776,7 @@ const providerEvidenceReferenceKeys = new Set([
   "evidenceReferencesA",
   "evidenceReferencesB",
 ]);
+const providerSingleEvidenceReferenceKeys = new Set(["evidenceReference"]);
 
 function mapResumeMatchEvidenceReferences(
   value: unknown,
@@ -1277,6 +1792,14 @@ function mapResumeMatchEvidenceReferences(
   }
   return Object.fromEntries(
     Object.entries(value).map(([key, child]) => {
+      if (providerSingleEvidenceReferenceKeys.has(key)) {
+        if (typeof child !== "string") {
+          evidenceResultViolation(
+            `Resume Match provider field ${key} contains a malformed evidence reference`,
+          );
+        }
+        return [key, resolveReference(child, key)];
+      }
       if (providerEvidenceReferenceKeys.has(key)) {
         if (
           !Array.isArray(child) ||
@@ -1331,48 +1854,53 @@ function restoreProviderEvidenceReferences(
   });
 }
 
-const bracketedProviderCitationPattern = /\[((?:jd|profile)-\d+)\]/g;
-const malformedBracketedProviderCitationPattern =
-  /\[(?:jd|profile)-[^\]]*\]/i;
+const bracketedProviderCitationPattern =
+  /\[\s*((?:jd|profile)-[^\]]*)\s*\]/gi;
+const providerCitationTokenPattern = /^(?:jd|profile)-\d+$/;
 const unbracketedProviderCitationPattern =
   /(^|[^A-Za-z0-9_-])((?:jd|profile)-\d+)(?=$|[^A-Za-z0-9_-])/g;
 
+// Narrative text is display-only. Structured evidence fields carry provenance
+// and are validated separately. Inside prose, each well-formed provider-local
+// reference that resolves is translated to its Core ID, and a bracket group
+// whose tokens all resolve uniquely is rendered as one bracket per reference.
+// Unresolvable or malformed citation text stays as authored and never decides
+// acceptance.
 function restoreProviderNarrativeCitations(
   value: unknown,
   coreReferenceByProviderReference: ReadonlyMap<string, string>,
   parentKey?: string,
 ): unknown {
   if (typeof value === "string") {
-    if (parentKey && providerEvidenceReferenceKeys.has(parentKey)) return value;
+    if (
+      parentKey &&
+      (providerEvidenceReferenceKeys.has(parentKey) ||
+        providerSingleEvidenceReferenceKeys.has(parentKey))
+    ) return value;
     const bracketRestored = value.replace(
       bracketedProviderCitationPattern,
-      (_citation, providerReference: string) => {
-        const coreReference =
-          coreReferenceByProviderReference.get(providerReference);
-        if (!coreReference) {
-          evidenceResultViolation(
-            "Resume Match narrative references unknown provider evidence",
-          );
-        }
-        return `[${coreReference}]`;
+      (citation, providerReferencesText: string) => {
+        const providerReferences = providerReferencesText
+          .split(",")
+          .map((providerReference) => providerReference.trim());
+        const coreReferences = providerReferences.map((providerReference) =>
+          providerCitationTokenPattern.test(providerReference)
+            ? coreReferenceByProviderReference.get(providerReference)
+            : undefined,
+        );
+        if (
+          new Set(providerReferences).size !== providerReferences.length ||
+          coreReferences.some((coreReference) => coreReference === undefined)
+        ) return citation;
+        return coreReferences.map((coreReference) => `[${coreReference}]`).join(" ");
       },
     );
-    if (malformedBracketedProviderCitationPattern.test(bracketRestored)) {
-      evidenceResultViolation(
-        "Resume Match narrative contains malformed or ambiguous provider evidence",
-      );
-    }
     return bracketRestored.replace(
       unbracketedProviderCitationPattern,
       (citation, prefix: string, providerReference: string) => {
         const coreReference =
           coreReferenceByProviderReference.get(providerReference);
-        if (!coreReference) {
-          evidenceResultViolation(
-            "Resume Match narrative references unknown provider evidence",
-          );
-        }
-        return `${prefix}${coreReference}`;
+        return coreReference ? `${prefix}${coreReference}` : citation;
       },
     );
   }
@@ -1530,12 +2058,14 @@ function validateResumeMatchEvidence(
         ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(
           assessment.classification,
         ) &&
-        (transportAssessment.experienceEvidenceBasis !==
-          "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
-          !hasEvidenceType(["DIRECT_EXPERIENCE"]))
+        !hasEvidenceType([
+          "DIRECT_EXPERIENCE",
+          "RELATED_EXPERIENCE",
+          "TRANSFERABLE_EXPERIENCE",
+        ])
       ) {
         evidenceResultViolation(
-          `${label} treats a specialized industry requirement as a match without direct specialized-experience evidence`,
+          `${label} treats an industry requirement as a match without work-experience evidence`,
         );
       }
       if (
@@ -1548,26 +2078,8 @@ function validateResumeMatchEvidence(
           `${label} treats skill or knowledge evidence as employment experience`,
         );
       }
-      const directExperienceRequested =
-        requirement?.category === "EXPERIENCE" &&
-        /\bdirect\b/i.test(
-          [requirement.requirement, requirement.experienceSpecificity]
-            .filter(Boolean)
-            .join(" "),
-        );
-      if (
-        directExperienceRequested &&
-        ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(
-          assessment.classification,
-        ) &&
-        (transportAssessment.experienceEvidenceBasis !==
-          "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
-          !hasEvidenceType(["DIRECT_EXPERIENCE"]))
-      ) {
-        evidenceResultViolation(
-          `${label} treats preparation or transferable experience as direct work experience`,
-        );
-      }
+      // Experience-level legality is the requirement-relative compatibility
+      // relation already enforced during conversion; it is not restated here.
       if (
         ["DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS"].includes(
           assessment.matchedExperienceSpecificity,
@@ -1752,12 +2264,21 @@ export function semanticResumeMatchFromTransport(
   if (new Set(availableEvidence.map((item) => item.referenceId)).size !== availableEvidence.length) {
     evidenceResultViolation("Available Resume Match evidence contains duplicate reference identifiers");
   }
+  const schemaEvidence = providerInputProjection?.schemaEvidence ?? availableEvidence;
+  const normalizedProviderValue = normalizeLegacyGapEvidence(
+    normalizeLegacyAssessmentEvidence(value),
+    schemaEvidence,
+    requirementMapSchema.parse(authoritativeRequirementMap),
+  );
   const providerResult = createSemanticResumeMatchTransportSchema(
-    providerInputProjection?.schemaEvidence ?? availableEvidence,
+    schemaEvidence,
     authoritativeRequirementMap,
-  ).safeParse(value);
-  const assessments = value !== null && typeof value === "object" && "requirementAssessments" in value
-    ? value.requirementAssessments : null;
+  ).safeParse(normalizedProviderValue);
+  const assessments = normalizedProviderValue !== null &&
+      typeof normalizedProviderValue === "object" &&
+      "requirementAssessments" in normalizedProviderValue
+    ? normalizedProviderValue.requirementAssessments
+    : null;
   const hasGroupedEvidence = Array.isArray(assessments) && assessments.some(
     (assessment) => assessment !== null && typeof assessment === "object" &&
       ("jdEvidence" in assessment || "profileEvidence" in assessment),
@@ -1810,6 +2331,7 @@ export function semanticResumeMatchFromTransport(
     }
   }
   const requirements = requirementMapSchema.parse(authoritativeRequirementMap);
+  const gapProof = genuineGapProofByRequirement(availableEvidence, requirements);
   const assessmentsByIndex = new Map<
     number,
     (typeof transport.requirementAssessments)[number]
@@ -1859,16 +2381,15 @@ export function semanticResumeMatchFromTransport(
         `Requirement ${assessment.requirementIndex} treats generic experience as startup specialization`,
       );
     }
+    // An Unknown asserts nothing about the candidate, so it cannot carry
+    // supported or unsupported portions; partial support is PARTIAL_MATCH.
     if (
-      authoritative.category === "INDUSTRY" &&
-      ["STRONG_MATCH", "PARTIAL_MATCH", "TRANSFERABLE_MATCH"].includes(assessment.classification) &&
-      (assessment.experienceEvidenceBasis !== "DIRECT_OR_RELATED_WORK_EXPERIENCE" ||
-        !assessment.profileEvidenceReferences.some((reference) =>
-          knownEvidence.get(reference)?.evidenceType === "DIRECT_EXPERIENCE",
-        ))
+      assessment.classification === "UNKNOWN" &&
+      (assessment.supportedPortion !== null ||
+        assessment.unsupportedPortion !== null)
     ) {
-      evidenceResultViolation(
-        `Requirement ${assessment.requirementIndex} treats a specialized industry requirement as a match without direct specialized-experience evidence`,
+      authoritativeResultViolation(
+        `Requirement ${assessment.requirementIndex} is Unknown but carries supported or unsupported portions`,
       );
     }
     if (
@@ -1891,6 +2412,37 @@ export function semanticResumeMatchFromTransport(
       ) {
         evidenceResultViolation(
           `Requirement ${assessment.requirementIndex} has incompatible classification, specificity, evidence basis or profile evidence`,
+        );
+      }
+    }
+    if (assessment.classification === "GENUINE_GAP") {
+      const proof = gapProof.get(assessment.requirementIndex) ?? new Set<string>();
+      const establishesGap = (reference: string) => proof.has(reference);
+      if (!assessment.profileEvidenceReferences.some(establishesGap)) {
+        evidenceResultViolation(
+          `Requirement ${assessment.requirementIndex} claims a Genuine Gap without a relevant profile limitation`,
+        );
+      }
+      // An unrelated limitation can never accompany a gap, even as context.
+      if (
+        assessment.profileEvidenceReferences.some((reference) =>
+          profileLimitation(knownEvidence.get(reference)!) !== undefined &&
+          !establishesGap(reference))
+      ) {
+        evidenceResultViolation(
+          `Requirement ${assessment.requirementIndex} cites a profile limitation that is not relevant to the requirement`,
+        );
+      }
+      const decisionReferences =
+        "decisionImpactEvidence" in assessment
+          ? mergeBothSourceEvidence(assessment.decisionImpactEvidence)
+          : assessment.decisionImpactEvidenceReferences;
+      if (
+        assessment.decisionImpact === "DECISIVE_DISQUALIFIER" &&
+        !decisionReferences.some(establishesGap)
+      ) {
+        evidenceResultViolation(
+          `Requirement ${assessment.requirementIndex} assigns decisive gap impact without a relevant profile limitation`,
         );
       }
     }

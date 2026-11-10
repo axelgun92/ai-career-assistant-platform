@@ -10,6 +10,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      // The web app's own import alias (apps/web/tsconfig.json "@/*"), so
+      // route handlers can be unit-tested.
+      "@": fileURLToPath(new URL("./apps/web/src", import.meta.url)),
+      "@ai-career/browser-retrieval": fileURLToPath(
+        new URL("./packages/browser-retrieval/src/index.ts", import.meta.url),
+      ),
       "@ai-career/core": fileURLToPath(
         new URL("./packages/core/src/index.ts", import.meta.url),
       ),
@@ -18,6 +24,12 @@ export default defineConfig({
       ),
       "@ai-career/database": fileURLToPath(
         new URL("./database/src/index.ts", import.meta.url),
+      ),
+      "@ai-career/deduplication": fileURLToPath(
+        new URL("./packages/deduplication/src/index.ts", import.meta.url),
+      ),
+      "@ai-career/discovery": fileURLToPath(
+        new URL("./packages/discovery/src/index.ts", import.meta.url),
       ),
       "@ai-career/evaluation": fileURLToPath(
         new URL("./packages/evaluation/src/index.ts", import.meta.url),

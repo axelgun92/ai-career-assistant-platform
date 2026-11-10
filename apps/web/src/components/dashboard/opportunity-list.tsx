@@ -1,0 +1,179 @@
+import Link from "next/link";
+import { workAuthorizationRelevance, type UserWorkEligibility } from "@ai-career/core";
+import type { OpportunityListItem } from "@ai-career/database";
+import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
+import { evaluationStatusLabel, priorityBandLabel } from "./labels";
+import { sourceTypeLabel } from "../opportunity-provenance";
+import { ExternalLink, safeExternalUrl } from "../external-link";
+import { applicationStatusLabel } from "../application/labels";
+import { formatResidency, formatSalary, formatWorkArrangements } from "../opportunity-facts";
+
+type Optional =
+  | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
+  | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority"
+  | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged" | "noLongerListed"
+  | "workAuthorizationRequirement" | "workAuthorizationRegions" | "visaSponsorship" | "relocationSupport"
+  | "employerOfRecordRegions" | "compensationBasis" | "workArrangements";
+type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
+
+// The application tracker's state, kept to one badge plus the next follow-up.
+function ApplicationBadges({ opportunity }: { opportunity: Row }) {
+  const application = opportunity.application ?? null;
+  if (!application) {
+    return opportunity.status === "APPLIED" ? (
+      <span className="status-label status-label-muted">Not tracked yet</span>
+    ) : null;
+  }
+  const overdue = application.nextFollowUpState === "OVERDUE";
+  return (
+    <>
+      <span className="status-label status-label-application">
+        Application: {applicationStatusLabel(application.stage, application.outcome)}
+      </span>
+      {application.nextFollowUpOn ? (
+        <span className={overdue ? "status-label status-label-overdue" : "status-label"}>
+          {overdue
+            ? `Follow-up overdue · ${application.nextFollowUpOn}`
+            : `Next follow-up ${application.nextFollowUpOn}`}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function EvaluationBadges({ opportunity }: { opportunity: Row }) {
+  const evaluation = opportunity.latestEvaluation;
+  const recommendation = opportunity.currentRecommendation ??
+    (evaluation?.decision ? { decision: evaluation.decision, isLatest: true } : null);
+  const priority = priorityBandLabel(opportunity.priorityBand);
+  return (
+    <>
+      {recommendation ? (
+        <span
+          className="status-label status-label-decision"
+          title={recommendation.isLatest ? undefined : "From the last completed evaluation"}
+        >
+          {formatLabel(recommendation.decision)}
+          {recommendation.isLatest ? "" : " (last completed)"}
+        </span>
+      ) : null}
+      {priority ? <span className="status-label status-label-priority">{priority}</span> : null}
+      {evaluation ? (
+        <span className="status-label">{evaluationStatusLabel(evaluation.status)}</span>
+      ) : opportunity.deferred ? null : (
+        <span className="status-label">Not evaluated</span>
+      )}
+      {opportunity.deferred ? (
+        <span className="status-label status-label-deferred">Evaluation deferred</span>
+      ) : null}
+    </>
+  );
+}
+
+// A job whose stated work-authorization facts, compared with the user's own
+// eligibility, need a look (never for a requirement the user already meets).
+function needsEligibilityCheck(opportunity: Row, eligibility: UserWorkEligibility | null | undefined): boolean {
+  if (!eligibility) return false;
+  const status = workAuthorizationRelevance(
+    {
+      workAuthorizationRequirement: (opportunity.workAuthorizationRequirement ?? null) as "RIGHT_TO_WORK" | "CITIZENSHIP" | null,
+      workAuthorizationRegions: opportunity.workAuthorizationRegions ?? [],
+      visaSponsorship: (opportunity.visaSponsorship ?? null) as "AVAILABLE" | "NOT_AVAILABLE" | null,
+      relocationSupport: (opportunity.relocationSupport ?? null) as "AVAILABLE" | "NOT_AVAILABLE" | null,
+      employerOfRecordRegions: opportunity.employerOfRecordRegions ?? [],
+      residencyRegions: opportunity.residencyRegions ?? [],
+      location: opportunity.location,
+    },
+    eligibility,
+  ).status;
+  return status === "REVIEW" || status === "UNKNOWN_CHECK";
+}
+
+export function OpportunityList({ opportunities, eligibility }: { opportunities: Row[]; eligibility?: UserWorkEligibility | null }) {
+  if (opportunities.length === 0) {
+    return (
+      <p className="empty-state">
+        No opportunities yet. <Link href="/opportunities/new">Add your first opportunity</Link> to
+        start an evaluation.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="opportunity-list" aria-label="Opportunities">
+      {opportunities.map((opportunity) => {
+        const applicationUrl = safeExternalUrl(opportunity.applicationUrl ?? null);
+        return (
+          <li key={opportunity.id} className="opportunity-row">
+            <div className="opportunity-row-main">
+              <Link href={`/opportunities/${opportunity.id}`} className="opportunity-row-title">
+                {opportunity.title ?? "Untitled opportunity"}
+              </Link>
+              <span>
+                {formatText(opportunity.companyName)}
+                {opportunity.location ? ` · ${opportunity.location}` : ""}
+              </span>
+            </div>
+            <dl className="opportunity-row-facts">
+              <div>
+                <dt>Salary</dt>
+                <dd>{formatSalary(opportunity) ?? "Unknown"}</dd>
+              </div>
+              <div>
+                <dt>Work arrangement</dt>
+                <dd>{formatWorkArrangements(opportunity)}</dd>
+              </div>
+              <div>
+                <dt>Residency</dt>
+                <dd>{formatResidency(opportunity.residencyRequirement, opportunity.residencyRegions)}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{opportunity.foundVia ? `Found via ${opportunity.foundVia}` : sourceTypeLabel(opportunity.sourceType)}</dd>
+              </div>
+              <div>
+                <dt>Discovered</dt>
+                <dd>{formatDate(opportunity.discoveredAt ?? opportunity.createdAt)}</dd>
+              </div>
+              <div>
+                <dt>Domain</dt>
+                <dd>{formatLabel(opportunity.domain)}</dd>
+              </div>
+            </dl>
+            <div className="opportunity-row-status">
+              <span className="status-label status-label-lifecycle">
+                {formatLifecycle(opportunity.status)}
+              </span>
+              <ApplicationBadges opportunity={opportunity} />
+              <EvaluationBadges opportunity={opportunity} />
+              {opportunity.duplicate ? (
+                <span className="status-label status-label-duplicate">
+                  {opportunity.duplicate === "MATCH" ? "Duplicate listing" : "Possible duplicate"}
+                </span>
+              ) : null}
+              {opportunity.listingChanged ? (
+                <span
+                  className="status-label status-label-deferred"
+                  title="The listing changed. Current facts show its latest version; earlier versions are kept, and an existing evaluation may describe an earlier one. Reevaluating is optional."
+                >
+                  Listing changed
+                </span>
+              ) : null}
+              {needsEligibilityCheck(opportunity, eligibility) ? (
+                <span className="status-label status-label-deferred" title="This job's stated work-authorization facts, or their absence for a job outside your countries, are worth checking.">
+                  Check work eligibility
+                </span>
+              ) : null}
+              {opportunity.noLongerListed ? (
+                <span className="status-label status-label-muted">No longer listed</span>
+              ) : null}
+              {applicationUrl ? (
+                <ExternalLink href={applicationUrl}>Application page</ExternalLink>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

@@ -1,0 +1,49 @@
+{
+  "adapter": "remote-ok",
+  "request": "GET https://remoteok.com/api",
+  "httpStatus": 200,
+  "contentType": "application/json",
+  "capturedAt": "2026-10-17T23:07:56Z",
+  "fullResponse": {
+    "bytes": 601534,
+    "sha256": "a7d5c4be2b9fbfaa6a01bbb5915845885197c8b5e9eef84a9f4d95bcdd6860b9",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 99 items",
+  "items": [
+    {
+      "responseIndex": 6,
+      "id": "1137529",
+      "title": "Customer Success Associate",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 0,
+      "id": "1137537",
+      "title": "Head of Technology",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 72,
+      "id": "1136987",
+      "title": "Consultant Implementation Engineer",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation. The first array element (last_updated and the API terms notice) is kept as received; responseIndex counts jobs after it.",
+  "sanitization": [],
+  "fixtureFile": "response.json"
+}

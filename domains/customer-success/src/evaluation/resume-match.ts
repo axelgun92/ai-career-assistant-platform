@@ -6,6 +6,10 @@ import {
 import type { EvidenceRecordDraft } from "@ai-career/evidence";
 import type { CustomerSuccessDomainData } from "../evaluator";
 import { createCustomerSuccessProfileContext } from "../profile/user-profile";
+import {
+  jdReconstructionCriterionId,
+  type CustomerSuccessJdReconstruction,
+} from "../schemas/maps";
 import { alexFitDataSchema } from "../schemas/alex-fit";
 import { burnoutRiskDataSchema } from "../schemas/burnout-risk";
 import { companyAlignmentDataSchema } from "../schemas/company-alignment";
@@ -75,6 +79,30 @@ function authoritativeResultViolation(
   });
 }
 
+// A current execution needs the current requirement contract. A persisted JD
+// Reconstruction map whose semantic requirements predate source-statement
+// provenance or experience levels cannot be reinterpreted: Resume Match fails
+// closed so JD Reconstruction is regenerated. Stored results stay readable.
+export function outdatedResumeMatchRequirementIndexes(
+  reconstruction: Pick<CustomerSuccessJdReconstruction, "requirements" | "evidence">,
+) {
+  const reconstructionEvidence = new Map(
+    reconstruction.evidence.map((item) => [item.referenceId, item]),
+  );
+  return reconstruction.requirements
+    .map((requirement, index) => ({ requirement, index }))
+    .filter(({ requirement }) =>
+      requirement.evidenceReferences.some((reference) =>
+        reconstructionEvidence.get(reference)?.criterionId ===
+          jdReconstructionCriterionId,
+      ) &&
+      (requirement.sourceStatement === undefined ||
+        (requirement.category === "EXPERIENCE" &&
+          requirement.minimumExperienceSpecificity === undefined)),
+    )
+    .map(({ index }) => index);
+}
+
 export function createResumeMatchStage() {
   return defineEvaluationStage<CustomerSuccessDomainData, ResumeMatchData>({
     id: "resume-match",
@@ -123,6 +151,14 @@ export function createResumeMatchStage() {
       const reconstruction =
         context.domainData.reconstruction ?? hardFilters.reconstruction;
       context.domainData.reconstruction = reconstruction;
+      const outdatedRequirementIndexes =
+        outdatedResumeMatchRequirementIndexes(reconstruction);
+      if (outdatedRequirementIndexes.length > 0) {
+        authoritativeResultViolation(
+          `JD Reconstruction requirements ${outdatedRequirementIndexes.join(", ")} predate the source-statement and experience-level contract; regenerate JD Reconstruction before Resume Match`,
+          "RESUME_MATCH_PREREQUISITE_OUTDATED",
+        );
+      }
       const profile =
         context.domainData.userProfile ??
         createCustomerSuccessProfileContext(context.userProfile);

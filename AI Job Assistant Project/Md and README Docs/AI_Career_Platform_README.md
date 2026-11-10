@@ -1,5 +1,7 @@
 # AI Career Platform
 
+**Last updated:** November 2, 2026
+
 A modular AI-assisted career platform for discovering, evaluating, and prioritizing opportunities using transparent, evidence-based reasoning.
 
 The platform is designed to support multiple domain-specific assistants on top of a shared Core AI Framework. The first implemented domain is the **Customer Success AI Assistant**.
@@ -23,6 +25,7 @@ The current working Customer Success flow supports:
 ```text
 Manual Opportunity
 → Persistence
+→ Pre-Evaluator Triage (Evaluate / Needs Review / Reject)
 → Background Evaluation
 → Customer Success Evaluation Pipeline
 → Deterministic Final Recommendation
@@ -37,6 +40,7 @@ Job Source(s)
 → Retrieval / Collection
 → Normalization
 → Deduplication
+→ Pre-Evaluator Triage
 → Existing Evaluator
 → Apply / Review / Skip
 ```
@@ -86,58 +90,100 @@ Current accepted semantic model routing:
 
 | Operation | Execution |
 | --- | --- |
+| Hard Filters | Deterministic |
 | JD Reconstruction | GPT-5.6 Terra |
 | Job Evaluation | GPT-5.6 Luna |
-| Company Alignment | GPT-5.6 Luna |
+| Company Alignment | GPT-6 Luna |
 | Organizational Maturity | GPT-5.6 Luna |
 | Alex Fit | GPT-5.6 Luna |
-| Burnout Risk | GPT-5.6 Luna |
+| Burnout Risk | GPT-6 Luna |
 | Resume Match | GPT-5.6 Terra |
 | Opportunity Priority | GPT-5.6 Luna |
 | Ghost Job Risk | Deterministic Unknown when posting-history evidence is insufficient |
 | Final Recommendation | Deterministic application logic |
 
+The routing policy is locked (October 15, 2026). A GPT-6 Luna Job Evaluation benchmark was rejected because it regressed an established classification and omitted established evidence; the remaining GPT-6 benchmarks were skipped by product decision.
+
+**Branch state:** the final evaluator/product integration is complete on `integration/final-evaluator-product` at `45d5fff`, the preserved pre-triage baseline. The new deterministic product-side pre-evaluator triage enhancement is `5ac3c9d`; it does not change evaluator routing, schemas, the six-released/fifteen-withheld input boundary, or Apply / Review / Skip.
+
+### Pre-evaluator triage (new after `45d5fff`)
+
+Normalized and deduplicated opportunities now pass through a conservative deterministic gate before budget admission or evaluator enqueue. The only outcomes are **Evaluate**, **Needs Review** and **Reject**. Unknown, ambiguous, conflicting or incomplete hard prerequisites wait for the user's explicit Evaluate/Reject decision; only definite structured incompatibility rejects. Needs Review and Reject create no evaluator spend or evaluator/admission/deferral/semantic-operation records. The review backlog is visible on `/budget`, and every decision preserves source history, normalized Unknowns and provenance.
+
 Model routing is treated as an execution detail. It does not change the meaning of the domain schemas, stage outputs, evidence rules, Unknown handling, contradictions, or recommendation behavior.
 
 ## Current Development Status
 
-### Implemented
+### Implemented / established
 
-- shared Core evaluation framework;
-- manual opportunity ingestion;
-- PostgreSQL persistence;
-- background evaluation processing;
-- ordered Customer Success evaluation stages;
-- evidence tracking;
-- Unknown and contradiction handling;
-- structured semantic outputs and validation;
+- shared Core evaluation framework and PostgreSQL-backed product foundation;
+- manual opportunity ingestion with raw-source preservation, deterministic normalization, and provenance;
+- background evaluation processing and persisted evaluation history;
+- ordered Customer Success evaluation stages with evidence tracking, Unknown and contradiction handling, and structured semantic outputs and validation;
 - deterministic recommendation logic;
 - semantic usage and estimated-cost accounting;
 - per-operation model routing;
-- persisted evaluation history;
-- Customer Success results interface;
-- bounded evaluation polling and status handling;
-- safe rendering of untrusted job-description content.
+- Customer Success results interface with bounded evaluation polling and status handling and safe rendering of untrusted job-description content;
+- opportunity dashboard, search/sort/filter, lifecycle actions, profile/version management, and AI usage/cost display;
+- application tracker, complete after the Task 8 completion pass (`534a4c7`);
+- setup and operations tooling, single-worker evaluation processing, honest queue states, and whole-product acceptance tests (original Task 9 work), complete after the Task 9 completion pass (October 16, 2026);
+- deduplication with provenance retention for captured listings (an exact duplicate is added to the saved opportunity as another source; a possible duplicate is flagged and never merged), a serialized guard against paying twice for one listing, and normalized company names (Features 1–10 Gap Closure, `d573acf`);
+- automated retrieval from the verified official API and feed sources (Greenhouse, Lever, Ashby, SmartRecruiters, Remote OK, We Work Remotely, Himalayas, Working Nomads): sources managed on `/sources` and disabled until enabled, title-only Customer Success role-family discovery, cross-source deduplication with employer-link preference, changed-listing observations, and no automatic evaluation (Feature 11A, `fad2341`);
+- automated retrieval from the verified public/guest-endpoint and public-HTML sources (Workday career sites, the Workable job search, the Wellfound role page) through the same path; Welcome to the Jungle / Otta registered but not enabled (Feature 11B, `2a1d8c2`);
+- source health and conservative retrieval: escalating backoff after source failures (capped at 7 days), a source's Retry-After honoured in full, any 5xx stopping a host for the run, no in-run retries or automatic disabling, derived health and freshness on `/sources`, Run now that cannot override a rate limit or requested wait, and read-only doctor warnings (Feature 12, `f10a02b`);
+- posting history: listing coverage recorded before the title filter, removal confirmed only by complete boards (Greenhouse, Lever, Ashby; Workday and SmartRecruiters when their stated total is read exactly), a listing ledger per tracking-scope generation, reappearance, a "Posting history" section, a "No longer listed" dashboard badge, and evaluator-shaped facts withheld from the evaluator (Feature 13, `d1bf217`);
+- persistent monthly AI budget ledger, atomic reservation/reconciliation, deferral/resume/cancel flow, warnings, and throughput/token limits;
+- Task 7 normalized salary/currency/position/residency contract (main-product branch);
+- Customer Success nine-stage evaluator plus deterministic Final Recommendation;
+- Resume Match Optimization #2 and JD Reconstruction State2 accepted;
+- final routing policy locked (GPT-6 Luna routes on `codex/evaluator-live-diagnostic`; not yet merged);
+- Customer Success Milestone 4 aligned to the Task 7 salary/currency/residency facts at commit `267124f` on `codex/evaluator-live-diagnostic` (not yet merged);
+- evaluator semantic-contract repairs of October 10–13 (`cs-jd-reconstruction-v7`, `cs-resume-match-v4`, `cs-organizational-maturity-v7`) on `codex/evaluator-live-diagnostic` (not yet merged; the main-product branch still runs `cs-jd-reconstruction-v3`, `cs-resume-match-v2` and `cs-organizational-maturity-v6`).
 
-### In Progress
+### In progress
 
-- final evaluator cost optimization;
-- JD Reconstruction optimization;
-- Resume Match optimization;
-- combined-path evaluator verification;
-- final mixed-model evaluation;
-- remaining application workflow and integration work outside the evaluator.
+- Extension Mode B, bounded results-page ingestion, is implemented after `e84c1cc` and verified offline. It is not yet committed or live-accepted.
+  - "Save jobs on this page" reads up to 25 already-loaded cards with a self-contained reader (`apps/extension/src/results.ts`; no scroll, click, navigation or request) and posts a strict batch (`pageCaptureBatchSchema`, Core `page-capture.ts`) to `POST /api/extension/page-captures`.
+  - The batch is staged in the additive `PageCaptureItem` work queue (migration `20261103090000_page_capture_item`). It is never a `RetrievalSource`, `RetrievedListing` or opportunity-less `SourceRecord`.
+  - For a site with `detailVerified`, an isolated pass in the retrieval worker (`page-capture-acquisition.ts`) opens each job's page with the Feature 14A browser session (fresh, logged-out, sequential, paced, friction stop with a backoff of 24 hours or more) and runs the unchanged single-job reader (`extract.ts`) over it. It then builds the unchanged capture envelope and calls the unchanged `capturedListing()` and retrieval ingestion, so a batch job has Mode A's identity, `BROWSER_EXTENSION` provenance and `discoveredAt` = its first batch sighting.
+  - Each new opportunity is handed once to `EvaluationService.requestEvaluation(id, {})`, whose existing pre-evaluator triage runs before any admission or spend.
+  - A job whose page cannot be read stays Awaiting details. Progress is shown on `/extension/jobs`.
+  - Extension experience (November 5, 2026; awaiting review):
+    - the extension's UI is a Chrome side panel (`apps/extension/static/popup.html`, `src/popup.ts`, `src/panel-view.ts`) with Single Job and Batch Capture modes;
+    - capture history is the additive `PageCaptureSession` (`database/src/page-capture-repository.ts` `listSessions` / `capturedJobs`), served to the panel by `GET /api/extension/page-captures/sessions[/<id>]`;
+    - the app's two Extension destinations are Setup & Connection (`/extension`) and Captured Jobs (`/extension/jobs`);
+    - single-job saves call `EvaluationService.assessTriage` (triage only, never admission).
+  - LinkedIn is `cardVerified`/`detailVerified: true` since November 4, 2026 (F0 5/5; P1 PASS 5/5), not complete until its targeted end-to-end acceptance. Welcome to the Jungle / Otta stays `false` (P1 BLOCKED by HTTP 403; P3 unsupported). P2, sequential background tabs triggered by the single Save action, is implemented and verified offline (November 4, 2026; awaiting review and live acceptance), so its Mode B is not complete. P2 runs in the extension's service worker (`apps/extension/src/tab-acquisition.ts`): the server never fetches the site, and the worker skips any site whose mechanism is not `server-browser`. Each job's page is reported to `apps/web/src/server/page-capture-tabs.ts`, identity-checked, and ingested through the same `createPageCaptureIngestor` path the LinkedIn worker uses. Until acceptance WTTJ is enabled only by `PAGE_CAPTURE_ACCEPTANCE_SITES`. *(Earlier, November 4: "is the chosen mechanism and is not yet implemented".)*
+- Feature 18, Company Intelligence, is complete (implemented, verified and accepted October 31, 2026): read-only company view on `/companies` (a top-level Companies entry after Market) and `/companies/[id]`: companies grouped by exact normalized name (different legal entities or brands stay separate), observed postings by the month first seen (never "hires"), Feature 13 listing state and reposts plus relisting under a new listing ID with the same requisition, recurring role groups kept apart from reposts, work arrangement and hiring regions (no "remote-friendly" label), your applications there with the Feature 17 outcomes and tracker-dated timing (observed listing duration and process timing instead of "hiring speed"), and company type from evaluated roles; no score, ranking or label; no migration (Core AI Framework PRD v1.18, Customer Success PRD v1.16, Core Platform TDD v1.19, Customer Success TDD v1.16). It completes main-product features 1–18.
+- Feature 17, Personal Job-Search Analytics, is complete (implemented, verified and accepted October 31, 2026): read-only personal view on `/my-search` (a top-level My search entry): applications by application date with the Feature 15 outcome rules, offer rates that exclude processes still in progress, the recommendation at application credited only when timing shows it came first, what the evaluator said beside what actually happened by title group, recurring Genuine Gaps by category and exact wording within one profile and Resume Match version, outcomes by first-discovering source and company type, and where applications are not progressing; no accuracy metric; no migration (Core AI Framework PRD v1.17, Customer Success PRD v1.15, Core Platform TDD v1.18, Customer Success TDD v1.15).
+- Feature 16, Job-Market Analytics, is complete (implemented, verified and accepted October 31, 2026): read-only market view on `/market` (a top-level Market entry): each job counted once by the date it was first seen, jobs first discovered by automated retrieval by default with an "All collected" view and its selection-bias note, salary per stated currency and basis with tiered pay listed apart and unknown-currency amounts in coverage only, title groups from the Customer Success discovery terms, job location, hiring eligibility and work arrangement kept apart, stated seniority, and the requirements, customer segment and recommendation mix of evaluated jobs with coverage; no migration (Core AI Framework PRD v1.16, Customer Success PRD v1.14, Core Platform TDD v1.17, Customer Success TDD v1.14).
+- Feature 15, Source Intelligence, is complete (implemented, verified and accepted October 31, 2026): read-only per-source evidence on `/sources/insights` (part of Sources) and a drill-down per source, with first-discovery credit and every other source as presence, useful jobs = Apply or Review over completed evaluations only, budget and usage-limit waits and other unevaluated states never counted against a source, outcomes counted once with a 30-day maturity rule, cost per useful job, geography and employer-ATS coverage, Feature 12 reliability and sample-size labels; no migration, no verdicts. Automated database tests now refuse any non-`_test` database.
+- Feature 14B, the browser-extension companion, is complete: committed `e6bacc6` (October 20, 2026), its live acceptance passed on October 29, 2026 (`2ccdc7f`) through the installed Chrome extension on real job pages, completing Feature 14. Along the way, already-supported facts a source leaves missing are read from explicit statements in the job text through one shared reader for every ingestion path, a recognized currency symbol is read directly as its currency (a stated currency code takes precedence), and the live acceptance of every supported source was applied as shared contracts. *(Earlier: "is committed … and stays open (Feature 14 is not complete until it is accepted).")*
+- Feature 14A is complete (`dd77d29`, accepted October 20, 2026; LinkedIn stays unverified and disabled): browser-assisted retrieval for public, logged-out LinkedIn job pages (a fresh logged-out Chromium context per run, navigation only, at least 5 seconds between pages, separate discovery and detail budgets, a pending queue of discovered matches in the existing ledger, a stop and Feature 12 backoff on any access friction; unverified and disabled: its local adapter check discovered 60 public jobs, then the first job page answered HTTP 429), We Work Remotely on its all-jobs RSS feed, and Wellfound at 12 seconds between requests; the other sources were audited and are unchanged. The browser-extension companion is Feature 14B, not part of 14A.
+- Feature 13 is complete (`d1bf217`, October 19, 2026): pre-title-filter listing coverage, the removal-capable source matrix with exact stated totals, the `RetrievedListing` ledger with opaque tracking-scope generations and a HISTORICAL baseline, the removal and reappearance rules, posting-history facts withheld from the evaluator, and the opportunity-page and dashboard display.
+- Feature 12 is complete (`f10a02b`, October 18, 2026): the `SERVER_ERROR` code and a host stop after any 5xx, Retry-After on the transport, one backoff gate per source (`RetrievalSource.nextEligibleAt`, with `RetrievalRun.retryAfterUntil`), derived source health, Run now's gate rules and doctor warnings. Listing expiry/removal detection moved to feature 13.
+- Feature 11B is complete (`2a1d8c2`, October 18, 2026): the Workday, Workable and Wellfound adapters, a JSON POST transport method and source-specific request intervals and page caps; Welcome to the Jungle / Otta registered but unverified.
+- Feature 11A is complete (`fad2341`, October 18, 2026): the collection framework, eight verified official API/feed adapters, the retrieval worker and `/sources`, title-only role-family discovery, cross-source deduplication (`core-dedup-v2`), canonical-link precedence and changed-listing observations.
+- The Features 1–10 Gap Closure is complete (`d573acf`, October 17, 2026).
+- The features 1–10 gap audit, Task 8, Task 9 and the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update are complete (Core AI Framework PRD v1.5, Customer Success PRD v1.4, Core Platform TDD v1.6, Customer Success TDD v1.4, Semantic Evaluation Playbook v1.3).
 
-### Planned
+### Main-product work still required before final acceptance
 
-- automated job retrieval / scraping;
-- source normalization and ingestion;
-- deduplication across sources;
-- broader source integrations;
-- stronger posting-history support for Ghost Job Risk;
-- source analytics;
+- feature 15 — source intelligence (complete, October 31, 2026);
+- feature 16 — job-market analytics (complete, October 31, 2026);
+- feature 17 — personal job-search analytics (complete, October 31, 2026);
+- feature 18 — company intelligence (complete, October 31, 2026);
+- only after all main-product features 1–18 are complete: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge.
+
+### Later add-ons only (features 19–23)
+
 - company watchlists;
-- additional domain assistants.
+- proactive notifications/follow-ups;
+- calendar integration;
+- email integration;
+- application assistance such as resume tailoring, cover letters, application questions, interview preparation, and learning recommendations.
+
+Beyond these add-ons, additional domain assistants remain planned on the same Core platform.
 
 ## Architecture
 
@@ -185,7 +231,8 @@ Current design targets:
 - **Validation:** Zod / JSON Schema
 - **Background processing:** lightweight worker / queue architecture
 - **Testing:** Vitest / Jest + Playwright
-- **Browser extension:** TypeScript + Chrome Manifest V3
+- **Browser-assisted retrieval:** Playwright (`playwright-core`) with headless Chromium, logged out, retrieval worker only (feature 14)
+- **Browser extension:** TypeScript + Chrome Manifest V3, bundled with esbuild, loaded unpacked (Feature 14B; `apps/extension`)
 - **Version control:** Git
 
 The project intentionally avoids unnecessary infrastructure complexity while the core workflow is being completed.
@@ -200,34 +247,39 @@ Authoritative product and technical documentation includes:
 - **Customer Success Assistant TDD** — defines the executable Customer Success technical design.
 - **AI Career Assistant Semantic Evaluation Implementation Playbook** — preserves evaluator implementation safeguards, testing lessons, routing guidance, and optimization rules.
 
-Additional repository documentation will cover:
+Additional project documentation (paths are listed in the "Documentation Locations" table in `AGENTS.md`):
 
-- Milestones 1–10;
-- current product status;
-- evaluator status;
-- development plan;
-- active workstreams;
-- current progress;
-- future agent handoffs.
+- `MILESTONES_1_10.md` — Milestones 1–10 implementation history;
+- `PRODUCT_STATUS.md` — current product status;
+- `EVALUATOR_STATUS.md` — evaluator routing, optimization, and status history;
+- `DEVELOPMENT_PLAN.md` — development plan and feature scope (main-product features 1–18; later add-ons 19–23);
+- `AGENT_WORKSTREAMS.md` — active workstreams and ownership;
+- `CURRENT_PROGRESS.md` — current progress and task records;
+- `HANDOFFS.md` — agent handoffs;
+- `CHANGELOG.md` — notable project changes.
+
+Superseded PRD/TDD versions are kept for history in the `Archive/` folders beside the current PRDs and TDDs.
 
 ## Development Priorities
 
-The current development order is:
+The current development order (October 16, 2026) is:
 
-1. finish and verify the evaluator;
-2. complete the remaining main-product work;
-3. integrate both into a stable, usable product;
-4. then add automated job retrieval and source ingestion;
-5. expand discovery, analytics, and additional domain capabilities afterward.
+1. keep the evaluator stable and make only demonstrated evaluator-sensitive corrections;
+2. the Task 1–9 product completion pass is complete (Task 8 and Task 9 complete); the post-Task-9 versioned PRD/TDD/Semantic Evaluation Playbook update is complete; the features 1–10 gap audit, the Features 1–10 Gap Closure, Feature 11A, Feature 11B, Feature 12, Feature 13 and Feature 14 (14A and 14B) are complete, and Feature 15 (Source Intelligence) is complete;
+3. build main-product features 11–18: retrieval, source health, posting-history/ghost-job intelligence, browser-assisted retrieval (feature 14A, complete), the browser extension companion (feature 14B, accepted October 29, 2026), source intelligence (feature 15, complete October 31, 2026), job-market analytics, personal job-search analytics, and company intelligence;
+4. only after features 1–18: deliberate evaluator/product integration, full isolated verification, evaluator freeze, and merge;
+5. add the later add-ons (features 19–23) afterward.
 
-The retrieval layer should feed the existing evaluator rather than redesign it.
+*(Earlier order, superseded on October 15, 2026: finish the evaluator, complete the remaining main-product work, integrate into a usable product, then add retrieval, then expand discovery and analytics.)*
+
+The retrieval layer must feed the existing evaluator rather than redesign it. The browser extension (Feature 14B) is a companion client to the same backend, data, evaluator and dashboard, not a separate product.
 
 ## Local Development
 
-Local setup and run instructions will be documented from the current repository state so that commands, environment requirements, migrations, and worker startup steps match the actual implementation.
+Setup, startup, worker operations, deterministic testing and troubleshooting are documented in the repository root `README.md` ("Local Development"), which is kept in sync with the code.
 
 ## Project Status
 
 **Active development**
 
-The Customer Success evaluator is close to completion, and the current focus is finishing evaluator optimization while completing the remaining product workflow in parallel.
+Main-product features 1–18 are complete. The Customer Success evaluator routing and current contracts are integrated with the product on `integration/final-evaluator-product`; `45d5fff` is the preserved November 2, 2026 pre-triage baseline. The separate deterministic pre-evaluator triage enhancement is complete at `5ac3c9d`. The next task is the Milestones 1–10 historical integrity audit. Features 19–23 and final live/provider acceptance remain later, separately authorized work.

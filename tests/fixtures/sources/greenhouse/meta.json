@@ -1,0 +1,49 @@
+{
+  "adapter": "greenhouse",
+  "request": "GET https://boards-api.greenhouse.io/v1/boards/gitlab/jobs?content=true",
+  "httpStatus": 200,
+  "contentType": "application/json",
+  "capturedAt": "2026-10-17T23:04:54Z",
+  "fullResponse": {
+    "bytes": 3646907,
+    "sha256": "2b0ac3395ca79d7a3f68c38ae5fc34df1d14928995cf3e3d6668869602d7c324",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 232 items",
+  "items": [
+    {
+      "responseIndex": 24,
+      "id": 8877426002,
+      "title": "Customer Success Architect",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 0,
+      "id": 8860302002,
+      "title": "Account Executive - France",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 2,
+      "id": 8716179002,
+      "title": "AI Transformation Owner, Product & Design",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation. meta.total is kept as received (232).",
+  "sanitization": [],
+  "fixtureFile": "response.json"
+}

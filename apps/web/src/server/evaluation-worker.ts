@@ -1,10 +1,12 @@
 import {
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
+  PrismaOpportunityLifecycleRepository,
 } from "@ai-career/database";
 import { createEvaluationWorker } from "@ai-career/evaluation";
 import { readEvaluationWorkerEnvironment } from "@ai-career/shared";
 import { createCustomerSuccessEvaluationProcessor } from "./customer-success-evaluation-processor";
+import { withOpportunityLifecycleSync } from "./opportunity-lifecycle-sync";
 import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-config";
 
 export function createProductionEvaluationWorker() {
@@ -13,10 +15,13 @@ export function createProductionEvaluationWorker() {
   return createEvaluationWorker({
     tasks,
     leaseSeconds: worker.EVALUATION_JOB_LEASE_SECONDS,
-    processor: createCustomerSuccessEvaluationProcessor({
-      evaluations: new PrismaEvaluationRepository(),
-      tasks,
-      semanticConfig: semanticExecutorConfigFromEnvironment(),
-    }),
+    processor: withOpportunityLifecycleSync(
+      createCustomerSuccessEvaluationProcessor({
+        evaluations: new PrismaEvaluationRepository(),
+        tasks,
+        semanticConfig: semanticExecutorConfigFromEnvironment(),
+      }),
+      new PrismaOpportunityLifecycleRepository(),
+    ),
   });
 }

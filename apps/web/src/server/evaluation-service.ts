@@ -1,15 +1,26 @@
 import {
+  canRequestEvaluation,
+  isNormalizedLifecycleState,
+  opportunityLifecycleStateSchema,
+  preEvaluatorTriageManualDecisionSchema,
+} from "@ai-career/core";
+import {
   createCustomerSuccessEvaluator,
   createCustomerSuccessProfileContext,
   loadCustomerSuccessPreferencesFromProfile,
 } from "@ai-career/customer-success";
 import {
+  AdmissionNotConsumableError,
+  PrismaDuplicateRepository,
   PrismaEvaluationQueryRepository,
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
+  type DeferredEvaluationRecord,
+  withDuplicateSpendLock,
 } from "@ai-career/database";
 import type {
   EvaluationRepository,
+  EvaluationTask,
   EvaluationTaskRepository,
   SemanticExecutorConfig,
 } from "@ai-career/evaluation";
@@ -18,8 +29,16 @@ import {
   readEvaluationWorkerEnvironment,
 } from "@ai-career/shared";
 import { z } from "zod";
+import { aiConfigurationStatus } from "./ai-configuration";
+import { getBudgetService, type EvaluationAdmissionGate } from "./budget-service";
 import { EvaluationApiError } from "./evaluation-errors";
+import { evaluationQueueState } from "./evaluation-queue-state";
 import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-config";
+import {
+  getPreEvaluatorTriageService,
+  type EvaluationTriageGate,
+  type PreEvaluatorTriageView,
+} from "./pre-evaluator-triage-service";
 
 const evaluationRequestSchema = z
   .object({
@@ -38,6 +57,7 @@ interface EvaluationQueryRepository {
   } | null>;
   resolveUserProfile(
     userProfileId: string | null,
+    domain?: string | null,
   ): Promise<{ id: string; version: number } | null>;
   findLatestEvaluationId(input: {
     opportunityId: string;
@@ -61,12 +81,51 @@ interface EvaluationQueryRepository {
   >;
 }
 
+export interface AdmittedTaskEnqueuer {
+  enqueueAdmitted(
+    input: Parameters<EvaluationTaskRepository["enqueue"]>[0] & { admissionId: string },
+  ): Promise<EvaluationTask>;
+}
+
 export interface EvaluationServiceDependencies {
   queries: EvaluationQueryRepository;
   evaluations: EvaluationRepository;
-  tasks: EvaluationTaskRepository;
-  semanticConfig: SemanticExecutorConfig;
-  jobMaxAttempts: number;
+  tasks: EvaluationTaskRepository & Partial<AdmittedTaskEnqueuer>;
+  // Product admission gate: request integrity and the budget decision.
+  // Optional so evaluator-level tests can run without a database.
+  admissionGate?: EvaluationAdmissionGate;
+  // Execution settings are needed only to queue work. Either give them
+  // directly, or give a resolver that is called only when requesting or
+  // resuming, so reading results never requires AI configuration.
+  semanticConfig?: SemanticExecutorConfig;
+  jobMaxAttempts?: number;
+  resolveExecution?: () => { semanticConfig: SemanticExecutorConfig; jobMaxAttempts: number };
+  now?: () => Date;
+  // Duplicate-spend protection: the exact duplicate that already has (or is
+  // about to have) a paid evaluation, if any, and the lock that serializes
+  // that check with the admission it protects. Optional so evaluator-level
+  // tests can run without a database.
+  duplicates?: {
+    blockingTwin(opportunityId: string): Promise<{ opportunityId: string; title: string | null; companyName: string | null } | null>;
+  };
+  duplicateSpendLock?: <T>(work: () => Promise<T>) => Promise<T>;
+  // Product-only deterministic gate before admission. Optional for isolated
+  // evaluator tests; production always supplies it.
+  triageGate?: EvaluationTriageGate;
+}
+
+// The public evaluation JSON omits stored error messages and provider request
+// IDs; they can hold internal or provider detail. Codes remain.
+function publicStage<Stage extends { errorMessage?: unknown }>(stage: Stage) {
+  const { errorMessage: _errorMessage, ...rest } = stage;
+  return rest;
+}
+
+function publicOperation<Operation extends { errorMessage?: unknown; providerRequestId?: unknown }>(
+  operation: Operation,
+) {
+  const { errorMessage: _errorMessage, providerRequestId: _providerRequestId, ...rest } = operation;
+  return rest;
 }
 
 function validateCustomerSuccessProfile(
@@ -97,33 +156,267 @@ function validateCustomerSuccessProfile(
 export function createEvaluationService(
   dependencies: EvaluationServiceDependencies,
 ) {
+  const gate = dependencies.admissionGate;
+  const triageGate = dependencies.triageGate;
+  const now = dependencies.now ?? (() => new Date());
+
+  function execution() {
+    if (dependencies.resolveExecution) return dependencies.resolveExecution();
+    if (!dependencies.semanticConfig || dependencies.jobMaxAttempts === undefined) {
+      throw new Error("Evaluation execution settings are not configured");
+    }
+    return { semanticConfig: dependencies.semanticConfig, jobMaxAttempts: dependencies.jobMaxAttempts };
+  }
+
+  async function loadEvaluableOpportunity(opportunityId: string) {
+    const opportunity =
+      await dependencies.queries.findOpportunityForEvaluation(opportunityId);
+    if (!opportunity) {
+      throw new EvaluationApiError(
+        "OPPORTUNITY_NOT_FOUND",
+        "Opportunity not found",
+        404,
+      );
+    }
+    const lifecycle = opportunityLifecycleStateSchema.safeParse(opportunity.status);
+    if (!lifecycle.success || !isNormalizedLifecycleState(lifecycle.data)) {
+      throw new EvaluationApiError(
+        "OPPORTUNITY_NOT_NORMALIZED",
+        "Only a normalized opportunity can be evaluated",
+        409,
+      );
+    }
+    if (!canRequestEvaluation(lifecycle.data)) {
+      throw new EvaluationApiError(
+        "OPPORTUNITY_NOT_EVALUABLE",
+        "Restore the opportunity before reevaluating it",
+        409,
+      );
+    }
+    if (!opportunity.jobDescription && opportunity.sourceRecords.length === 0) {
+      throw new EvaluationApiError(
+        "NORMALIZED_SOURCE_CONTENT_MISSING",
+        "The opportunity has no normalized job description or raw source content",
+        422,
+      );
+    }
+    return opportunity;
+  }
+
+  // Server-side duplicate guard: never enqueue a second paid evaluation
+  // while one is still queued or running for this opportunity. With the
+  // admission gate this is re-checked under its lock, which also closes the
+  // check-then-enqueue race.
+  async function assertNoActiveEvaluation(opportunityId: string) {
+    const [latest] = await dependencies.queries.listEvaluationHistory({ opportunityId });
+    const latestTaskStatus = latest?.task?.status ?? latest?.status;
+    if (latestTaskStatus === "PENDING" || latestTaskStatus === "RUNNING") {
+      throw alreadyActive();
+    }
+  }
+
+  const alreadyActive = () =>
+    new EvaluationApiError(
+      "EVALUATION_ALREADY_ACTIVE",
+      "An evaluation is already queued or running for this opportunity",
+      409,
+    );
+  const deferralNotOpen = () =>
+    new EvaluationApiError(
+      "DEFERRAL_NOT_OPEN",
+      "This deferred evaluation was already resumed or cancelled",
+      409,
+    );
+
+  // Every new request and every deferred resume ends here, so the
+  // duplicate-spend check covers both (Core TDD §33: recheck duplicate state
+  // before release). Under the lock, the check and the admission, evaluation
+  // or deferral it allows are one serialized step.
+  async function admitAndEnqueue(input: {
+    opportunityId: string;
+    domain: string;
+    profile: { id: string; version: number };
+    resumeDeferralId?: string;
+  }) {
+    const duplicates = dependencies.duplicates;
+    if (!duplicates) return admitAndEnqueueChecked(input);
+    const guarded = async () => {
+      const twin = await duplicates.blockingTwin(input.opportunityId);
+      if (twin) {
+        throw new EvaluationApiError(
+          "DUPLICATE_LISTING_ALREADY_EVALUATED",
+          "This listing is a duplicate of an opportunity that already has an evaluation or a pending request. Open that opportunity, or mark the two as different jobs to evaluate this one.",
+          409,
+          { duplicateOfOpportunityId: twin.opportunityId, title: twin.title, companyName: twin.companyName },
+        );
+      }
+      return admitAndEnqueueChecked(input);
+    };
+    return dependencies.duplicateSpendLock ? dependencies.duplicateSpendLock(guarded) : guarded();
+  }
+
+  async function admitAndEnqueueChecked(input: {
+    opportunityId: string;
+    domain: string;
+    profile: { id: string; version: number };
+    resumeDeferralId?: string;
+  }) {
+    const { semanticConfig, jobMaxAttempts } = execution();
+    const evaluator = createCustomerSuccessEvaluator();
+    const enqueueInput = {
+      opportunityId: input.opportunityId,
+      userProfileId: input.profile.id,
+      userProfileVersion: input.profile.version,
+      evaluator,
+      executionMetadata: {
+        provider: "openai",
+        model: semanticConfig.model,
+        maxOutputTokens: semanticConfig.maxOutputTokens,
+        semanticCallBudget: semanticConfig.callBudget,
+        pricingConfigurationVersion:
+          semanticConfig.pricing.version,
+        semanticExecutionPolicyVersion:
+          semanticConfig.executionPolicy?.version ?? null,
+        semanticOperationExecutionPolicy:
+          semanticConfig.executionPolicy?.operations ?? null,
+      },
+      maxAttempts: jobMaxAttempts,
+    };
+    const queued = (task: { id: string; evaluationId: string; status: string }) => ({
+      outcome: "QUEUED" as const,
+      opportunityId: input.opportunityId,
+      evaluationId: task.evaluationId,
+      taskId: task.id,
+      domain: input.domain,
+      status: task.status,
+    });
+
+    if (!gate) return queued(await dependencies.tasks.enqueue(enqueueInput));
+    const enqueueAdmitted = dependencies.tasks.enqueueAdmitted?.bind(dependencies.tasks);
+    if (!enqueueAdmitted) {
+      throw new Error("The admission gate requires a task repository with enqueueAdmitted");
+    }
+
+    const admitted = await gate.admit(input);
+    switch (admitted.outcome) {
+      case "ACTIVE":
+        throw alreadyActive();
+      case "DEFERRAL_EXISTS":
+        throw new EvaluationApiError(
+          "DEFERRED_REQUEST_EXISTS",
+          "This opportunity already has a deferred evaluation request; resume or cancel it",
+          409,
+        );
+      case "DEFERRAL_NOT_OPEN":
+        throw deferralNotOpen();
+      case "DEFERRED":
+      case "STILL_DEFERRED":
+        return {
+          outcome: "DEFERRED" as const,
+          opportunityId: input.opportunityId,
+          domain: input.domain,
+          deferredEvaluationId: admitted.deferral.id,
+          // AI_BUDGET_LIMIT (monthly dollar budget) or USAGE_LIMIT_REACHED
+          // (a throughput limit): an operational deferral, never a result.
+          reason: admitted.deferral.reasonCode,
+          resumed: admitted.outcome === "STILL_DEFERRED",
+          userProfileVersion: admitted.deferral.userProfileVersion,
+          budget: admitted.budget,
+        };
+      case "ADMITTED":
+        break;
+    }
+    // The user's per-evaluation call allowance can only lower the deployment
+    // maximum; it is persisted on the evaluation like the maximum always was.
+    const semanticCallBudget = Math.min(
+      semanticConfig.callBudget,
+      admitted.evaluationCallLimit ?? semanticConfig.callBudget,
+    );
+    const admittedInput = {
+      ...enqueueInput,
+      executionMetadata: { ...enqueueInput.executionMetadata, semanticCallBudget },
+    };
+    try {
+      return queued(await enqueueAdmitted({ ...admittedInput, admissionId: admitted.admissionId }));
+    } catch (error) {
+      // Nothing was created; release the admission (and return a resumed
+      // request to the backlog) so the user can simply try again.
+      await gate.abandon(admitted.admissionId);
+      if (error instanceof AdmissionNotConsumableError) {
+        throw new EvaluationApiError(
+          "ADMISSION_EXPIRED",
+          "The evaluation took too long to start; please try again",
+          409,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async function resumeDeferredRequest(deferral: DeferredEvaluationRecord) {
+    await loadEvaluableOpportunity(deferral.opportunityId);
+    await assertNoActiveEvaluation(deferral.opportunityId);
+    // A deferred request keeps the profile version it was requested with.
+    const unavailable = () =>
+      new EvaluationApiError(
+        "DEFERRED_PROFILE_UNAVAILABLE",
+        "The profile version this request was made with no longer exists; cancel it and request a new evaluation",
+        422,
+      );
+    if (!deferral.userProfileId) throw unavailable();
+    const subject = await dependencies.evaluations.loadSubject({
+      opportunityId: deferral.opportunityId,
+      userProfileId: deferral.userProfileId,
+    });
+    if (!subject?.userProfile) throw unavailable();
+    validateCustomerSuccessProfile(subject);
+    if (triageGate) {
+      const triage = await triageGate.assess({
+        opportunityId: deferral.opportunityId,
+        domain: deferral.domain,
+        profile: {
+          id: deferral.userProfileId,
+          version: deferral.userProfileVersion ?? subject.userProfile.version,
+        },
+      });
+      if (triage.outcome !== "EVALUATE") {
+        return {
+          outcome: triage.outcome,
+          opportunityId: deferral.opportunityId,
+          domain: deferral.domain,
+          triage,
+        } as const;
+      }
+    }
+    return admitAndEnqueue({
+      opportunityId: deferral.opportunityId,
+      domain: deferral.domain,
+      profile: {
+        id: deferral.userProfileId,
+        version: deferral.userProfileVersion ?? subject.userProfile.version,
+      },
+      resumeDeferralId: deferral.id,
+    });
+  }
+
+  async function findDeferral(idValue: string) {
+    const id = z.uuid().safeParse(idValue);
+    const deferral = id.success && gate ? await gate.getDeferral(id.data) : null;
+    if (!deferral) {
+      throw new EvaluationApiError(
+        "DEFERRED_EVALUATION_NOT_FOUND",
+        "Deferred evaluation not found",
+        404,
+      );
+    }
+    return deferral;
+  }
+
   return {
     async requestEvaluation(opportunityIdValue: string, body: unknown) {
       const opportunityId = z.uuid().parse(opportunityIdValue);
       const request = evaluationRequestSchema.parse(body ?? {});
-      const opportunity =
-        await dependencies.queries.findOpportunityForEvaluation(opportunityId);
-      if (!opportunity) {
-        throw new EvaluationApiError(
-          "OPPORTUNITY_NOT_FOUND",
-          "Opportunity not found",
-          404,
-        );
-      }
-      if (opportunity.status !== "NORMALIZED") {
-        throw new EvaluationApiError(
-          "OPPORTUNITY_NOT_NORMALIZED",
-          "Only a normalized opportunity can be evaluated",
-          409,
-        );
-      }
-      if (!opportunity.jobDescription && opportunity.sourceRecords.length === 0) {
-        throw new EvaluationApiError(
-          "NORMALIZED_SOURCE_CONTENT_MISSING",
-          "The opportunity has no normalized job description or raw source content",
-          422,
-        );
-      }
+      const opportunity = await loadEvaluableOpportunity(opportunityId);
 
       const domain = request.domain ?? opportunity.domain;
       if (domain !== "customer-success") {
@@ -143,8 +436,25 @@ export function createEvaluationService(
         );
       }
 
+      await assertNoActiveEvaluation(opportunityId);
+
+      // An open deferred request is resumed rather than duplicated, with the
+      // profile version it was originally requested with.
+      const open = gate ? await gate.findOpenDeferral(opportunityId) : null;
+      if (open) {
+        if (request.userProfileId && request.userProfileId !== open.userProfileId) {
+          throw new EvaluationApiError(
+            "DEFERRED_REQUEST_EXISTS",
+            "This opportunity already has a deferred evaluation request with another profile version; resume or cancel it",
+            409,
+          );
+        }
+        return resumeDeferredRequest(open);
+      }
+
       const profile = await dependencies.queries.resolveUserProfile(
         request.userProfileId ?? null,
+        domain,
       );
       if (!profile) {
         throw new EvaluationApiError(
@@ -159,33 +469,103 @@ export function createEvaluationService(
       });
       validateCustomerSuccessProfile(subject);
 
-      const evaluator = createCustomerSuccessEvaluator();
-      const task = await dependencies.tasks.enqueue({
+      if (triageGate) {
+        const triage = await triageGate.assess({ opportunityId, domain, profile });
+        if (triage.outcome !== "EVALUATE") {
+          return {
+            outcome: triage.outcome,
+            opportunityId,
+            domain,
+            triage,
+          } as const;
+        }
+      }
+
+      return admitAndEnqueue({ opportunityId, domain, profile });
+    },
+
+    async decideTriage(opportunityIdValue: string, body: unknown) {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      const parsed = z
+        .object({ decision: preEvaluatorTriageManualDecisionSchema })
+        .strict()
+        .parse(body);
+      if (!triageGate) {
+        throw new EvaluationApiError(
+          "TRIAGE_NOT_FOUND",
+          "Pre-evaluator triage is unavailable",
+          404,
+        );
+      }
+      const triage = await triageGate.decide({
         opportunityId,
-        userProfileId: profile.id,
-        userProfileVersion: profile.version,
-        evaluator,
-        executionMetadata: {
-          provider: "openai",
-          model: dependencies.semanticConfig.model,
-          maxOutputTokens: dependencies.semanticConfig.maxOutputTokens,
-          semanticCallBudget: dependencies.semanticConfig.callBudget,
-          pricingConfigurationVersion:
-            dependencies.semanticConfig.pricing.version,
-          semanticExecutionPolicyVersion:
-            dependencies.semanticConfig.executionPolicy?.version ?? null,
-          semanticOperationExecutionPolicy:
-            dependencies.semanticConfig.executionPolicy?.operations ?? null,
-        },
-        maxAttempts: dependencies.jobMaxAttempts,
+        decision: parsed.decision,
       });
-      return {
-        opportunityId,
-        evaluationId: task.evaluationId,
-        taskId: task.id,
-        domain,
-        status: task.status,
-      };
+      if (!triage) {
+        throw new EvaluationApiError(
+          "TRIAGE_NOT_OPEN",
+          "This pre-evaluator review was already resolved or is not open",
+          409,
+        );
+      }
+      if (parsed.decision === "REJECT") {
+        return { outcome: "REJECT" as const, opportunityId, triage };
+      }
+      if (!triage.userProfileId) {
+        throw new EvaluationApiError(
+          "TRIAGE_PROFILE_UNAVAILABLE",
+          "The profile version used for triage is no longer available",
+          422,
+        );
+      }
+      return this.requestEvaluation(opportunityId, {
+        userProfileId: triage.userProfileId,
+      });
+    },
+
+    // Pre-evaluator triage only, for a job just saved: the same profile
+    // resolution and the same deterministic triage gate requestEvaluation
+    // runs, without admission, budget reservation, queueing or any provider
+    // call. With no active profile nothing is triaged and no outcome is
+    // invented; the job stays saved.
+    async assessTriage(opportunityIdValue: string): Promise<TriageAssessment> {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      if (!triageGate) return { status: "UNAVAILABLE", reason: "TRIAGE_UNAVAILABLE" };
+      const opportunity = await loadEvaluableOpportunity(opportunityId);
+      const domain = opportunity.domain;
+      if (domain !== "customer-success") return { status: "UNAVAILABLE", reason: "DOMAIN_UNSUPPORTED" };
+      const profile = await dependencies.queries.resolveUserProfile(null, domain);
+      if (!profile) return { status: "NO_PROFILE" };
+      const subject = await dependencies.evaluations.loadSubject({ opportunityId, userProfileId: profile.id });
+      try {
+        validateCustomerSuccessProfile(subject);
+      } catch (error) {
+        if (error instanceof EvaluationApiError && error.code === "USER_PROFILE_NOT_FOUND") return { status: "NO_PROFILE" };
+        if (error instanceof EvaluationApiError) return { status: "UNAVAILABLE", reason: error.code };
+        throw error;
+      }
+      return { status: "ASSESSED", triage: await triageGate.assess({ opportunityId, domain, profile }) };
+    },
+
+    async getTriage(opportunityIdValue: string) {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      return triageGate ? triageGate.get(opportunityId) : null;
+    },
+
+    async resumeDeferred(deferredIdValue: string) {
+      const deferral = await findDeferral(deferredIdValue);
+      if (deferral.status !== "DEFERRED") throw deferralNotOpen();
+      return resumeDeferredRequest(deferral);
+    },
+
+    async cancelDeferred(deferredIdValue: string) {
+      const deferral = await findDeferral(deferredIdValue);
+      if (!(await gate!.cancelDeferral(deferral.id))) throw deferralNotOpen();
+      return { deferredEvaluationId: deferral.id, status: "CANCELLED" as const };
+    },
+
+    async getOpenDeferral(opportunityId: string) {
+      return gate ? gate.findOpenDeferral(opportunityId) : null;
     },
 
     async getLatestEvaluation(
@@ -243,13 +623,13 @@ export function createEvaluationService(
         domain: evaluation.domain,
         status: task.status,
         evaluationStatus: evaluation.status,
+        queueState: evaluationQueueState(task, now()),
         task: {
           id: task.id,
           status: task.status,
           attempt: task.attempt,
           maxAttempts: task.maxAttempts,
           errorCode: task.errorCode,
-          errorMessage: task.errorMessage,
         },
         versions: {
           evaluation: evaluation.evaluationVersion,
@@ -260,14 +640,16 @@ export function createEvaluationService(
         },
         startedAt: evaluation.startedAt,
         completedAt: evaluation.completedAt,
-        stages: evaluation.stageResults,
+        stages: evaluation.stageResults.map(publicStage),
         evidence: evaluation.evidenceRecords,
         contradictions: evaluation.contradictions,
         result: evaluation.domainResult,
         recommendation: evaluation.recommendation,
-        operations,
+        operations: operations.map(publicOperation),
         usage: summarizeSemanticUsage(operations),
-        error: evaluation.errorMessage,
+        // The budget held before the run (when a budget was configured), for
+        // showing reserved vs actual cost. Usage and cost are unaffected.
+        reservation: gate ? await gate.reservationForEvaluation(evaluationId) : null,
         history: history.map((item, index) => ({
           evaluationId: item.id,
           isLatest: index === 0,
@@ -287,29 +669,49 @@ export function createEvaluationService(
 
 export type EvaluationService = ReturnType<typeof createEvaluationService>;
 
+// The outcome of triaging a saved job (assessTriage): triaged, not triaged
+// for want of an active profile, or not available (with a safe code).
+export type TriageAssessment =
+  | { status: "ASSESSED"; triage: PreEvaluatorTriageView }
+  | { status: "NO_PROFILE" }
+  | { status: "UNAVAILABLE"; reason: string };
+
 let evaluationService: EvaluationService | undefined;
+let executionSettings: { semanticConfig: SemanticExecutorConfig; jobMaxAttempts: number } | undefined;
+
+// Resolved on first request/resume and cached for the process. Reading
+// results never needs it. A missing or placeholder key is reported as
+// PRODUCTION_CONFIGURATION_MISSING before anything is written.
+function resolveProductionExecution() {
+  if (executionSettings) return executionSettings;
+  const notConfigured = () =>
+    new EvaluationApiError(
+      "PRODUCTION_CONFIGURATION_MISSING",
+      "AI evaluation is not configured. Set OPENAI_API_KEY and the AI settings, then restart the app.",
+      503,
+    );
+  if (aiConfigurationStatus().state !== "configured") throw notConfigured();
+  try {
+    executionSettings = {
+      semanticConfig: semanticExecutorConfigFromEnvironment(),
+      jobMaxAttempts: readEvaluationWorkerEnvironment().EVALUATION_JOB_MAX_ATTEMPTS,
+    };
+  } catch {
+    throw notConfigured();
+  }
+  return executionSettings;
+}
 
 export function getEvaluationService(): EvaluationService {
-  if (!evaluationService) {
-    let semanticConfig;
-    let worker;
-    try {
-      semanticConfig = semanticExecutorConfigFromEnvironment();
-      worker = readEvaluationWorkerEnvironment();
-    } catch {
-      throw new EvaluationApiError(
-        "PRODUCTION_CONFIGURATION_MISSING",
-        "Production semantic execution is not configured",
-        503,
-      );
-    }
-    evaluationService = createEvaluationService({
-      queries: new PrismaEvaluationQueryRepository(),
-      evaluations: new PrismaEvaluationRepository(),
-      tasks: new PrismaEvaluationTaskRepository(),
-      semanticConfig,
-      jobMaxAttempts: worker.EVALUATION_JOB_MAX_ATTEMPTS,
-    });
-  }
+  evaluationService ??= createEvaluationService({
+    queries: new PrismaEvaluationQueryRepository(),
+    evaluations: new PrismaEvaluationRepository(),
+    tasks: new PrismaEvaluationTaskRepository(),
+    resolveExecution: resolveProductionExecution,
+    admissionGate: getBudgetService().gate,
+    duplicates: new PrismaDuplicateRepository(),
+    duplicateSpendLock: (work) => withDuplicateSpendLock(work),
+    triageGate: getPreEvaluatorTriageService().gate,
+  });
   return evaluationService;
 }

@@ -216,9 +216,9 @@ describe("evaluation API", () => {
               "openai-gpt-5.6-luna-standard-2026-08-26",
           },
           "customer-success.company-alignment": {
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             pricingVersion:
-              "openai-gpt-5.6-luna-standard-2026-08-26",
+              "openai-gpt-6-luna-standard-2026-09-22",
           },
           "customer-success.organizational-maturity": {
             model: "gpt-5.6-luna",
@@ -231,9 +231,9 @@ describe("evaluation API", () => {
               "openai-gpt-5.6-luna-standard-2026-08-26",
           },
           "customer-success.burnout-risk": {
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             pricingVersion:
-              "openai-gpt-5.6-luna-standard-2026-08-26",
+              "openai-gpt-6-luna-standard-2026-09-22",
           },
           "customer-success.resume-match": {
             model: "gpt-5.6-terra",
@@ -262,6 +262,108 @@ describe("evaluation API", () => {
         }
       ).executionMetadata.semanticOperationExecutionPolicy,
     ).toEqual(semanticConfig.executionPolicy?.operations);
+  });
+
+  it.each([
+    ["NORMALIZED", 202, null],
+    ["EVALUATED", 202, null],
+    ["RECOMMENDED", 202, null],
+    ["SAVED", 202, null],
+    ["APPLIED", 202, null],
+    ["REJECTED_BY_USER", 202, null],
+    ["DISCOVERED", 409, "OPPORTUNITY_NOT_NORMALIZED"],
+    ["ARCHIVED", 409, "OPPORTUNITY_NOT_EVALUABLE"],
+    ["CLOSED", 409, "OPPORTUNITY_NOT_EVALUABLE"],
+    ["NOT_A_STATE", 409, "OPPORTUNITY_NOT_NORMALIZED"],
+  ] as const)("applies the product evaluation guard to a %s opportunity", async (status, expected, code) => {
+    const subject = validSubject();
+    const tasks = fakeTaskRepository();
+    const service = createEvaluationService({
+      queries: {
+        async findOpportunityForEvaluation() {
+          return {
+            id: subject.opportunity.id,
+            domain: "customer-success",
+            status,
+            jobDescription: subject.opportunity.jobDescription,
+            sourceRecords: [{ id: subject.rawSources[0]!.id }],
+          };
+        },
+        async resolveUserProfile() {
+          return { id: subject.userProfile!.id, version: 4 };
+        },
+        async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() { return []; },
+      },
+      evaluations: {
+        async loadSubject() { return subject; },
+      } as unknown as EvaluationRepository,
+      tasks,
+      semanticConfig: productionSemanticConfig("server-only-secret"),
+      jobMaxAttempts: 3,
+    });
+    const response = await createEvaluationApiHandlers(service).post(
+      new Request("http://localhost/api/opportunities/id/evaluate", { method: "POST", body: "{}" }),
+      subject.opportunity.id,
+    );
+    expect(response.status).toBe(expected);
+    if (code) expect(await response.json()).toMatchObject({ code });
+  });
+
+  it.each([
+    ["PENDING", 409],
+    ["RUNNING", 409],
+    ["COMPLETED", 202],
+    ["FAILED", 202],
+    [null, 202],
+  ] as const)("guards against a duplicate evaluation when the latest task is %s", async (taskStatus, expected) => {
+    const subject = validSubject();
+    const tasks = fakeTaskRepository();
+    let enqueued = 0;
+    const countingTasks = { ...tasks, enqueue: async (...args: Parameters<typeof tasks.enqueue>) => { enqueued += 1; return tasks.enqueue(...args); } };
+    const service = createEvaluationService({
+      queries: {
+        async findOpportunityForEvaluation() {
+          return {
+            id: subject.opportunity.id,
+            domain: "customer-success",
+            status: "RECOMMENDED",
+            jobDescription: subject.opportunity.jobDescription,
+            sourceRecords: [{ id: subject.rawSources[0]!.id }],
+          };
+        },
+        async resolveUserProfile() { return { id: subject.userProfile!.id, version: 4 }; },
+        async findLatestEvaluationId() { return null; },
+        async listEvaluationHistory() {
+          return taskStatus === null ? [] : [{
+            id: randomUUID(),
+            status: taskStatus,
+            evaluationVersion: "v",
+            promptVersion: null,
+            userProfileVersion: 4,
+            createdAt: new Date(),
+            completedAt: null,
+            task: { status: taskStatus },
+            recommendation: null,
+          }];
+        },
+      },
+      evaluations: { async loadSubject() { return subject; } } as unknown as EvaluationRepository,
+      tasks: countingTasks,
+      semanticConfig: productionSemanticConfig("server-only-secret"),
+      jobMaxAttempts: 3,
+    });
+    const response = await createEvaluationApiHandlers(service).post(
+      new Request("http://localhost/api/opportunities/id/evaluate", { method: "POST", body: "{}" }),
+      subject.opportunity.id,
+    );
+    expect(response.status).toBe(expected);
+    if (expected === 409) {
+      expect(await response.json()).toMatchObject({ code: "EVALUATION_ALREADY_ACTIVE" });
+      expect(enqueued).toBe(0);
+    } else {
+      expect(enqueued).toBe(1);
+    }
   });
 
   it("returns safe errors for a missing opportunity, unsupported domain, and missing profile", async () => {

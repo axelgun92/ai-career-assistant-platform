@@ -1,0 +1,224 @@
+import type { BrowserRequestCounts } from "./browser";
+import type {
+  DiscoveryConfiguration,
+  OpportunitySourceType,
+  RawOpportunity,
+  RetrievalType,
+  SourceCategory,
+} from "@ai-career/core";
+import type { z } from "zod";
+import type { BrowserSession } from "./browser";
+import type { RetrievalTransport } from "./transport";
+
+// The Core collection contract (Core TDD §8): a source adapter turns one
+// source's public interface into RawOpportunity listings. Collectors only
+// collect: they keep listings whose title matches the domain's role-family
+// terms and never score or evaluate anything.
+
+// Why a retrieval stopped or failed. RATE_LIMITED (HTTP 429), ACCESS_DENIED
+// (HTTP 401/403) and SERVER_ERROR (HTTP 5xx) stop all further requests to
+// that source's host for the run; ACCESS_DENIED is an access failure, not a
+// rate limit, and a 503 is a server error even when it asks us to wait.
+export const adapterErrorCodes = [
+  "NETWORK",
+  "HTTP_STATUS",
+  "SERVER_ERROR",
+  "ACCESS_DENIED",
+  "RATE_LIMITED",
+  "RESPONSE_TOO_LARGE",
+  "CONTRACT_MISMATCH",
+  "CONFIG",
+] as const;
+export type AdapterErrorCode = (typeof adapterErrorCodes)[number];
+
+// Query parameters that carry credentials; they never appear in an error,
+// a log line, run history or fixture metadata.
+const credentialParameter = /^(app_id|app_key|api_key|apikey|key|token|access_token|client_secret)$/i;
+
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const name of [...parsed.searchParams.keys()]) {
+      if (credentialParameter.test(name)) parsed.searchParams.set(name, "REDACTED");
+    }
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.toString();
+  } catch {
+    return "(invalid URL)";
+  }
+}
+
+export interface AdapterErrorDetails {
+  status?: number;
+  url?: string;
+  // A valid, future Retry-After the source sent with a 429 or 503, in
+  // seconds from when the response arrived.
+  retryAfterSeconds?: number;
+  // A browser navigation's requests, when the driver counted them.
+  requests?: BrowserRequestCounts;
+}
+
+export class AdapterError extends Error {
+  readonly details: AdapterErrorDetails;
+
+  constructor(
+    readonly code: AdapterErrorCode,
+    message: string,
+    details: AdapterErrorDetails = {},
+  ) {
+    super(message);
+    this.name = "AdapterError";
+    this.details = { ...details, ...(details.url ? { url: redactUrl(details.url) } : {}) };
+  }
+}
+
+// Whether a failure means no further request may go to the source's host in
+// this run: a rate limit, an access refusal or a server error (and any
+// response carrying Retry-After). Adapters that make several requests per
+// run stop on these instead of carrying on with the next request.
+export function isStopError(error: unknown): error is AdapterError {
+  return (
+    error instanceof AdapterError &&
+    (error.code === "RATE_LIMITED" || error.code === "ACCESS_DENIED" || error.code === "SERVER_ERROR" || error.details.retryAfterSeconds !== undefined)
+  );
+}
+
+// A listing the adapter could not map; the rest of the run continues.
+export interface ListingIssue {
+  externalId: string | null;
+  code: "CONTRACT_MISMATCH";
+  message: string;
+}
+
+export interface CollectContext {
+  transport: RetrievalTransport;
+  discovery: DiscoveryConfiguration;
+  // Whether a listing title is kept. Retrieval uses the domain's title
+  // terms (see discovery-terms.ts); the description is never consulted.
+  keepTitle: (title: string | null) => boolean;
+  env: Readonly<Record<string, string | undefined>>;
+  now: () => Date;
+  // Upper bounds per run (pagination and per-listing detail requests).
+  maxPages: number;
+  maxDetailRequests: number;
+  // When each of these source listing IDs, already stored from this
+  // source, was last checked by a run; an ID not in the map has never been
+  // stored. Adapters that ration per-listing detail requests use it so that
+  // unseen listings go first and stored ones take turns. Without it every
+  // listing counts as unseen.
+  lastChecked?: (externalIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
+  // Feature 14: the run's browser session, for adapters that require one.
+  browser?: BrowserSession;
+  // Feature 14: listings this source discovered in earlier runs (title
+  // matches) whose details have not been stored yet, oldest first, so a
+  // later run can fetch them even after they leave the search window. Only
+  // those first discovered since the given time.
+  pendingListings?: (since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date }>>;
+}
+
+// Which listing IDs one run saw in the source's own listing, before the
+// local title filter (feature 13). complete says the run read the source's
+// whole listing as one consistent snapshot: every page needed, every item
+// with a usable ID and, where the source states a total, exactly that many
+// unique IDs. Only a complete run of a removal-capable adapter can show
+// that a tracked listing is absent; any other run only records sightings.
+export interface ListingCoverage {
+  observedListingIds: string[];
+  complete: boolean;
+}
+
+export interface CollectResult {
+  // Listings kept by the title terms, mapped to RawOpportunity with
+  // retrieval provenance (without the source and run ids, which the worker
+  // sets).
+  listings: RawOpportunity[];
+  // Listings the source returned before the title filter.
+  fetched: number;
+  issues: ListingIssue[];
+  // Set when retrieval stopped early (for example a 429 on a later page);
+  // the listings collected before it are still returned.
+  halted: AdapterError | null;
+  requests: number;
+  // Set by adapters that can see the source's listing IDs (feature 13).
+  coverage?: ListingCoverage;
+  // Feature 14: the title-matching listings this run found. Any whose
+  // details are not stored is tracked as pending, so later runs can fetch
+  // it (CollectContext.pendingListings).
+  discovered?: string[];
+  // Feature 14: pending listings whose page the source no longer serves
+  // (HTTP 404 or 410); they leave the pending queue.
+  unavailable?: string[];
+}
+
+// What a run of an adapter can say about absence (feature 13):
+// - complete-board: one response holds the whole board;
+// - complete-when-total-fits: paged, complete only when the source's stated
+//   total is read in full within the page cap;
+// - bounded: a window, feed or search scope; absence never means removal.
+export type ListingCoverageKind = "complete-board" | "complete-when-total-fits" | "bounded";
+
+// A configuration field shown on /sources for this adapter.
+export interface AdapterConfigField {
+  name: string;
+  label: string;
+  help: string;
+  required: boolean;
+}
+
+export interface SourceAdapter<Config = unknown> {
+  key: string;
+  name: string;
+  retrievalType: RetrievalType;
+  sourceCategory: SourceCategory;
+  sourceType: OpportunitySourceType;
+  configSchema: z.ZodType<Config>;
+  configFields: readonly AdapterConfigField[];
+  // Environment variables that must be set before the source can run.
+  requiredEnv: readonly string[];
+  // False until the adapter's mapping has been checked against a real
+  // response; an unverified adapter cannot be enabled.
+  verified: boolean;
+  // Attribution the source requires next to its listings, if any.
+  attribution: string | null;
+  // The single low-volume request used to verify the adapter's response
+  // contract, and, where the list has no full description, the one detail
+  // request derived from that response.
+  verificationUrl(config: Config): string;
+  // When the verification request is a JSON POST (Workday), its body.
+  verificationBody?(config: Config): unknown;
+  // The first response's parsed JSON, or for a browser-assisted adapter its
+  // page as a Document.
+  verificationFollowUpUrl?(firstResponse: unknown, config: Config): string | null;
+  // Source-specific limits, where a source's verified contract calls for
+  // them: a longer minimum interval between requests to its host, and a
+  // page cap other than the worker's default.
+  minRequestIntervalMs?: number;
+  maxPagesPerRun?: number;
+  // Feature 13. Unset means bounded.
+  listingCoverage?: ListingCoverageKind;
+  // Feature 14: the adapter reads pages through a logged-out browser
+  // session (context.browser) instead of the HTTP transport. The browser
+  // options apply to that session.
+  requiresBrowser?: boolean;
+  browser?: {
+    authCookieNames?: readonly string[];
+    detectFriction?: (page: { finalUrl: string; document: Document }) => string | null;
+    maxNavigations: number;
+  };
+  // The configuration fields that decide which listings a run retrieves
+  // (feature 13). A settings change that alters them starts a new tracking
+  // scope; display-only fields (such as a fallback company name) are left
+  // out. Unset means the whole configuration. A code change to a
+  // configuration-free adapter's fixed query or page must rotate its sources'
+  // tracking scopes explicitly rather than inherit the old history.
+  trackingScope?(config: Config): unknown;
+  collect(context: CollectContext, config: Config): Promise<CollectResult>;
+}
+
+export type AnySourceAdapter = SourceAdapter<any>;
+
+// Whether a complete run of this adapter can confirm that a listing is gone.
+export function isRemovalCapable(adapter: Pick<AnySourceAdapter, "listingCoverage">): boolean {
+  return adapter.listingCoverage === "complete-board" || adapter.listingCoverage === "complete-when-total-fits";
+}

@@ -1,4 +1,6 @@
 export * from "./config/preferences";
+export * from "./config/salary-policy";
+export * from "./discovery/discovery-config";
 export * from "./evaluator";
 export * from "./extraction/extractor";
 export * from "./schemas/maps";
@@ -14,11 +16,16 @@ export * from "./schemas/recommendation";
 export * from "./profile/user-profile";
 export * from "./production/semantic-operations";
 export { burnoutRiskBand } from "./evaluation/burnout-risk";
-export { resumeMatchBand } from "./evaluation/resume-match";
+export {
+  outdatedResumeMatchRequirementIndexes,
+  resumeMatchBand,
+} from "./evaluation/resume-match";
+export { reconcileRequirementMap } from "./extraction/requirement-reconciliation";
 export {
   opportunityPriorityBand,
   postingAgePriority,
 } from "./evaluation/opportunity-priority";
+export * from "./triage/pre-evaluator-triage";
 
 import { createCustomerSuccessEvaluator } from "./evaluator";
 

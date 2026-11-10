@@ -1,0 +1,94 @@
+{
+  "adapter": "himalayas",
+  "request": "GET https://himalayas.app/jobs/api?limit=20",
+  "httpStatus": 200,
+  "contentType": "application/json",
+  "capturedAt": "2026-10-17T23:07:57Z",
+  "fullResponse": {
+    "bytes": 122064,
+    "sha256": "b0313be1fbbcb553d079fee95c8f76e68d7e161fe029045113acc93a8a48611a",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 20 items",
+  "items": [
+    {
+      "responseIndex": 0,
+      "id": "https://himalayas.app/companies/ewor-gmbh/jobs/ai-co-founder-coo-100-remote-m-f-d-270749859",
+      "title": "AI Co-Founder / COO (100 % remote) (m/f/d)",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 1,
+      "id": "https://himalayas.app/companies/fisher-agencies-american-income/jobs/virtual-entry-level-leadership",
+      "title": "Virtual Entry Level Leadership",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 5,
+      "id": "https://himalayas.app/companies/fyul/jobs/senior-cybersecurity-engineer-infrastructure",
+      "title": "Senior Cybersecurity Engineer (Infrastructure)",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation. Top-level fields (comments, totalCount, offset, limit, nextCursor, updatedAt) are kept as received.",
+  "sanitization": [],
+  "fixtureFile": "response.json",
+  "page2": {
+    "request": "GET https://himalayas.app/jobs/api?limit=20&cursor=MjAyNi0xMC0xN1QyMjo0MjozMC42Mjk5NzZafDI0MTk5Njk",
+    "file": "response-page-2.json",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T13:38:01Z",
+    "fullResponse": {
+      "bytes": 144516,
+      "sha256": "e631e59f47b0b7d16633fd792d6fc7234f91aaf831c68e612a44b0ecee3b28fe",
+      "keptInGit": false
+    },
+    "trimmedTo": "3 of 20 items",
+    "items": [
+      {
+        "responseIndex": 0,
+        "id": "https://himalayas.app/companies/capgemini-technology-services/jobs/fbs-us-life-insurance-actuary",
+        "title": "FBS US Life Insurance Actuary",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 1,
+        "id": "https://himalayas.app/companies/ewor-gmbh/jobs/healthtech-co-founder-head-of-engineering-100-remote-m-f-d-4549241642",
+        "title": "HealthTech Co-Founder / Head of Engineering (100 % remote) (m/f/d)",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 2,
+        "id": "https://himalayas.app/companies/centurylink/jobs/data-analytics-decision-science-summer-2027-internship-pathway-remote-us",
+        "title": "Data, Analytics & Decision Science - Summer 2027 Internship Pathway (Remote, US)",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      }
+    ],
+    "note": "Requested with the nextCursor of page 1, as the page-1 response documents. Same contract as page 1; no overlap with page 1."
+  }
+}

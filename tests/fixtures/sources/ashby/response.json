@@ -1,0 +1,463 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "893cd08a-929c-4077-b39c-64bc34f347ea",
+      "title": "Founding Customer Success Manager - APAC",
+      "department": "Customer Success",
+      "team": "Strategic Customer Success",
+      "employmentType": "FullTime",
+      "location": "Australia",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [
+        {
+          "location": "Singapore",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "",
+              "addressCountry": "Singapore",
+              "addressLocality": ""
+            }
+          }
+        },
+        {
+          "location": "South Korea",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "",
+              "addressCountry": "South Korea",
+              "addressLocality": ""
+            }
+          }
+        },
+        {
+          "location": "Philippines",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "",
+              "addressCountry": "Philippines",
+              "addressLocality": ""
+            }
+          }
+        },
+        {
+          "location": "Japan",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "",
+              "addressCountry": "Japan",
+              "addressLocality": ""
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-07-21T12:38:25.967+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "",
+          "addressCountry": "Australia",
+          "addressLocality": ""
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/ashby/893cd08a-929c-4077-b39c-64bc34f347ea",
+      "applyUrl": "https://jobs.ashbyhq.com/ashby/893cd08a-929c-4077-b39c-64bc34f347ea/application",
+      "descriptionHtml": "<h2><strong>About this Role</strong></h2><p style=\"min-height:1.5em\">Our Customer Success team is passionate about shaping and scaling an exceptional enterprise customer experience globally. As we continue to grow in APAC, we are excited to hire our first <strong>Customer Success Manager</strong> in region to support our Strategic and High Touch customers in the region.</p><p style=\"min-height:1.5em\">In this role, you will own a defined book of upmarket APAC customers. You will oversee the customer journey throughout long-term adoption, customer health, and value realization.</p><p style=\"min-height:1.5em\">You will partner with Ashby’s customers, helping them get up and running quickly while also building deep, ongoing strategic relationships. Ashby is powerful and highly configurable, and this role requires both technical depth and customer leadership. You will develop strong product and domain expertise to help customers apply Ashby within their hiring workflows and achieve hiring excellence.</p><p style=\"min-height:1.5em\">You will come into this role owning the existing book of business and work with existing customers within the market. This role is ideal for someone who thrives in complexity, enjoys hands-on execution, and is excited to help shape how we support customers in a new region.</p><p style=\"min-height:1.5em\"></p><p style=\"min-height:1.5em\"><strong>Role Requirements</strong></p><h3><strong>Customer Success &amp; Account Ownership</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">You have a strong background in Customer Success in B2B SaaS (5+ years preferred), supporting Enterprise or Strategic customers on complex, configurable products and driving adoption, engagement, and long-term outcomes.</p></li><li><p style=\"min-height:1.5em\">You are excited to own a strategic book of customers in APAC and are comfortable managing a book of ~20 strategic customers, exceeding $2m in total ARR. </p></li><li><p style=\"min-height:1.5em\">You build trusted, multi-threaded relationships with senior stakeholders and act as a proactive owner of customer health, risk, and value realization.</p></li><li><p style=\"min-height:1.5em\">You partner closely with Sales, Product, Support, Professional Services, and Operations to deliver cohesive, high-quality customer outcomes across the full lifecycle.</p></li><li><p style=\"min-height:1.5em\">You are comfortable working in a remote-first environment and can travel up to 10 percent as needed for strategic customer engagements in APAC.</p></li></ul><h3><strong>Product, Technical, and Domain Expertise</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">You love becoming a product and industry expert. You create “aha” moments by tailoring configuration, workflows, and training to each customer’s specific hiring challenges.</p></li><li><p style=\"min-height:1.5em\">You have worked with technically complex products and are deeply curious about how things work, enabling you to anticipate risks, troubleshoot issues, and support evolving customer requirements.</p></li><li><p style=\"min-height:1.5em\">You take pride in advising customers on best practices to ensure they get maximum value from Ashby.</p></li></ul><h3><strong>Change Management &amp; Problem Solving</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">You are experienced in change management and help customers successfully adopt new systems, workflows, and ways of working.</p></li><li><p style=\"min-height:1.5em\">You think critically and proactively identify themes across customers, using those insights to improve internal processes and customer playbooks.</p></li><li><p style=\"min-height:1.5em\">You use data, signals, and metrics to assess adoption, spot risk, and continuously refine your approach.</p></li><li><p style=\"min-height:1.5em\">You are comfortable operating as the first Customer Success hire in APAC, bringing curiosity, ownership, and initiative to develop the region, define best practices, and partnering cross-functionally.</p></li></ul><p style=\"min-height:1.5em\"></p><p style=\"min-height:1.5em\"><strong>You Should Apply If:</strong></p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">📣 You communicate with clarity and precision. You can distill complex workflows, reports, or technical concepts into simple, confident guidance for a range of stakeholders.</p></li><li><p style=\"min-height:1.5em\">🎧 You are a listener first. You seek to deeply understand customer needs and advocate for them internally to shape how Ashby evolves for enterprise use cases.</p></li><li><p style=\"min-height:1.5em\">⚙️ You thrive in complexity. You are energized by learning a powerful, configurable product and translating that knowledge into practical solutions.</p></li><li><p style=\"min-height:1.5em\">🧑‍🏫 You love teaching and coaching. You see every interaction as an opportunity to help customers grow and succeed.</p></li><li><p style=\"min-height:1.5em\">🔍 Your peers describe you as detail-oriented. You send crisp follow-ups, keep projects on track, and take pride in strong internal operations and CRM hygiene.</p></li><li><p style=\"min-height:1.5em\">📊 You are data-driven. You use insights to evaluate what is working, identify risks, and improve outcomes over time.</p></li><li><p style=\"min-height:1.5em\">🌍 You are adaptable. You are excited to help shape and evolve our enterprise and APAC customer motion as the region scales. While there are in-region Product Support Specialists and a Support Manager, you’ll be our founding CSM!</p></li><li><p style=\"min-height:1.5em\">👥 You may have experience as a recruiter, hiring manager, or interviewer, which helps you quickly connect Ashby’s workflows to real-world hiring challenges (nice to have, not required).</p></li></ul><p style=\"min-height:1.5em\"><strong>Why you shouldn’t apply:</strong></p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">You are looking for a role with infrequent, transactional customer interactions instead of hands-on, ongoing partnerships.</p></li><li><p style=\"min-height:1.5em\">You prefer exclusively commercial account management with variable compensation. This role focuses on adoption, engagement, and long-term value rather than renewals or upsell negotiation.</p></li><li><p style=\"min-height:1.5em\">You are not excited by hands-on execution, detailed configuration, project management, or change management work.</p></li><li><p style=\"min-height:1.5em\">You prefer working with simple, point-solution products rather than a deep, highly configurable platform.</p></li></ul><h2><strong>About Ashby</strong></h2><p style=\"min-height:1.5em\">We’re building the next generation of enterprise software and we’re starting with a suite of products that empower talent leaders, recruiters, and hiring managers to be a driving force for revenue &amp; efficiency via a holistic, data-centric talent strategy.</p><p style=\"min-height:1.5em\">We are well funded and backed by great investors, including Y Combinator, Elad Gil and Lachy Groom. <strong>We have thousands of amazing customers</strong> including Snowflake, OpenAI, Shopify, Ramp, Notion, and Zapier (and many others who we cannot name!).</p><p style=\"min-height:1.5em\">Our growth and retention metrics are best-in-class among our peers: we have tens of millions in ARR, growing &gt;100% year over year, over 4,000 customers, very low churn, and many years of runway. In short, it's the perfect time to join! 🚀</p><p style=\"min-height:1.5em\"></p><h2><strong>Interview Process</strong></h2><p style=\"min-height:1.5em\">Our interview process is designed to be thorough and transparent, ensuring mutual fit for both you and Ashby. The process for this role includes:</p><ol style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\"><strong>Recruiter Screen</strong> - 30 minutes</p></li><li><p style=\"min-height:1.5em\"><strong>Hiring Manager Interview</strong> -45 minutes</p></li><li><p style=\"min-height:1.5em\"><strong>Mock Customer Scenario Presentation</strong> - 45 minutes</p></li><li><p style=\"min-height:1.5em\"><strong>Panel Interview</strong> - 1 hour</p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Rather than a traditional panel interview with a large group, we structure our panel into two focused conversations. This gives you the opportunity to meet with multiple team members in a more conversational setting centered on specific topics, instead of a formal Q&amp;A. You'll discuss how you approach problem solving, dive into a product complexity exercise, then wrap up with a quick closing call with the hiring manager.</p></li></ul></li></ol><h2></h2><h2><strong>Benefits</strong></h2><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">10-year exercise window for stock options. You shouldn’t feel pressure to purchase stock options if you leave Ashby —do it when you feel financially comfortable.</p></li><li><p style=\"min-height:1.5em\">Unlimited PTO with four weeks is recommended per year<em>.</em> Expect “Vacation?” in our one-on-one agenda until you start taking it 😅</p></li><li><p style=\"min-height:1.5em\">Generous paid family leave<em>.</em></p></li><li><p style=\"min-height:1.5em\">Generous equipment, software, and office furniture budget. Get what you need to be happy and productive!</p></li><li><p style=\"min-height:1.5em\">$100/month education budget with more expensive items (like conferences) covered with manager approval.</p></li></ul><p style=\"min-height:1.5em\"><em>Ashby provides equal employment opportunities (EEO) to all employees and applicants for employment without regard to race, color, religion, sex, national origin, age, disability, genetics, sexual orientation, gender identity, or gender expression. We are committed to a diverse and inclusive workforce and welcome people from all backgrounds, experiences, perspectives, and abilities.</em></p><p style=\"min-height:1.5em\"><em>Ashby is committed to a fair and transparent hiring process. We confirm that this advertisement is for an active, existing vacancy within our organization. Please be advised that we may use artificial intelligence-driven tools to assist our recruitment team in screening, assessing, and selecting candidates for this position.</em></p>",
+      "descriptionPlain": "ABOUT THIS ROLE\n\nOur Customer Success team is passionate about shaping and scaling an exceptional enterprise customer experience globally. As we continue to grow in APAC, we are excited to hire our first Customer Success Manager in region to support our Strategic and High Touch customers in the region.\n\nIn this role, you will own a defined book of upmarket APAC customers. You will oversee the customer journey throughout long-term adoption, customer health, and value realization.\n\nYou will partner with Ashby’s customers, helping them get up and running quickly while also building deep, ongoing strategic relationships. Ashby is powerful and highly configurable, and this role requires both technical depth and customer leadership. You will develop strong product and domain expertise to help customers apply Ashby within their hiring workflows and achieve hiring excellence.\n\nYou will come into this role owning the existing book of business and work with existing customers within the market. This role is ideal for someone who thrives in complexity, enjoys hands-on execution, and is excited to help shape how we support customers in a new region.\n\n\n\nRole Requirements\n\n\nCUSTOMER SUCCESS & ACCOUNT OWNERSHIP\n\n - You have a strong background in Customer Success in B2B SaaS (5+ years preferred), supporting Enterprise or Strategic customers on complex, configurable products and driving adoption, engagement, and long-term outcomes.\n\n - You are excited to own a strategic book of customers in APAC and are comfortable managing a book of ~20 strategic customers, exceeding $2m in total ARR. \n\n - You build trusted, multi-threaded relationships with senior stakeholders and act as a proactive owner of customer health, risk, and value realization.\n\n - You partner closely with Sales, Product, Support, Professional Services, and Operations to deliver cohesive, high-quality customer outcomes across the full lifecycle.\n\n - You are comfortable working in a remote-first environment and can travel up to 10 percent as needed for strategic customer engagements in APAC.\n\n\nPRODUCT, TECHNICAL, AND DOMAIN EXPERTISE\n\n - You love becoming a product and industry expert. You create “aha” moments by tailoring configuration, workflows, and training to each customer’s specific hiring challenges.\n\n - You have worked with technically complex products and are deeply curious about how things work, enabling you to anticipate risks, troubleshoot issues, and support evolving customer requirements.\n\n - You take pride in advising customers on best practices to ensure they get maximum value from Ashby.\n\n\nCHANGE MANAGEMENT & PROBLEM SOLVING\n\n - You are experienced in change management and help customers successfully adopt new systems, workflows, and ways of working.\n\n - You think critically and proactively identify themes across customers, using those insights to improve internal processes and customer playbooks.\n\n - You use data, signals, and metrics to assess adoption, spot risk, and continuously refine your approach.\n\n - You are comfortable operating as the first Customer Success hire in APAC, bringing curiosity, ownership, and initiative to develop the region, define best practices, and partnering cross-functionally.\n\n\n\nYou Should Apply If:\n\n - 📣 You communicate with clarity and precision. You can distill complex workflows, reports, or technical concepts into simple, confident guidance for a range of stakeholders.\n\n - 🎧 You are a listener first. You seek to deeply understand customer needs and advocate for them internally to shape how Ashby evolves for enterprise use cases.\n\n - ⚙️ You thrive in complexity. You are energized by learning a powerful, configurable product and translating that knowledge into practical solutions.\n\n - 🧑‍🏫 You love teaching and coaching. You see every interaction as an opportunity to help customers grow and succeed.\n\n - 🔍 Your peers describe you as detail-oriented. You send crisp follow-ups, keep projects on track, and take pride in strong internal operations and CRM hygiene.\n\n - 📊 You are data-driven. You use insights to evaluate what is working, identify risks, and improve outcomes over time.\n\n - 🌍 You are adaptable. You are excited to help shape and evolve our enterprise and APAC customer motion as the region scales. While there are in-region Product Support Specialists and a Support Manager, you’ll be our founding CSM!\n\n - 👥 You may have experience as a recruiter, hiring manager, or interviewer, which helps you quickly connect Ashby’s workflows to real-world hiring challenges (nice to have, not required).\n\nWhy you shouldn’t apply:\n\n - You are looking for a role with infrequent, transactional customer interactions instead of hands-on, ongoing partnerships.\n\n - You prefer exclusively commercial account management with variable compensation. This role focuses on adoption, engagement, and long-term value rather than renewals or upsell negotiation.\n\n - You are not excited by hands-on execution, detailed configuration, project management, or change management work.\n\n - You prefer working with simple, point-solution products rather than a deep, highly configurable platform.\n\n\nABOUT ASHBY\n\nWe’re building the next generation of enterprise software and we’re starting with a suite of products that empower talent leaders, recruiters, and hiring managers to be a driving force for revenue & efficiency via a holistic, data-centric talent strategy.\n\nWe are well funded and backed by great investors, including Y Combinator, Elad Gil and Lachy Groom. We have thousands of amazing customers including Snowflake, OpenAI, Shopify, Ramp, Notion, and Zapier (and many others who we cannot name!).\n\nOur growth and retention metrics are best-in-class among our peers: we have tens of millions in ARR, growing >100% year over year, over 4,000 customers, very low churn, and many years of runway. In short, it's the perfect time to join! 🚀\n\n\n\n\nINTERVIEW PROCESS\n\nOur interview process is designed to be thorough and transparent, ensuring mutual fit for both you and Ashby. The process for this role includes:\n\n 1. Recruiter Screen - 30 minutes\n\n 2. Hiring Manager Interview -45 minutes\n\n 3. Mock Customer Scenario Presentation - 45 minutes\n\n 4. Panel Interview - 1 hour\n    \n    - Rather than a traditional panel interview with a large group, we structure our panel into two focused conversations. This gives you the opportunity to meet with multiple team members in a more conversational setting centered on specific topics, instead of a formal Q&A. You'll discuss how you approach problem solving, dive into a product complexity exercise, then wrap up with a quick closing call with the hiring manager.\n\n\n\n\n\nBENEFITS\n\n - 10-year exercise window for stock options. You shouldn’t feel pressure to purchase stock options if you leave Ashby —do it when you feel financially comfortable.\n\n - Unlimited PTO with four weeks is recommended per year. Expect “Vacation?” in our one-on-one agenda until you start taking it 😅\n\n - Generous paid family leave.\n\n - Generous equipment, software, and office furniture budget. Get what you need to be happy and productive!\n\n - $100/month education budget with more expensive items (like conferences) covered with manager approval.\n\nAshby provides equal employment opportunities (EEO) to all employees and applicants for employment without regard to race, color, religion, sex, national origin, age, disability, genetics, sexual orientation, gender identity, or gender expression. We are committed to a diverse and inclusive workforce and welcome people from all backgrounds, experiences, perspectives, and abilities.\n\nAshby is committed to a fair and transparent hiring process. We confirm that this advertisement is for an active, existing vacancy within our organization. Please be advised that we may use artificial intelligence-driven tools to assist our recruitment team in screening, assessing, and selecting candidates for this position.",
+      "compensation": {
+        "compensationTierSummary": "A$135K – A$189K • Offers Equity • Multiple Ranges",
+        "scrapeableCompensationSalarySummary": "A$135,000 - A$189,000",
+        "compensationTiers": [
+          {
+            "id": "fd7ef60a-e5e2-43fd-8ad6-a6d2967d63a9",
+            "tierSummary": "AUD A$135,000 – A$189,000 • Offers Equity",
+            "title": "Australia",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "5d7908c5-233a-4885-a0fe-9bf3145df9f4",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "4832b977-623d-4e40-8c9a-b8a6909f52d5",
+                "summary": "AUD A$135,000 – A$189,000",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "AUD",
+                "minValue": 135000,
+                "maxValue": 189000
+              }
+            ]
+          },
+          {
+            "id": "359dfd1e-55f5-4362-a581-9d1e34cd9fc9",
+            "tierSummary": "SGD SGD 132,000 – SGD 184,000 • Offers Equity",
+            "title": "Singapore",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "9f070e77-c0cd-4e22-a59f-2da273166523",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "3df16dd2-33c3-4462-9e68-07d6c7824214",
+                "summary": "SGD SGD 132,000 – SGD 184,000",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "SGD",
+                "minValue": 132000,
+                "maxValue": 184000
+              }
+            ]
+          },
+          {
+            "id": "e9c25d4c-67cb-4c0f-9b7a-3daa180674c0",
+            "tierSummary": "JPY ¥12,120,000 – ¥17,196,000 • Offers Equity",
+            "title": "Japan",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "610612e7-ddf2-40fb-9d9e-af3ec2811f04",
+                "summary": "JPY ¥12,120,000 – ¥17,196,000",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "JPY",
+                "minValue": 12120000,
+                "maxValue": 17196000
+              },
+              {
+                "id": "3607c39e-b25d-45b0-b64d-27483743fb48",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          },
+          {
+            "id": "563db231-bf2c-4932-ba7b-bc899fb78741",
+            "tierSummary": "South Korea ₩122,500,000 – ₩172,720,000 • Offers Equity",
+            "title": "South Korea",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "d40f5b0d-be80-4d82-be7d-1d0a2aa14003",
+                "summary": "South Korea ₩122,500,000 – ₩172,720,000",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "KRW",
+                "minValue": 122500000,
+                "maxValue": 172720000
+              },
+              {
+                "id": "60ca29f4-8a47-4817-a1e0-4b73312b6f61",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          },
+          {
+            "id": "4bc031f2-b99e-47b0-914c-4b277c9941bb",
+            "tierSummary": "PHP ₱1,805,000 – ₱2,562,000 • Offers Equity",
+            "title": "Philippines",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c7bd72b4-ff0c-48fd-8af2-55e39eb6c3b2",
+                "summary": "PHP ₱1,805,000 – ₱2,562,000",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "PHP",
+                "minValue": 1805000,
+                "maxValue": 2562000
+              },
+              {
+                "id": "29cc1ce1-4cfb-445d-8658-dca31e8a25b5",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "EquityPercentage",
+            "minValue": null,
+            "maxValue": null,
+            "interval": "1 YEAR"
+          },
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "AUD",
+            "minValue": 135000,
+            "maxValue": 189000
+          }
+        ]
+      }
+    },
+    {
+      "id": "55078a90-f1f0-4190-9d2a-c14d1cbc5486",
+      "title": "Product Support Specialist - Australia",
+      "department": "Customer Success",
+      "team": "Technical Support",
+      "employmentType": "FullTime",
+      "location": "Australia",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [],
+      "publishedAt": "2026-02-20T17:26:27.704+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "",
+          "addressCountry": "Australia",
+          "addressLocality": ""
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/ashby/55078a90-f1f0-4190-9d2a-c14d1cbc5486",
+      "applyUrl": "https://jobs.ashbyhq.com/ashby/55078a90-f1f0-4190-9d2a-c14d1cbc5486/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\">We're excited to share that we're hiring a Product Support Specialist in the APAC region, specifically in Australia 🎉.</p><p style=\"min-height:1.5em\">Over the past few years, we’ve built a team of Ashby experts who delight customers through keen attention to detail, deep product knowledge, and fast, thoughtful support. By joining the team, you’ll contribute to delivering that same world-class experience.</p><p style=\"min-height:1.5em\">In this role, you’ll work closely with customers every day. Ashby is a broad and complex product, so you can expect to handle everything from troubleshooting sophisticated integrations to guiding customers through detailed workflows and best practices.</p><p style=\"min-height:1.5em\">You’ll also spend time on projects that make the work we do better. Past projects our team has taken on include:</p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Absorbing and synthesizing highly technical work from our Engineering Team to create enablement for technical up-leveling of the broader Support Team.</p></li><li><p style=\"min-height:1.5em\">Developing workflow automation allowing for better team cohesion and efficacy.</p></li></ul><p style=\"min-height:1.5em\">As a company, we value a strong sense of ownership, principled thinking over experience, and thoughtful communication. These and other values, which we’ll explore more deeply during the interview process, guide how we work.</p><div style=\"min-height:1.2em;margin-top:0;margin-bottom:0\"> </div><h2><strong>You should apply if:</strong></h2><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">You are already comfortable owning complex SaaS troubleshooting from first report through resolution, including isolating configuration issues, reproducing ambiguous behavior, and communicating clearly</p></li><li><p style=\"min-height:1.5em\">You can explain technical issues concisely, you think systematically, and operate with strong ownership in asynchronous environments. You can explain the same issue differently depending on the audience, while staying clear and direct.</p></li><li><p style=\"min-height:1.5em\">You’re curious—both when addressing customers and when creating solutions that improve our workflows. You seek the answers beyond what’s on the surface.</p></li><li><p style=\"min-height:1.5em\">You delight customers. You possess keen attention to detail, ensure your responses are thorough and clear, and are empathetic along the way.</p></li><li><p style=\"min-height:1.5em\">You can balance investigation, customer communication, and escalation quality in a fast-moving environment.</p></li><li><p style=\"min-height:1.5em\">You've done B2B support across company sizes, from SMB to enterprise.</p></li></ul><h2><strong>You should not apply if:</strong></h2><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Your recent experience is primarily customer success management, account management, or customer onboarding</p></li><li><p style=\"min-height:1.5em\">You're more drawn to coordination, enablement, or team leadership than spending your days deep in tickets.</p></li><li><p style=\"min-height:1.5em\">You avoid getting in the weeds of solving technical problems; each member of our support team is highly technical and capable of solving deeply complex tickets.</p></li><li><p style=\"min-height:1.5em\">You prefer to triage tickets swiftly; if tagging in Engineering early on (without attempting comprehensive solutions) is an exhale moment, this is likely not a great fit.</p></li><li><p style=\"min-height:1.5em\">You prefer to support a product you can know the ins and outs of quickly (such as a point solution) rather than a product that is rapidly evolving with quite a bit of surface area.</p></li></ul><h2><strong>About Ashby</strong></h2><p style=\"min-height:1.5em\">We’re building the next generation of enterprise software, and we’re starting with a suite of products that help talent leaders, recruiters, and hiring managers run their hiring process significantly better. Learn more on our website:<a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://www.ashbyhq.com/%EF%BF%BC%EF%BF%BCWe\"><u> </u></a><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://www.ashbyhq.com/\"><u>https://www.ashbyhq.com/</u></a></p><p style=\"min-height:1.5em\">We are well funded and backed by great investors, including Y Combinator, Elad Gil and Lachy Groom. Following our Series D in 2025, we’re continuing to grow ARR at more than 100% year over year, serving over 4,000 customers, including industry leaders like Snowflake, OpenAI, Shopify, Ramp, Notion, Reddit, and Zapier (and many others who we cannot name!). Our growth and retention metrics are best-in-class among our peers. We’ll share more details once we meet. In short, it's the perfect time to join! 🚀</p><div style=\"min-height:1.2em;margin-top:0;margin-bottom:0\"> </div><h2><strong>About Go To Market</strong></h2><p style=\"min-height:1.5em\">We view our Support team as an extension of the product itself, one that ensures an optimal customer experience for customers ranging across all market segments. Here are a few points that should give you an idea of what it is like to work with us:</p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">We spend a lot of time building best-in-class products since we believe a highly differentiated product is easier to sell.</p></li><li><p style=\"min-height:1.5em\">We also spend a lot of time building a best-in-class customer experience. We aim to offer deep expertise whenever we interact with prospects and customers.</p></li><li><p style=\"min-height:1.5em\">We strongly believe that small teams with very talented people and the right work environment deliver much better performance than teams with large headcount.</p></li></ul><p style=\"min-height:1.5em\">We value a strong sense of ownership, principled thinking over experience, and thoughtful communication (we put a lot of effort into using the right communication channels) - we’ll get into these and other values during the hiring process. You can take a look at our<a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://www.ashbyhq.com/blog/culture/ashbys-leadership-principles\"> <u>Leadership Principles</u></a> to get a sense of what we value in People Leaders at Ashby.</p><div style=\"min-height:1.2em;margin-top:0;margin-bottom:0\"> </div><h2><strong>Interview Process</strong></h2><p style=\"min-height:1.5em\">Our interview process is thorough—we aim to ensure each person that joins the team is the right fit for Ashby and will provide ample information for you to assess if Ashby is the right fit for you. The process for this role is as follows:</p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\"><strong>Intro Call with Recruiting</strong> - 30 Minutes</p></li><li><p style=\"min-height:1.5em\"><strong>Take Home Assessment</strong> - 1 week to complete</p></li><li><p style=\"min-height:1.5em\"><strong>Hiring Manager Interview</strong> - 45 Minutes</p></li><li><p style=\"min-height:1.5em\"><strong>Skills Fit Interview</strong> - 45 Minutes</p></li><li><p style=\"min-height:1.5em\"><strong>Team Insights Interview + Hiring Manager Closing Questions</strong> - 30 Minutes</p></li></ul><p style=\"min-height:1.5em\">Throughout our interview process, you will be evaluated on both technical reasoning and communication precision.</p><div style=\"min-height:1.2em;margin-top:0;margin-bottom:0\"> </div><h2>Onboarding Process</h2><p style=\"min-height:1.5em\">Ashby is a highly complex product, and we invest a lot of time in ensuring our support team members are experts on the platform. Your first 30 days will focus primarily on onboarding and learning the product. With support and guidance, you’ll begin taking tickets in week one, so you can start getting to know our customers, our processes, and begin making an impact right away, all while continuing to build confidence and depth in the platform.</p><p style=\"min-height:1.5em\"></p><h2>Benefits</h2><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">10-year exercise window for stock options. You shouldn’t feel pressure to purchase stock options if you leave Ashby —do it when you feel financially comfortable.</p></li><li><p style=\"min-height:1.5em\">Unlimited PTO with four weeks is recommended per year<em>.</em> Expect “Vacation?” in our one-on-one agenda until you start taking it 😅</p></li><li><p style=\"min-height:1.5em\">Generous paid family leave<em>.</em></p></li><li><p style=\"min-height:1.5em\">Generous equipment, software, and office furniture budget. Get what you need to be happy and productive!</p></li><li><p style=\"min-height:1.5em\">$100/month education budget with more expensive items (like conferences) covered with manager approval.</p></li></ul><p style=\"min-height:1.5em\"><em>Ashby provides equal employment opportunities (EEO) to all employees and applicants for employment without regard to race, color, religion, sex, national origin, age, disability, genetics, sexual orientation, gender identity, or gender expression. We are committed to a diverse and inclusive workforce and welcome people from all backgrounds, experiences, perspectives, and abilities.</em></p><p style=\"min-height:1.5em\"><em>Ashby is committed to a fair and transparent hiring process. We confirm that this advertisement is for an active, existing vacancy within our organization. Please be advised that we may use artificial intelligence-driven tools to assist our recruitment team in screening, assessing, and selecting candidates for this position.</em></p>",
+      "descriptionPlain": "We're excited to share that we're hiring a Product Support Specialist in the APAC region, specifically in Australia 🎉.\n\nOver the past few years, we’ve built a team of Ashby experts who delight customers through keen attention to detail, deep product knowledge, and fast, thoughtful support. By joining the team, you’ll contribute to delivering that same world-class experience.\n\nIn this role, you’ll work closely with customers every day. Ashby is a broad and complex product, so you can expect to handle everything from troubleshooting sophisticated integrations to guiding customers through detailed workflows and best practices.\n\nYou’ll also spend time on projects that make the work we do better. Past projects our team has taken on include:\n\n - Absorbing and synthesizing highly technical work from our Engineering Team to create enablement for technical up-leveling of the broader Support Team.\n\n - Developing workflow automation allowing for better team cohesion and efficacy.\n\nAs a company, we value a strong sense of ownership, principled thinking over experience, and thoughtful communication. These and other values, which we’ll explore more deeply during the interview process, guide how we work.\n\n \n\n\nYOU SHOULD APPLY IF:\n\n - You are already comfortable owning complex SaaS troubleshooting from first report through resolution, including isolating configuration issues, reproducing ambiguous behavior, and communicating clearly\n\n - You can explain technical issues concisely, you think systematically, and operate with strong ownership in asynchronous environments. You can explain the same issue differently depending on the audience, while staying clear and direct.\n\n - You’re curious—both when addressing customers and when creating solutions that improve our workflows. You seek the answers beyond what’s on the surface.\n\n - You delight customers. You possess keen attention to detail, ensure your responses are thorough and clear, and are empathetic along the way.\n\n - You can balance investigation, customer communication, and escalation quality in a fast-moving environment.\n\n - You've done B2B support across company sizes, from SMB to enterprise.\n\n\nYOU SHOULD NOT APPLY IF:\n\n - Your recent experience is primarily customer success management, account management, or customer onboarding\n\n - You're more drawn to coordination, enablement, or team leadership than spending your days deep in tickets.\n\n - You avoid getting in the weeds of solving technical problems; each member of our support team is highly technical and capable of solving deeply complex tickets.\n\n - You prefer to triage tickets swiftly; if tagging in Engineering early on (without attempting comprehensive solutions) is an exhale moment, this is likely not a great fit.\n\n - You prefer to support a product you can know the ins and outs of quickly (such as a point solution) rather than a product that is rapidly evolving with quite a bit of surface area.\n\n\nABOUT ASHBY\n\nWe’re building the next generation of enterprise software, and we’re starting with a suite of products that help talent leaders, recruiters, and hiring managers run their hiring process significantly better. Learn more on our website:  https://www.ashbyhq.com/%EF%BF%BC%EF%BF%BCWehttps://www.ashbyhq.com/\n\nWe are well funded and backed by great investors, including Y Combinator, Elad Gil and Lachy Groom. Following our Series D in 2025, we’re continuing to grow ARR at more than 100% year over year, serving over 4,000 customers, including industry leaders like Snowflake, OpenAI, Shopify, Ramp, Notion, Reddit, and Zapier (and many others who we cannot name!). Our growth and retention metrics are best-in-class among our peers. We’ll share more details once we meet. In short, it's the perfect time to join! 🚀\n\n \n\n\nABOUT GO TO MARKET\n\nWe view our Support team as an extension of the product itself, one that ensures an optimal customer experience for customers ranging across all market segments. Here are a few points that should give you an idea of what it is like to work with us:\n\n - We spend a lot of time building best-in-class products since we believe a highly differentiated product is easier to sell.\n\n - We also spend a lot of time building a best-in-class customer experience. We aim to offer deep expertise whenever we interact with prospects and customers.\n\n - We strongly believe that small teams with very talented people and the right work environment deliver much better performance than teams with large headcount.\n\nWe value a strong sense of ownership, principled thinking over experience, and thoughtful communication (we put a lot of effort into using the right communication channels) - we’ll get into these and other values during the hiring process. You can take a look at our Leadership Principles https://www.ashbyhq.com/blog/culture/ashbys-leadership-principles to get a sense of what we value in People Leaders at Ashby.\n\n \n\n\nINTERVIEW PROCESS\n\nOur interview process is thorough—we aim to ensure each person that joins the team is the right fit for Ashby and will provide ample information for you to assess if Ashby is the right fit for you. The process for this role is as follows:\n\n - Intro Call with Recruiting - 30 Minutes\n\n - Take Home Assessment - 1 week to complete\n\n - Hiring Manager Interview - 45 Minutes\n\n - Skills Fit Interview - 45 Minutes\n\n - Team Insights Interview + Hiring Manager Closing Questions - 30 Minutes\n\nThroughout our interview process, you will be evaluated on both technical reasoning and communication precision.\n\n \n\n\nONBOARDING PROCESS\n\nAshby is a highly complex product, and we invest a lot of time in ensuring our support team members are experts on the platform. Your first 30 days will focus primarily on onboarding and learning the product. With support and guidance, you’ll begin taking tickets in week one, so you can start getting to know our customers, our processes, and begin making an impact right away, all while continuing to build confidence and depth in the platform.\n\n\n\n\nBENEFITS\n\n - 10-year exercise window for stock options. You shouldn’t feel pressure to purchase stock options if you leave Ashby —do it when you feel financially comfortable.\n\n - Unlimited PTO with four weeks is recommended per year. Expect “Vacation?” in our one-on-one agenda until you start taking it 😅\n\n - Generous paid family leave.\n\n - Generous equipment, software, and office furniture budget. Get what you need to be happy and productive!\n\n - $100/month education budget with more expensive items (like conferences) covered with manager approval.\n\nAshby provides equal employment opportunities (EEO) to all employees and applicants for employment without regard to race, color, religion, sex, national origin, age, disability, genetics, sexual orientation, gender identity, or gender expression. We are committed to a diverse and inclusive workforce and welcome people from all backgrounds, experiences, perspectives, and abilities.\n\nAshby is committed to a fair and transparent hiring process. We confirm that this advertisement is for an active, existing vacancy within our organization. Please be advised that we may use artificial intelligence-driven tools to assist our recruitment team in screening, assessing, and selecting candidates for this position.",
+      "compensation": {
+        "compensationTierSummary": "A$89K – A$105K • Offers Equity",
+        "scrapeableCompensationSalarySummary": "A$89K - A$105K",
+        "compensationTiers": [
+          {
+            "id": "5567d29c-ce3f-455f-88eb-026ea83844fc",
+            "tierSummary": "A$89K – A$105K • Offers Equity",
+            "title": "Australia",
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "7351f86b-911e-4c1b-b66f-3cd1d9a3169e",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "344f5a67-1acf-4e5d-b243-47a7502d51a8",
+                "summary": "A$89K – A$105K",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "AUD",
+                "minValue": 89000,
+                "maxValue": 105000
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "EquityPercentage",
+            "interval": "NONE",
+            "currencyCode": null,
+            "minValue": null,
+            "maxValue": null
+          },
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "AUD",
+            "minValue": 89000,
+            "maxValue": 105000
+          }
+        ]
+      }
+    },
+    {
+      "id": "dfc35159-ffe5-4d42-bea3-552b5dc17628",
+      "title": "Enterprise Solutions Engineering Manager",
+      "department": "Sales",
+      "team": "Solutions Engineering",
+      "employmentType": "FullTime",
+      "location": "Remote - US",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [
+        {
+          "location": "Remote - Canada",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "",
+              "addressCountry": "Canada",
+              "addressLocality": ""
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-07-20T22:51:10.937+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "",
+          "addressCountry": "United States",
+          "addressLocality": ""
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/ashby/dfc35159-ffe5-4d42-bea3-552b5dc17628",
+      "applyUrl": "https://jobs.ashbyhq.com/ashby/dfc35159-ffe5-4d42-bea3-552b5dc17628/application",
+      "descriptionHtml": "<p style=\"min-height:1.5em\">As the Enterprise Solutions Engineering Manager at Ashby, you’ll lead and grow a high-performing team of Solutions Engineers who own our most strategic, complex deals. Your team partners closely with Enterprise Account Executives to secure both the technical and commercial win—guiding large organizations through deep technical evaluations and showing them how Ashby can fundamentally transform the way they hire.</p><p style=\"min-height:1.5em\"></p><p style=\"min-height:1.5em\">You’ll be responsible for shaping and scaling the enterprise SE motion at Ashby: hiring exceptional talent, coaching them toward mastery, operationalizing excellence, and refining the processes that help the team—and the business—win more often and more efficiently.</p><p style=\"min-height:1.5em\"></p><p style=\"min-height:1.5em\">This is a highly strategic role with direct impact on revenue, product direction, and customer value.</p><p style=\"min-height:1.5em\"></p><h2><strong>Why Lead Enterprise SE at Ashby?</strong></h2><p style=\"min-height:1.5em\"></p><h3><strong>Product-Market Fit That Makes Your Team’s Job Easier</strong></h3><p style=\"min-height:1.5em\">Your team will support a product that prospects genuinely love—and often ask to buy before the demo ends. This creates a coaching environment focused on technical excellence and deal strategy, not convincing skeptics.</p><p style=\"min-height:1.5em\"></p><h3><strong>Product Depth That Rewards Real Solutioning</strong></h3><p style=\"min-height:1.5em\">Ashby is a deeply configurable product, and enterprise prospects come with highly specific, nuanced hiring processes. Your team won’t be running generic demos—they’ll be diagnosing how each organization hires and architecting solutions that map Ashby’s capabilities to those workflows. The coaching opportunity here is rich: breadth across the full product, depth in custom solutioning, and the creativity to show prospects something they didn’t know was possible.</p><p style=\"min-height:1.5em\"></p><h3><strong>A Leadership Role Designed for Builders</strong></h3><p style=\"min-height:1.5em\">You’ll inherit an enterprise SE motion that works and level it up. The initiatives you lead—from POC frameworks to RFP libraries to competitive playbooks—will define how the enterprise SE team operates for years to come.</p><p style=\"min-height:1.5em\"></p><h3><strong>A Seat at the Product Table</strong></h3><p style=\"min-height:1.5em\">You’ll work in tight collaboration with Product and Engineering, translating enterprise field insights directly into roadmap input. The problems your team uncovers shape what Ashby builds next.</p><p style=\"min-height:1.5em\"></p><h2><strong>What You’ll Do</strong></h2><p style=\"min-height:1.5em\"></p><h3><strong>Lead &amp; Grow a High-Performing Enterprise SE Team</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Hire, onboard, and develop world-class Solutions Engineers who become trusted technical advisors to enterprise prospects.</p></li><li><p style=\"min-height:1.5em\">Coach SEs on enterprise-specific skills: discovery with complex buying committees, POC design and execution, security and compliance conversations, API-level technical fluency, and executive-level storytelling.</p></li><li><p style=\"min-height:1.5em\">Create a culture of ownership, rigor, and continuous improvement.</p></li></ul><p style=\"min-height:1.5em\"></p><h3><strong>Drive Excellence in Enterprise Deal Execution</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Partner with Enterprise sales leadership to align on pipeline and priorities, with SEs leading the technical track alongside AEs on the commercial.</p></li><li><p style=\"min-height:1.5em\">Oversee the team’s involvement in demos, POCs, trials, security reviews, and RFPs across 3–5 stakeholder buying groups—including IT, Legal, HR, Finance, and executive sponsors.</p></li><li><p style=\"min-height:1.5em\">Review and elevate team execution, stepping in as a technical expert when the deal demands it.</p></li></ul><p style=\"min-height:1.5em\"></p><h3><strong>Build Scalable Systems, Processes &amp; Enablement</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Refine and evolve the existing enterprise SE motion—improving demo workflows, POC frameworks, trial structures, RFP processes, and internal knowledge bases.</p></li><li><p style=\"min-height:1.5em\">Build enablement for complex, long-horizon deals: competitive positioning, security questionnaire libraries, integration playbooks, and value frameworks.</p></li><li><p style=\"min-height:1.5em\">Identify patterns from the field and translate them into product feedback, roadmap insights, and internal process improvements in close partnership with Product and Engineering.</p></li><li><p style=\"min-height:1.5em\">Partner cross-functionally with CS, Product, Marketing, and Implementation to ensure seamless handoffs and consistent enterprise messaging.</p></li></ul><p style=\"min-height:1.5em\"></p><h3><strong>Drive Strategic Initiatives from Diagnosis to Impact</strong></h3><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">Identify high-leverage problems across the enterprise SE motion—through data, field observation, and stakeholder input—and develop a clear point of view on what to solve and why.</p></li><li><p style=\"min-height:1.5em\">Validate your hypotheses with the right stakeholders, write crisp proposals, and earn executive buy-in by connecting your recommendations to business outcomes.</p></li><li><p style=\"min-height:1.5em\">Own implementation end-to-end—managing change, aligning stakeholders, and driving adoption—with little oversight and a high bar for follow-through.</p></li><li><p style=\"min-height:1.5em\">Operate as a strategic contributor beyond your team—your projects will shape how Ashby scales, not just how the SE org runs.</p></li></ul><p style=\"min-height:1.5em\"></p><h2><strong>You could be a great fit if:</strong></h2><p style=\"min-height:1.5em\"></p><p style=\"min-height:1.5em\">🎯 You have experience managing or mentoring Solutions Engineers in complex, multi-stakeholder enterprise SaaS sales motions.</p><p style=\"min-height:1.5em\">👥 You thrive in hiring, growing, and developing people—your success comes from your team’s success.</p><p style=\"min-height:1.5em\">🧭 You think strategically about process, enablement, and operational excellence—not just individual deal execution.</p><p style=\"min-height:1.5em\">🤝 You partner naturally with Sales Leadership and cross-functional stakeholders (CS, Product, Implementation) and can influence with clarity and conviction.</p><p style=\"min-height:1.5em\">🧠 You have strong business and technical acumen and can guide your team on connecting Ashby’s capabilities to measurable enterprise outcomes.</p><p style=\"min-height:1.5em\">📣 You’re a clear communicator who can simplify complex concepts—and coach others to do the same, whether in a security review or an exec boardroom.</p><p style=\"min-height:1.5em\">⚙️ You love building—POC frameworks, RFP libraries, competitive playbooks, demo environments—and you do it with intentionality.</p><p style=\"min-height:1.5em\">💙 You have empathy for enterprise Talent teams and are energized by solving their real, nuanced challenges.</p><p style=\"min-height:1.5em\"></p><h2><strong>Bonus Points For</strong></h2><p style=\"min-height:1.5em\"></p><p style=\"min-height:1.5em\">🤝 Experience with Applicant Tracking Systems or deep familiarity with enterprise TA workflows.</p><p style=\"min-height:1.5em\">🧩 Experience building POC frameworks, value engineering models, or technical trial structures for enterprise deals.</p><p style=\"min-height:1.5em\">📈 Experience leading cross-functional projects in rapidly scaling organizations.</p><p style=\"min-height:1.5em\">🔧 A background as a technical IC (SE, Solutions Architect, or similar) before moving into management.</p><p style=\"min-height:1.5em\"></p><h2><strong>Reasons You Shouldn’t Apply</strong></h2><p style=\"min-height:1.5em\"></p><ul style=\"min-height:1.5em\"><li><p style=\"min-height:1.5em\">You’d rather execute deals yourself than enable a team around you to excel.</p></li><li><p style=\"min-height:1.5em\">You’re uncomfortable refining a motion that’s already partially built—you want either a blank slate or a fully finished playbook.</p></li><li><p style=\"min-height:1.5em\">Multi-stakeholder enterprise complexity—security reviews, procurement, legal, executive sponsors—feels like friction rather than the core of the job.</p></li><li><p style=\"min-height:1.5em\">You’re uncomfortable coaching people through feedback, growth, and evolving expectations.</p></li><li><p style=\"min-height:1.5em\">Fast-paced, high-change environments feel overwhelming rather than exciting.</p></li></ul><p style=\"min-height:1.5em\"><em>Ashby provides equal employment opportunities (EEO) to all employees and applicants for employment without regard to race, color, religion, sex, national origin, age, disability, genetics, sexual orientation, gender identity, or gender expression. We are committed to a diverse and inclusive workforce and welcome people from all backgrounds, experiences, perspectives, and abilities.</em></p><p style=\"min-height:1.5em\"><em>Ashby is committed to a fair and transparent hiring process. We confirm that this advertisement is for an active, existing vacancy within our organization. Please be advised that we may use artificial intelligence-driven tools to assist our recruitment team in screening, assessing, and selecting candidates for this position.</em></p>",
+      "descriptionPlain": "As the Enterprise Solutions Engineering Manager at Ashby, you’ll lead and grow a high-performing team of Solutions Engineers who own our most strategic, complex deals. Your team partners closely with Enterprise Account Executives to secure both the technical and commercial win—guiding large organizations through deep technical evaluations and showing them how Ashby can fundamentally transform the way they hire.\n\n\n\nYou’ll be responsible for shaping and scaling the enterprise SE motion at Ashby: hiring exceptional talent, coaching them toward mastery, operationalizing excellence, and refining the processes that help the team—and the business—win more often and more efficiently.\n\n\n\nThis is a highly strategic role with direct impact on revenue, product direction, and customer value.\n\n\n\n\nWHY LEAD ENTERPRISE SE AT ASHBY?\n\n\n\n\nPRODUCT-MARKET FIT THAT MAKES YOUR TEAM’S JOB EASIER\n\nYour team will support a product that prospects genuinely love—and often ask to buy before the demo ends. This creates a coaching environment focused on technical excellence and deal strategy, not convincing skeptics.\n\n\n\n\nPRODUCT DEPTH THAT REWARDS REAL SOLUTIONING\n\nAshby is a deeply configurable product, and enterprise prospects come with highly specific, nuanced hiring processes. Your team won’t be running generic demos—they’ll be diagnosing how each organization hires and architecting solutions that map Ashby’s capabilities to those workflows. The coaching opportunity here is rich: breadth across the full product, depth in custom solutioning, and the creativity to show prospects something they didn’t know was possible.\n\n\n\n\nA LEADERSHIP ROLE DESIGNED FOR BUILDERS\n\nYou’ll inherit an enterprise SE motion that works and level it up. The initiatives you lead—from POC frameworks to RFP libraries to competitive playbooks—will define how the enterprise SE team operates for years to come.\n\n\n\n\nA SEAT AT THE PRODUCT TABLE\n\nYou’ll work in tight collaboration with Product and Engineering, translating enterprise field insights directly into roadmap input. The problems your team uncovers shape what Ashby builds next.\n\n\n\n\nWHAT YOU’LL DO\n\n\n\n\nLEAD & GROW A HIGH-PERFORMING ENTERPRISE SE TEAM\n\n - Hire, onboard, and develop world-class Solutions Engineers who become trusted technical advisors to enterprise prospects.\n\n - Coach SEs on enterprise-specific skills: discovery with complex buying committees, POC design and execution, security and compliance conversations, API-level technical fluency, and executive-level storytelling.\n\n - Create a culture of ownership, rigor, and continuous improvement.\n\n\n\n\nDRIVE EXCELLENCE IN ENTERPRISE DEAL EXECUTION\n\n - Partner with Enterprise sales leadership to align on pipeline and priorities, with SEs leading the technical track alongside AEs on the commercial.\n\n - Oversee the team’s involvement in demos, POCs, trials, security reviews, and RFPs across 3–5 stakeholder buying groups—including IT, Legal, HR, Finance, and executive sponsors.\n\n - Review and elevate team execution, stepping in as a technical expert when the deal demands it.\n\n\n\n\nBUILD SCALABLE SYSTEMS, PROCESSES & ENABLEMENT\n\n - Refine and evolve the existing enterprise SE motion—improving demo workflows, POC frameworks, trial structures, RFP processes, and internal knowledge bases.\n\n - Build enablement for complex, long-horizon deals: competitive positioning, security questionnaire libraries, integration playbooks, and value frameworks.\n\n - Identify patterns from the field and translate them into product feedback, roadmap insights, and internal process improvements in close partnership with Product and Engineering.\n\n - Partner cross-functionally with CS, Product, Marketing, and Implementation to ensure seamless handoffs and consistent enterprise messaging.\n\n\n\n\nDRIVE STRATEGIC INITIATIVES FROM DIAGNOSIS TO IMPACT\n\n - Identify high-leverage problems across the enterprise SE motion—through data, field observation, and stakeholder input—and develop a clear point of view on what to solve and why.\n\n - Validate your hypotheses with the right stakeholders, write crisp proposals, and earn executive buy-in by connecting your recommendations to business outcomes.\n\n - Own implementation end-to-end—managing change, aligning stakeholders, and driving adoption—with little oversight and a high bar for follow-through.\n\n - Operate as a strategic contributor beyond your team—your projects will shape how Ashby scales, not just how the SE org runs.\n\n\n\n\nYOU COULD BE A GREAT FIT IF:\n\n\n\n🎯 You have experience managing or mentoring Solutions Engineers in complex, multi-stakeholder enterprise SaaS sales motions.\n\n👥 You thrive in hiring, growing, and developing people—your success comes from your team’s success.\n\n🧭 You think strategically about process, enablement, and operational excellence—not just individual deal execution.\n\n🤝 You partner naturally with Sales Leadership and cross-functional stakeholders (CS, Product, Implementation) and can influence with clarity and conviction.\n\n🧠 You have strong business and technical acumen and can guide your team on connecting Ashby’s capabilities to measurable enterprise outcomes.\n\n📣 You’re a clear communicator who can simplify complex concepts—and coach others to do the same, whether in a security review or an exec boardroom.\n\n⚙️ You love building—POC frameworks, RFP libraries, competitive playbooks, demo environments—and you do it with intentionality.\n\n💙 You have empathy for enterprise Talent teams and are energized by solving their real, nuanced challenges.\n\n\n\n\nBONUS POINTS FOR\n\n\n\n🤝 Experience with Applicant Tracking Systems or deep familiarity with enterprise TA workflows.\n\n🧩 Experience building POC frameworks, value engineering models, or technical trial structures for enterprise deals.\n\n📈 Experience leading cross-functional projects in rapidly scaling organizations.\n\n🔧 A background as a technical IC (SE, Solutions Architect, or similar) before moving into management.\n\n\n\n\nREASONS YOU SHOULDN’T APPLY\n\n\n\n - You’d rather execute deals yourself than enable a team around you to excel.\n\n - You’re uncomfortable refining a motion that’s already partially built—you want either a blank slate or a fully finished playbook.\n\n - Multi-stakeholder enterprise complexity—security reviews, procurement, legal, executive sponsors—feels like friction rather than the core of the job.\n\n - You’re uncomfortable coaching people through feedback, growth, and evolving expectations.\n\n - Fast-paced, high-change environments feel overwhelming rather than exciting.\n\nAshby provides equal employment opportunities (EEO) to all employees and applicants for employment without regard to race, color, religion, sex, national origin, age, disability, genetics, sexual orientation, gender identity, or gender expression. We are committed to a diverse and inclusive workforce and welcome people from all backgrounds, experiences, perspectives, and abilities.\n\nAshby is committed to a fair and transparent hiring process. We confirm that this advertisement is for an active, existing vacancy within our organization. Please be advised that we may use artificial intelligence-driven tools to assist our recruitment team in screening, assessing, and selecting candidates for this position.",
+      "compensation": {
+        "compensationTierSummary": "$255,000 – $319,125 • Offers Equity • Offers Commission • Multiple Ranges",
+        "scrapeableCompensationSalarySummary": "$255,000 - $319,125",
+        "compensationTiers": [
+          {
+            "id": "604f946e-12f2-4ca7-bde6-d47f71950d92",
+            "tierSummary": "On Target Earnings $293,250 – $319,125 • Offers Equity • Offers Commission • 75/25 Split",
+            "title": "US Tier 1 - SF & NYC Metros",
+            "additionalInformation": "75/25 Split",
+            "components": [
+              {
+                "id": "b89a4dc1-6749-4f3c-993e-5b5db445ad26",
+                "summary": "On Target Earnings $293,250 – $319,125",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 293250,
+                "maxValue": 319125
+              },
+              {
+                "id": "0f75fbd0-434c-48aa-bcb8-23111e96ef53",
+                "summary": "Offers Commission",
+                "compensationType": "Commission",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "4db95ae5-ce78-4ef7-9afd-4f37517cdf55",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          },
+          {
+            "id": "39c7831b-0405-4eca-9830-4f9d16da15cd",
+            "tierSummary": "On Target Earnings $255,000 – $277,500 • Offers Equity • Offers Commission • 75/25 Split",
+            "title": "US Tier 2",
+            "additionalInformation": "75/25 Split",
+            "components": [
+              {
+                "id": "c738b369-9dbc-4598-b52c-0a9260c9c732",
+                "summary": "Offers Commission",
+                "compensationType": "Commission",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "352b2def-72a5-4b89-8e27-c187b216c3bf",
+                "summary": "On Target Earnings $255,000 – $277,500",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 255000,
+                "maxValue": 277500
+              },
+              {
+                "id": "311cadb2-862f-4aa4-a798-443590937c71",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          },
+          {
+            "id": "a4ded4cc-9229-4cbf-a39d-492b3ca7d57c",
+            "tierSummary": "On Target Earnings CA$280,500 – CA$305,250 • Offers Equity • Offers Commission • 75/25 Split",
+            "title": "Canada",
+            "additionalInformation": "75/25 Split",
+            "components": [
+              {
+                "id": "b9530c9f-2e45-425e-afdc-2c85d86fc5d5",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "f6b1fe95-d805-46af-a17a-e098be2b6fb2",
+                "summary": "Offers Commission",
+                "compensationType": "Commission",
+                "interval": "1 YEAR",
+                "currencyCode": "CAD",
+                "minValue": null,
+                "maxValue": null
+              },
+              {
+                "id": "4b82393a-00a1-44d9-bd02-5bfcc3d29f1d",
+                "summary": "On Target Earnings CA$280,500 – CA$305,250",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "CAD",
+                "minValue": 280500,
+                "maxValue": 305250
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "minValue": 255000,
+            "maxValue": 319125,
+            "currencyCode": "USD",
+            "interval": "1 YEAR",
+            "compensationType": "Salary"
+          },
+          {
+            "compensationType": "Commission",
+            "minValue": null,
+            "maxValue": null,
+            "interval": "1 YEAR"
+          },
+          {
+            "compensationType": "EquityPercentage",
+            "minValue": null,
+            "maxValue": null,
+            "interval": "1 YEAR"
+          }
+        ]
+      }
+    }
+  ]
+}

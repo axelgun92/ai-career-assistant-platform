@@ -1,13 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CustomerSuccessResults } from "../customer-success/customer-success-results";
 import { createEvaluationPoller } from "./poller";
+import { evaluationFailure } from "./evaluation-failure";
+import { StatusNotices } from "./status-notices";
+import { UsageSummary } from "./usage-summary";
 import { ClassificationBadge, humanize } from "./shared-results";
 import type {
+  EvaluationHistoryPresentation,
   EvaluationPresentation,
   OpportunityPresentation,
 } from "./types";
+import { DeferredNotice } from "../budget/deferred-notice";
+import type { DeferralView } from "../budget/types";
+import {
+  PreEvaluatorTriagePanel,
+  type PreEvaluatorTriagePresentation,
+} from "../pre-evaluator-triage";
 
 type StatusResult =
   | { found: true; evaluation: EvaluationPresentation }
@@ -41,21 +52,92 @@ function activeStatus(status: string | undefined) {
   return status === "PENDING" || status === "RUNNING";
 }
 
+function formatTimestamp(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : null;
+}
+
+// Which versions produced an evaluation, so history rows can be told apart
+// when the profile, evaluator or prompts changed between them.
+export function historyVersionLabel(
+  item: Pick<EvaluationHistoryPresentation, "userProfileVersion" | "evaluationVersion" | "promptVersion">,
+): string {
+  return [
+    item.userProfileVersion === null ? "Profile unknown" : `Profile v${item.userProfileVersion}`,
+    `Evaluation ${item.evaluationVersion}`,
+    item.promptVersion ? `Prompt ${item.promptVersion}` : null,
+  ].filter(Boolean).join(" · ");
+}
+
 export function EvaluationExperience({
   opportunity,
+  evaluable = true,
+  deferral = null,
+  activeProfile = null,
+  listingWarning = null,
+  triage = null,
 }: {
   opportunity: OpportunityPresentation;
+  // False for archived/closed opportunities; the API enforces the same rule.
+  evaluable?: boolean;
+  // An open request waiting for budget; evaluating again resumes it.
+  deferral?: DeferralView | null;
+  activeProfile?: { id: string; version: number } | null;
+  // Feature 13: shown before an evaluation is requested for a listing that is
+  // no longer listed; a warning, never a block.
+  listingWarning?: string | null;
+  triage?: PreEvaluatorTriagePresentation | null;
 }) {
+  // `evaluation` is what is displayed; `latest` is the newest evaluation, which
+  // drives status, failure details, and the queued-too-long notice.
   const [evaluation, setEvaluation] = useState<EvaluationPresentation | null>(null);
+  const [latest, setLatest] = useState<EvaluationPresentation | null>(null);
+  const [fallbackEvaluationId, setFallbackEvaluationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pollStopped, setPollStopped] = useState(false);
+  const router = useRouter();
+  // Set while an evaluation is queued/running, so its completion can refresh
+  // server-rendered lifecycle status on the page.
+  const wasActive = useRef(false);
   const requestInFlight = useRef(false);
   const selectedHistoryId = useRef<string | null>(null);
+  const fallbackController = useRef<AbortController | null>(null);
   const poller = useRef<ReturnType<typeof createEvaluationPoller<StatusResult>> | null>(null);
 
   useEffect(() => {
+    // When the latest evaluation failed, show the newest completed evaluation
+    // from history rather than an empty result area.
+    async function showLastCompleted(failed: EvaluationPresentation) {
+      const completed = failed.history.find(
+        (item) => !item.isLatest && item.status === "COMPLETED",
+      );
+      if (!completed) {
+        setFallbackEvaluationId(null);
+        setEvaluation(failed);
+        return;
+      }
+      fallbackController.current?.abort();
+      const controller = new AbortController();
+      fallbackController.current = controller;
+      try {
+        const value = await fetchEvaluation(opportunity.id, controller.signal, completed.evaluationId);
+        if (controller.signal.aborted || selectedHistoryId.current) return;
+        if (value.found && value.evaluation.status === "COMPLETED") {
+          setFallbackEvaluationId(value.evaluation.evaluationId);
+          setEvaluation(value.evaluation);
+        } else {
+          setFallbackEvaluationId(null);
+          setEvaluation(failed);
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+        setFallbackEvaluationId(null);
+        setEvaluation(failed);
+      }
+    }
+
     const controller = createEvaluationPoller<StatusResult>({
       fetchStatus: (signal) => fetchEvaluation(opportunity.id, signal),
       shouldContinue: (value) =>
@@ -63,26 +145,52 @@ export function EvaluationExperience({
       onUpdate: (value) => {
         setLoading(false);
         setError(null);
-        setEvaluation((current) => {
-          if (!value.found) return null;
-          if (selectedHistoryId.current && current) {
-            return { ...current, history: value.evaluation.history };
-          }
-          return value.evaluation;
-        });
+        if (!value.found) {
+          setLatest(null);
+          setEvaluation(null);
+          return;
+        }
+        setLatest(value.evaluation);
+        if (activeStatus(value.evaluation.status)) {
+          wasActive.current = true;
+        } else if (wasActive.current) {
+          wasActive.current = false;
+          router.refresh();
+        }
+        if (selectedHistoryId.current) {
+          setEvaluation((current) =>
+            current ? { ...current, history: value.evaluation.history } : value.evaluation,
+          );
+          return;
+        }
+        if (value.evaluation.status === "FAILED") {
+          void showLastCompleted(value.evaluation);
+          return;
+        }
+        setFallbackEvaluationId(null);
+        setEvaluation(value.evaluation);
       },
       onError: (message) => {
         setLoading(false);
         setError(message);
+        setPollStopped(true);
       },
     });
     poller.current = controller;
     controller.start();
     return () => {
       controller.stop();
+      fallbackController.current?.abort();
       poller.current = null;
     };
-  }, [opportunity.id]);
+  }, [opportunity.id, router]);
+
+  function keepChecking() {
+    setPollStopped(false);
+    setError(null);
+    poller.current?.stop();
+    poller.current?.start();
+  }
 
   async function requestEvaluation() {
     if (requestInFlight.current || activeStatus(evaluation?.history[0]?.status)) return;
@@ -99,12 +207,38 @@ export function EvaluationExperience({
           body: "{}",
         },
       );
+      if (response.status === 200) {
+        const body = (await response.json().catch(() => ({}))) as { outcome?: string; resumed?: boolean; reason?: string };
+        if (body.outcome === "DEFERRED") {
+          // Accepted but not started: the budget or a usage limit has no room.
+          const limit = body.reason === "USAGE_LIMIT_REACHED" ? "an AI usage limit is reached" : "the budget does not have room";
+          setNotice(
+            body.resumed
+              ? `Checked again: ${limit === "the budget does not have room" ? "the budget still does not have room" : "an AI usage limit is still reached"}, so the evaluation remains deferred.`
+              : `Evaluation deferred: ${limit} right now. Nothing was spent.`,
+          );
+          router.refresh();
+          return;
+        }
+        if (body.outcome === "NEEDS_REVIEW") {
+          setNotice("Evaluation is held for pre-evaluator review. Nothing was spent.");
+          router.refresh();
+          return;
+        }
+        if (body.outcome === "REJECT") {
+          setNotice("Rejected before evaluation. Nothing was spent.");
+          router.refresh();
+          return;
+        }
+      }
       if (response.status !== 202) {
         setError(await responseMessage(response, "Evaluation could not be requested"));
         return;
       }
+      if (deferral) router.refresh();
       setNotice("Evaluation accepted and queued. This page will update automatically.");
       selectedHistoryId.current = null;
+      setPollStopped(false);
       poller.current?.stop();
       poller.current?.start();
     } catch {
@@ -118,11 +252,13 @@ export function EvaluationExperience({
   async function showHistory(evaluationId: string, isLatest: boolean) {
     setLoading(true);
     setError(null);
+    fallbackController.current?.abort();
     const controller = new AbortController();
     try {
       const value = await fetchEvaluation(opportunity.id, controller.signal, evaluationId);
       if (value.found) {
         selectedHistoryId.current = isLatest ? null : evaluationId;
+        setFallbackEvaluationId(null);
         setEvaluation(value.evaluation);
       }
       else setError("That historical evaluation is no longer available.");
@@ -133,58 +269,107 @@ export function EvaluationExperience({
     }
   }
 
-  const latestStatus = evaluation?.history[0]?.status ?? evaluation?.status;
+  const history = latest?.history ?? evaluation?.history ?? [];
+  const latestStatus = history[0]?.status ?? latest?.status ?? evaluation?.status;
   const active = activeStatus(latestStatus);
   const isolatedFailure = evaluation?.evaluationStatus === "COMPLETED" &&
     evaluation.stages.some((stage) => stage.status === "FAILED");
+  const failure = latestStatus === "FAILED" && latest
+    ? evaluationFailure(latest.task.errorCode)
+    : null;
+  const fallbackShown = fallbackEvaluationId !== null &&
+    evaluation?.evaluationId === fallbackEvaluationId;
+  const triageHeld = triage?.outcome === "NEEDS_REVIEW" || triage?.outcome === "REJECT";
 
   return (
     <div className="evaluation-shell">
+      {triage ? (
+        <PreEvaluatorTriagePanel
+          opportunityId={opportunity.id}
+          triage={triage}
+          onChanged={() => {
+            selectedHistoryId.current = null;
+            setPollStopped(false);
+            poller.current?.stop();
+            poller.current?.start();
+          }}
+        />
+      ) : (
+        <p className="field-help pre-evaluator-triage-pending">
+          Pre-evaluator triage has not run for this job yet. It runs, with an active profile, when the job is saved from the browser
+          extension or when you request evaluation.
+        </p>
+      )}
       <section className="evaluation-controls" aria-labelledby="evaluation-status-title">
         <div>
           <p className="eyebrow">Evaluation status</p>
           <h2 id="evaluation-status-title">
-            {loading && !evaluation ? "Checking evaluation…" :
-              evaluation ? humanize(latestStatus) : "Not evaluated"}
+            {loading && !evaluation && !deferral ? "Checking evaluation…" :
+              evaluation && !(deferral && !active) ? humanize(latestStatus) :
+              deferral ? (deferral.reasonCode === "USAGE_LIMIT_REACHED" ? "Deferred — waiting for usage limits" : "Deferred — waiting for budget") : "Not evaluated"}
           </h2>
         </div>
-        <button
-          type="button"
-          onClick={requestEvaluation}
-          disabled={requesting || active}
-          aria-describedby="evaluation-status-message"
-        >
-          {requesting ? "Requesting…" : active ? "Evaluation in progress" :
-            evaluation ? "Reevaluate opportunity" : "Evaluate Customer Success fit"}
-        </button>
-        <div id="evaluation-status-message" aria-live="polite">
-          {active ? <p>Evaluation is {latestStatus === "PENDING" ? "queued" : "running"}. Results will appear here when complete.</p> : null}
-          {notice ? <p className="success-message">{notice}</p> : null}
-          {error ? <p className="error-message">{error}</p> : null}
-          {latestStatus === "FAILED" ? (
-            <p className="error-message">Evaluation could not complete safely. You may request another evaluation; earlier completed results remain available below.</p>
-          ) : null}
-          {isolatedFailure ? (
-            <p className="warning-message">Evaluation completed with an isolated stage issue. Available validated results are shown below.</p>
+        <div className="evaluation-actions">
+          <button
+            type="button"
+            onClick={requestEvaluation}
+            disabled={requesting || active || !evaluable || triageHeld}
+            aria-describedby="evaluation-status-message"
+          >
+            {requesting ? "Requesting…" : active ? "Evaluation in progress" :
+              triage?.outcome === "NEEDS_REVIEW" ? "Awaiting pre-evaluator review" :
+              triage?.outcome === "REJECT" ? "Rejected before evaluation" :
+              deferral ? "Resume deferred evaluation" :
+              evaluation ? "Reevaluate opportunity" : "Evaluate Customer Success fit"}
+          </button>
+          {pollStopped ? (
+            <button type="button" className="secondary-button" onClick={keepChecking}>
+              Keep checking
+            </button>
           ) : null}
         </div>
+        <div id="evaluation-status-message" aria-live="polite">
+          {!evaluable && !active ? (
+            <p>This opportunity is archived. Restore it to request another evaluation.</p>
+          ) : null}
+          {listingWarning && evaluable && !active ? (
+            <p className="field-help" role="note">
+              {listingWarning}
+            </p>
+          ) : null}
+          {notice ? <p className="success-message">{notice}</p> : null}
+          {error ? <p className="error-message">{error}</p> : null}
+          <StatusNotices
+            latestStatus={latestStatus}
+            failure={failure}
+            fallbackCompletedAt={fallbackShown ? formatTimestamp(evaluation?.completedAt) : null}
+            hasEarlierCompleted={history.some((item) => !item.isLatest && item.status === "COMPLETED")}
+            queueState={latest?.queueState}
+            evaluable={evaluable}
+            isolatedFailure={isolatedFailure}
+          />
+        </div>
+        {deferral && !active ? (
+          <DeferredNotice deferral={deferral} activeProfile={activeProfile} onChanged={() => router.refresh()} />
+        ) : null}
       </section>
 
-      {evaluation?.history.length ? (
+      {history.length ? (
         <details className="history-panel">
-          <summary>Evaluation history ({evaluation.history.length})</summary>
+          <summary>Evaluation history ({history.length})</summary>
           <ul>
-            {evaluation.history.map((item) => (
+            {history.map((item) => (
               <li key={item.evaluationId}>
                 <button
                   className="history-button"
                   type="button"
                   onClick={() => showHistory(item.evaluationId, item.isLatest)}
-                  aria-current={evaluation.evaluationId === item.evaluationId ? "true" : undefined}
+                  aria-current={evaluation?.evaluationId === item.evaluationId ? "true" : undefined}
                 >
                   {item.isLatest ? "Latest · " : ""}
                   {item.decision ? <><ClassificationBadge value={item.decision} /> · </> : null}
                   {humanize(item.status)} · {item.completedAt ? new Date(item.completedAt).toLocaleString() : "In progress"}
+                  <span className="history-versions"> · {historyVersionLabel(item)}</span>
                 </button>
               </li>
             ))}
@@ -194,6 +379,10 @@ export function EvaluationExperience({
 
       {evaluation?.status === "COMPLETED" && evaluation.result ? (
         <CustomerSuccessResults opportunity={opportunity} evaluation={evaluation} />
+      ) : null}
+
+      {evaluation ? (
+        <UsageSummary usage={evaluation.usage} operations={evaluation.operations} reservation={evaluation.reservation} />
       ) : null}
     </div>
   );

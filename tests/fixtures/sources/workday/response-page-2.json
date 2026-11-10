@@ -1,0 +1,37 @@
+{
+  "total": 0,
+  "jobPostings": [
+    {
+      "title": "Customer Success Manager, Paradox",
+      "externalPath": "/job/Australia-NSW-North-Sydney/Customer-Success-Manager--Paradox_JR-0110720",
+      "locationsText": "Australia, NSW, North Sydney",
+      "postedOn": "Posted 3 Days Ago",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0110720"
+      ]
+    },
+    {
+      "title": "Software Development Engineer--Pipedream Connect",
+      "externalPath": "/job/USA-CA-San-Francisco/Software-Development-Engineer--Pipedream-Connect_JR-0107821",
+      "locationsText": "2 Locations",
+      "postedOn": "Posted 3 Days Ago",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0107821"
+      ]
+    },
+    {
+      "title": "Medium Enterprise Account Executive, Customer Base",
+      "externalPath": "/job/USA-CA-Pleasanton/Medium-Enterprise-Account-Executive--Customer-Base_JR-0110512-1",
+      "locationsText": "5 Locations",
+      "postedOn": "Posted 3 Days Ago",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0110512"
+      ]
+    }
+  ],
+  "facets": [],
+  "userAuthenticated": false
+}

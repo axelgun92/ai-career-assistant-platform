@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Job Assistant</title>
+    <link rel="stylesheet" href="extension.css" />
+  </head>
+  <!-- The extension's side panel (opened from the toolbar button). The same
+       page also opens on its own (popup.html?tabId=…), as the automated tests
+       use it. -->
+  <body class="popup panel">
+    <main>
+      <h1>AI Job Assistant</h1>
+      <p id="connection" class="muted">Connecting…</p>
+
+      <section id="capture-banner" class="capture-banner" hidden aria-live="polite">
+        <p id="capture-banner-text"></p>
+        <button type="button" id="capture-banner-view" class="secondary">View current capture</button>
+      </section>
+
+      <div id="modes" class="modes" role="group" aria-label="Capture mode" hidden>
+        <button type="button" id="mode-single-button" class="mode" aria-pressed="true">Single Job</button>
+        <button type="button" id="mode-batch-button" class="mode" aria-pressed="false">Batch Capture</button>
+      </div>
+      <p id="page-access" class="muted" hidden></p>
+
+      <!-- Single Job: one job posting, reviewed and saved. -->
+      <section id="mode-single" aria-label="Single Job">
+        <p id="page-site"></p>
+
+        <section id="saved" hidden>
+          <p id="saved-message"></p>
+        </section>
+
+        <div id="read-actions" hidden>
+          <button type="button" id="read">Read this page</button>
+        </div>
+
+        <section id="preview" hidden aria-labelledby="preview-heading">
+          <h2 id="preview-heading">Preview</h2>
+          <p id="preview-source" class="muted"></p>
+          <p class="muted">Check and correct the details. Nothing is sent until you press Save.</p>
+          <label for="preview-title">Title</label>
+          <input id="preview-title" type="text" maxlength="300" autocomplete="off" />
+          <label for="preview-company">Company</label>
+          <input id="preview-company" type="text" maxlength="200" placeholder="Unknown" autocomplete="off" />
+          <label for="preview-location">Location</label>
+          <input id="preview-location" type="text" maxlength="200" placeholder="Unknown" autocomplete="off" />
+          <label for="preview-description">Description</label>
+          <textarea id="preview-description" class="description" rows="8" maxlength="50000"></textarea>
+          <p id="preview-notes" class="muted"></p>
+          <p>
+            <button type="button" id="use-selection" class="link" hidden>Use my selected text instead</button>
+            <button type="button" id="use-page" class="link" hidden>Use the page's job details instead</button>
+          </p>
+          <button type="button" id="save">Save to AI Job Assistant</button>
+        </section>
+
+        <section id="result" hidden aria-live="polite">
+          <p id="result-message"></p>
+          <p id="triage-state" hidden></p>
+          <p id="evaluation-state"></p>
+          <p id="evaluation-request" hidden></p>
+          <button type="button" id="request-evaluation" hidden>Request evaluation</button>
+          <button type="button" id="open-app" class="secondary" hidden>Open in AI Job Assistant</button>
+        </section>
+      </section>
+
+      <!-- Batch Capture: the jobs already loaded on a results page, then their
+           progress and results. No single-job fields here. -->
+      <section id="mode-batch" aria-label="Batch Capture" hidden>
+        <p id="batch-site" class="muted"></p>
+
+        <div id="page-actions" hidden>
+          <button type="button" id="read-jobs" class="secondary">Save jobs on this page</button>
+          <p class="muted">Reads up to 25 jobs already shown on this page. It does not scroll, open other pages or click anything.</p>
+        </div>
+
+        <section id="jobs-preview" hidden aria-labelledby="jobs-heading">
+          <h2 id="jobs-heading">Jobs on this page</h2>
+          <p id="jobs-summary" class="muted"></p>
+          <p class="muted">Untick any job you don't want. Nothing is sent until you press Save.</p>
+          <ul id="jobs-list" class="jobs-list"></ul>
+          <button type="button" id="save-jobs" hidden>Save selected jobs</button>
+        </section>
+
+        <section id="jobs-result" hidden aria-live="polite">
+          <p id="jobs-result-message"></p>
+          <p id="jobs-rejected" class="muted"></p>
+          <button type="button" id="view-saved-session" class="secondary" hidden>View this capture</button>
+          <button type="button" id="open-progress" class="secondary">Open progress in AI Job Assistant</button>
+        </section>
+
+        <section id="tab-run" hidden aria-live="polite">
+          <p id="tab-run-state"></p>
+          <button type="button" id="tab-run-stop" class="secondary" hidden>Stop reading details</button>
+        </section>
+
+        <section id="captures" aria-labelledby="captures-heading" hidden>
+          <h2 id="captures-heading">Captures</h2>
+          <div id="current-capture" hidden>
+            <p id="current-capture-text"></p>
+            <button type="button" id="current-capture-view">View current capture</button>
+          </div>
+          <div id="latest-capture" hidden>
+            <p id="latest-capture-text"></p>
+            <button type="button" id="latest-capture-view" class="secondary">View results</button>
+          </div>
+          <h3 id="previous-heading">Previous captures</h3>
+          <ul id="previous-captures" class="capture-list" aria-labelledby="previous-heading"></ul>
+          <p id="previous-empty" class="muted" hidden>No earlier captures yet.</p>
+          <button type="button" id="open-captured-jobs" class="link">View Captured Jobs in AI Job Assistant</button>
+        </section>
+
+        <section id="session-view" hidden aria-labelledby="session-heading" aria-live="polite">
+          <button type="button" id="session-back" class="link">← Back</button>
+          <h2 id="session-heading"></h2>
+          <p id="session-summary" class="muted"></p>
+          <ul id="session-jobs" class="session-jobs"></ul>
+          <button type="button" id="session-open" class="secondary">View Captured Jobs in AI Job Assistant</button>
+        </section>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+      <p class="footer"><button type="button" id="options" class="link">Options</button></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
