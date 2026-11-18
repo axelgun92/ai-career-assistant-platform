@@ -11,7 +11,7 @@ import {
   triageLine,
 } from "./popup-view";
 import { readSettings, restrictStorage } from "./settings";
-import { pageCaptureOffer, type PageCaptureSiteSpec } from "../../../packages/core/src/page-capture";
+import { pageCaptureOffer, pageCaptureSiteByKey, type PageCaptureSiteSpec } from "../../../packages/core/src/page-capture";
 import { readResultCards, type ResultCardsReading } from "./results";
 import { buildPageCaptureBatch, cardLine, pageCaptureMessage, readerInputFor, readingSummary, rejectedLines, type PageCaptureResponse } from "./page-capture-view";
 import { tabRunLine } from "./tab-acquisition";
@@ -29,7 +29,9 @@ import {
   singleOnResultsPage,
   type CaptureMode,
 } from "./panel-view";
-import { pendingSaveKey, startTabSave, type SaveReply, type StateReply, type TabMessage } from "./tab-messages";
+import { pendingSaveKey, startTabSave, type ContinuousMessage, type SaveReply, type StateReply, type TabMessage } from "./tab-messages";
+import { continuousHostPermissions, type ContinuousRunState } from "./continuous-capture";
+import { continuousView, discardQuestion } from "./continuous-view";
 
 // The popup. Nothing is read from the page until "Read this page", and
 // nothing is sent until "Save". Every message is set as text, never as HTML.
@@ -323,6 +325,126 @@ async function stopTabRun() {
   await refreshTabRun();
 }
 
+// --- Continuous capture -------------------------------------------------
+
+type ContinuousReply = { ok: boolean; error?: string; state: ContinuousRunState | null };
+let continuousPolling: ReturnType<typeof setTimeout> | null = null;
+let continuousState: ContinuousRunState | null = null;
+const sendContinuous = (message: ContinuousMessage) => chrome.runtime.sendMessage<ContinuousReply>(message).catch(() => null);
+
+// Whether the site's permission is already held (checked ahead, so a click
+// asks for it only when it is missing: Chrome refuses a request for a host
+// the extension already has).
+const permissionHeld = new Map<string, boolean>();
+function checkPermission(site: PageCaptureSiteSpec | null) {
+  if (!site?.continuation || permissionHeld.has(site.key)) return;
+  void chrome.permissions
+    .contains({ origins: continuousHostPermissions(site) })
+    .then((held) => permissionHeld.set(site.key, held))
+    .catch(() => undefined);
+}
+// Inside the click: resolves at once when the permission is held, otherwise
+// asks (the user's gesture is still current).
+function ensurePermission(site: PageCaptureSiteSpec): Promise<boolean> {
+  if (permissionHeld.get(site.key)) return Promise.resolve(true);
+  return chrome.permissions.request({ origins: continuousHostPermissions(site) }).then((granted) => {
+    if (granted) permissionHeld.set(site.key, true);
+    return granted;
+  });
+}
+
+function renderContinuous() {
+  checkPermission(pageSite);
+  if (continuousState) checkPermission(pageCaptureSiteByKey(continuousState.site));
+  const offeredHere = Boolean(pageSite?.continuation);
+  const view = continuousView(continuousState, Date.now(), offeredHere);
+  show("continuous", view !== null);
+  if (!view) return;
+  setText("continuous-badge", view.badge);
+  show("continuous-badge", view.badge !== "");
+  setText("continuous-heading-line", view.heading);
+  show("continuous-heading-line", view.heading !== "");
+  setText("continuous-activity", view.activity ?? "");
+  show("continuous-activity", view.activity !== null);
+  const totals = element("continuous-totals");
+  totals.replaceChildren(...view.totals.map((line) => Object.assign(document.createElement("li"), { textContent: line })));
+  show("continuous-totals", view.totals.length > 0);
+  setText("continuous-reason", view.reason ?? "");
+  show("continuous-reason", view.reason !== null && view.reason !== "");
+  setText("continuous-resume-note", view.resumeNote ?? "");
+  show("continuous-resume-note", view.resumeNote !== null);
+  show("continuous-intro", continuousState === null);
+  show("continuous-start", view.buttons.start);
+  show("continuous-stop", view.buttons.stop);
+  show("continuous-resume", view.buttons.resume);
+  show("continuous-discard", view.buttons.discard);
+  const diagnostics = element("continuous-diagnostics");
+  diagnostics.replaceChildren(...view.diagnostics.map((line) => Object.assign(document.createElement("li"), { textContent: line })));
+  show("continuous-details", view.diagnostics.length > 0);
+}
+
+async function refreshContinuous() {
+  if (continuousPolling) clearTimeout(continuousPolling);
+  continuousPolling = null;
+  const reply = await sendContinuous({ type: "continuous:state" });
+  continuousState = reply?.state ?? null;
+  renderContinuous();
+  continuousPolling = setTimeout(() => void refreshContinuous(), 3_000);
+}
+
+// Start and Resume ask for the site's host permission inside the click
+// (Chrome requires the user's gesture), before anything is awaited.
+function startContinuous() {
+  const site = pageSite;
+  if (!site?.continuation || tabId === null) return;
+  showError(null);
+  const button = element<HTMLButtonElement>("continuous-start");
+  button.disabled = true;
+  const runTab = tabId;
+  void ensurePermission(site)
+    .then(async (granted) => {
+      if (!granted) return showError(`Continuous capture needs permission to read ${site.name} pages. Nothing was started.`);
+      const tab = await chrome.tabs.get(runTab).catch(() => null);
+      const reply = await sendContinuous({ type: "continuous:start", site: site.key, tabId: runTab, url: tab?.url ?? "", title: tab?.title ?? null });
+      if (!reply?.ok) showError(reply?.error ?? "Continuous capture could not start.");
+    })
+    .catch((error: unknown) => showError(`Continuous capture could not start${error instanceof Error ? `: ${error.message}` : "."}`))
+    .finally(() => {
+      button.disabled = false;
+      void refreshContinuous();
+    });
+}
+
+function resumeContinuous() {
+  const state = continuousState;
+  const site = state ? pageSiteByKey(state.site) : null;
+  if (!state || !site) return;
+  showError(null);
+  void ensurePermission(site)
+    .then(async (granted) => {
+      if (!granted) return showError(`Resuming needs permission to read ${site.name} pages.`);
+      const reply = await sendContinuous({ type: "continuous:resume", tabId });
+      if (!reply?.ok) showError(reply?.error ?? "The capture could not be resumed.");
+    })
+    .catch((error: unknown) => showError(`The capture could not be resumed${error instanceof Error ? `: ${error.message}` : "."}`))
+    .finally(() => void refreshContinuous());
+}
+
+async function stopContinuous() {
+  element<HTMLButtonElement>("continuous-stop").disabled = true;
+  await sendContinuous({ type: "continuous:stop" });
+  element<HTMLButtonElement>("continuous-stop").disabled = false;
+  await refreshContinuous();
+}
+
+async function discardContinuous() {
+  if (!continuousState || !confirm(discardQuestion(continuousState))) return;
+  await sendContinuous({ type: "continuous:discard" });
+  await refreshContinuous();
+}
+
+const pageSiteByKey = (key: string) => pageCaptureSiteByKey(key);
+
 function openProgress() {
   if (origin) void chrome.tabs.create({ url: `${origin}/extension/jobs` });
 }
@@ -400,6 +522,7 @@ async function refreshPage(force = false) {
   pageSite = offer.offered ? offer.site : null;
   if (!modeChosen) setMode(defaultMode({ resultsPageOffered: pageSite !== null }));
   show("page-actions", pageSite !== null);
+  renderContinuous();
   setText("batch-site", pageSite ? `A ${pageSite.name} results page.` : batchOnOtherPage);
   // Single Job never reads a results page as one job.
   if (pageSite) {
@@ -574,6 +697,10 @@ async function start() {
   element("read-jobs").addEventListener("click", () => void readJobsOnPage());
   element("save-jobs").addEventListener("click", () => saveJobs());
   element("tab-run-stop").addEventListener("click", () => void stopTabRun());
+  element("continuous-start").addEventListener("click", () => startContinuous());
+  element("continuous-stop").addEventListener("click", () => void stopContinuous());
+  element("continuous-resume").addEventListener("click", () => resumeContinuous());
+  element("continuous-discard").addEventListener("click", () => void discardContinuous());
   element("open-progress").addEventListener("click", openProgress);
   element("mode-single-button").addEventListener("click", () => setMode("single", true));
   element("mode-batch-button").addEventListener("click", () => setMode("batch", true));
@@ -608,6 +735,7 @@ async function start() {
   void refreshTabRun();
   void showBanner();
   await refreshPage(true);
+  void refreshContinuous();
 
   // The panel stays open while you browse: it follows the page shown, and a
   // click on the toolbar button gives it access to a newly opened page.

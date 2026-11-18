@@ -6,6 +6,8 @@ import {
   linkedInJobIdFromUrl,
   pageCaptureBatchSchema,
   pageCaptureDetailMechanism,
+  pageCaptureSelectionSchema,
+  type PageCaptureDisposition,
   pageCaptureOffer,
   pageCaptureSiteByKey,
   pageCaptureSiteForUrl,
@@ -101,8 +103,39 @@ function cardBelongsTo(site: PageCaptureSiteSpec, url: string) {
   return pageCaptureSiteForUrl(url)?.key === site.key;
 }
 
+// A card's listing identity as staging decides it, or why it is not a job of
+// this site (the same checks for a save and for continuous capture's
+// selection).
+type CardIdentity = { ok: true; externalId: string; sourceUrl: string; siteJobId: string | null } | { ok: false; reason: string };
+function cardIdentity(site: PageCaptureSiteSpec, tabs: boolean, card: { url: string; siteJobId: string | null }): CardIdentity {
+  const url = cleanPageUrl(card.url);
+  if (!url) return { ok: false, reason: "The job's link or title could not be read" };
+  if (!cardBelongsTo(site, url)) return { ok: false, reason: `The link is not a ${site.name} job page` };
+  if (tabs && !pageCaptureTabUrlAllowed(site, url)) return { ok: false, reason: `The link is not on a ${site.name} address the extension may read` };
+  let identity;
+  try {
+    identity = capturedPageIdentity(url);
+  } catch {
+    return { ok: false, reason: `The link is not a ${site.name} job page` };
+  }
+  if (!identity.externalId) return { ok: false, reason: "The link does not identify one job" };
+  const urlJobId = site.key === "linkedin" ? linkedInJobIdFromUrl(url) : null;
+  if (site.key === "linkedin" && (!urlJobId || (card.siteJobId && card.siteJobId !== urlJobId))) {
+    return { ok: false, reason: "The card's job ID does not match its link" };
+  }
+  return { ok: true, externalId: identity.externalId, sourceUrl: identity.sourceUrl, siteJobId: urlJobId ?? card.siteJobId };
+}
+
+export interface PageCaptureSelectionResult {
+  site: string;
+  // While set, the site is stopped after an access restriction (continuous
+  // capture stops; nothing is read before this time).
+  stoppedUntil: string | null;
+  cards: Array<{ url: string; disposition: PageCaptureDisposition; selectable: boolean; reason: string | null }>;
+}
+
 export function createPageCaptureService(dependencies: {
-  repository: Pick<PrismaPageCaptureRepository, "stageBatch" | "siteStoppedUntil" | "expireTabItems">;
+  repository: Pick<PrismaPageCaptureRepository, "stageBatch" | "siteStoppedUntil" | "expireTabItems"> & Partial<Pick<PrismaPageCaptureRepository, "selectionFor">>;
   enabledSites?: () => { cards: string[]; details: string[] };
   now?: () => Date;
 }) {
@@ -143,28 +176,16 @@ export function createPageCaptureService(dependencies: {
       batch.cards.forEach((card, index) => {
         const title = cleanCapturedText(card.title);
         const reject = (reason: string) => outcomes.push({ url: card.url, title: title || card.url, outcome: "REJECTED", reason, opportunityId: null });
-        const url = cleanPageUrl(card.url);
-        if (!url || !title) return reject("The job's link or title could not be read");
-        if (!cardBelongsTo(site, url)) return reject(`The link is not a ${site.name} job page`);
-        if (tabs && !pageCaptureTabUrlAllowed(site, url)) return reject(`The link is not on a ${site.name} address the extension may read`);
-        let identity;
-        try {
-          identity = capturedPageIdentity(url);
-        } catch {
-          return reject(`The link is not a ${site.name} job page`);
-        }
-        if (!identity.externalId) return reject("The link does not identify one job");
-        const urlJobId = site.key === "linkedin" ? linkedInJobIdFromUrl(url) : null;
-        if (site.key === "linkedin" && (!urlJobId || (card.siteJobId && card.siteJobId !== urlJobId))) {
-          return reject("The card's job ID does not match its link");
-        }
+        if (!title) return reject("The job's link or title could not be read");
+        const identity = cardIdentity(site, tabs !== null, card);
+        if (!identity.ok) return reject(identity.reason);
         if (seen.has(identity.externalId)) return reject("The same job appears twice in this batch");
         seen.add(identity.externalId);
         staged.push({
           index,
           externalId: identity.externalId,
           sourceUrl: identity.sourceUrl,
-          siteJobId: urlJobId ?? card.siteJobId,
+          siteJobId: identity.siteJobId,
           title,
           company: optional(card.company),
           location: optional(card.location),
@@ -187,7 +208,13 @@ export function createPageCaptureService(dependencies: {
             // Capture history: this save and the jobs it covered.
             session: {
               pageTitle: batch.pageTitle,
-              counts: { ...batch.counts, staged: staged.length, rejected: outcomes.filter((item) => item.outcome === "REJECTED").length },
+              counts: {
+                ...batch.counts,
+                staged: staged.length,
+                rejected: outcomes.filter((item) => item.outcome === "REJECTED").length,
+                // A continuous run's batch: a grouping label only.
+                ...(batch.continuous ? { continuousRunId: batch.continuous.runId, continuousBatch: batch.continuous.batchNumber } : {}),
+              },
             },
           })
         : [];
@@ -219,6 +246,44 @@ export function createPageCaptureService(dependencies: {
               },
             }
           : {}),
+      };
+    },
+
+    // Continuous capture (November 15, 2026): which loaded cards a batch may
+    // take, decided exactly as staging would decide them now. Read-only:
+    // nothing is staged, queued or recorded.
+    async selection(body: unknown): Promise<PageCaptureSelectionResult> {
+      const parsed = pageCaptureSelectionSchema.safeParse(body);
+      if (!parsed.success) throw new ExtensionCaptureError("INVALID_CAPTURE", "The selection request is invalid", issuesOf(parsed.error));
+      const input = parsed.data;
+      const enabled = enabledSites();
+      const site = pageCaptureSiteByKey(input.site);
+      if (!site || !enabled.cards.includes(site.key) || !site.continuation || !dependencies.repository.selectionFor) {
+        throw new ExtensionCaptureError("UNSUPPORTED_PAGE", "Continuous capture is not available for this site");
+      }
+      const automaticDetails = enabled.details.includes(site.key);
+      const tabs = automaticDetails && pageCaptureDetailMechanism(site) === "extension-tabs";
+      const at = now();
+      if (tabs) await dependencies.repository.expireTabItems([site.key], new Date(at.getTime() - pageCaptureTabStaleMs));
+      const stoppedUntil = automaticDetails ? await dependencies.repository.siteStoppedUntil(site.key, at) : null;
+      const identities = input.cards.map((card) => ({ card, identity: cardIdentity(site, tabs, card) }));
+      const known = identities.flatMap(({ identity }) => (identity.ok ? [{ externalId: identity.externalId, siteJobId: identity.siteJobId }] : []));
+      const decisions = await dependencies.repository.selectionFor({
+        site: site.key,
+        cards: known,
+        detailsAvailable: automaticDetails && !stoppedUntil,
+        requeueAwaiting: tabs,
+        refresh: { policy: site.refresh, siteStopped: stoppedUntil !== null },
+        now: at,
+      });
+      return {
+        site: site.key,
+        stoppedUntil: stoppedUntil?.toISOString() ?? null,
+        cards: identities.map(({ card, identity }) => {
+          if (!identity.ok) return { url: card.url, disposition: "REJECTED" as const, selectable: false, reason: identity.reason };
+          const decision = decisions.get(identity.externalId) ?? { disposition: "NEW" as const, selectable: true };
+          return { url: card.url, disposition: decision.disposition, selectable: decision.selectable && !stoppedUntil, reason: null };
+        }),
       };
     },
   };

@@ -16,7 +16,7 @@ import {
   type RetrievedStructuredFields,
 } from "@ai-career/core";
 import { bareDollarCurrencySourceField, parseCompensation } from "./compensation";
-import { readJobTextFacts, statementsForRange, relativePostedDate, remoteByExceptionValue, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
+import { baseAndOnTargetStatements, readJobTextFacts, statementsForRange, relativePostedDate, remoteByExceptionValue, standardizeSeniorityLabel, statedCompensationTiers, type TextFact } from "./job-text-facts";
 import { parseResidency, residencySourceFields } from "./residency";
 import { primaryCountryTier } from "./salary-tiers";
 import { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, withdrawalSourceFields } from "./withdrawal";
@@ -24,6 +24,9 @@ import { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, wi
 // A country tier chosen as the role's range by the posting's eligibility
 // evidence (November 5, 2026).
 export const primaryTierSourceField = "rawText:compensation-tier-primary";
+// The employer's base salary range and on-target figure, read in place of a
+// board range that states neither (November 15, 2026).
+export const employerBaseSourceField = "rawText:employer-base-and-ote-statement";
 import { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
 
 // Normalization of listings produced by automated retrieval and the browser
@@ -423,6 +426,44 @@ export function createRetrievedOpportunityNormalizer(): OpportunityNormalizer {
         if (variable) {
           compensationBasis = "OTE";
           basisEvidence = variable;
+        }
+      }
+      // The employer's own base salary and on-target figure clarify a board's
+      // range (Fullpath, November 15, 2026: LinkedIn advertised $110,000–
+      // $118,000; the description states "Annual base salary: $80,000–
+      // $88,000" and "On-target earnings: up to $118,000"). When the source's
+      // range states no basis, its maximum is the stated on-target figure and
+      // the stated base range lies wholly below it, the source's range is the
+      // total pay, not base salary: the employer's base range becomes the
+      // Salary (basis BASE). The on-target statement is total pay (base plus
+      // variable), never variable pay: it is kept, with the base statement,
+      // as the salary's evidence (shown as on-target earnings), and never as
+      // the bonus. The source's range stays in the source record. Anything
+      // else is left as it was; nothing is invented.
+      if (compensationBasis === null && salaryMax !== null && !facts.compensationTiers) {
+        const stated = baseAndOnTargetStatements(rawOpportunity.description);
+        const sameCurrency = (value: string | null) => value === null || currency === null || value === currency;
+        if (
+          stated &&
+          stated.onTarget.maximum === salaryMax &&
+          stated.base.maximum < (salaryMin ?? salaryMax) &&
+          sameCurrency(stated.base.currency) &&
+          sameCurrency(stated.onTarget.currency)
+        ) {
+          for (let index = provenance.length - 1; index >= 0; index -= 1) {
+            if (["salaryMin", "salaryMax", "currency", "salaryText", "compensationBasis"].includes(provenance[index]!.fieldName)) provenance.splice(index, 1);
+          }
+          const sourceText = `${stated.base.sourceText}\n${stated.onTarget.sourceText}`;
+          salaryMin = stated.base.minimum;
+          salaryMax = stated.base.maximum;
+          currency = knownCurrency(stated.base.currency ?? currency);
+          salaryText = stated.base.value;
+          compensationBasis = "BASE";
+          basisEvidence = { sourceField: employerBaseSourceField, sourceText };
+          record("salaryMin", employerBaseSourceField, "DETERMINISTIC", salaryMin, sourceText);
+          record("salaryMax", employerBaseSourceField, "DETERMINISTIC", salaryMax, sourceText);
+          if (currency) record("currency", employerBaseSourceField, "DETERMINISTIC", currency, sourceText);
+          record("salaryText", employerBaseSourceField, "DETERMINISTIC", salaryText, sourceText);
         }
       }
       if (compensationBasis !== null && basisEvidence) {

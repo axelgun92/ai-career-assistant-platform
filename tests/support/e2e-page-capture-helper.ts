@@ -16,7 +16,14 @@
 //                                older reader (as the November 4–5 records
 //                                are), so the next save reads them again
 //   cleanup-items <run>          delete the staged jobs of this run
+//   cleanup-opportunities <run>  delete the opportunities this run's staged
+//                                jobs added (one pass, however many)
+//   seed <run> <url>...          continuous capture: these jobs were
+//                                captured before (staged as added)
+//   sessions <run> <runId>       continuous capture: the run's batches, in
+//                                order, each with its jobs' addresses
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import { createRetrievalIngestionService } from "../../packages/core/src/index";
 import { customerSuccessDiscoveryConfiguration } from "../../domains/customer-success/src/index";
 import { PrismaManualOpportunityRepository, PrismaPageCaptureRepository, getDatabaseClient } from "../../database/src/index";
@@ -24,6 +31,7 @@ import type { BrowserDriver } from "../../packages/discovery/src/index";
 import { createRetrievedOpportunityNormalizer } from "../../packages/normalization/src/index";
 import { getEvaluationService } from "../../apps/web/src/server/evaluation-service";
 import { createPageCaptureAcquisition, evaluationHandoff } from "../../apps/web/src/server/page-capture-acquisition";
+import { capturedPageIdentity } from "../../apps/web/src/server/extension-capture";
 import { assertIsolatedTestDatabase } from "./test-database-guard";
 import { e2ePageFor } from "./page-capture-e2e";
 
@@ -54,7 +62,7 @@ try {
       ingestion: createRetrievalIngestionService({ repository: new PrismaManualOpportunityRepository(), normalizer: createRetrievedOpportunityNormalizer() }),
       handoff: evaluationHandoff(getEvaluationService()),
       discovery: customerSuccessDiscoveryConfiguration,
-      detailSites: () => ["e2e-results"],
+      detailSites: () => ["e2e-results", "e2e-pages"],
       ...(mode === "no-browser" ? {} : { browser: { launch: async () => driver } }),
       sleep: async () => undefined,
       now: () => clock.now,
@@ -82,6 +90,46 @@ try {
       UPDATE "SourceRecord" SET "sourceMetadata" = jsonb_set("sourceMetadata", '{capture}', ("sourceMetadata"->'capture') - 'readerRevision') - 'lastRead'
       WHERE "source" = 'browser-extension' AND "externalId" LIKE ${`%${run}%`} AND "sourceMetadata" ? 'capture'`;
     process.stdout.write(JSON.stringify({ updated }));
+  } else if (command === "seed") {
+    const urls = process.argv.slice(4);
+    for (const url of urls) {
+      const identity = capturedPageIdentity(url);
+      const host = new URL(url).hostname;
+      await database.pageCaptureItem.create({
+        data: {
+          site: host.startsWith("pages.") ? "e2e-pages" : "e2e-results",
+          host,
+          externalId: identity.externalId!,
+          sourceUrl: identity.sourceUrl,
+          title: `Captured before ${url.split("-").at(-1)}`,
+          resultsPageUrl: `https://${host}/search`,
+          firstSeenAt: new Date(),
+          lastSeenAt: new Date(),
+          lastBatchId: randomUUID(),
+          pairingId: randomUUID(),
+          status: "INGESTED",
+        },
+      });
+    }
+    process.stdout.write(JSON.stringify({ seeded: urls.length }));
+  } else if (command === "sessions") {
+    const runId = process.argv[4] ?? "";
+    const sessions = await database.pageCaptureSession.findMany({ where: { counts: { path: ["continuousRunId"], equals: runId } } });
+    const items = await database.pageCaptureItem.findMany({ where: { id: { in: sessions.flatMap((session) => session.itemIds) } }, select: { id: true, sourceUrl: true, status: true } });
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const batches = sessions
+      .map((session) => ({ batch: (session.counts as { continuousBatch: number }).continuousBatch, urls: session.itemIds.map((id) => byId.get(id)?.sourceUrl ?? id), statuses: session.itemIds.map((id) => byId.get(id)?.status ?? "") }))
+      .sort((left, right) => left.batch - right.batch);
+    process.stdout.write(JSON.stringify(batches));
+  } else if (command === "cleanup-opportunities") {
+    const items = await database.pageCaptureItem.findMany({ where: ofRun, select: { opportunityId: true } });
+    const ids = [...new Set(items.map((item) => item.opportunityId).filter((id): id is string => Boolean(id)))];
+    const companies = await database.opportunity.findMany({ where: { id: { in: ids } }, select: { companyId: true } });
+    await database.sourceRecord.deleteMany({ where: { opportunityId: { in: ids } } });
+    await database.opportunity.deleteMany({ where: { id: { in: ids } } });
+    const companyIds = [...new Set(companies.map((row) => row.companyId).filter((id): id is string => Boolean(id)))];
+    await database.company.deleteMany({ where: { id: { in: companyIds }, opportunities: { none: {} } } });
+    process.stdout.write(JSON.stringify({ deleted: ids.length }));
   } else if (command === "cleanup-items") {
     await database.pageCaptureItem.deleteMany({ where: ofRun });
     // Capture-history sessions left with none of their jobs (November 5, 2026).

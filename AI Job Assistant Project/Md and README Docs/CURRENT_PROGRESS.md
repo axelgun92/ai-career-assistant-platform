@@ -1,7 +1,41 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 10, 2026
+**Last updated:** November 15, 2026
+
+## November 15 Normalization Fixes (F1–F7) and Continuous Mode B for LinkedIn and Welcome to the Jungle (November 15, 2026; implemented and verified offline on top of `eacf5c2`; not committed, awaiting Alex's review; no live request made)
+
+### Task 1: normalization (shared normalizer, so Single Capture and Mode B alike)
+
+- **Root cause shared by the arrangement failures:** on LinkedIn the work arrangement comes only from the description text (no Hybrid or On-site field exists in LinkedIn's job page, cards or structured data; checked against the real November 7 pages, the F0 cards and the public search page). The rules missed these shapes, and a company-wide hybrid policy counted as much as the role's own statement.
+- **F1, precedence tiers** (`job-text-facts.ts`): every arrangement candidate is ROLE (labelled values, the role's own statements, `#LI-` tags, page metadata, a cadence sentence about the role or "you"), TITLE (F7) or GENERAL (company-wide policy, "remote-first", "work from anywhere" lines). The first tier with candidates decides, with `agreed()` inside it; a conflict there is Unknown and lower tiers are not consulted.
+- **F2, the role's own statement** (`roleArrangementStatement`): "This role/position …", "This is a full-time … position, working remotely …", "You will be based …", "Location USA (remote position)", and short "Remote … anywhere in <place>" lines. Guards: negation, alternatives ("remote or hybrid"), indefinite or limited remote work ("for up to 4 weeks a year"), past experience, sentences over 250 characters.
+- **F3, office-day counts:** "3 in-office days per week" and "N days in the office per week" (1–4 Hybrid, 5 On-site, existing guards).
+- **F4, work authorization:** "Legal authorization to work in the United States without the need for employer sponsorship" is RIGHT_TO_WORK [US] (a "without … sponsorship" clause, or a standalone authorization line of 200 characters or fewer). Sponsorship stays separate (NOT_AVAILABLE). "… is a plus" stays Unknown.
+- **F5, employer base and OTE** (`retrieved.ts`): when the board's range has no basis, the description states exactly one base range below it and one OTE figure equal to its maximum, the salary is the employer's base (BASE, `rawText:employer-base-and-ote-statement`) The board's range stays in the source record. The OTE is total pay (base plus variable), so it is never stored as the bonus / variable-pay fact (which the evaluator and the source-version check read as variable pay). The opportunity page shows it from the salary's evidence as "On-target earnings (as stated; base + variable)". *(Corrected November 16, 2026 at Alex's review: the first version stored the OTE sentence as `bonus` and showed it as "Variable pay (as stated)", which mislabelled total pay as variable pay.)*
+- **F6, residency** (`residency.ts`): "remote(ly) from anywhere in <country>" gives the country; preference clauses ("with a preference for candidates based in …", "preferably", "ideally") are never requirements; limited remote work is guarded.
+- **F7, the title:** one unnegated arrangement in the title's parenthetical or trailing segment ("(Remote, US)", "– Hybrid") is the TITLE tier: below the description's role statements, above general statements. "Non-Remote" gives nothing.
+- **Posting dates:** no change (months are intentionally unsupported; the employer's original date and LinkedIn's repost age stay distinct). **Dedup:** no change (same-source ids only).
+- **Expected live results (L1):** Jacobs Remote; Dashlane Hybrid; Trulioo Remote with residency US and no preferred-city requirement, over the company's hybrid policy; PermitFlow Hybrid; Fullpath Remote, RIGHT_TO_WORK US, no sponsorship, base $80k–$88k with the OTE text.
+- No existing normalization expectation changed (Kerv's and Staffr's cited sentences included). The extension and registry guard tests were updated for Task 2's new permission, page functions and test site.
+
+### Task 2: continuous Mode B (LinkedIn "See more jobs", WTTJ numbered pages)
+
+- **One Start, successive batches of at most 25.** Jobs captured before are skipped through a new read-only selection endpoint (`POST /api/extension/page-captures/selection`, using the same pure `classifyPageCaptureCard` as staging) before any slot is filled. The next batch is submitted only when the previous one has settled (the session's new `settled`, `items` and `queuedTabItems`). The envelope's optional `continuous {runId, batchNumber}` is kept in the session's counts. No migration, no change to single saves.
+- **Controller** (`apps/extension/src/continuous-capture.ts`): one bounded step at a time under a lease, state in `chrome.storage.local`, written before every external action. Phases: tab check (the extension's own navigations are told apart from the user's), settle the batch in flight, submit, finish, discover.
+  - LinkedIn: the site's own "See more jobs" button; COMPLETED only when its end marker is visible; three loads without new jobs flush the buffer and end STOPPED_NO_MORE_RESULTS.
+  - WTTJ: the same search with the next page number, at least 12 s apart; discovery continues while a batch is in flight; COMPLETED only on last-page evidence read twice; otherwise bounded re-reads and reloads, then the buffer is flushed and the run ends STOPPED_UNCONFIRMED. Restriction stops at once (STOPPED_RESTRICTED). WTTJ selectors are `verified:false` until live step L0.
+  - Stop keeps the buffer and the batch in flight. Resume reconciles the batch in flight first, returns its stopped or expired jobs to the front of the buffer, then the buffer, then discovery. A browser restart pauses the run until Resume.
+  - Unattended: a 30 s alarm, keep-alive only during active steps, no duration limit, no rate-limit or access-restriction evasion.
+  - A step's writes are guarded by a revision check: the user's Stop during a step keeps the step's bookkeeping with the stop; a newer write by another worker instance (one that took the run over after this one was stopped) wins. `workerStarts` counts, per run, the instances that worked on it (diagnostic `WORKER_RESUMED`).
+- **Side panel:** Start continuous capture (requests the new optional `https://www.linkedin.com/*` host permission inside the click), Stop, Resume, Discard and start new (states the jobs not yet submitted), status, activity, totals and the last diagnostics. The service worker now accepts messages from the extension's own pages open in a tab.
+
+### Verified offline (`ai_career_assistant_test` only; normal and acceptance databases untouched; no live site, paid call or evaluation)
+
+- New tests: unit `nov15-linkedin-normalization` (27), `continuous-capture` (21), `continuous-capture-pages` (10, on the real November 15 LinkedIn controls fixture and the F0 cards); integration `continuous-capture` (4); E2E `extension-continuous-capture` (5: 60 jobs → 25 + 25; 63 → 25 + 25 + 3 with the service worker stopped mid-run through CDP; 67 on numbered pages → 25 + 25 + 12; Stop and Resume; no recognizable pagination → STOPPED_UNCONFIRMED).
+- Typecheck (including the extension), lint, Prisma validate, migrations (28, unchanged), extension build and `git diff --check` pass.
+- Unit 2,456 passed / 6 skipped (113 files); integration 486/486 (58 files); E2E 65/65 (18 files; the continuous spec runs as its own Playwright project after `page-capture`, since both activate a test profile).
+- **Not verified (live acceptance, separately authorized):** WTTJ's real pagination (L0); the November 15 re-reads (L1); LinkedIn and WTTJ continuous runs (L2, L3); an occluded or minimized window, a locked screen and multi-hour runs (L4).
 
 ## LinkedIn Mode B Corrections — Offline Audit and Re-verification against Core Platform TDD v1.21 (November 10, 2026; at `891a130`; no production code changed; awaiting Alex's review; no live request made)
 

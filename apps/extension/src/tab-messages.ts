@@ -32,6 +32,21 @@ export interface StateReply {
   state: TabRunState | null;
 }
 
+// Continuous capture (November 15, 2026): the side panel's Start, Stop,
+// Resume and Discard, and its progress view.
+export type ContinuousMessage =
+  | { type: "continuous:start"; site: string; tabId: number; url: string; title: string | null }
+  | { type: "continuous:stop" }
+  | { type: "continuous:resume"; tabId: number | null }
+  | { type: "continuous:discard" }
+  | { type: "continuous:state" };
+
+export function isContinuousMessage(value: unknown): value is ContinuousMessage {
+  if (!value || typeof value !== "object") return false;
+  const type = (value as { type?: unknown }).type;
+  return type === "continuous:start" || type === "continuous:stop" || type === "continuous:resume" || type === "continuous:discard" || type === "continuous:state";
+}
+
 export function isTabMessage(value: unknown): value is TabMessage {
   if (!value || typeof value !== "object") return false;
   const type = (value as { type?: unknown }).type;

@@ -1,0 +1,8 @@
+{
+  "_note": "LinkedIn's public (logged-out) job search page, fetched once read-only on November 15, 2026 for continuous capture's design (adjustment 3). REDUCED to the results header and the controls after the results list, exactly as sent (only the icons' static asset links removed). No job, person or account data. The page held 60 job cards on first load; the end marker carries the 'hidden' class until the end of the search.",
+  "site": "linkedin",
+  "fetchedAt": "2026-11-15",
+  "cardsOnFirstLoad": 60,
+  "header": "<div class=\"results-context-header\"> <h1 class=\"results-context-header__context\"> <span class=\"results-context-header__job-count\">4,000+</span> <span class=\"results-context-header__query-search\">Customer Success Manager Jobs in New York</span> </h1> </div>",
+  "controls": "<button aria-label=\"See more jobs\" class=\"infinite-scroller__show-more-button\" data-tracking-control-name=\"infinite-scroller_show-more\"> See more jobs </button> <div class=\"px-1.5 flex inline-notification hidden text-color-signal-positive see-more-jobs__viewed-all\" role=\"alert\" type=\"success\"> <icon class=\"inline-notification__icon w-[20px] h-[20px] shrink-0 mr-[10px] inline-block\"></icon> <p class=\"inline-notification__text text-sm leading-regular\"> You&#39;ve viewed all jobs for this search <!----> </p> </div>"
+}

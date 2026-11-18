@@ -54,6 +54,16 @@ const residenceVerb =
 const openTo =
   /\b(?:open|available)\s+(?:only\s+)?to\s+(?:candidates|applicants|residents|people|those)\s+(?:who\s+(?:reside|live|are based|are located)\s+)?(?:in|of|from|based in|located in|residing in)\s+/i;
 const basedIn = /\b(?:candidates|applicants)\s+(?:must be\s+)?(?:based|located|residing)\s+in\s+/i;
+// "working remotely from anywhere in the United States", "Remote anywhere in
+// the US" (Trulioo, November 15, 2026): where the remote role may be done.
+const remoteAnywhere = /\bremote(?:ly)?\s+(?:from\s+)?anywhere\s+(?:in|within|across|throughout)\s+/i;
+// A stated preference after the rule ("…, with a preference for candidates
+// based in San Diego, San Francisco, or New York"): never a requirement, so
+// it is set aside before the rule is read.
+const preferenceClause = /[,;]?\s*(?:\bwith\s+)?(?:\ba\s+)?(?:strong\s+)?\bpreference\s+(?:for|given\s+to)\b.*$/i;
+// Remote work allowed only for a while ("work remotely from anywhere for up
+// to 4 weeks a year"): a benefit, not where the role is done.
+const limitedRemote = /\bfor\s+up\s+to\b|\b(?:days|weeks)\s+(?:a|per|each)\s+year\b/i;
 // "the following states:", "one of these provinces:" before the list.
 const listLeadIn =
   /^(?:(?:one|any)\s+of\s+)?(?:the|these)\s+(?:following\s+)?(?:u\.?s\.?\s+|canadian\s+)?(?:states|provinces|territories|provinces and territories|countries|locations|regions)(?:\s+listed\s+below)?\s*:?\s*/i;
@@ -120,10 +130,13 @@ function readBasedRole(sentence: string, remote: boolean): string[] | null {
   return parseGeographyList(match[1]!);
 }
 
-function readSentence(sentence: string): SentenceResult {
+function readSentence(original: string): SentenceResult {
+  const sentence = original.replace(preferenceClause, "");
+  if (!sentence.trim()) return null;
+  const limited = limitedRemote.test(sentence);
   const found: string[][] = [];
   let ambiguous = false;
-  for (const pattern of [residenceVerb, openTo, basedIn]) {
+  for (const pattern of limited ? [residenceVerb, openTo, basedIn] : [residenceVerb, openTo, basedIn, remoteAnywhere]) {
     const match = pattern.exec(sentence);
     if (!match) continue;
     let after = sentence.slice(match.index + match[0].length);
@@ -149,7 +162,7 @@ function readSentence(sentence: string): SentenceResult {
     break;
   }
   if (ambiguous) return "QUALIFIED";
-  if (worldwide.test(sentence)) found.push(["WORLDWIDE"]);
+  if (worldwide.test(sentence) && !limited) found.push(["WORLDWIDE"]);
   if (!found.length) return null;
   if (qualifier.test(sentence)) return "QUALIFIED";
   return { regions: [...new Set(found.flat())] };

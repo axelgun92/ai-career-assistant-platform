@@ -1,4 +1,4 @@
-import { pageCaptureIncompleteRefreshes, pageCaptureRefreshReason, type PageCaptureRefreshPolicy } from "@ai-career/core";
+import { pageCaptureIncompleteRefreshes, pageCaptureRefreshReason, type PageCaptureDisposition, type PageCaptureRefreshPolicy } from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
 import { namedTransaction, workerTransactionOptions } from "./transaction-diagnostics";
@@ -160,6 +160,46 @@ export function latestExtensionRead(
   };
 }
 
+export interface PageCaptureCardDecision {
+  disposition: PageCaptureDisposition;
+  selectable: boolean;
+}
+
+// What staging does with one card (November 15, 2026; one decision for
+// stageBatch and for continuous capture's selection):
+// - a saved job due to be read again (and not already in this batch):
+//   REFRESH_DUE;
+// - a job already added, or one the user dismissed: ALREADY_SAVED or
+//   DISMISSED;
+// - a background-tab site's job awaiting details and never added: AWAITING,
+//   read again by a new save (requeueAwaiting); on the worker's sites it
+//   keeps its own retry rules and is not selectable;
+// - a job queued or being read: IN_PROGRESS; one whose page is gone:
+//   UNAVAILABLE;
+// - anything else: NEW.
+export function classifyPageCaptureCard(input: {
+  saved: string | null;
+  existing: { status: PageCaptureItemStatusValue; opportunityId: string | null; lastBatchId: string | null } | null;
+  refreshDue: boolean;
+  // The batch being staged (null for selection, which stages nothing).
+  batchId: string | null;
+  requeueAwaiting: boolean;
+  detailsAvailable: boolean;
+}): PageCaptureCardDecision {
+  const { saved, existing } = input;
+  if (saved && input.refreshDue && (!existing || input.batchId === null || existing.lastBatchId !== input.batchId)) {
+    return { disposition: "REFRESH_DUE", selectable: true };
+  }
+  if (!existing) return saved ? { disposition: "ALREADY_SAVED", selectable: false } : { disposition: "NEW", selectable: true };
+  if (existing.status === "DISMISSED") return { disposition: "DISMISSED", selectable: false };
+  if (saved || existing.opportunityId || existing.status === "INGESTED" || existing.status === "ALREADY_SAVED") return { disposition: "ALREADY_SAVED", selectable: false };
+  if (existing.status === "AWAITING_DETAILS") {
+    return { disposition: "AWAITING", selectable: input.requeueAwaiting && input.detailsAvailable };
+  }
+  if (existing.status === "UNAVAILABLE") return { disposition: "UNAVAILABLE", selectable: false };
+  return { disposition: "IN_PROGRESS", selectable: false };
+}
+
 export class PrismaPageCaptureRepository {
   private readonly database = getDatabaseClient();
 
@@ -208,7 +248,7 @@ export class PrismaPageCaptureRepository {
   // (pageCaptureRefreshReason). A job saved only from another source, one
   // being read, dismissed or awaiting details is never refreshed.
   private async refreshReasons(
-    transaction: Transaction,
+    transaction: Transaction | ReturnType<typeof getDatabaseClient>,
     cards: Array<{ externalId: string }>,
     policy: PageCaptureRefreshPolicy,
     now: Date,
@@ -272,7 +312,7 @@ export class PrismaPageCaptureRepository {
     refresh?: { policy: PageCaptureRefreshPolicy; siteStopped: boolean };
     // Capture history: the save, recorded once per batchId with the items it
     // covered (in page order), in the same transaction.
-    session?: { pageTitle: string | null; counts: Record<string, number> };
+    session?: { pageTitle: string | null; counts: Record<string, number | string> };
   }): Promise<StagedResult[]> {
     return namedTransaction("stageBatch", () => this.database.$transaction(async (transaction) => {
       const results: StagedResult[] = [];
@@ -285,9 +325,20 @@ export class PrismaPageCaptureRepository {
       for (const card of input.cards) {
         const saved = savedByExternalId.get(card.externalId) ?? null;
         const existing = existingByExternalId.get(card.externalId) ?? null;
+        // One decision per card, shared with continuous capture's selection
+        // (classifyPageCaptureCard), so what selection offers is what staging
+        // does.
+        const decision = classifyPageCaptureCard({
+          saved,
+          existing,
+          refreshDue: refreshable.has(card.externalId),
+          batchId: input.batchId,
+          requeueAwaiting: input.requeueAwaiting === true,
+          detailsAvailable: input.detailsAvailable,
+        });
         // A saved job read again by this save: queued with its refresh
         // marker, keeping its opportunity; never handed off again.
-        const refresh = saved && (!existing || existing.lastBatchId !== input.batchId) ? refreshable.get(card.externalId) : undefined;
+        const refresh = decision.disposition === "REFRESH_DUE" ? refreshable.get(card.externalId) : undefined;
         if (refresh) {
           const data = {
             title: card.title,
@@ -314,8 +365,7 @@ export class PrismaPageCaptureRepository {
         }
         if (existing) {
           const repeat = existing.lastBatchId === input.batchId;
-          const requeue =
-            !saved && input.requeueAwaiting === true && input.detailsAvailable && existing.status === "AWAITING_DETAILS" && !existing.opportunityId;
+          const requeue = decision.disposition === "AWAITING" && decision.selectable;
           const status =
             saved && existing.status !== "INGESTED" && existing.status !== "DISMISSED"
               ? "ALREADY_SAVED"
@@ -500,6 +550,52 @@ export class PrismaPageCaptureRepository {
       this.database.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`SELECT COUNT(*) AS count FROM "PageCaptureSession" s ${where}`),
     ]);
     return { rows, total: Number(total[0]?.count ?? 0) };
+  }
+
+  // Continuous capture's selection (November 15, 2026): what staging would do
+  // with each card now, without staging anything (read-only; the same lookups
+  // and the same decision as stageBatch).
+  async selectionFor(input: {
+    site: string;
+    cards: Array<{ externalId: string; siteJobId: string | null }>;
+    detailsAvailable: boolean;
+    requeueAwaiting: boolean;
+    refresh: { policy: PageCaptureRefreshPolicy; siteStopped: boolean };
+    now: Date;
+  }): Promise<Map<string, PageCaptureCardDecision>> {
+    if (!input.cards.length) return new Map();
+    const saved = await this.savedOpportunities(this.database, input.cards, input.site);
+    const items = await this.database.pageCaptureItem.findMany({ where: { externalId: { in: input.cards.map((card) => card.externalId) } } });
+    const existing = new Map(items.map((item) => [item.externalId, item]));
+    const refreshable =
+      !input.refresh.siteStopped && input.detailsAvailable
+        ? await this.refreshReasons(this.database, input.cards, input.refresh.policy, input.now, existing)
+        : new Map<string, string>();
+    return new Map(
+      input.cards.map((card) => [
+        card.externalId,
+        classifyPageCaptureCard({
+          saved: saved.get(card.externalId) ?? null,
+          existing: existing.get(card.externalId) ?? null,
+          refreshDue: refreshable.has(card.externalId),
+          batchId: null,
+          requeueAwaiting: input.requeueAwaiting,
+          detailsAvailable: input.detailsAvailable,
+        }),
+      ]),
+    );
+  }
+
+  // A save's jobs as stored (in the save's order): continuous capture checks
+  // that the batch has settled and finds its still-queued jobs.
+  async sessionItems(ids: readonly string[]): Promise<Array<{ id: string; externalId: string; sourceUrl: string; site: string; status: PageCaptureItemStatusValue; lastReason: string | null; opportunityId: string | null; attempts: number }>> {
+    if (!ids.length) return [];
+    const rows = await this.database.pageCaptureItem.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, externalId: true, sourceUrl: true, site: true, status: true, lastReason: true, opportunityId: true, attempts: true },
+    });
+    const order = new Map(ids.map((id, index) => [id, index]));
+    return rows.sort((left, right) => order.get(left.id)! - order.get(right.id)!);
   }
 
   async findSession(id: string): Promise<{ id: string; site: string; pageUrl: string; pageTitle: string | null; receivedAt: Date; itemIds: string[]; counts: unknown } | null> {

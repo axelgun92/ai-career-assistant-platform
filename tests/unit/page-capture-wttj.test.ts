@@ -93,7 +93,8 @@ describe("the registry for background-tab reading", () => {
 
   it("asks for exactly the manifest's optional host permissions", () => {
     const requested = pageCaptureSites.flatMap((candidate) => candidate.tabAcquisition?.hostPermissions ?? []);
-    expect(requested).toEqual(manifest.optional_host_permissions);
+    // And LinkedIn's pages, for continuous capture only (November 15, 2026).
+    expect([...requested, "https://www.linkedin.com/*"]).toEqual(manifest.optional_host_permissions);
   });
 
   it("enables an unverified site only by the explicit acceptance setting, never the test site", () => {

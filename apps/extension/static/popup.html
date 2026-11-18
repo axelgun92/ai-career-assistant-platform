@@ -76,6 +76,27 @@
           <p class="muted">Reads up to 25 jobs already shown on this page. It does not scroll, open other pages or click anything.</p>
         </div>
 
+        <!-- Continuous capture: the whole search, in batches of up to 25 jobs
+             not captured before, until the search ends. -->
+        <section id="continuous" hidden aria-labelledby="continuous-heading" aria-live="polite">
+          <h2 id="continuous-heading">Continuous capture</h2>
+          <p id="continuous-intro" class="muted">Captures this whole search in batches of up to 25 jobs not captured before, loading more results as the site offers them, until the search ends. Keep Chrome, this tab and AI Job Assistant running; you can leave the computer.</p>
+          <p id="continuous-badge" hidden></p>
+          <p id="continuous-heading-line" class="muted" hidden></p>
+          <p id="continuous-activity" hidden></p>
+          <ul id="continuous-totals" class="capture-list" hidden></ul>
+          <p id="continuous-reason" hidden></p>
+          <p id="continuous-resume-note" class="muted" hidden></p>
+          <button type="button" id="continuous-start" hidden>Start continuous capture</button>
+          <button type="button" id="continuous-stop" class="secondary" hidden>Stop capture</button>
+          <button type="button" id="continuous-resume" hidden>Resume</button>
+          <button type="button" id="continuous-discard" class="secondary" hidden>Discard and start new</button>
+          <details id="continuous-details" hidden>
+            <summary>Diagnostics</summary>
+            <ul id="continuous-diagnostics" class="capture-list"></ul>
+          </details>
+        </section>
+
         <section id="jobs-preview" hidden aria-labelledby="jobs-heading">
           <h2 id="jobs-heading">Jobs on this page</h2>
           <p id="jobs-summary" class="muted"></p>

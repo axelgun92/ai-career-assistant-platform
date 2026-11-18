@@ -69,6 +69,49 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: November 15 Normalization Fixes and Continuous Mode B — Review Requested
+
+**Date:** 2026-11-15
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Verification Needed (verified offline on top of `eacf5c2`; not committed; live acceptance L0–L4 needs separate authorization)
+
+#### Completed
+
+- F1–F7 in the shared normalizer: arrangement precedence (role > title > company-wide), role statements, office-day counts, work authorization without sponsorship, employer base over a board OTE range, nationwide residency with preferred cities ignored, title arrangement.
+- Continuous Mode B for LinkedIn ("See more jobs") and Welcome to the Jungle (numbered pages): one Start, batches of at most 25, captured jobs skipped first, next batch only after the previous one settles, Stop/Resume/Discard, service-worker restart recovery, COMPLETED only on confirmed end-of-results evidence.
+
+#### Files Changed
+
+- Normalization: `packages/normalization/src/job-text-facts.ts`, `residency.ts`, `retrieved.ts`; display: `apps/web/src/app/opportunities/[id]/page.tsx`, `apps/web/src/components/opportunity-facts.ts` (`employerOnTargetStatement`; OTE shown as on-target earnings, never as the bonus / variable pay).
+- Server: `packages/core/src/page-capture.ts`, `database/src/page-capture-repository.ts`, `apps/web/src/server/page-capture.ts`, `page-capture-progress.ts`, `extension-api.ts`, new route `apps/web/src/app/api/extension/page-captures/selection/route.ts`.
+- Extension: new `continuation.ts`, `continuous-capture.ts`, `continuous-view.ts`; `results.ts`, `service-worker.ts`, `popup.ts`, `static/popup.html`, `api.ts`, `tab-messages.ts`, `chrome.d.ts`, `static/manifest.json`.
+- Tests and support: see CURRENT_PROGRESS (November 15).
+
+#### Current Contract / Assumptions
+
+- No migration (28 unchanged). The batch envelope stays schemaVersion 1; `continuous` is optional. Single saves are unchanged.
+- The selection endpoint is read-only and decides each card with the same `classifyPageCaptureCard` as staging.
+- Evaluator, triage and model routing are untouched.
+
+#### Verification Completed
+
+- Typecheck, lint, Prisma validate, migrations, extension build, `git diff --check`; full unit, integration and E2E on `ai_career_assistant_test` (counts in CURRENT_PROGRESS).
+
+#### Known Issues / Blockers
+
+- WTTJ pagination selectors are `verified:false` until live step L0.
+- Occluded or minimized windows, a locked screen and multi-hour runs are unverified until L4.
+- After Chrome stops the service worker mid-step, the new instance waits for the old lease (up to 60 s) before continuing.
+
+#### Next Task
+
+- Alex's review; then commit and push; then the proposed Core Platform TDD v1.22 amendment for separate approval; then L0–L4, each separately authorized.
+
+#### Do Not Change Without Coordination
+
+- `classifyPageCaptureCard` (shared by staging and selection); the continuous run state in `chrome.storage.local["continuousCapture"]` and its revision guard; the F1 tier order.
+
 ### Handoff: Codex E2E Cleanup — Grouped Verification Complete
 
 **Date:** November 4, 2026

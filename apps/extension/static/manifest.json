@@ -27,6 +27,7 @@
   ],
   "optional_host_permissions": [
     "https://www.welcometothejungle.com/*",
-    "https://app.welcometothejungle.com/*"
+    "https://app.welcometothejungle.com/*",
+    "https://www.linkedin.com/*"
   ]
 }

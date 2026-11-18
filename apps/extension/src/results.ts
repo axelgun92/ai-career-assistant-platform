@@ -20,6 +20,13 @@ export interface ResultCardReaderInput {
   postedSelector: string | null;
   excludeSelector: string | null;
   maxCards: number;
+  // Continuous capture (November 15, 2026): cards whose key (the canonical
+  // job address, lower case, without query or fragment) is listed are left
+  // out before the cap, and the cap is up to 200 instead of 25 (the cards a
+  // run examines, never a batch: a batch is still at most 25). The reader
+  // still never scrolls, clicks or navigates.
+  excludeKeys?: string[] | null;
+  continuous?: boolean;
 }
 
 export interface ReadResultCard {
@@ -35,7 +42,9 @@ export interface ResultCardsReading {
   pageUrl: string;
   pageTitle: string | null;
   cards: ReadResultCard[];
-  counts: { loaded: number; skippedUnloaded: number; overCap: number };
+  counts: { loaded: number; skippedUnloaded: number; overCap: number; excluded?: number };
+  // Continuous capture only: every loaded card's key, in page order.
+  keys?: string[];
   problem: "FRICTION" | "NO_CARDS" | null;
   // A sign-in prompt the page shows over results that are still loaded and
   // readable: the cards are read, the prompt is left as it is (never
@@ -264,20 +273,30 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
   }
   // Document order, as the page shows them.
   found.sort((left, right) => (left.card.compareDocumentPosition(right.card) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-  const maxCards = Math.max(1, Math.min(25, Math.floor(input.maxCards)));
-  const cards = found.slice(0, maxCards).map((item) => item.read);
-  if (!cards.length) {
+  const maxCards = Math.max(1, Math.min(input.continuous ? 200 : 25, Math.floor(input.maxCards)));
+  const excludedKeys = new Set(input.excludeKeys ?? []);
+  const keys = found.map((item) => keyOf(item.read.url));
+  const open = found.filter((_item, index) => !excludedKeys.has(keys[index]!));
+  const cards = open.slice(0, maxCards).map((item) => item.read);
+  if (!found.length) {
     // A sign-in prompt with no readable card behind it stands in for the
     // results: that is the friction to report.
     const empty = none(signInPrompts.length ? "FRICTION" : "NO_CARDS");
     empty.counts.skippedUnloaded = skippedUnloaded;
+    if (input.continuous) empty.keys = [];
     return empty;
   }
   return {
     pageUrl,
     pageTitle,
     cards,
-    counts: { loaded: found.length, skippedUnloaded, overCap: Math.max(0, found.length - cards.length) },
+    counts: {
+      loaded: found.length,
+      skippedUnloaded,
+      overCap: Math.max(0, open.length - cards.length),
+      ...(input.continuous ? { excluded: found.length - open.length } : {}),
+    },
+    ...(input.continuous ? { keys: keys.slice(0, 5000) } : {}),
     problem: null,
     notice: signInPrompts.length ? "SIGN_IN_PROMPT_SHOWN" : null,
   };

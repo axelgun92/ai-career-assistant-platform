@@ -53,7 +53,7 @@ describe("the page-capture site registry", () => {
   it("offers only verified real sites (LinkedIn, verified November 3, 2026), and the test site only under its test setting", () => {
     expect(enabledPageCaptureSiteKeys({ includeTestSite: false })).toEqual(["linkedin"]);
     expect(detailEnabledPageCaptureSiteKeys({ includeTestSite: false })).toEqual(["linkedin"]);
-    expect(enabledPageCaptureSiteKeys({ includeTestSite: true })).toEqual(["linkedin", "e2e-results"]);
+    expect(enabledPageCaptureSiteKeys({ includeTestSite: true })).toEqual(["linkedin", "e2e-results", "e2e-pages"]);
     for (const site of pageCaptureSites.filter((spec) => !spec.testOnly)) {
       // Welcome to the Jungle / Otta: F0 done, P1 blocked (HTTP 403), P3 unsupported.
       expect(site.cardVerified, site.key).toBe(site.key === "linkedin");

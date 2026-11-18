@@ -46,6 +46,14 @@ export interface ApiClient {
   // Capture history (the side panel's Current and Previous captures).
   captureSessions(limit: number): Promise<ApiResult<{ sessions: CaptureSessionSummary[] }>>;
   captureSession(id: string): Promise<ApiResult<CaptureSessionDetail>>;
+  // Continuous capture: which loaded cards a batch may take (read-only).
+  pageCaptureSelection(body: { site: string; cards: Array<{ url: string; siteJobId: string | null }> }): Promise<ApiResult<PageCaptureSelectionResponse>>;
+}
+
+export interface PageCaptureSelectionResponse {
+  site: string;
+  stoppedUntil: string | null;
+  cards: Array<{ url: string; disposition: string; selectable: boolean; reason: string | null }>;
 }
 
 export interface CaptureSessionSummary {
@@ -68,6 +76,13 @@ export interface CaptureSessionSummary {
 }
 
 export interface CaptureSessionDetail {
+  // Continuous capture (absent from older servers): whether every job of the
+  // save has settled (none queued, waiting to retry or being read), the jobs
+  // as stored, and the background-tab jobs still waiting to be read.
+  settled?: boolean;
+  stoppedUntil?: string | null;
+  items?: Array<{ itemId: string; externalId: string; url: string; status: string; lastReason: string | null; opportunityId: string | null }>;
+  queuedTabItems?: Array<{ itemId: string; url: string }>;
   session: CaptureSessionSummary | null;
   jobs: Array<{ id: string; title: string; company: string | null; location?: string | null; status: string; statusText: string; savedBefore?: boolean; opportunityPath: string | null; sourceUrl: string | null }>;
 }
@@ -190,5 +205,6 @@ export function createApiClient(
     pageCaptureTabStop: (body) => call(`${extensionApiPrefix}page-captures/stop`, { method: "POST", body }),
     captureSessions: (limit) => call(`${extensionApiPrefix}page-captures/sessions?limit=${encodeURIComponent(String(limit))}`),
     captureSession: (id) => call(`${extensionApiPrefix}page-captures/sessions/${encodeURIComponent(id)}`),
+    pageCaptureSelection: (body) => call(`${extensionApiPrefix}page-captures/selection`, { method: "POST", body }),
   };
 }

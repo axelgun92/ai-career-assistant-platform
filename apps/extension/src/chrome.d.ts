@@ -35,6 +35,9 @@ declare namespace chrome {
     function get(tabId: number): Promise<Tab>;
     function create(createProperties: { url: string; active?: boolean }): Promise<Tab>;
     function remove(tabId: number): Promise<void>;
+    // Continuous capture: the search tab moves to the search's next page
+    // (its own address, on a site whose host permission the user granted).
+    function update(tabId: number, updateProperties: { url: string }): Promise<Tab>;
     interface Listener<A extends unknown[]> {
       addListener(callback: (...args: A) => void): void;
       removeListener(callback: (...args: A) => void): void;

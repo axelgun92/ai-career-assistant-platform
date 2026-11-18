@@ -197,7 +197,16 @@ export async function extensionCaptureSession(id: string, repository = new Prism
   ]);
   const own = summary.rows[0];
   const before = savedBeforeIds(session.counts);
+  // Continuous capture (November 15, 2026): the save's jobs as stored, whether
+  // every one has settled (none still queued, waiting to retry or being read),
+  // and the background-tab jobs still waiting to be read.
+  const items = await repository.sessionItems(session.itemIds);
+  const stoppedUntil = await repository.siteStoppedUntil(session.site, now());
   return {
+    stoppedUntil: stoppedUntil?.toISOString() ?? null,
+    settled: items.every((item) => item.status !== "QUEUED" && item.status !== "ACQUIRING"),
+    items: items.map((item) => ({ itemId: item.id, externalId: item.externalId, url: item.sourceUrl, status: item.status, lastReason: item.lastReason, opportunityId: item.opportunityId })),
+    queuedTabItems: items.filter((item) => item.status === "QUEUED" && tabSiteKeys.includes(item.site)).map((item) => ({ itemId: item.id, url: item.sourceUrl })),
     session: own ? sessionView(own) : null,
     jobs: list.rows.map((row) => {
       const view = capturedJobView(row);

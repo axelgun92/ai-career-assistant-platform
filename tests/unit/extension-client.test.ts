@@ -280,10 +280,12 @@ describe("the extension package", () => {
     // No popup: the toolbar button opens the panel and is the activeTab grant.
     expect(manifest.action).not.toHaveProperty("default_popup");
     expect(manifest.host_permissions).toEqual(["http://127.0.0.1/*", "http://localhost/*"]);
-    // Optional, requested inside "Save selected jobs" only: the Welcome to
-    // the Jungle job pages the background-tab reading opens, nothing else (no
-    // tabs permission, no other site, no wildcard host).
-    expect(manifest.optional_host_permissions).toEqual(["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*"]);
+    // Optional, requested inside a user click only: the Welcome to the Jungle
+    // job pages the background-tab reading opens ("Save selected jobs" and
+    // continuous capture), and LinkedIn's pages, which continuous capture
+    // reads for hours without a new click (November 15, 2026); nothing else
+    // (no tabs permission, no other site, no wildcard host).
+    expect(manifest.optional_host_permissions).toEqual(["https://www.welcometothejungle.com/*", "https://app.welcometothejungle.com/*", "https://www.linkedin.com/*"]);
     // No content scripts, nothing a web page can reach.
     expect(manifest.background).toEqual({ service_worker: "service-worker.js" });
     for (const key of ["content_scripts", "web_accessible_resources", "externally_connectable", "optional_permissions", "content_security_policy", "key"]) {
@@ -302,18 +304,21 @@ describe("the extension package", () => {
     }
   });
 
-  it("has a service worker that restricts storage and otherwise only runs the background-tab detail reading", () => {
+  it("has a service worker that restricts storage and otherwise only runs the background-tab detail reading and continuous capture", () => {
     const source = read("src/service-worker.ts");
     expect(source).toContain("restrictStorage");
-    for (const forbidden of ["fetch(", "onConnect", "onMessageExternal", "webRequest", "cookies", "chrome.tabs.update", "chrome.tabs.query", "chrome.tabs.reload", "chrome.windows", "history", "active: true"]) {
+    for (const forbidden of ["fetch(", "onConnect", "onMessageExternal", "webRequest", "cookies", "chrome.tabs.query", "chrome.tabs.reload", "chrome.windows", "history", "active: true"]) {
       expect(source, forbidden).not.toContain(forbidden);
     }
-    // Its tabs are background tabs; only the page check and the unchanged
-    // single-job reader are ever injected; only the extension's own pages
-    // may message it.
+    // The one navigation it makes: continuous capture moves its own search
+    // tab to the search's next page (November 15, 2026).
+    expect([...source.matchAll(/chrome\.tabs\.update\(([^)]*)\)/g)].map((match) => match[1])).toEqual(["tabId, { url }"]);
+    // Its tabs are background tabs; only the page check, the unchanged
+    // single-job reader and continuous capture's results-page functions are
+    // ever injected; only the extension's own pages may message it.
     expect(source).toContain("chrome.tabs.create({ url, active: false })");
-    expect([...source.matchAll(/func: (\w+)/g)].map((match) => match[1])).toEqual(["probeJobPage", "extractJobPosting"]);
-    expect(source).toContain("sender.id !== chrome.runtime.id || sender.tab");
+    expect([...source.matchAll(/func: (\w+)/g)].map((match) => match[1])).toEqual(["probeJobPage", "extractJobPosting", "readResultCards", "advanceResults", "describeResultsPage"]);
+    expect(source).toContain("sender.id !== chrome.runtime.id || !(sender.url ?? \"\").startsWith(`chrome-extension://${chrome.runtime.id}/`)");
     // The toolbar button only opens the side panel and tells it about the page.
     expect(source).toContain("chrome.action.onClicked.addListener");
     expect(source).toContain("chrome.sidePanel.open({ windowId: tab.windowId })");

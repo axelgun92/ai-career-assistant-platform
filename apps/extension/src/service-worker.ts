@@ -1,9 +1,12 @@
-import { pageCaptureSiteByKey } from "../../../packages/core/src/page-capture";
+import { pageCaptureSiteByKey, type PageCaptureBatch } from "../../../packages/core/src/page-capture";
 import { createApiClient, normalizeBackendUrl, type ApiClient, type ApiResult } from "./api";
+import { advanceResults, describeResultsPage, type AdvanceResult, type PageDescription } from "./continuation";
+import { continuousAlarm, continuousStorageKey, createContinuousCapture, type ContinuousRunState } from "./continuous-capture";
+import { readResultCards, type ResultCardsReading } from "./results";
 import { extractJobPosting, type PageExtraction } from "./extract";
 import { readSettings, restrictStorage } from "./settings";
 import { createTabAcquisition, probeJobPage, tabRunStorageKey, type TabProbe, type TabRunState } from "./tab-acquisition";
-import { isTabMessage, pendingSaveKey, pendingSaveMaxAgeMs, type PendingSave, type SaveReply, type StateReply } from "./tab-messages";
+import { isContinuousMessage, isTabMessage, pendingSaveKey, pendingSaveMaxAgeMs, type PendingSave, type SaveReply, type StateReply } from "./tab-messages";
 
 // The extension's service worker.
 //
@@ -34,6 +37,8 @@ chrome.runtime.onStartup.addListener(() => {
   void restrictStorage();
   void chrome.storage.session.remove([tabRunStorageKey, pendingSaveKey]).catch(() => undefined);
   void chrome.alarms.clear(runAlarm).catch(() => undefined);
+  // A continuous capture waits for the user's Resume after a browser restart.
+  void continuous.browserStarted().catch(() => undefined);
 });
 void restrictStorage();
 
@@ -150,7 +155,82 @@ const acquisition = createTabAcquisition({
   },
 });
 
+// Continuous capture (continuous-capture.ts): its state is in local storage,
+// so a stopped service worker continues the run at the next alarm.
+let continuousKeepAlive: ReturnType<typeof setInterval> | null = null;
+const continuous = createContinuousCapture({
+  api: {
+    selection: (body) => withApi((api) => api.pageCaptureSelection(body)),
+    pageCapture: (batch) => withApi((api) => api.pageCapture(batch as PageCaptureBatch)),
+    captureSession: (id) => withApi((api) => api.captureSession(id)),
+  },
+  tabs: {
+    get: (tabId) =>
+      chrome.tabs
+        .get(tabId)
+        .then((tab) => ({ url: tab.url ?? null, status: tab.status ?? null }))
+        .catch(() => null),
+    async update(tabId, url) {
+      await chrome.tabs.update(tabId, { url });
+    },
+    async create(url) {
+      const tab = await chrome.tabs.create({ url, active: false });
+      if (tab.id === undefined) throw new Error("The tab could not be opened");
+      return tab.id;
+    },
+  },
+  page: {
+    async read(tabId, input) {
+      const [injection] = await chrome.scripting.executeScript({ target: { tabId }, func: readResultCards, args: [input] });
+      return (injection?.result as ResultCardsReading | undefined) ?? null;
+    },
+    async advance(tabId, input) {
+      const [injection] = await chrome.scripting.executeScript({ target: { tabId }, func: advanceResults, args: [input] });
+      return (injection?.result as AdvanceResult | undefined) ?? null;
+    },
+    async describe(tabId, input) {
+      const [injection] = await chrome.scripting.executeScript({ target: { tabId }, func: describeResultsPage, args: [input] });
+      return (injection?.result as PageDescription | undefined) ?? null;
+    },
+  },
+  acquisition: {
+    enqueue: (input) => acquisition.enqueue(input),
+    state: () => acquisition.state(),
+    stop: () => acquisition.stop(),
+  },
+  hasPermission: (origins) => chrome.permissions.contains({ origins }),
+  storage: {
+    async load() {
+      const stored = await chrome.storage.local.get(continuousStorageKey);
+      return (stored[continuousStorageKey] as ContinuousRunState | undefined) ?? null;
+    },
+    async save(state) {
+      if (state) await chrome.storage.local.set({ [continuousStorageKey]: state });
+      else await chrome.storage.local.remove(continuousStorageKey);
+    },
+  },
+  now: () => Date.now(),
+  uuid: () => crypto.randomUUID(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  extensionVersion: chrome.runtime.getManifest().version,
+  keepAlive(active) {
+    if (active) continuousKeepAlive ??= setInterval(() => void chrome.runtime.getPlatformInfo().catch(() => undefined), 20_000);
+    else {
+      if (continuousKeepAlive) clearInterval(continuousKeepAlive);
+      continuousKeepAlive = null;
+    }
+  },
+  setAlarm(active) {
+    if (active) void chrome.alarms.create(continuousAlarm, { periodInMinutes: 0.5 }).catch(() => undefined);
+    else void chrome.alarms.clear(continuousAlarm).catch(() => undefined);
+  },
+});
+
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === continuousAlarm) {
+    if (!continuous.isRunning()) void continuous.tick();
+    return;
+  }
   if (alarm.name !== runAlarm || acquisition.isRunning()) return;
   void acquisition.state().then((state) => {
     if (state && !state.finished) void acquisition.resume();
@@ -208,8 +288,35 @@ chrome.permissions.onAdded.addListener((permissions) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Only the extension's own pages (the popup) may ask.
-  if (sender.id !== chrome.runtime.id || sender.tab || !isTabMessage(message)) return;
+  // Only the extension's own pages (the side panel, wherever it is shown)
+  // may ask: the extension has no content script and accepts no external
+  // connection, and its own pages are recognized by their address.
+  if (sender.id !== chrome.runtime.id || !(sender.url ?? "").startsWith(`chrome-extension://${chrome.runtime.id}/`)) return;
+  if (isContinuousMessage(message)) {
+    const reply = (async () => {
+      switch (message.type) {
+        case "continuous:start":
+          return continuous.start({ site: message.site, tabId: message.tabId, url: message.url, title: message.title });
+        case "continuous:stop":
+          return { ok: true, state: await continuous.stop() };
+        case "continuous:resume":
+          return continuous.resume({ tabId: message.tabId });
+        case "continuous:discard":
+          await continuous.discard();
+          return { ok: true, state: null };
+        default: {
+          // The panel's view of the run (and a nudge to a run the service
+          // worker was stopped in).
+          const state = await continuous.state();
+          if (state && (state.status === "RUNNING" || state.status === "STOPPING") && !continuous.isRunning()) void continuous.tick();
+          return { ok: true, state, instance: continuous.instanceId };
+        }
+      }
+    })();
+    void reply.then(sendResponse, (error: unknown) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "Unexpected error", state: null }));
+    return true;
+  }
+  if (!isTabMessage(message)) return;
   if (message.type === "page-capture:save") {
     void savePending(message.pending).then(sendResponse);
     return true;

@@ -93,6 +93,10 @@ export interface PageCaptureSiteSpec {
   // When a job already saved is read again in a later save (selective
   // re-observation, November 5, 2026).
   refresh: PageCaptureRefreshPolicy;
+  // Continuous capture (November 15, 2026): how more results are reached
+  // after the loaded ones, and what of the results page's address is not part
+  // of the search. Absent: continuous capture is not offered for the site.
+  continuation?: PageCaptureContinuationSpec;
   // True only for the synthetic test site, enabled by the server's explicit
   // test setting; never matches a real host.
   testOnly: boolean;
@@ -153,6 +157,73 @@ export function pageCaptureIncompleteRefreshes(lastReason: string | null | undef
 }
 export function isPageCaptureRefresh(lastReason: string | null | undefined): boolean {
   return pageCaptureRefreshMarker.test(lastReason ?? "");
+}
+
+// Continuous capture (November 15, 2026). One start reads successive batches
+// of at most 25 jobs not captured before, until the search ends or a real
+// stopping condition occurs. More results are reached only the way the site
+// itself offers them:
+// - "show-more" (LinkedIn's public search): the site's own "See more jobs"
+//   button appends results to the same page; the end of the search is
+//   confirmed only by the site's own end marker becoming visible.
+// - "pages" (Welcome to the Jungle): numbered results pages, opened in the
+//   same tab through the search address's own page parameter; the end is
+//   confirmed only by the last page's own pagination (or a stated total that
+//   the jobs seen have reached), read twice.
+// Plain JSON (passed to the injected page functions).
+export type PageCaptureContinuationSpec =
+  | {
+      kind: "show-more";
+      buttonSelector: string;
+      endSelector: string;
+      // Query parameters the site rewrites without changing the search.
+      volatileParams: string[];
+      verified: boolean;
+      // Synthetic test sites only: how often a batch in flight is checked
+      // (the real sites use the extension's 30-second alarm period).
+      pollMs?: number;
+    }
+  | {
+      kind: "pages";
+      pageParam: string;
+      // Controls that lead to the next page, the active page's marker, and
+      // the containers that hold the numbered page links.
+      nextSelectors: string[];
+      activePageSelectors: string[];
+      paginationSelectors: string[];
+      // A results heading that states the total number of jobs.
+      totalPattern: string | null;
+      // The page shown when a search has no results.
+      emptySelectors: string[];
+      volatileParams: string[];
+      verified: boolean;
+      pollMs?: number;
+    };
+
+// The address of a search without what the site rewrites without changing
+// it (and without the fragment): two pages of one search have the same
+// identity. Query parameters are sorted, so their order does not matter.
+export function pageCaptureSearchIdentity(value: string, continuation: Pick<PageCaptureContinuationSpec, "volatileParams">): string | null {
+  if (!isHttpUrl(value)) return null;
+  const url = new URL(value);
+  const params = [...url.searchParams.entries()].filter(([name]) => !continuation.volatileParams.includes(name)).sort(([a], [b]) => a.localeCompare(b));
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}?${params.map(([name, item]) => `${name}=${item}`).join("&")}`;
+}
+
+// The results page a pages-kind search is on (1 when the address names none).
+export function pageCapturePageNumber(value: string, pageParam: string): number | null {
+  if (!isHttpUrl(value)) return null;
+  const raw = new URL(value).searchParams.get(pageParam);
+  if (raw === null) return 1;
+  return /^\d{1,5}$/.test(raw) && Number(raw) >= 1 ? Number(raw) : null;
+}
+
+// The same search on another page.
+export function pageCapturePageUrl(value: string, pageParam: string, page: number): string {
+  const url = new URL(value);
+  url.searchParams.set(pageParam, String(page));
+  url.hash = "";
+  return url.toString();
 }
 
 // How the extension reads a site's job pages in background tabs (P2).
@@ -253,6 +324,19 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     // restores the earlier script-enabled reading.
     detail: { minIntervalMs: 5_000, authCookieNames: ["li_at"], pageScripts: "skip" },
     refresh: defaultRefreshPolicy,
+    // The public search page's own controls (read-only evidence, November 15,
+    // 2026; tests/fixtures/page-capture/linkedin-nov15-search-controls.json):
+    // <button aria-label="See more jobs" class="infinite-scroller__show-more-button">
+    // and the end marker, hidden until the end of the search:
+    // <div class="… hidden … see-more-jobs__viewed-all">You've viewed all jobs
+    // for this search</div>.
+    continuation: {
+      kind: "show-more",
+      buttonSelector: "button.infinite-scroller__show-more-button",
+      endSelector: ".see-more-jobs__viewed-all",
+      volatileParams: ["position", "pageNum", "currentJobId", "trk", "refId", "trackingId"],
+      verified: true,
+    },
     testOnly: false,
   },
   {
@@ -299,6 +383,22 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
       // load completes); the last one is still inside the 12 s spacing.
       rereadDelaysMs: [2_000, 5_000, 10_000],
     },
+    // Numbered results pages through the search address's own page parameter
+    // (?…&page=N). The pagination markup itself could not be read outside the
+    // user's Chrome (the server HTML holds no results; November 15, 2026), so
+    // these selectors are generic and verified at live step L0 from the
+    // run's own page diagnostics (describeResultsPage).
+    continuation: {
+      kind: "pages",
+      pageParam: "page",
+      nextSelectors: ['a[rel="next"]', 'a[aria-label*="next" i]', 'button[aria-label*="next" i]', '[data-testid*="pagination" i] [aria-label*="next" i]'],
+      activePageSelectors: ['[aria-current="page"]', '[aria-current="true"]', '[data-testid*="pagination" i] [aria-selected="true"]'],
+      paginationSelectors: ['nav[aria-label*="pagination" i]', '[data-testid*="pagination" i]', 'nav[role="navigation"]', "nav"],
+      totalPattern: "^\\s*([\\d][\\d,.\\s]*)\\s+(?:jobs?|results?|offres?|postes?)\\b",
+      emptySelectors: ['[data-testid*="no-result" i]', '[data-testid*="empty" i]'],
+      volatileParams: ["page"],
+      verified: false,
+    },
     testOnly: false,
   },
   {
@@ -325,6 +425,52 @@ export const pageCaptureSites: readonly PageCaptureSiteSpec[] = [
     detailVerified: true,
     detail: { minIntervalMs: 0, authCookieNames: [], pageScripts: "run" },
     refresh: defaultRefreshPolicy,
+    continuation: {
+      kind: "show-more",
+      buttonSelector: "button.show-more",
+      endSelector: ".viewed-all",
+      volatileParams: ["position"],
+      verified: true,
+      pollMs: 1_500,
+    },
+    testOnly: true,
+  },
+  {
+    // The second synthetic site: numbered results pages (continuous capture's
+    // "pages" kind), read like the first.
+    key: "e2e-pages",
+    name: "Test paged results site",
+    knownSiteKeys: [],
+    hosts: ["pages.e2e.invalid"],
+    resultsPath: "^/search/?$",
+    excludedPaths: null,
+    reader: {
+      jobLink: "^https://pages\\.e2e\\.invalid/jobs/[a-z0-9-]+/?$",
+      jobIdAttributes: ["data-job-id"],
+      jobIdPattern: "^([a-z0-9-]+)$",
+      jobUrlTemplate: "https://pages.e2e.invalid/jobs/{id}",
+      titleSelector: ".card-title",
+      companySelector: ".card-company",
+      locationSelector: ".card-location",
+      postedSelector: ".card-posted",
+      excludeSelector: ".detail-pane",
+    },
+    cardVerified: true,
+    detailVerified: true,
+    detail: { minIntervalMs: 0, authCookieNames: [], pageScripts: "run" },
+    refresh: defaultRefreshPolicy,
+    continuation: {
+      kind: "pages",
+      pageParam: "page",
+      nextSelectors: ['a[rel="next"]'],
+      activePageSelectors: ['[aria-current="page"]'],
+      paginationSelectors: ['nav[aria-label="Pagination"]'],
+      totalPattern: null,
+      emptySelectors: [".no-results"],
+      volatileParams: ["page"],
+      verified: true,
+      pollMs: 1_500,
+    },
     testOnly: true,
   },
 ];
@@ -424,6 +570,9 @@ export const pageCaptureBatchSchema = z
       })
       .strict(),
     cards: z.array(pageCaptureCardSchema).min(1).max(pageCaptureMaxCards),
+    // A batch of a continuous capture run (November 15, 2026): a grouping
+    // label for the capture history only; it changes nothing in staging.
+    continuous: z.object({ runId: z.string().trim().min(1).max(64), batchNumber: z.number().int().min(1).max(1_000_000) }).strict().optional(),
   })
   .strict()
   .superRefine((batch, context) => {
@@ -434,6 +583,30 @@ export const pageCaptureBatchSchema = z
       seen.add(key);
     });
   });
+
+// Continuous capture's question before it fills a batch: which of these
+// loaded cards are not captured yet (or are due to be read again). Read-only.
+export const pageCaptureSelectionMaxCards = 200;
+export const pageCaptureSelectionSchema = z
+  .object({
+    site: z.string().trim().min(1).max(60),
+    cards: z
+      .array(z.object({ url: httpUrl, siteJobId: z.string().trim().min(1).max(pageCaptureLimits.siteJobId).regex(/^\S+$/).nullable().default(null) }).strict())
+      .min(1)
+      .max(pageCaptureSelectionMaxCards),
+  })
+  .strict();
+export type PageCaptureSelectionInput = z.input<typeof pageCaptureSelectionSchema>;
+
+// What staging would do with a card now, without staging it. Selectable:
+// NEW (never captured), REFRESH_DUE (saved, and due to be read again by the
+// site's refresh policy) and, for background-tab sites, AWAITING (waiting for
+// details and never added: a new save reads it again). Never selectable:
+// ALREADY_SAVED, IN_PROGRESS (queued or being read), DISMISSED, UNAVAILABLE,
+// AWAITING on the worker's sites (its own retry rules apply) and REJECTED
+// (not a job of this site).
+export const pageCaptureDispositionValues = ["NEW", "REFRESH_DUE", "AWAITING", "ALREADY_SAVED", "IN_PROGRESS", "DISMISSED", "UNAVAILABLE", "REJECTED"] as const;
+export type PageCaptureDisposition = (typeof pageCaptureDispositionValues)[number];
 
 export type PageCaptureCard = z.infer<typeof pageCaptureCardSchema>;
 export type PageCaptureBatch = z.infer<typeof pageCaptureBatchSchema>;

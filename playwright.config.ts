@@ -39,7 +39,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/, /\/extension-page-capture\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/, /\/extension-page-capture\.spec\.ts$/, /\/extension-continuous-capture\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -131,6 +131,15 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/extension-page-capture\.spec\.ts$/,
       dependencies: ["pre-evaluator-triage"],
+    },
+    {
+      // Continuous capture (November 15, 2026): the same extension build and
+      // the same active-profile handling as page-capture, so it runs after
+      // it, never beside it.
+      name: "continuous-capture",
+      use: chromium,
+      testMatch: /\/extension-continuous-capture\.spec\.ts$/,
+      dependencies: ["page-capture"],
     },
   ],
   webServer: {

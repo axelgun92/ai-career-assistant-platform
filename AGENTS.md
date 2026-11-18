@@ -214,7 +214,9 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   one-action requirement passed); November 9 diagnostic corrections (shared reader for escaped
   structured descriptions, shared role-level hybrid rules, LinkedIn validThrough as listing expiry
   with retraction on re-read) verified offline, approved by Alex and committed; they are adopted in
-  Core Platform TDD v1.21 (approved November 10, 2026; v1.20 archived unchanged); no live test authorized
+  Core Platform TDD v1.21 (approved November 10, 2026; v1.20 archived unchanged); November 15
+  normalization fixes F1–F7 and continuous Mode B for LinkedIn and WTTJ verified offline on top of
+  eacf5c2, awaiting Alex's review (TDD v1.22 amendment proposed separately); no live test authorized
 → current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

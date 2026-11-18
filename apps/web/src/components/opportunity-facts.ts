@@ -153,6 +153,17 @@ export function formatSalary(facts: {
   return label ? `${tiers.join(" · ")} ${label}` : tiers.join(" · ");
 }
 
+// The employer's on-target earnings beside its base salary (November 15,
+// 2026): when the Salary is the employer's stated base range because the
+// source's range was really on-target pay, the employer's on-target statement
+// as written, from the salary's own evidence. It is total pay (base plus
+// variable), so it is shown as on-target earnings, never as variable pay.
+export const employerBaseAndOnTargetSourceField = "rawText:employer-base-and-ote-statement";
+export function employerOnTargetStatement(provenance: ReadonlyArray<{ fieldName: string; sourceField: string; sourceText?: string | null }>): string | null {
+  const evidence = provenance.find((row) => row.fieldName === "salaryMin" && row.sourceField === employerBaseAndOnTargetSourceField)?.sourceText;
+  return evidence?.split("\n").find((line) => /\bOTE\b|\bon[- ]target\b/i.test(line))?.trim() || null;
+}
+
 // The work arrangement as stated: one arrangement, or every option the
 // posting offers in its order ("On-site / Remote"); Unknown when none.
 // "Hybrid, with remote availability only by exception": an office-first

@@ -4,6 +4,7 @@
 // reader). Every page is on the reserved jobs.e2e.invalid host, so nothing
 // can reach a real site.
 import { testSiteJobPage, testSiteResultsPage } from "./page-capture-pages";
+import { continuousPageFor } from "./continuous-e2e";
 
 export const e2eResultsUrl = "https://jobs.e2e.invalid/search";
 
@@ -60,6 +61,8 @@ export function e2eResultsPage(run: string): string {
 
 // The page a URL on the test host answers with, or null (404).
 export function e2ePageFor(run: string, url: string): string | null {
+  // Continuous capture's synthetic searches and jobs (their own run tokens).
+  if (/^https:\/\/(?:jobs|pages)\.e2e\.invalid\/(?:search\?scenario=|jobs\/cc-)/.test(url)) return continuousPageFor(url);
   const clean = url.split(/[?#]/)[0]!.replace(/\/+$/, "");
   if (clean === e2eResultsUrl) return e2eResultsPage(run);
   const job = e2eBatchJobs(run).find((candidate) => candidate.url === clean);

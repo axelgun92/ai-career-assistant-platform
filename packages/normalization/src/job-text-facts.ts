@@ -129,6 +129,8 @@ export const jobTextSourceFields = {
   timeZonePreference: "rawText:explicit-time-zone-preference",
   workArrangementCadence: "rawText:explicit-office-days-statement",
   workplaceTag: "rawText:explicit-workplace-tag",
+  // The arrangement the employer wrote in the job title ("… (Remote, US)").
+  titleWorkArrangement: "title:stated-work-arrangement",
   seniorityStatement: "rawText:explicit-seniority-statement",
   timeZoneClause: "rawText:explicit-time-zone-clause",
   compensationTiers: "rawText:compensation-tiers",
@@ -743,7 +745,14 @@ function modifierSentence(sentence: string): ModifierReading | null {
 }
 
 interface PositionCandidates {
+  // What the posting says of this position (labelled values, role
+  // statements, the employer's workplace tag, page metadata).
   arrangements: Array<TextFact<WorkArrangement>>;
+  // Statements that do not name the position as their subject: an office
+  // cadence stated of the company or the team, a remote-first or "remote is
+  // primary" policy, a "Work from anywhere" line. They count only when the
+  // posting states nothing about the position itself (November 15, 2026).
+  generalArrangements: Array<TextFact<WorkArrangement>>;
   arrangementOptions: Array<TextFact<WorkArrangement[]>>;
   employments: Array<TextFact<EmploymentType>>;
   arrangementConflict: boolean;
@@ -760,8 +769,13 @@ interface PositionCandidates {
 // naming it.
 const weeklyCount = String.raw`(?:(?:\d|one|two|three|four|five)\s+(?:days?|times)|once|twice|thrice)\s+(?:a|per|each)\s+week`;
 const officePlace = String.raw`(?:office|offices|hq|headquarters)`;
+// The days named as office days before the week ("3 in-office days per
+// week", "three office days a week", "2 days in-office per week", "3 days in
+// the office each week"; PermitFlow, November 15, 2026).
+const officeDayCount = String.raw`(?:\d|one|two|three|four|five)\s+(?:(?:in[- ]office|office|on[- ]?site|in[- ]person)\s+days?|days?\s+(?:in[- ]office|on[- ]?site|in[- ]person|in\s+(?:the\s+|our\s+)?office))\s+(?:a|per|each)\s+week`;
 const officeDays = new RegExp(
   String.raw`\b(?:` +
+    String.raw`${officeDayCount}|` +
     String.raw`${weeklyCount}\s+(?:in|at)\s+(?:the\s+|our\s+|an\s+)?${officePlace}` +
     String.raw`|(?:in[- ](?:the[- ])?office|in[- ]person|on[- ]?site)\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?${weeklyCount}` +
     String.raw`|(?:attend(?:ing)?|visit(?:ing)?|work(?:ing)?\s+(?:from|in|at)|be\s+(?:in|at)|come\s+(?:in)?to|commut(?:e|ing)\s+to)\s+(?:(?:the|our|an?|its|their)\s+)?(?:[^\s.;:!?]+\s+){0,4}?${officePlace}\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?${weeklyCount}` +
@@ -773,7 +787,7 @@ const dayCounts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, f
 function officeDaysArrangement(text: string): WorkArrangement | null {
   const match = officeDays.exec(text);
   if (!match || indefiniteDays.test(text) || negation.test(text)) return null;
-  const count = /\b(\d|one|two|three|four|five)\s+(?:days?|times)\b|\b(once|twice|thrice)\b/i.exec(match[0]);
+  const count = /\b(\d|one|two|three|four|five)\s+(?:(?:in[- ]office|office|on[- ]?site|in[- ]person)\s+)?(?:days?|times)\b|\b(once|twice|thrice)\b/i.exec(match[0]);
   if (!count) return null;
   const word = (count[1] ?? count[2])!.toLowerCase();
   const days = dayCounts[word] ?? Number(word);
@@ -799,6 +813,60 @@ function roleHybridRequirement(sentence: string): WorkArrangement | null {
   if (text.length > 250 || !roleRequirementLead.test(text) || !hybridWorkSetting.test(text)) return null;
   if (hybridAlternative.test(text) || negation.test(text) || indefiniteDays.test(text)) return null;
   return "HYBRID";
+}
+
+// A statement whose subject is the position, read for the arrangement it
+// states anywhere in it (November 15, 2026): "This role is based in our New
+// York City office on a hybrid schedule (in-office Mondays, Tuesdays, and
+// Thursdays)." (Dashlane), "This is a full-time, permanent position, working
+// remotely from anywhere in the United States, …" (Trulioo), "Location USA
+// (remote position)" (Jacobs), "Remote anywhere in the United States". A
+// hybrid cue wins over an office one (a hybrid role names its office days),
+// and remote over on-site (a remote role may name office visits). Negated,
+// alternative ("remote or hybrid"), indefinite ("may") and limited ("for up
+// to 4 weeks a year") wording states nothing.
+const positionSubject =
+  /^(?:(?:this|the)\s+(?:role|position|job|opportunity)\b|this\s+is\s+(?:an?\s+)?[^.;!?]{0,80}?\b(?:role|position|job|opportunity)\b|you\s+(?:will|['’]ll)\s+(?:be\s+)?(?:work(?:ing)?|based)\b|(?:job\s+|work\s+|role\s+)?location\b)/i;
+const cadenceOfPosition = /\b(?:this|the)\s+(?:role|position|job)\b|\byou(?:\s+will|['’]ll|\s+are|\s+must|\s+need\s+to)\b|\bsuccessful\s+candidate\b/i;
+const remoteAnywhereLine =/^(?:fully\s+|100\s?%\s+)?remote\b[^.;!?]{0,30}?\banywhere\s+(?:in|within|across)\s+\S/i;
+const hybridCue = /\bhybrid\b/i;
+const remoteCue = /\b(?:fully\s+|100\s?%\s+)?remote(?:ly)?\b(?![- ](?:first|friendly))|\bwork(?:ing)?\s+from\s+home\b/i;
+const onsiteCue = /\b(?:on-?site|on\s+site|in[- ]office|in[- ]person|office[- ]based)\b/i;
+const negatedCue = /\b(?:not|no|non|never)\s+(?:\w+\s+){0,2}?(?:fully\s+)?(?:remote|hybrid|on-?site|in[- ]office|office[- ]based)\b|n['’]t\s+(?:\w+\s+){0,2}?(?:remote|hybrid|on-?site|in[- ]office|office[- ]based)\b|\bnon-(?:remote|hybrid)\b/i;
+const arrangementAlternative = /\b(?:remote|hybrid|on-?site|in[- ]office)\s*(?:,\s*)?(?:or|\/)\s*(?:fully\s+)?(?:remote|hybrid|on-?site|in[- ]office)\b/i;
+const limitedRemote = /\bfor\s+up\s+to\b|\b(?:\d+|one|two|three|four|a\s+few)\s+(?:days|weeks)\s+(?:a|per|each)\s+year\b|\bweeks?\s+(?:a|per)\s+year\b/i;
+function roleArrangementStatement(sentence: string): WorkArrangement | null {
+  const text = collapse(sentence).replace(/^[-–•·*]\s*/, "");
+  if (text.length > 250) return null;
+  if (!positionSubject.test(text) && !(text.length <= 80 && remoteAnywhereLine.test(text))) return null;
+  if (negatedCue.test(text) || arrangementAlternative.test(text) || indefiniteDays.test(text) || limitedRemote.test(text)) return null;
+  // Someone's past work ("… for someone who has worked remotely") is not
+  // the position's arrangement.
+  if (/\b(?:worked|experience|previously|prior)\b/i.test(text)) return null;
+  const cadence = officeDaysArrangement(text);
+  if (hybridCue.test(text) || cadence === "HYBRID") return "HYBRID";
+  if (remoteCue.test(text)) return "REMOTE";
+  if (onsiteCue.test(text) || cadence === "ONSITE") return "ONSITE";
+  return null;
+}
+
+// The arrangement the employer writes in the job title ("Strategic Customer
+// Success Manager (Remote, US)", "CSM – Hybrid", "CSM | On-site"): in a
+// parenthetical or a trailing segment after a dash or bar, single and not
+// negated (November 15, 2026). Position-level metadata, read below the
+// description's own statements about the position.
+export function titleArrangement(title: string | null | undefined): WorkArrangement | null {
+  if (!title) return null;
+  const segmentsOfTitle = collapse(title).split(/\s[-–—|]\s+/);
+  const trailing = segmentsOfTitle.length > 1 && segmentsOfTitle.at(-1)!.length <= 40 && !/[()]/.test(segmentsOfTitle.at(-1)!) ? segmentsOfTitle.at(-1) : undefined;
+  const parts = [...[...title.matchAll(/\(([^()]{1,40})\)/g)].map((match) => match[1]!), ...(trailing ? [trailing] : [])];
+  const found = new Set<WorkArrangement>();
+  for (const part of parts) {
+    if (/\bnon[- ]?(?:remote|hybrid)\b|\bnot\b|\bno\b/i.test(part)) return null;
+    const tokens = part.split(/[\s,/;]+/).map((token) => token.toLowerCase()).filter(Boolean);
+    for (const token of tokens) if (arrangementTokens[token]) found.add(arrangementTokens[token]!);
+  }
+  return found.size === 1 ? [...found][0]! : null;
 }
 
 // The arrangements a value offers as options, in its order: "Remote or
@@ -860,7 +928,7 @@ const arrangementLabels = [
 ];
 
 function collectArrangementAndEmployment(source: TextSource): PositionCandidates {
-  const result: PositionCandidates = { arrangements: [], arrangementOptions: [], employments: [], arrangementConflict: false, employmentConflict: false };
+  const result: PositionCandidates = { arrangements: [], generalArrangements: [], arrangementOptions: [], employments: [], arrangementConflict: false, employmentConflict: false };
   for (const { value, sourceText } of labelledValues(source.lines, arrangementLabels, { bareLabel: source.labelledOnly })) {
     const key = firstSentence(value).toLowerCase();
     const arrangement = labelledArrangementValues[key] ?? labelledOnlyArrangementValues[key];
@@ -915,7 +983,7 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
   }
   for (const line of source.lines) {
     if (workFromAnywhereLine.test(line.trim())) {
-      result.arrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: line.trim() });
+      result.generalArrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: line.trim() });
     }
     for (const tag of line.matchAll(linkedInWorkplaceTag)) {
       const value = tag[1]!.toLowerCase().startsWith("on") ? "ONSITE" : (tag[1]!.toUpperCase() as "REMOTE" | "HYBRID");
@@ -923,16 +991,27 @@ function collectArrangementAndEmployment(source: TextSource): PositionCandidates
     }
   }
   for (const sentence of source.sentences) {
+    // An office cadence is the position's when the sentence names the
+    // position or the person in it ("This role requires 3 days a week in the
+    // office", "… and this role will require to attend … office twice a
+    // week", "You will be in the office 2 days a week"); otherwise (the
+    // company's or a team's policy) it is general.
     const cadence = sentence.length <= maxStatementLength ? officeDaysArrangement(sentence) : null;
-    if (cadence) result.arrangements.push({ value: cadence, sourceField: marker(source, "explicit-office-days-statement"), sourceText: sentence });
+    if (cadence) {
+      const ofPosition = cadenceOfPosition.test(sentence) || positionSubject.test(collapse(sentence).replace(/^[-–•·*]\s*/, ""));
+      const target = ofPosition ? result.arrangements : result.generalArrangements;
+      target.push({ value: cadence, sourceField: marker(source, "explicit-office-days-statement"), sourceText: sentence });
+    }
     const required = roleHybridRequirement(sentence);
     if (required) result.arrangements.push({ value: required, sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
-    if (
-      sentence.length <= 200 &&
-      (remotePrimary.test(sentence) || fullyRemoteLead.test(sentence) || remoteFirstOptionalOffice.test(sentence)) &&
-      !negation.test(sentence)
-    ) {
-      result.arrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
+    const stated = roleArrangementStatement(sentence);
+    if (stated) result.arrangements.push({ value: stated, sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
+    if (sentence.length <= 200 && !negation.test(sentence)) {
+      if (fullyRemoteLead.test(sentence)) {
+        result.arrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
+      } else if (remotePrimary.test(sentence) || remoteFirstOptionalOffice.test(sentence)) {
+        result.generalArrangements.push({ value: "REMOTE", sourceField: marker(source, "explicit-work-arrangement-statement"), sourceText: sentence });
+      }
     }
     const reading = modifierSentence(sentence);
     if (!reading) continue;
@@ -1371,6 +1450,36 @@ export function statementsForRange(
   });
 }
 
+// The employer's own base salary range and on-target figure, when the
+// description states exactly one of each (Fullpath, November 15, 2026:
+// "Annual base salary: $80,000–$88,000" and "On-target earnings: up to
+// $118,000"). A statement naming both is read as its two parts. Null unless
+// there is exactly one base range with both bounds and exactly one on-target
+// figure with an upper bound.
+export function baseAndOnTargetStatements(text: string | null): {
+  base: TextFact<string> & { minimum: number; maximum: number; currency: string | null };
+  onTarget: TextFact<string> & { maximum: number; currency: string | null };
+} | null {
+  const parts = collectCompensation(textSource(text, "rawText")).flatMap((candidate) =>
+    candidate.value
+      .split(/[;,]\s+(?=(?:with\s+|and\s+|plus\s+)?(?:an?\s+)?(?:on[- ]target|OTE\b))/i)
+      .map((value) => ({ ...candidate, value: value.trim() })),
+  );
+  const bases = new Map<string, TextFact<string> & { minimum: number; maximum: number; currency: string | null }>();
+  const onTargets = new Map<string, TextFact<string> & { maximum: number; currency: string | null }>();
+  for (const part of parts) {
+    const parsed = parseCompensation(part.value);
+    if (parsed.currencyUnknownReason === "CONFLICTING_CURRENCIES") continue;
+    if (parsed.basis === "BASE" && parsed.minimum !== null && parsed.maximum !== null) {
+      bases.set(`${parsed.minimum}|${parsed.maximum}|${parsed.currency ?? ""}`, { ...part, minimum: parsed.minimum, maximum: parsed.maximum, currency: parsed.currency });
+    } else if (parsed.basis === "OTE" && parsed.maximum !== null) {
+      onTargets.set(`${parsed.maximum}|${parsed.currency ?? ""}`, { ...part, maximum: parsed.maximum, currency: parsed.currency });
+    }
+  }
+  if (bases.size !== 1 || onTargets.size !== 1) return null;
+  return { base: [...bases.values()][0]!, onTarget: [...onTargets.values()][0]! };
+}
+
 // Several statements must say the same thing (the same amounts, reading and
 // currency); otherwise the compensation is Unknown.
 const compensationReading = (value: string) => {
@@ -1704,6 +1813,9 @@ const conditional = /\b(?:prefer(?:red|ably)?|ideally|nice\s+to\s+have|a\s+plus|
 const withoutSponsorship =
   /\bwithout\s+(?:the\s+need\s+for\s+|requiring\s+|need\s+of\s+|the\s+need\s+of\s+)?(?:(?:current|now)\s+or\s+(?:in\s+the\s+)?future\s+)?(?:visa\s+|employer\s+|company\s+|immigration\s+|employment\s+)?sponsorship\b/i;
 const negated = /\b(?:not|no|never|none)\b|n't\b/i;
+// A qualification line that opens with the right to work in a place.
+const authorizationLine =
+  /^(?:[-–•·*]\s*)?(?:(?:legal|valid|current|existing|full)\s+)?(?:work\s+)?(?:authori[sz]ation|eligibility|right|permission)\s+to\s+work\s+(?:full[- ]time\s+)?(?:in|within|for)\s+/i;
 // A sponsorship clause inside a requirement sentence ("…, and we cannot
 // sponsor visas") is the sponsorship reading; it does not negate the
 // requirement.
@@ -1723,7 +1835,12 @@ function collectWorkAuthorization(source: TextSource): Array<TextFact<{ requirem
   if (source.labelledOnly) return candidates;
   for (const sentence of source.sentences) {
     if (conditional.test(sentence) || negated.test(sentence.replace(withoutSponsorship, "").replace(sponsorshipClause, ""))) continue;
-    if (!requirementWords.test(sentence)) continue;
+    // A requirement word, or (November 15, 2026; Fullpath) a right to work
+    // stated together with working without sponsorship ("Legal authorization
+    // to work in the United States without the need for employer sponsorship
+    // now or in the future."), or a qualification line that is nothing but
+    // the right to work ("Valid authorization to work in the UK").
+    if (!requirementWords.test(sentence) && !withoutSponsorship.test(sentence) && !(sentence.length <= 200 && authorizationLine.test(sentence))) continue;
     // Citizenship: "must be a U.S. citizen", "citizenship of Canada is required".
     const citizenOf = /\bcitizen(?:s|ship)?\s+(?:of|in)\s+/i.exec(sentence);
     const citizen = /\bcitizen(?:s|ship)?\b/i.exec(sentence);
@@ -1957,7 +2074,16 @@ export function readJobTextFacts(input: JobTextInput): JobTextFacts {
 
   const positions = sources.map(collectArrangementAndEmployment);
   // ("Location: Remote" states the arrangement, read with the others.)
-  const arrangements = positions.flatMap((reading) => reading.arrangements);
+  // Precedence by tier (November 15, 2026): what the posting says of the
+  // position, then the arrangement the employer wrote in the title, then
+  // general statements (a company or team policy). The first tier with any
+  // candidate decides; candidates that disagree within it leave the
+  // arrangement Unknown, and a lower tier is not consulted.
+  const roleArrangements = positions.flatMap((reading) => reading.arrangements);
+  const fromTitle = titleArrangement(title);
+  const titleArrangements: Array<TextFact<WorkArrangement>> = fromTitle && title ? [{ value: fromTitle, sourceField: jobTextSourceFields.titleWorkArrangement, sourceText: title }] : [];
+  const generalArrangements = positions.flatMap((reading) => reading.generalArrangements);
+  const arrangements = roleArrangements.length ? roleArrangements : titleArrangements.length ? titleArrangements : generalArrangements;
   // Several arrangements offered as options are kept as stated. Statements
   // agree when they offer the same options; a single arrangement stated
   // elsewhere agrees when it is one of them. Anything else conflicts.

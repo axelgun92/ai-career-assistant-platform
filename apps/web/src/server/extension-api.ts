@@ -155,6 +155,20 @@ export function createExtensionApiHandlers(dependencies: ExtensionApiDependencie
       }
     },
 
+    // Continuous capture: which loaded cards a batch may take (read-only).
+    async pageCaptureSelection(request: Request) {
+      const auth = await authenticate(request);
+      if (!auth.ok) return auth.response;
+      if (!dependencies.pageCaptures) return extensionError("UNSUPPORTED_PAGE", "Saving jobs from results pages is not available");
+      const body = await readJsonBody(request, 96 * 1024);
+      if (!body.ok) return body.response;
+      try {
+        return extensionJson(await dependencies.pageCaptures.selection(body.body), 200);
+      } catch (error) {
+        return captureFailure(error);
+      }
+    },
+
     // Mode B background-tab reading (P2): the extension asks before opening
     // a job's tab, then reports the job page's capture or why it gave none,
     // or the rest of a batch it stopped. Pairing credential only.

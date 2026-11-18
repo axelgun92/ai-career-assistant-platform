@@ -28,6 +28,7 @@ import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-serv
 import { DuplicateNotices } from "@/components/duplicate-notices";
 import {
   applicationUrlBasisNotes,
+  employerOnTargetStatement,
   employmentTypeLabel,
   formatSalary,
   formatArrangementWithExceptions,
@@ -201,6 +202,7 @@ export default async function OpportunityPage({
     detail.opportunity.closingDate && detail.opportunity.postingDate && new Date(detail.opportunity.closingDate) < new Date(detail.opportunity.postingDate)
       ? `${display(detail.opportunity.closingDate)} (as stated; earlier than the posting date, so the posting may restate a past deadline)`
       : detail.opportunity.closingDate;
+  const onTargetStatement = employerOnTargetStatement(detail.fieldProvenance);
   const normalizedFields = [
     ["Lifecycle", formatLifecycle(detail.opportunity.status)],
     ["Domain", detail.opportunity.domain],
@@ -208,6 +210,9 @@ export default async function OpportunityPage({
     ["Company", detail.opportunity.companyName],
     ["Location", detail.opportunity.location],
     ["Salary", formatSalary(detail.opportunity)],
+    // The employer's on-target earnings beside its base salary, in its own
+    // words: total pay (base plus variable), never labelled variable pay.
+    ...(onTargetStatement ? [["On-target earnings (as stated; base + variable)", onTargetStatement] as const] : []),
     ["Posting date", postingDate],
     ["Closing date", closingDate],
     ["Work arrangement", detail.opportunity.remoteStatus || detail.opportunity.workArrangements.length ? formatArrangementWithExceptions(detail.opportunity, detail.fieldProvenance) : null],
