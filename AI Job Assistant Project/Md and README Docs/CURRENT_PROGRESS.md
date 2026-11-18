@@ -3,7 +3,12 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 18, 2026
 
-## Mode B Acceptance Follow-up (November 18, 2026; on top of the November 15 candidate; implemented and verified offline; E1 done; not committed, awaiting Alex's closeout approval)
+## Mode B Acceptance Follow-up (November 18, 2026; on top of the November 15 candidate; verified offline; E1 done; approved by Alex and committed as `e881b4c`, pushed to `integration/final-evaluator-product`)
+
+**Closeout (November 18, 2026, approved by Alex):** two commits on `integration/final-evaluator-product`, pushed without force, local and remote verified:
+- C1 `05cb9c6e52af61f1043afe5486ac111197f6e578`: the tested November 15 candidate, unchanged (43 files; diff sha256 `90693fec…`, identical to the tested patch; `apps/web/next-env.d.ts` excluded).
+- C2 `e881b4c929fa8ec01d9835a987959ae22738216d`: this follow-up and the E1 documentation (21 files; diff sha256 `53316222…`).
+- No tests were rerun after verification: only documentation changed. The proposed Core Platform TDD v1.22 amendment is not applied (TDD v1.21 unchanged).
 
 ### Live acceptance of the November 15 candidate (Alex, November 17–18, `ai_career_assistant_acceptance`, checkout `~/aija/mode-b-rev3-acceptance` at `eacf5c2` plus the candidate)
 
@@ -69,7 +74,7 @@ Salesforce 4483587199 normalized correctly: Hybrid from "in office 3 days per we
 - Typecheck (including the extension), lint, Prisma validate, migrations 28 (unchanged), extension build, `git diff --check`: pass.
 - Unit 2,466 passed / 6 skipped; integration 487/487; E2E 66/66. The first full E2E run hit one 30 s timeout on the first application-tracker page (a cold first compile in the new container, on pages this change does not touch); the rerun passed 66/66.
 
-## November 15 Normalization Fixes (F1–F7) and Continuous Mode B for LinkedIn and Welcome to the Jungle (November 15, 2026; implemented and verified offline on top of `eacf5c2`; live-accepted November 17–18 with the follow-up above; not yet committed)
+## November 15 Normalization Fixes (F1–F7) and Continuous Mode B for LinkedIn and Welcome to the Jungle (November 15, 2026; implemented and verified offline on top of `eacf5c2`; live-accepted November 17–18 with the follow-up above; committed unchanged as `05cb9c6`)
 
 ### Task 1: normalization (shared normalizer, so Single Capture and Mode B alike)
 

@@ -69,12 +69,12 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
-### Handoff: Mode B Acceptance Follow-up — Review Requested
+### Handoff: Mode B Acceptance Follow-up — Committed
 
 **Date:** 2026-11-18
 **From:** Claude (main-product workstream)
 **To:** Alex
-**Status:** Verification Needed (verified offline on top of the tested November 15 candidate; E1 done; not committed, awaiting closeout approval)
+**Status:** Complete (verified offline on top of the tested November 15 candidate; E1 done; approved by Alex and committed: C1 `05cb9c6e52af61f1043afe5486ac111197f6e578` (the tested candidate, unchanged), C2 `e881b4c929fa8ec01d9835a987959ae22738216d` (this follow-up), pushed to `integration/final-evaluator-product`)
 
 #### Completed
 
@@ -106,7 +106,8 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 #### Next Task
 
-- Alex's closeout approval; then closeout in two commits per the approved plan and the checkout synchronization procedure.
+- Alex synchronizes the acceptance checkout and main working copy to the branch head with the approved procedure (compare against C1, back up, stash, fast-forward only, account for `next-env.d.ts`, re-verify after rebuilding).
+- Then the current sequence: User Profile activation, then final end-to-end triage and evaluator acceptance.
 
 #### Do Not Change Without Coordination
 
