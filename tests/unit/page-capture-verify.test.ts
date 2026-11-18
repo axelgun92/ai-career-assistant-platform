@@ -8,9 +8,10 @@
 // acquisition.
 import { describe, expect, it } from "vitest";
 import { pageCaptureSiteByKey } from "@ai-career/core";
+import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-success";
 import type { BrowserDriver, BrowserNavigation } from "@ai-career/discovery";
 import { createPageCaptureAcquisition, pageCaptureFrictionDetector } from "../../apps/web/src/server/page-capture-acquisition";
-import { runPageCaptureVerification } from "../../apps/web/src/server/page-capture-verify";
+import { pageCaptureVerifyApplyEvidence, runPageCaptureVerification } from "../../apps/web/src/server/page-capture-verify";
 import { testSiteJobPage } from "../support/page-capture-pages";
 
 const linkedin = pageCaptureSiteByKey("linkedin")!;
@@ -119,6 +120,31 @@ describe("the P1 verification experiment", () => {
   });
 });
 
+describe("the verify command's application-link evidence (November 18, 2026)", () => {
+  it("hands each page's document as the site sent it to the caller, beside the page as read", async () => {
+    const browser = fakeBrowser((url) => ({ html: readablePage(idOf(url)), servedHtml: `<!-- served ${idOf(url)} -->${readablePage(idOf(url))}` }));
+    const seen: Array<[string | null, string | null]> = [];
+    await runPageCaptureVerification({ site: linkedin, urls: f0Urls.slice(0, 2), driver: browser.driver, now: browser.now, sleep: browser.sleep, onPage: (_page, html, served) => seen.push([html, served]) });
+    expect(seen).toHaveLength(2);
+    expect(seen[0]![1]).toContain("served 4484727127");
+    expect(seen[0]![0]).not.toContain("served");
+  });
+
+  it("reports LinkedIn's hidden apply address when the sent page has one, decoded and unchanged; nothing is inferred when it has none", () => {
+    const workday = "https://employer.wd12.myworkdayjobs.com/External/job/City/Customer-Success-Manager_JR1?source=LinkedIn_Jobs";
+    const withCode = `<html><body><code id="applyUrl" style="display: none"><!--"https://www.linkedin.com/jobs/view/externalApply/4483587199?url=${encodeURIComponent(workday)}&urlHash=abc"--></code><button class="apply-button" data-tracking-control-name="public_jobs_apply-link-offsite_sign-up-modal">Apply</button></body></html>`;
+    const served = pageCaptureVerifyApplyEvidence("<html><body>rendered</body></html>", withCode, "https://www.linkedin.com/jobs/view/4483587199");
+    expect(served.served?.codeApplyUrl).toEqual({ present: true, url: workday });
+    expect(served.rendered?.codeApplyUrl.present).toBe(false);
+    expect(served.markers).toEqual({ applyUrlCode: 1, externalApply: 1, offsiteApplyTracking: 1 });
+    const signInOnly = '<html><body><button class="apply-button" data-tracking-control-name="public_jobs_apply-link-offsite_sign-up-modal">Apply</button></body></html>';
+    const none = pageCaptureVerifyApplyEvidence(signInOnly, signInOnly, "https://www.linkedin.com/jobs/view/4483587199");
+    expect(none.served?.codeApplyUrl).toEqual({ present: false, url: null });
+    expect(none.markers).toEqual({ applyUrlCode: 0, externalApply: 0, offsiteApplyTracking: 1 });
+    expect(pageCaptureVerifyApplyEvidence(null, null, "https://www.linkedin.com/jobs/view/1")).toMatchObject({ rendered: null, served: null });
+  });
+});
+
 describe("LinkedIn friction in production acquisition", () => {
   it("uses LinkedIn's own friction checks for LinkedIn only", () => {
     expect(pageCaptureFrictionDetector("linkedin")).toBeTypeOf("function");
@@ -175,7 +201,7 @@ describe("LinkedIn friction in production acquisition", () => {
       } as never,
       ingestion: { ingest: async () => { throw new Error("must not ingest"); } } as never,
       handoff: { alreadyHandled: async () => false, request: async () => "QUEUED" },
-      discovery: {} as never,
+      discovery: customerSuccessDiscoveryConfiguration,
       detailSites: () => ["linkedin"],
       browser: {
         launch: async () => ({

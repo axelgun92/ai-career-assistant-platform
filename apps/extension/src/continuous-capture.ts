@@ -93,6 +93,20 @@ export interface ContinuousRunState {
   loadAttemptsWithoutProgress: number;
   lastLoadAt: number | null;
   lastLoadedCount: number;
+  // LinkedIn's "See more jobs" progress (November 18, 2026). Progress is a
+  // new distinct job on the page, readable or not yet readable; the page's
+  // raw job links tell a page that still grows (repeated jobs) from one that
+  // stopped. Both counters reset only on a new job.
+  lastSeenJobs?: number;
+  // A load whose effect has not been judged yet (each load counts once).
+  loadPending?: boolean;
+  lastRawLinks?: number;
+  loadsWithoutNewJobs?: number;
+  // The one delayed recheck before a run stops for lack of progress.
+  stallRecheckAt?: number | null;
+  // Jobs on the page that could not be read yet: re-read a bounded number
+  // of times before the run ends (never COMPLETED while any is unread).
+  unreadableCheck?: { kind: "END" | "STALL"; attempts: number; nextAt: number } | null;
   lastNavigationAt: number | null;
   pendingEnd: { status: "STOPPED_NO_MORE_RESULTS" | "STOPPED_UNCONFIRMED"; reason: string } | null;
   stoppedUntil: string | null;
@@ -166,6 +180,13 @@ export const continuousTimings = {
   rereadDelaysMs: [2_000, 5_000, 10_000],
   finalReloadDelayMs: 60_000,
   maxStalledLoads: 3,
+  // Loads in a row that add page links but no new job (repeated jobs).
+  maxLoadsWithoutNewJobs: 10,
+  // The one recheck before a stop for lack of progress.
+  stallRecheckMs: 60_000,
+  // Jobs on the page whose cards are not readable yet: re-read at these
+  // delays (about 47 s in all) before the run ends without them.
+  unreadRecheckDelaysMs: [2_000, 5_000, 10_000, 30_000],
   backoffMinMs: 30_000,
   backoffMaxMs: 5 * 60_000,
   leaseMs: 60_000,
@@ -571,42 +592,131 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
   }
 
   // LinkedIn: the site's own "See more jobs" (and the scroll that loads more
-  // as a person scrolls). The end counts only when the site's end marker is
-  // shown; three loads in a row that add nothing, without it, stop the run
-  // with the end not confirmed.
+  // as a person scrolls). Only the site's visible end marker confirms the
+  // end. What the page holds is classified on every read (results.ts
+  // pageJobs): distinct jobs readable or not yet readable count as progress;
+  // links that bring no new job (repeated jobs, excluded areas, non-result
+  // links) never do, and never block the end. Every wait is bounded:
+  // - 3 loads in a row that add no link and no job, or 10 that add links but
+  //   no job, then one recheck after a minute, then a stop with the end not
+  //   confirmed;
+  // - at the end (or a stop), jobs on the page still unread are re-read at
+  //   2, 5, 10 and 30 s; any still unread end the run STOPPED_UNCONFIRMED,
+  //   never COMPLETED.
   async function loadMore(state: ContinuousRunState, reading: ResultCardsReading | null): Promise<StepResult | null> {
     const site = siteOf(state);
     const continuation = site.continuation as Extract<NonNullable<PageCaptureSiteSpec["continuation"]>, { kind: "show-more" }>;
     const spacing = Math.max(site.detail.minIntervalMs, continuousTimings.loadSettleMs);
     const loaded = reading?.counts.loaded ?? 0;
     const input = { buttonSelector: continuation.buttonSelector, endSelector: continuation.endSelector, jobLink: site.reader.jobLink };
-    if (state.lastLoadAt !== null) {
-      if (loaded <= state.lastLoadedCount && environment.now() < state.lastLoadAt + spacing) return { delayMs: state.lastLoadAt + spacing - environment.now() };
-      state.loadAttemptsWithoutProgress = loaded > state.lastLoadedCount ? 0 : state.loadAttemptsWithoutProgress + 1;
-    }
-    if (state.loadAttemptsWithoutProgress >= continuousTimings.maxStalledLoads) {
-      const check = await environment.page.advance(state.tabId!, { ...input, checkOnly: true });
-      if (check?.action === "END") {
+    const pageJobs = reading?.pageJobs ?? { rawLinks: 0, unreadableKeys: [], excludedJobs: 0 };
+    const known = new Set([...state.handled, ...state.buffer.map((item) => item.key)]);
+    const unread = pageJobs.unreadableKeys.filter((key) => !known.has(key));
+    const uniqueJobs = new Set([...(reading?.keys ?? []), ...pageJobs.unreadableKeys]).size;
+    // Every distinct job this run has seen: handled, buffered, or on the
+    // page and not readable yet. It only grows when the site shows a new job
+    // (a page that drops older cards as it loads more still counts).
+    const seenJobs = known.size + unread.length;
+    const counts = { readable: loaded, unread: unread.length, uniqueJobs, seenJobs, rawLinks: pageJobs.rawLinks, excludedJobs: pageJobs.excludedJobs };
+    const detail = (diagnostics: object | undefined) => JSON.stringify({ ...(diagnostics ?? {}), ...counts });
+
+    // Ending: unread jobs first get their bounded re-reads (no loads).
+    const finish = (kind: "END" | "STALL", diagnostics: object | undefined): StepResult => {
+      if (unread.length) {
+        const check = state.unreadableCheck ?? { kind, attempts: 0, nextAt: environment.now() };
+        const delays = continuousTimings.unreadRecheckDelaysMs;
+        if (check.attempts < delays.length) {
+          check.nextAt = environment.now() + delays[check.attempts]!;
+          check.attempts += 1;
+          state.unreadableCheck = check;
+          state.activity = "Waiting for loaded results to finish rendering";
+          note(state, "UNREAD_RECHECK", `attempt ${check.attempts}: ${detail(diagnostics)}`);
+          return { delayMs: delays[check.attempts - 1]! };
+        }
+        state.unreadableCheck = null;
+        state.pendingEnd = {
+          status: "STOPPED_UNCONFIRMED",
+          reason: `${unread.length} loaded job(s) on the ${state.siteName} results could not be read; the end of the search was not confirmed`,
+        };
+        state.status = "STOPPING";
+        note(state, "UNREAD_JOBS", `${unread.slice(0, 20).join(" ")}${unread.length > 20 ? ` (+${unread.length - 20})` : ""}`);
+        return { delayMs: 0 };
+      }
+      state.unreadableCheck = null;
+      if (kind === "END") {
         state.endConfirmed = true;
-        note(state, "END_MARKER", JSON.stringify(check.diagnostics));
+        note(state, "END_MARKER", detail(diagnostics));
         return { delayMs: 0 };
       }
       state.pendingEnd = { status: "STOPPED_NO_MORE_RESULTS", reason: `${state.siteName} stopped loading more results; the end of the search was not confirmed` };
       state.status = "STOPPING";
-      note(state, "NO_MORE_RESULTS", JSON.stringify(check?.diagnostics ?? {}));
+      note(state, "NO_MORE_RESULTS", detail(diagnostics));
       return { delayMs: 0 };
+    };
+
+    // A re-read of unread jobs in progress: wait for it, then decide again.
+    if (state.unreadableCheck) {
+      if (environment.now() < state.unreadableCheck.nextAt) return { delayMs: state.unreadableCheck.nextAt - environment.now() };
+      if (!unread.length || state.unreadableCheck.attempts >= continuousTimings.unreadRecheckDelaysMs.length) {
+        const kind = state.unreadableCheck.kind;
+        if (unread.length) return finish(kind, undefined);
+        state.unreadableCheck = null;
+        if (kind === "END") return finish("END", undefined);
+      } else {
+        return finish(state.unreadableCheck.kind, undefined);
+      }
     }
+
+    // Loads stay at least the site's interval apart.
+    if (state.lastLoadAt !== null && environment.now() < state.lastLoadAt + spacing) return { delayMs: state.lastLoadAt + spacing - environment.now() };
+    // The previous load's effect, judged once.
+    if (state.loadPending) {
+      state.loadPending = false;
+      const newJobs = seenJobs > (state.lastSeenJobs ?? 0);
+      const newLinks = pageJobs.rawLinks > (state.lastRawLinks ?? 0);
+      if (newJobs) {
+        state.loadAttemptsWithoutProgress = 0;
+        state.loadsWithoutNewJobs = 0;
+        state.stallRecheckAt = null;
+      } else {
+        state.loadsWithoutNewJobs = (state.loadsWithoutNewJobs ?? 0) + 1;
+        state.loadAttemptsWithoutProgress = newLinks ? 0 : state.loadAttemptsWithoutProgress + 1;
+      }
+      state.lastSeenJobs = Math.max(state.lastSeenJobs ?? 0, seenJobs);
+      state.lastRawLinks = Math.max(state.lastRawLinks ?? 0, pageJobs.rawLinks);
+    }
+
+    const stalled =
+      state.loadAttemptsWithoutProgress >= continuousTimings.maxStalledLoads || (state.loadsWithoutNewJobs ?? 0) >= continuousTimings.maxLoadsWithoutNewJobs;
+    if (stalled) {
+      const check = await environment.page.advance(state.tabId!, { ...input, checkOnly: true });
+      if (check?.action === "END") return finish("END", check.diagnostics);
+      if (state.stallRecheckAt === null || state.stallRecheckAt === undefined) {
+        // One recheck after a minute: one more read and one more load.
+        state.stallRecheckAt = environment.now() + continuousTimings.stallRecheckMs;
+        state.activity = "Waiting before one more attempt to load results";
+        note(state, "STALL_RECHECK", detail(check?.diagnostics));
+        return { delayMs: continuousTimings.stallRecheckMs };
+      }
+      if (environment.now() < state.stallRecheckAt) return { delayMs: state.stallRecheckAt - environment.now() };
+      if (state.stallRecheckAt > 0) {
+        // The recheck's one load (marked done with 0).
+        state.stallRecheckAt = 0;
+      } else {
+        return finish("STALL", check?.diagnostics);
+      }
+    }
+
     const result = await environment.page.advance(state.tabId!, input);
     if (!result) return failed(state, "The search page could not be read");
-    if (result.action === "END") {
-      state.endConfirmed = true;
-      note(state, "END_MARKER", JSON.stringify(result.diagnostics));
-      return { delayMs: 0 };
-    }
+    if (result.action === "END") return finish("END", result.diagnostics);
     state.lastLoadAt = environment.now();
+    state.loadPending = true;
     state.lastLoadedCount = loaded;
+    state.lastSeenJobs = Math.max(state.lastSeenJobs ?? 0, seenJobs);
+    state.lastRawLinks = Math.max(state.lastRawLinks ?? 0, pageJobs.rawLinks);
     state.activity = "Loading more results";
-    note(state, result.action, JSON.stringify(result.diagnostics));
+    note(state, result.action, detail(result.diagnostics));
     return { delayMs: spacing };
   }
 
@@ -851,6 +961,12 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
       loadAttemptsWithoutProgress: 0,
       lastLoadAt: null,
       lastLoadedCount: 0,
+      lastSeenJobs: 0,
+      loadPending: false,
+      lastRawLinks: 0,
+      loadsWithoutNewJobs: 0,
+      stallRecheckAt: null,
+      unreadableCheck: null,
       lastNavigationAt: null,
       pendingEnd: null,
       stoppedUntil: null,
@@ -929,6 +1045,12 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
         state.lastLoadAt = null;
         state.lastLoadedCount = 0;
         state.loadAttemptsWithoutProgress = 0;
+        state.lastSeenJobs = 0;
+        state.loadPending = false;
+        state.lastRawLinks = 0;
+        state.loadsWithoutNewJobs = 0;
+        state.stallRecheckAt = null;
+        state.unreadableCheck = null;
       }
       state.pendingEnd = null;
       state.pageRetry = null;

@@ -3,6 +3,7 @@ import { AdapterError, createBrowserSession, type BrowserDriver } from "@ai-care
 import { JSDOM } from "jsdom";
 import { capturedPageIdentity } from "./extension-capture";
 import { pageCaptureFrictionDetector, readJobPage } from "./page-capture-acquisition";
+import { applyEvidence, type ApplyEvidence } from "./page-capture-evidence";
 
 // The bounded P1 verification experiment for Mode B: can a site's public job
 // pages be read in a fresh, logged-out headless browser, so that batch-captured
@@ -97,18 +98,22 @@ export async function runPageCaptureVerification(input: {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   // Called after each page with its raw HTML (for keeping evidence outside
-  // the repository); never with cookies or headers.
-  onPage?: (page: PageCaptureVerifyPage, html: string | null) => void;
+  // the repository): the page as read, and the document exactly as the site
+  // sent it (servedHtml, when the driver has it); never cookies or headers.
+  onPage?: (page: PageCaptureVerifyPage, html: string | null, servedHtml: string | null) => void;
 }): Promise<PageCaptureVerifyResult> {
   const { site } = input;
   const targets = pageCaptureVerifyTargets(site, input.urls);
   let lastHtml: string | null = null;
+  let lastServedHtml: string | null = null;
   const session = createBrowserSession(
     {
       async navigate(url, options) {
         lastHtml = null;
+        lastServedHtml = null;
         const result = await input.driver.navigate(url, options);
         lastHtml = result.html;
+        lastServedHtml = result.servedHtml ?? null;
         return result;
       },
       close: () => input.driver.close(),
@@ -135,7 +140,7 @@ export async function runPageCaptureVerification(input: {
   });
   const record = (page: PageCaptureVerifyPage) => {
     pages.push(page);
-    input.onPage?.(page, lastHtml);
+    input.onPage?.(page, lastHtml, lastServedHtml);
   };
 
   for (const [position, target] of targets.entries()) {
@@ -175,4 +180,38 @@ export async function runPageCaptureVerification(input: {
     if (!readable) return finish("FAIL", `page ${position + 1}: no readable posting; no further request`);
   }
   return finish("PASS", `all ${targets.length} job pages loaded without restriction and gave a readable posting`);
+}
+
+// The application-link evidence of one page, as the worker records it
+// (page-capture-evidence.ts applyEvidence): for the page as read and for the
+// document as the site sent it, plus whether either holds LinkedIn's apply
+// markers at all (November 18, 2026: Salesforce 4483587199, which stored the
+// listing fallback while the employer links a Workday application). Nothing
+// is inferred or constructed from it; it only shows what was received.
+export interface PageCaptureVerifyApplyEvidence {
+  rendered: ApplyEvidence | null;
+  served: ApplyEvidence | null;
+  markers: { applyUrlCode: number; externalApply: number; offsiteApplyTracking: number };
+}
+
+export function pageCaptureVerifyApplyEvidence(html: string | null, servedHtml: string | null, url: string): PageCaptureVerifyApplyEvidence {
+  const read = (value: string | null) => {
+    if (!value) return null;
+    const window = new JSDOM(value, { url }).window;
+    try {
+      return applyEvidence(window.document);
+    } finally {
+      window.close();
+    }
+  };
+  const count = (pattern: RegExp) => Math.max((html ?? "").match(pattern)?.length ?? 0, (servedHtml ?? "").match(pattern)?.length ?? 0);
+  return {
+    rendered: read(html),
+    served: read(servedHtml),
+    markers: {
+      applyUrlCode: count(/<code[^>]*\bid=["']?applyUrl\b/gi),
+      externalApply: count(/externalApply/g),
+      offsiteApplyTracking: count(/apply-link-offsite/g),
+    },
+  };
 }

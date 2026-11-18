@@ -80,6 +80,10 @@ export function addedStateText(row: Pick<PageCaptureRowView, "triageOutcome" | "
   if (triage === "NEEDS_REVIEW") return "Needs Review before evaluation";
   if (triage === "REJECT") return "Rejected before evaluation";
   if (row.handoffOutcome === "DEFERRED") return "Waiting: AI budget";
+  // Saved, but not sent for evaluation automatically: the title is outside
+  // every role family of the domain (November 18, 2026). The job's page can
+  // still request an evaluation.
+  if (row.handoffOutcome === "NOT_SENT:OUTSIDE_ROLE_FAMILIES") return "Added; not sent for evaluation automatically: its title is outside the Customer Success role families. Open it to request an evaluation.";
   // No active profile: nothing was triaged (no outcome is invented); the
   // job is saved and is triaged when a profile is active and evaluation is
   // requested.

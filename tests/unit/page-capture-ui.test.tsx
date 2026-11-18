@@ -64,6 +64,12 @@ describe("page-capture progress text", () => {
     expect(addedStateText({ ...added, evaluationStatus: "COMPLETED", recommendation: "APPLY" })).toBe("Evaluated: APPLY");
     expect(addedStateText({ ...added, handoffOutcome: "FAILED:PROFILE_NOT_READY" })).toBe("Added; the evaluation request was not accepted");
     expect(addedStateText(added)).toBe("Added");
+    // A title outside every role family: saved, not sent automatically; once
+    // the user requests the evaluation, its triage and evaluation show.
+    expect(addedStateText({ ...added, handoffOutcome: "NOT_SENT:OUTSIDE_ROLE_FAMILIES" })).toBe(
+      "Added; not sent for evaluation automatically: its title is outside the Customer Success role families. Open it to request an evaluation.",
+    );
+    expect(addedStateText({ ...added, handoffOutcome: "NOT_SENT:OUTSIDE_ROLE_FAMILIES", triageOutcome: "NEEDS_REVIEW" })).toBe("Needs Review before evaluation");
   });
 });
 

@@ -20,6 +20,11 @@ export interface ContinuousScenario {
   // Numbered pages: jobs per page.
   pageSize?: number;
   pagination?: boolean;
+  // "See more jobs" behaviours (November 18, 2026): the first presses add
+  // only links to jobs already shown, and the cards each later press adds
+  // get their titles only after a delay (rendered late).
+  repeatLoads?: number;
+  lateTitlesMs?: number;
 }
 
 export const continuousScenarios: Record<string, ContinuousScenario> = {
@@ -33,6 +38,9 @@ export const continuousScenarios: Record<string, ContinuousScenario> = {
   nopages: { kind: "pages", total: 20, pageSize: 10, captured: [], pagination: false },
   // Stop and Resume.
   stop: { kind: "show-more", total: 40, captured: [] },
+  // 50 jobs: four presses that only repeat shown jobs (the old rule stopped
+  // after three), then cards whose titles render 6 s late: 25 + 25.
+  late: { kind: "show-more", total: 50, captured: [], repeatLoads: 4, lateTitlesMs: 6_000 },
 };
 
 const host = (kind: ContinuousScenario["kind"]) => (kind === "show-more" ? "jobs.e2e.invalid" : "pages.e2e.invalid");
@@ -65,11 +73,27 @@ function showMorePage(scenario: string, run: string, spec: ContinuousScenario): 
 <button class="show-more" type="button">See more jobs</button>
 <div class="viewed-all hidden" role="alert">You've viewed all jobs for this search</div>
 <script>
+  let repeats = ${spec.repeatLoads ?? 0};
+  const lateMs = ${spec.lateTitlesMs ?? 0};
   document.querySelector("button.show-more").addEventListener("click", () => {
     const more = document.getElementById("more");
     const list = document.querySelector("ul.results");
+    if (repeats > 0) {
+      // The site answers with jobs it already showed.
+      repeats -= 1;
+      for (const shown of [...list.children].slice(0, 5)) list.appendChild(shown.cloneNode(true));
+      return;
+    }
     const items = [...more.content.children].slice(0, 25);
-    for (const item of items) list.appendChild(item);
+    for (const item of items) {
+      if (lateMs) {
+        const title = item.querySelector(".card-title");
+        const text = title.textContent;
+        title.textContent = "";
+        setTimeout(() => { title.textContent = text; }, lateMs);
+      }
+      list.appendChild(item);
+    }
     if (!more.content.children.length) {
       document.querySelector("button.show-more").setAttribute("disabled", "");
       document.querySelector(".viewed-all").classList.remove("hidden");

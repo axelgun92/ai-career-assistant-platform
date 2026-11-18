@@ -65,6 +65,31 @@ describe("the results reader in a continuous run", () => {
   });
 });
 
+describe("what the page holds besides readable cards (November 18, 2026)", () => {
+  it("counts raw job links, lists the distinct jobs whose cards are not readable yet, and counts jobs only in excluded areas; the single save's output is unchanged", () => {
+    const cards = f0.cards as string[];
+    // A real card whose content has not rendered yet: its job link without a
+    // title (LinkedIn fills appended cards in later).
+    const unrendered = cards[0]!
+      .replace(/\/jobs\/view\/[^"?]*?(\d{6,})/g, "/jobs/view/placeholder-4499999999")
+      .replace(/<h3[\s\S]*?<\/h3>/g, "<h3></h3>")
+      .replace(/<span class="sr-only">[\s\S]*?<\/span>/g, "")
+      .replace(/(<a[^>]*base-card__full-link[^>]*>)[\s\S]*?(<\/a>)/, "$1$2");
+    const related = `<section><h2>Similar jobs</h2><ul><li><a href="https://www.linkedin.com/jobs/view/similar-4488888888">Similar role</a></li></ul></section>`;
+    const html = linkedInF0ResultsPage([...cards, unrendered]).replace("</main>", `${related}</main>`);
+    const reading = inPage<ResultCardsReading>(html, searchUrl, readResultCards.toString(), { ...linkedin.reader, maxCards: 200, continuous: true, excludeKeys: [] }).result;
+    expect(reading.keys).toHaveLength(5);
+    expect(reading.pageJobs!.unreadableKeys).toEqual(["https://www.linkedin.com/jobs/view/4499999999"]);
+    expect(reading.pageJobs!.excludedJobs).toBe(1);
+    // Every job link counts once per link (cards may carry more than one).
+    expect(reading.pageJobs!.rawLinks).toBeGreaterThanOrEqual(5 + 1 + 1);
+    expect(reading.counts.skippedUnloaded).toBe(1);
+    const single = inPage<ResultCardsReading>(html, searchUrl, readResultCards.toString(), { ...linkedin.reader, maxCards: 25 }).result;
+    expect(single).not.toHaveProperty("pageJobs");
+    expect(single.cards).toHaveLength(5);
+  });
+});
+
 describe("LinkedIn's 'See more jobs' (the real November 15 controls)", () => {
   const input = { buttonSelector: (linkedin.continuation as { buttonSelector: string }).buttonSelector, endSelector: (linkedin.continuation as { endSelector: string }).endSelector, jobLink: linkedin.reader.jobLink };
 

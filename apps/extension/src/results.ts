@@ -45,6 +45,13 @@ export interface ResultCardsReading {
   counts: { loaded: number; skippedUnloaded: number; overCap: number; excluded?: number };
   // Continuous capture only: every loaded card's key, in page order.
   keys?: string[];
+  // Continuous capture only (November 18, 2026): what else the page holds.
+  // rawLinks: every link to a job page (diagnostics only; one job can have
+  // several). unreadableKeys: the distinct jobs in result cards the page has
+  // not rendered yet or that have no title, never invented as cards.
+  // excludedJobs: distinct jobs only in excluded areas (navigation, related
+  // lists, sign-in prompts, hidden parts), never results.
+  pageJobs?: { rawLinks: number; unreadableKeys: string[]; excludedJobs: number };
   problem: "FRICTION" | "NO_CARDS" | null;
   // A sign-in prompt the page shows over results that are still loaded and
   // readable: the cards are read, the prompt is left as it is (never
@@ -188,9 +195,11 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
   // when the site has one, otherwise the link without query or fragment).
   const keyOf = (url: string) => url.split(/[?#]/)[0]!.replace(/\/+$/, "").toLowerCase();
   const fromTemplate = (id: string) => (input.jobUrlTemplate ? input.jobUrlTemplate.replace("{id}", encodeURIComponent(id)) : null);
+  let rawLinks = 0;
   for (const anchor of [...document.querySelectorAll("a[href]")]) {
     const url = absolute(anchor.getAttribute("href"));
     if (!url || !jobLink.test(url)) continue;
+    rawLinks += 1;
     const siteJobId = idFromUrl(url);
     const canonical = (siteJobId && fromTemplate(siteJobId)) || url;
     markers.push({ node: anchor, key: keyOf(canonical), url, siteJobId, link: anchor });
@@ -241,12 +250,20 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
   }
   const found: Found[] = [];
   let skippedUnloaded = 0;
-  for (const group of byKey.values()) {
+  const unreadableKeys: string[] = [];
+  let excludedJobs = 0;
+  for (const [groupKey, group] of byKey.entries()) {
     const anchorMarker = group.find((marker) => marker.link) ?? null;
     const first = group[0]!;
-    if (group.every((marker) => isExcluded(marker.node))) continue;
+    if (group.every((marker) => isExcluded(marker.node))) {
+      excludedJobs += 1;
+      continue;
+    }
     const card = cardOf(anchorMarker?.node ?? first.node);
-    if (isExcluded(card)) continue;
+    if (isExcluded(card)) {
+      excludedJobs += 1;
+      continue;
+    }
     const titleElement = input.titleSelector ? card.querySelector(input.titleSelector) : null;
     const title =
       clean(titleElement?.textContent, limits.title) ??
@@ -255,6 +272,7 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
     // Not rendered yet, or hidden: not a loaded card.
     if (!title || !isRendered(card)) {
       skippedUnloaded += 1;
+      if (unreadableKeys.length < 200) unreadableKeys.push(groupKey);
       continue;
     }
     const siteJobId = group.find((marker) => marker.siteJobId)?.siteJobId ?? null;
@@ -283,7 +301,10 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
     // results: that is the friction to report.
     const empty = none(signInPrompts.length ? "FRICTION" : "NO_CARDS");
     empty.counts.skippedUnloaded = skippedUnloaded;
-    if (input.continuous) empty.keys = [];
+    if (input.continuous) {
+      empty.keys = [];
+      empty.pageJobs = { rawLinks, unreadableKeys, excludedJobs };
+    }
     return empty;
   }
   return {
@@ -296,7 +317,7 @@ export function readResultCards(input: ResultCardReaderInput): ResultCardsReadin
       overCap: Math.max(0, open.length - cards.length),
       ...(input.continuous ? { excluded: found.length - open.length } : {}),
     },
-    ...(input.continuous ? { keys: keys.slice(0, 5000) } : {}),
+    ...(input.continuous ? { keys: keys.slice(0, 5000), pageJobs: { rawLinks, unreadableKeys, excludedJobs } } : {}),
     problem: null,
     notice: signInPrompts.length ? "SIGN_IN_PROMPT_SHOWN" : null,
   };

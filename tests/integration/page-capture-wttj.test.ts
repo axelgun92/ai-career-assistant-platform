@@ -185,6 +185,31 @@ afterEach(async () => {
 afterAll(() => database.$disconnect());
 
 describe("Welcome to the Jungle Mode B (background tabs) on the test database", () => {
+  it("a job whose title is outside every Customer Success role family is saved with its facts and provenance but not sent for evaluation automatically; requesting it on its own page runs triage and admission as usual (November 18, 2026)", async () => {
+    const offFamily = (url: string): ServedPage => {
+      const served = jobPageFor(url);
+      if (url !== wttjF0Urls[0]) return served;
+      return { status: 200, html: wttjJobPage({ title: "Senior Account Executive", company: companies[0]!, city: "Chicago", descriptionHtml: csmDescription(salaries[0]!) }) };
+    };
+    const { state } = await saveAndRead(offFamily);
+    expect(state?.finished?.reason).toBe("COMPLETED");
+    const [held, ...rest] = await items();
+    expect(held).toMatchObject({ status: "INGESTED", handoffOutcome: "NOT_SENT:OUTSIDE_ROLE_FAMILIES" });
+    const opportunity = await database.opportunity.findUnique({ where: { id: held!.opportunityId! } });
+    expect(opportunity?.title).toBe("Senior Account Executive");
+    expect(await database.fieldProvenance.count({ where: { opportunityId: held!.opportunityId! } })).toBeGreaterThan(0);
+    // Nothing was triaged, admitted or queued for it.
+    expect(await triageRepository.get(held!.opportunityId!)).toBeNull();
+    expect(await database.evaluationAdmission.count({ where: { opportunityId: held!.opportunityId! } })).toBe(0);
+    // The other jobs (in the role families) are handed off as before.
+    expect(rest.map((item) => item.handoffOutcome)).toEqual(["NEEDS_REVIEW", "REJECT", "QUEUED", "QUEUED"]);
+    // The user requests the evaluation on the job's own page: the same
+    // triage-gated request, which admits it (its salary is in range).
+    const requested = await evaluation.requestEvaluation(held!.opportunityId!, {});
+    expect(requested.outcome).not.toBe("REJECT");
+    expect(await triageRepository.get(held!.opportunityId!)).not.toBeNull();
+  });
+
   it("saves the real F0 cards and, with no second action, reads each job's page in a background tab, ingests it like a single-job capture and hands it to the existing triage", async () => {
     const before = await tableCounts();
     const { staged, fake, state } = await saveAndRead();

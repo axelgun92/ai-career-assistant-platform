@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cardKey,
+  continuousTimings,
   classifyResultsPage,
   createContinuousCapture,
   isResumable,
@@ -42,6 +43,15 @@ class World {
   loadStep = 25;
   stallAfter: number | null = null;
   markerAtEnd = true;
+  // LinkedIn page behaviours (November 18, 2026): loads that add only links
+  // to jobs already shown; jobs (1-based) whose cards render only some time
+  // after they load (Infinity: never); the page's job links beyond one per
+  // job; every "See more jobs" press.
+  duplicateLoads = 0;
+  renderDelayMs = new Map<number, number>();
+  loadedAt = new Map<number, number>();
+  extraLinks = 0;
+  loads = 0;
   pages: string[][] = [];
   paginationSignals = true;
   friction = false;
@@ -180,7 +190,14 @@ class World {
         async read(tabId, input): Promise<ResultCardsReading | null> {
           if (tabId !== world.tab.id || world.tab.closed) return null;
           if (world.friction) return { pageUrl: world.tab.url, pageTitle: null, cards: [], counts: { loaded: 0, skippedUnloaded: 0, overCap: 0 }, problem: "FRICTION", keys: [] };
-          const urls = world.site() === "linkedin" ? world.jobs.slice(0, world.loaded) : (world.pages[world.page() - 1] ?? []);
+          const onPage = world.site() === "linkedin" ? world.jobs.slice(0, world.loaded) : (world.pages[world.page() - 1] ?? []);
+          const readable = (url: string) => {
+            const index = world.jobs.indexOf(url) + 1;
+            const delay = world.renderDelayMs.get(index);
+            return delay === undefined || world.clock >= (world.loadedAt.get(index) ?? 0) + delay;
+          };
+          const urls = onPage.filter(readable);
+          const unreadableKeys = onPage.filter((url) => !readable(url)).map(cardKey);
           const keys = urls.map(cardKey);
           const excluded = new Set(input.excludeKeys ?? []);
           const open = urls.filter((url) => !excluded.has(cardKey(url)));
@@ -188,9 +205,10 @@ class World {
             pageUrl: world.tab.url,
             pageTitle: "Customer Success jobs",
             cards: open.slice(0, input.maxCards).map((url) => ({ url, title: `Job ${url.slice(-12)}`, siteJobId: world.site() === "linkedin" ? url.split("/").at(-1)! : null, company: "Acme", location: null, postedText: null })),
-            counts: { loaded: urls.length, skippedUnloaded: 0, overCap: 0, excluded: urls.length - open.length },
+            counts: { loaded: urls.length, skippedUnloaded: unreadableKeys.length, overCap: 0, excluded: urls.length - open.length },
             keys,
-            problem: urls.length ? null : "NO_CARDS",
+            pageJobs: { rawLinks: onPage.length + world.extraLinks, unreadableKeys, excludedJobs: 0 },
+            problem: urls.length || unreadableKeys.length ? null : "NO_CARDS",
           };
         },
         async advance(_tabId, input) {
@@ -198,7 +216,16 @@ class World {
           const diagnostics = { buttonPresent: true, buttonVisible: true, buttonDisabled: false, markerPresent: true, markerVisible: atEnd && world.markerAtEnd, cardCount: world.loaded, headerCount: null };
           if (atEnd && world.markerAtEnd) return { action: "END", diagnostics };
           if (input.checkOnly) return { action: "CHECKED", diagnostics };
+          world.loads += 1;
+          if (world.duplicateLoads > 0) {
+            // The site answers with jobs it already showed.
+            world.duplicateLoads -= 1;
+            world.extraLinks += 10;
+            return { action: "CLICKED", diagnostics };
+          }
+          const before = world.loaded;
           if (world.stallAfter === null || world.loaded < world.stallAfter) world.loaded = Math.min(world.jobs.length, world.stallAfter ?? Infinity, world.loaded + world.loadStep);
+          for (let index = before + 1; index <= world.loaded; index += 1) world.loadedAt.set(index, world.clock);
           return { action: "CLICKED", diagnostics };
         },
         async describe(): Promise<PageDescription | null> {
@@ -531,6 +558,100 @@ describe("Welcome to the Jungle: numbered pages", () => {
     // The expired jobs went back through intake (a later batch), each once.
     const later = world.batches.slice(1).flatMap((batch) => batch.keys);
     for (const item of expired) expect(later.filter((key) => key === item.key)).toHaveLength(1);
+  });
+});
+
+describe("LinkedIn: what a load brought (November 18, 2026 acceptance follow-up)", () => {
+  const events = (world: World) => world.state()!.diagnostics.map((entry) => entry.event);
+  const since = (world: World, at: number) => world.clock - at;
+
+  it("the November 18 sequence: loads that add links but no readable card no longer stop the run; jobs that render late are collected and the run completes", async () => {
+    const world = linkedInWorld(90, { loaded: 60 });
+    world.loadStep = 10;
+    // Jobs 61-80 render only 30 s after they load (as in the stopped run,
+    // where the page grew 61 -> 71 -> 81 links while 60 cards stayed
+    // readable): longer than three loads, within the bounded re-reads.
+    for (let index = 61; index <= 80; index += 1) world.renderDelayMs.set(index, 30_000);
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("COMPLETED");
+    expect(new Set(allSubmitted(world))).toEqual(new Set(world.jobs.map(cardKey)));
+    expect(allSubmitted(world)).toHaveLength(90);
+    expect(events(world)).not.toContain("NO_MORE_RESULTS");
+  });
+
+  it("jobs on the page that never become readable: bounded re-reads, then Stopped (end not confirmed) naming how many, never Completed; every readable job is captured", async () => {
+    const world = linkedInWorld(50, { loaded: 25 });
+    world.loadStep = 25;
+    for (const index of [30, 31, 32]) world.renderDelayMs.set(index, Infinity);
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("STOPPED_UNCONFIRMED");
+    expect(state.reason).toMatch(/^3 loaded job\(s\) on the LinkedIn results could not be read/);
+    expect(allSubmitted(world)).toHaveLength(47);
+    expect(events(world).filter((event) => event === "UNREAD_RECHECK")).toHaveLength(continuousTimings.unreadRecheckDelaysMs.length);
+    expect(state.diagnostics.find((entry) => entry.event === "UNREAD_JOBS")!.detail).toContain(cardKey(linkedInJob(30)));
+  });
+
+  it("links to jobs already captured or handled, and links outside the results, never block completion", async () => {
+    const world = linkedInWorld(50, { loaded: 25, captured: [3, 4, 40] });
+    world.loadStep = 25;
+    world.extraLinks = 12;
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("COMPLETED");
+    expect(allSubmitted(world)).toHaveLength(47);
+    expect(events(world)).not.toContain("UNREAD_RECHECK");
+  });
+
+  it("loads that bring only repeated jobs (the page still grows) do not stop the run; new jobs after them are collected", async () => {
+    const world = linkedInWorld(50, { loaded: 25 });
+    world.loadStep = 25;
+    // Five loads in a row repeat earlier jobs (the old rule stopped after 3).
+    world.duplicateLoads = 5;
+    await drive(world, await start(world, "linkedin"));
+    expect(world.state()!.status).toBe("COMPLETED");
+    expect(allSubmitted(world)).toHaveLength(50);
+  });
+
+  it("repeated jobs without end: at most 10 such loads, one recheck a minute later and one more load, then Stopped (end not confirmed), in bounded time", async () => {
+    const world = linkedInWorld(30, { loaded: 25 });
+    world.loadStep = 25;
+    world.markerAtEnd = false;
+    world.duplicateLoads = Infinity;
+    const startedAt = world.clock;
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("STOPPED_NO_MORE_RESULTS");
+    expect(world.loads).toBe(continuousTimings.maxLoadsWithoutNewJobs + 1);
+    expect(events(world)).toContain("STALL_RECHECK");
+    // 25 jobs, no more: the loads, their spacing and the recheck stay within
+    // a few minutes of alarm ticks (batch settling included).
+    expect(since(world, startedAt)).toBeLessThan(15 * 60_000);
+    expect(allSubmitted(world)).toHaveLength(25);
+  });
+
+  it("a page that stops growing: 3 loads that add nothing, one recheck, one more load, then Stopped (end not confirmed)", async () => {
+    const world = linkedInWorld(40, { loaded: 25 });
+    world.loadStep = 25;
+    world.stallAfter = 32;
+    world.markerAtEnd = false;
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("STOPPED_NO_MORE_RESULTS");
+    // One load to 32, then 3 that add nothing, then the recheck's one load.
+    expect(world.loads).toBe(1 + continuousTimings.maxStalledLoads + 1);
+    expect(events(world).filter((event) => event === "STALL_RECHECK")).toHaveLength(1);
+    expect(allSubmitted(world)).toHaveLength(32);
+  });
+
+  it("each load's diagnostics name readable, unread, distinct and raw counts", async () => {
+    const world = linkedInWorld(30, { loaded: 25 });
+    world.loadStep = 5;
+    world.extraLinks = 2;
+    await drive(world, await start(world, "linkedin"));
+    const click = world.state()!.diagnostics.find((entry) => entry.event === "CLICKED")!;
+    expect(JSON.parse(click.detail)).toMatchObject({ readable: 25, unread: 0, uniqueJobs: 25, rawLinks: 27, excludedJobs: 0 });
   });
 });
 

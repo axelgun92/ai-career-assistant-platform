@@ -25,7 +25,7 @@ import {
   type PageCaptureItemRecord,
   type PrismaPageCaptureRepository,
 } from "@ai-career/database";
-import { AdapterError, createBrowserSession, detectLinkedInFriction, type BrowserDriver, type BrowserRequestCounts } from "@ai-career/discovery";
+import { AdapterError, createBrowserSession, createTitleMatcher, detectLinkedInFriction, type BrowserDriver, type BrowserRequestCounts } from "@ai-career/discovery";
 import { JSDOM } from "jsdom";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { buildCaptureEnvelope } from "../../../extension/src/envelope";
@@ -212,6 +212,10 @@ export function pageCaptureFrictionDetector(siteKey: string) {
   return siteKey === "linkedin" ? detectLinkedInFriction : undefined;
 }
 
+// The hand-off outcome of a job whose title is outside the domain's role
+// families: saved, not sent to the evaluation request automatically.
+export const pageCaptureOutsideRoleFamilies = "NOT_SENT:OUTSIDE_ROLE_FAMILIES";
+
 export interface PageCaptureIngestorDependencies {
   repository: Pick<PrismaPageCaptureRepository, "markIngested" | "markHandedOff">;
   ingestion: RetrievalIngestionService;
@@ -311,14 +315,27 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
   const now = dependencies.now ?? (() => new Date());
   const log = dependencies.log ?? { info: () => undefined, warn: () => undefined };
   const diagnostics = dependencies.diagnostics ?? noDiagnostics;
+  // The domain's role families (CS TDD section 6), matched on the title only,
+  // never the description: the same configurable rule configured sources
+  // keep listings by (November 18, 2026). Mode B saves every job it reads;
+  // one whose title is outside every family is not sent to the evaluation
+  // request automatically. It stays a saved opportunity with its provenance,
+  // and its own page can still request an evaluation.
+  const inRoleFamilies = createTitleMatcher(dependencies.discovery.titleTerms);
 
-  async function handOff(item: PageCaptureItemRecord, opportunityId: string, outcome: RetrievedListingOutcome) {
+  async function handOff(item: PageCaptureItemRecord, opportunityId: string, outcome: RetrievedListingOutcome, title: string | null) {
     const at = now();
     try {
       if (await dependencies.handoff.alreadyHandled(opportunityId)) {
         await dependencies.repository.markHandedOff(item.id, "ALREADY_HANDLED", at);
         diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result: "ALREADY_HANDLED" });
         log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; already handed to the evaluation request`);
+        return;
+      }
+      if (!inRoleFamilies(title)) {
+        await dependencies.repository.markHandedOff(item.id, pageCaptureOutsideRoleFamilies, at);
+        diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result: pageCaptureOutsideRoleFamilies });
+        log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; its title is outside the role families, so it was not sent for evaluation`);
         return;
       }
       const result = await dependencies.handoff.request(opportunityId);
@@ -369,7 +386,7 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
       // failure), is never handed off again: no second triage, no evaluation.
       if (!refresh && (item.handoffOutcome === null || item.handoffOutcome === undefined)) {
         try {
-          await handOff(item, ingested.opportunityId, ingested.outcome);
+          await handOff(item, ingested.opportunityId, ingested.outcome, raw.title);
         } catch (error) {
           throw new PageCaptureSavedError("handoff", ingested.opportunityId, error);
         }

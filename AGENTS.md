@@ -216,7 +216,9 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   with retraction on re-read) verified offline, approved by Alex and committed; they are adopted in
   Core Platform TDD v1.21 (approved November 10, 2026; v1.20 archived unchanged); November 15
   normalization fixes F1–F7 and continuous Mode B for LinkedIn and WTTJ verified offline on top of
-  eacf5c2, awaiting Alex's review (TDD v1.22 amendment proposed separately); no live test authorized
+  eacf5c2, live-accepted November 17–18 (WTTJ 79 jobs, LinkedIn 112 jobs after one Resume); November 18
+  follow-up (bounded LinkedIn load progress, Mode B role-family title check, verify-command apply evidence)
+  verified offline; E1 kept the Salesforce listing fallback (no employer link in the logged-out page); awaiting Alex's closeout approval (TDD v1.22 amendment proposed separately)
 → current sequence: LinkedIn Mode B live acceptance (WTTJ accepted; with authorization) → User Profile activation → final end-to-end triage/evaluator acceptance →
   production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

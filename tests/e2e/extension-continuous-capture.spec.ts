@@ -231,6 +231,18 @@ test("'See more jobs': 60 jobs with 10 captured before are exactly two batches o
   await panel.close();
 });
 
+test("'See more jobs' that first repeats shown jobs and then adds cards rendered late: the run neither stops early nor completes with unread jobs (25 + 25, Completed)", async () => {
+  const { panel, search } = await startRun("late");
+  const state = await workUntilEnd(panel);
+  expect(state.status).toBe("COMPLETED");
+  const batches = await batchesOf(state.runId);
+  expect(batches.map((batch) => batch.urls.length)).toEqual([25, 25]);
+  expect(new Set(batches.flatMap((batch) => batch.urls))).toEqual(new Set(eligible("late", run)));
+  expect(state.diagnostics.map((entry) => entry.event)).not.toContain("NO_MORE_RESULTS");
+  await search.close();
+  await panel.close();
+});
+
 test("63 jobs with 10 captured before: 25 + 25 + a final 3, and the run continues after its service worker is stopped mid-run", async () => {
   const { panel, search } = await startRun("b");
   // After the first batch is sent, Chrome stops the extension's service worker.

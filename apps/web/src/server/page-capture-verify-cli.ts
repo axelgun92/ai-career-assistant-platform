@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { pageCaptureSiteByKey } from "@ai-career/core";
-import { pageCaptureVerifyMaxUrls, pageCaptureVerifyTargets, runPageCaptureVerification, type PageCaptureVerdict } from "./page-capture-verify";
+import { pageCaptureDetailPageScripts, pageCaptureSiteByKey } from "@ai-career/core";
+import { pageCaptureVerifyApplyEvidence, pageCaptureVerifyMaxUrls, pageCaptureVerifyTargets, runPageCaptureVerification, type PageCaptureVerdict } from "./page-capture-verify";
 
 // pnpm page-capture:verify <site> <job URL> [<job URL> …] [--raw-dir <dir>]
 //
@@ -18,6 +18,13 @@ import { pageCaptureVerifyMaxUrls, pageCaptureVerifyTargets, runPageCaptureVerif
 // --raw-dir (outside the repository) keeps each page's raw HTML and a
 // p1-<site>-summary.json with the verdict and per-page results (no cookies
 // or headers).
+//
+// The browser reads pages exactly as the retrieval worker does (November 18,
+// 2026): the site's page-scripts setting (LinkedIn: scripts off, the
+// registry's value, or PAGE_CAPTURE_LINKEDIN_PAGE_SCRIPTS as for the worker).
+// With --raw-dir it also keeps, per page, the document exactly as the site
+// sent it (p1-<site>-<n>.served.html) and the application-link evidence the
+// worker records (p1-<site>-<n>.apply.json).
 
 const exitCodes: Record<PageCaptureVerdict, number> = { PASS: 0, FAIL: 2, BLOCKED: 3 };
 
@@ -54,8 +61,10 @@ async function main() {
     `[page-capture:verify] ${site.name}: ${targets.length} job page(s), one at a time, at least ${site.detail.minIntervalMs / 1000} s apart, ` +
       "fresh logged-out browser; the first access restriction or unreadable page stops it with no further request.",
   );
+  const pageScripts = pageCaptureDetailPageScripts(site, process.env);
+  console.info(`[page-capture:verify] page scripts: ${pageScripts.mode} (${pageScripts.source === "setting" ? "server setting" : "the worker's default"})`);
   const { launchBrowserDriver } = await import("@ai-career/browser-retrieval");
-  const driver = await launchBrowserDriver({ executablePath });
+  const driver = await launchBrowserDriver({ executablePath, pageScripts: pageScripts.mode });
   if (rawDir) mkdirSync(rawDir, { recursive: true });
   let result;
   try {
@@ -63,8 +72,17 @@ async function main() {
       site,
       urls,
       driver,
-      onPage: (page, html) => {
+      onPage: (page, html, servedHtml) => {
         if (rawDir && html !== null) writeFileSync(path.join(rawDir, `p1-${site.key}-${page.index}.html`), html);
+        if (rawDir && servedHtml !== null) writeFileSync(path.join(rawDir, `p1-${site.key}-${page.index}.served.html`), servedHtml);
+        const apply = pageCaptureVerifyApplyEvidence(html, servedHtml, page.finalUrl ?? page.openedUrl);
+        if (rawDir) writeFileSync(path.join(rawDir, `p1-${site.key}-${page.index}.apply.json`), `${JSON.stringify(apply, null, 2)}\n`);
+        console.info(
+          `[page-capture:verify] ${page.index} apply evidence: served=${servedHtml === null ? "unavailable" : `${servedHtml.length} chars`}` +
+            ` code#applyUrl=${apply.served?.codeApplyUrl.present ?? apply.rendered?.codeApplyUrl.present ?? false}` +
+            ` url=${apply.served?.codeApplyUrl.url ?? apply.rendered?.codeApplyUrl.url ?? "-"}` +
+            ` markers=${JSON.stringify(apply.markers)}`,
+        );
         console.info(
           `[page-capture:verify] ${page.index}/${targets.length} ${page.result} HTTP ${page.status ?? "-"} opened=${page.openedUrl}` +
             `${page.finalUrl && page.finalUrl !== page.openedUrl ? ` final=${page.finalUrl}` : ""}` +

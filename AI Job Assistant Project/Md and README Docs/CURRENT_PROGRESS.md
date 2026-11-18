@@ -1,9 +1,75 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 15, 2026
+**Last updated:** November 18, 2026
 
-## November 15 Normalization Fixes (F1–F7) and Continuous Mode B for LinkedIn and Welcome to the Jungle (November 15, 2026; implemented and verified offline on top of `eacf5c2`; not committed, awaiting Alex's review; no live request made)
+## Mode B Acceptance Follow-up (November 18, 2026; on top of the November 15 candidate; implemented and verified offline; E1 done; not committed, awaiting Alex's closeout approval)
+
+### Live acceptance of the November 15 candidate (Alex, November 17–18, `ai_career_assistant_acceptance`, checkout `~/aija/mode-b-rev3-acceptance` at `eacf5c2` plus the candidate)
+
+The tested code is the delivered candidate byte for byte (`90693fec…`). The only extra file was `apps/web/next-env.d.ts`, which `pnpm dev` rewrites.
+
+| Step | Result |
+|---|---|
+| L0/L3 WTTJ continuous | **Passed.** Run `7fd937e5`: 8 pages, batches 25 + 25 + 25 + 4 = 79 ingested, last page confirmed (`LAST_PAGE_CONFIRMED`), no failures. |
+| WTTJ 80-card audit (later snapshot) | 78 unique listings. 1 not captured (shown on both pages 3 and 4 of the snapshot); 2 captured but absent from the snapshot. Two-way drift between capture and snapshot: a known limit of numbered pages, not a capture defect. |
+| L1 Single Capture re-reads | **Passed 5/5** (Jacobs, Dashlane, Trulioo, PermitFlow, Fullpath; base $80k–$88k with OTE shown separately) |
+| L2 LinkedIn continuous | **Passed operationally.** Run `ce872aa4`: 6 batches (25, 25, 10, 25, 25, 2) = 112 ingested into 112 distinct opportunities; end marker, COMPLETED. **But** the first run stopped at 60 (STOPPED_NO_MORE_RESULTS) and needed one manual Resume. |
+| Worker restart recovery | **Passed** (no browser configured, then restarted with one; queued jobs recovered) |
+| Extension service-worker restart | Verified by automated E2E only; unverified live |
+| Fully unattended LinkedIn completion | Not demonstrated (the manual Resume) |
+
+Salesforce 4483587199 normalized correctly: Hybrid from "in office 3 days per week", salary and closing date Unknown, as the posting states. Its application URL is the labelled LinkedIn listing fallback, while the employer links a Workday application. The `USER_PROFILE_NOT_FOUND` hand-offs are expected (no profile in acceptance).
+
+### Findings and fixes
+
+- **B2, LinkedIn stop at 60 (confirmed defect, fixed):**
+  - **Cause:** `loadMore()` counted progress only as more readable cards. Over three loads the page's job links grew 61 → 71 → 81 while readable cards stayed at 60, so the run stopped although LinkedIn was still loading.
+  - **Not established:** whether the final run's 133 links against 112 handled jobs left eligible jobs uncaptured. Those links may be repeated jobs, links outside results, or cards not yet readable; the diagnostics didn't record which.
+  - **Fix** (`apps/extension/src/results.ts` and `continuous-capture.ts`; the load step in `continuation.ts` is unchanged):
+    - The continuous reader now classifies the page (`pageJobs`): raw job links, distinct jobs whose cards are not readable yet, and jobs only in excluded areas.
+    - Progress means a job the run has not seen before, readable or not.
+    - A page that adds nothing stops after 3 loads; a page that adds only repeated jobs stops after 10. Either way, one recheck a minute later and one more load come first, then STOPPED_NO_MORE_RESULTS.
+    - At the end marker, or before any stop, unread jobs are re-read at 2, 5, 10 and 30 s. Any still unread end the run **STOPPED_UNCONFIRMED** ("N loaded job(s) … could not be read"), never COMPLETED.
+    - Repeated, excluded and non-job links never block completion.
+    - Every load records readable, unread, distinct, seen, raw and excluded counts.
+    - Loads stay at least 5 s apart. Every wait is bounded; worst case without progress is about 2.5 minutes.
+- **B3, Mode B titles (confirmed product gap, fixed):**
+  - **Cause:** Mode B handed every job to the evaluation request, whose triage has no title rule. With an active profile, an off-family title passing triage would be admitted and incur a paid evaluation.
+  - **Fix** (`page-capture-acquisition.ts`, shared by the LinkedIn worker and the WTTJ tabs):
+    - The domain's existing, configurable role-family terms (`createTitleMatcher(customerSuccessDiscoveryConfiguration.titleTerms)`, title only, CS TDD §6) decide.
+    - A job outside every family is still saved with its facts and provenance, but not sent automatically: `handoffOutcome NOT_SENT:OUTSIDE_ROLE_FAMILIES`.
+    - Captured Jobs explains it, and the job's own **Evaluate Customer Success fit** still runs triage and evaluation.
+    - Seniority is not filtered. Single Capture is unchanged.
+    - On the 112 L2 titles, the terms keep 43 and hold 69.
+- **B1, Salesforce application link (resolved for this observed retrieval; no extraction change):**
+  - The worker's read (HTTP 200, scripts off, served HTML available) found no link it recognizes. The HTML it received was not saved.
+  - **Tooling** (`page-capture-verify.ts` and `-cli.ts`): `pnpm page-capture:verify` now reads with the worker's page-script setting (LinkedIn: scripts off). With `--raw-dir` it keeps the document exactly as sent (`*.served.html`) and the worker's apply evidence (`*.apply.json`), and it prints LinkedIn's apply markers.
+  - **E1 (November 18, 2026; Alex; one logged-out read with the worker's setting, no database):** HTTP 200, a readable posting.
+    - The page as LinkedIn sent it (349,031 characters) holds no `code#applyUrl`, no `externalApply` and no direct application link. Both Apply controls are sign-in prompts.
+    - No `myworkdayjobs.com` or `workdayjobs.com` host and no requisition id (`JR364939`). The eight offsite-apply tracking markers name no destination.
+    - The temporary follow-up patch was reversed afterwards; the acceptance checkout's status was restored.
+  - **Outcome:** the employer link was not in what LinkedIn sent the logged-out worker, so the reader did not miss it. `LISTING_FALLBACK` and its wording stay unchanged.
+  - **Scope:** this establishes the result for this job's logged-out retrieval on this date only. It is not generalized to every LinkedIn posting; another posting may still carry `code#applyUrl`, which the reader already handles.
+- **Search guidance (no code):** documented in the extension README:
+  - LinkedIn job search has no documented title-only operator.
+  - Use quoted role phrases joined by OR in the keywords, with LinkedIn's own filters.
+  - Leave out NOT seniority words, which match descriptions.
+  - Leave out the company filter unless intended. The tested URL's `f_C` limited L2 to five companies.
+
+### Verified offline (`ai_career_assistant_test` only)
+
+- New tests:
+  - unit `continuous-capture` (+7: the real 61/71/81 sequence; late-rendering, never-readable and repeated jobs; the bounds; diagnostics). 6 of the 7 fail on the tested candidate's controller.
+  - `continuous-capture-pages` (+1, real F0 cards);
+  - `page-capture-verify` (+2);
+  - `page-capture-ui` (label);
+  - integration `page-capture-wttj` (+1: off-family job saved, not handed off, then manual request runs triage);
+  - E2E `extension-continuous-capture` (+1: repeated jobs then late-rendering cards, Completed 25 + 25).
+- Typecheck (including the extension), lint, Prisma validate, migrations 28 (unchanged), extension build, `git diff --check`: pass.
+- Unit 2,466 passed / 6 skipped; integration 487/487; E2E 66/66. The first full E2E run hit one 30 s timeout on the first application-tracker page (a cold first compile in the new container, on pages this change does not touch); the rerun passed 66/66.
+
+## November 15 Normalization Fixes (F1–F7) and Continuous Mode B for LinkedIn and Welcome to the Jungle (November 15, 2026; implemented and verified offline on top of `eacf5c2`; live-accepted November 17–18 with the follow-up above; not yet committed)
 
 ### Task 1: normalization (shared normalizer, so Single Capture and Mode B alike)
 

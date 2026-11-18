@@ -69,6 +69,49 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: Mode B Acceptance Follow-up — Review Requested
+
+**Date:** 2026-11-18
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Verification Needed (verified offline on top of the tested November 15 candidate; E1 done; not committed, awaiting closeout approval)
+
+#### Completed
+
+- **B2:** LinkedIn continuous loading counts a job the run has not seen (readable or not) as progress, with bounded stops (3 loads with nothing new, or 10 with only repeated jobs, then one 60 s recheck), and a completion check that never reports COMPLETED while loaded jobs remain unread (re-reads at 2, 5, 10 and 30 s, then STOPPED_UNCONFIRMED). Load diagnostics record the page's contents.
+- **B3:** Mode B saves every job but sends only titles in the domain's role families to evaluation automatically (`NOT_SENT:OUTSIDE_ROLE_FAMILIES` otherwise; manual evaluation unchanged).
+- **B1 tooling:** `page-capture:verify` reads as the worker does and keeps the served HTML and apply evidence.
+- **B1 result (E1, Alex, November 18):** the page LinkedIn sent the logged-out worker for Salesforce 4483587199 (HTTP 200, 349,031 characters) held no `code#applyUrl`, `externalApply`, Workday host or requisition id; both Apply controls were sign-in prompts. `LISTING_FALLBACK` and its wording are unchanged. Resolved for that retrieval only, not generalized.
+
+#### Files Changed
+
+- `apps/extension/src/results.ts`, `apps/extension/src/continuous-capture.ts`, `apps/web/src/server/page-capture-acquisition.ts`, `apps/web/src/components/extension/page-capture-labels.ts`, `apps/web/src/server/page-capture-verify.ts`, `apps/web/src/server/page-capture-verify-cli.ts`.
+- Tests: `tests/unit/continuous-capture.test.ts`, `continuous-capture-pages.test.ts`, `page-capture-verify.test.ts`, `page-capture-ui.test.tsx`; `tests/integration/page-capture-wttj.test.ts`; `tests/support/continuous-e2e.ts`, `tests/e2e/extension-continuous-capture.spec.ts`.
+- Docs: CURRENT_PROGRESS, PRODUCT_STATUS, DEVELOPMENT_PLAN, CHANGELOG, extension README, AI_Architecture_README, AGENTS.md, this file.
+
+#### Current Contract / Assumptions
+
+- No migration (28). No change to triage, the evaluator, deduplication, normalization or Single Capture.
+- The role-family list is `customerSuccessDiscoveryConfiguration.titleTerms` (configurable), title only.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS (November 18): typecheck, lint, Prisma, migrations, build, diff check; full unit, integration and E2E.
+
+#### Known Issues / Blockers
+
+- A logged-out LinkedIn page that carries no employer link keeps the labelled listing fallback (E1). Other postings may differ; only the Salesforce retrieval was observed.
+- Whether the L2 run's extra 21 links were repeated jobs or unread cards is not recoverable from the existing evidence; the new diagnostics record it for future runs.
+- WTTJ result drift between pages is a known limit of numbered pages.
+
+#### Next Task
+
+- Alex's closeout approval; then closeout in two commits per the approved plan and the checkout synchronization procedure.
+
+#### Do Not Change Without Coordination
+
+- The `loadMore()` bounds and the unread-jobs completion check; `NOT_SENT:OUTSIDE_ROLE_FAMILIES`; the shared ingestor's hand-off order (already-handled, then the title check, then the request).
+
 ### Handoff: November 15 Normalization Fixes and Continuous Mode B — Review Requested
 
 **Date:** 2026-11-15
