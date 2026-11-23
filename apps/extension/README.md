@@ -118,7 +118,7 @@ For a site whose job pages AI Job Assistant cannot read itself (Welcome to the J
 Batch Capture on a LinkedIn or Welcome to the Jungle **search** also offers **Start continuous capture**. One click captures the whole search in successive batches of at most 25. The single 25-job save above is unchanged.
 
 1. **Permission, inside the Start click:** the site's optional host access (`https://www.linkedin.com/*`, new, or the Welcome to the Jungle hosts above). Decline, and nothing starts.
-2. **Skip what you have.** Before a batch is filled, the loaded cards are checked with AI Job Assistant (read-only); jobs already saved, in progress, dismissed or unavailable are skipped and do not use a slot. A batch is staged exactly like a single save.
+2. **Skip what you have, and what you don't target.** Before a batch is filled, the loaded cards (with their titles) are checked with AI Job Assistant (read-only); jobs already saved, in progress, dismissed, unavailable or permanently deleted are skipped, and so are jobs whose titles are outside your **target job titles** (November 22, 2026). Neither uses a slot: a batch holds up to 25 eligible jobs, and the run keeps loading or paging until it has them or the end is confirmed. A batch is staged exactly like a single save.
 3. **More results.** LinkedIn: the site's own **See more jobs** button, at least 5 seconds apart. Welcome to the Jungle: the same search with the next page number, in the same tab, at least 12 seconds after the previous navigation; the jobs of a page may be split across two batches, and the next page can be opened while a batch is still being read.
 4. **One batch at a time.** The next batch is sent only when every job of the previous one has settled (read, unavailable, or waiting); totals count only settled jobs.
 5. **The end.**
@@ -130,7 +130,12 @@ Batch Capture on a LinkedIn or Welcome to the Jungle **search** also offers **St
    - Each load's diagnostics record what the page held: readable cards, unread jobs, distinct jobs, the page's job links and jobs only in excluded areas.
 7. **Unattended.** The run continues in the background with the side panel closed, and after Chrome stops the extension's service worker (the alarm resumes it within about a minute). It has no duration limit. It never works around a rate limit, challenge or restriction.
 
-**Titles outside the role families (November 18, 2026).** Every job the run reads is saved, with its facts and where they came from. A job whose title is outside every Customer Success role family (the app's configurable list: Customer Success, Client Success, Member Success, Customer Experience, Onboarding, Implementation and the other adjacent families; the title only, never the description) is not sent for evaluation automatically. Captured Jobs shows "Added; not sent for evaluation automatically: its title is outside the Customer Success role families". Open the job and use **Evaluate Customer Success fit** to evaluate it anyway. Seniority words are not filtered here, and **Read this page** (Single Capture) is unchanged.
+**Target job titles (November 22, 2026; replaces the November 18 role-family check).** One setting, **Target job titles (automatic capture)** on the app's Profile page, decides for every automatic capture which titles are in scope, from the card's title alone and before any job page is opened:
+- **Outside the titles:** skipped. The job is never read, saved, triaged or evaluated, and no record is created; the panel counts it as **Skipped (outside target titles)**, and a single save reports "N outside your target job titles, not saved".
+- **Inside:** captured and processed exactly as before (deduplication, triage, evaluation). Title relevance only decides retrieval; whether a job suits you is still decided by its description, the hard filters, the triage and the evaluation. Seniority is never filtered.
+- **Your choice wins:** in **Save jobs on this page**, outside titles are listed unticked with "(outside your target job titles: tick to save anyway)"; a job you tick is saved and evaluated like any other. **Read this page** (Single Capture) always saves, and only notes that the title is outside your target job titles. Continuous runs never override.
+- A job page whose own title differs from its card's and is outside the titles is still saved but not sent for evaluation automatically (Captured Jobs: "Added; not sent for evaluation automatically: its title is outside your target job titles"), as before.
+- Jobs queued before this change whose titles are outside are not opened; Captured Jobs shows "Not read: its title is outside your target job titles". A later save whose title passes reads them normally.
 
 **Searching LinkedIn more precisely.**
 - LinkedIn's job search supports AND, OR, NOT, quotes and parentheses, matched against the whole posting. It documents no title-only operator or address parameter for job search; title-only Boolean exists only in its people-search tools (for example Sales Navigator's Title field).
@@ -138,9 +143,9 @@ Batch Capture on a LinkedIn or Welcome to the Jungle **search** also offers **St
 - Use LinkedIn's own filters for Location, Remote, Job type, Experience level and Date posted, rather than words in the keywords: those words also match descriptions.
 - Avoid `NOT Senior`, `NOT Director` and the like. They remove any posting that mentions the word anywhere, including roles that only work with senior leaders; use the Experience level filter instead.
 - Don't keep a Company filter (`f_C` in the address) unless you mean to. The November 18 acceptance search kept five companies, which is why three employers made up all 112 results.
-- The app's role-family check above then decides which titles go on to evaluation.
+- The app's target job titles above then decide which titles are captured at all.
 
-The panel shows the status, the current activity, the batch number, captured, skipped as captured before, awaiting details, failures, refreshed, discovered but not yet sent, and the last diagnostics. Welcome to the Jungle's pagination selectors are unverified until the first live run (step L0 of the November 15 acceptance plan).
+The panel shows the status, the current activity, the batch number, captured, skipped as captured before, skipped as outside the target titles, awaiting details, failures, refreshed, discovered but not yet sent, and the last diagnostics. Welcome to the Jungle's pagination selectors are unverified until the first live run (step L0 of the November 15 acceptance plan).
 
 ## Permissions
 

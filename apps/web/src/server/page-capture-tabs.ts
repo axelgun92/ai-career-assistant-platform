@@ -8,11 +8,12 @@ import {
   pageCaptureTabUrlAllowed,
   RetrievedListingNormalizationError,
   type PageCaptureSiteSpec,
+  type TitlePolicy,
 } from "@ai-career/core";
 import type { PageCaptureItemRecord, PrismaPageCaptureRepository } from "@ai-career/database";
 import { z } from "zod";
 import { capturedPageIdentity, ExtensionCaptureError, parseCapture } from "./extension-capture";
-import { PageCaptureSavedError, type PageCaptureIngestor } from "./page-capture-acquisition";
+import { itemsSkippedByTitle, PageCaptureSavedError, type PageCaptureIngestor } from "./page-capture-acquisition";
 
 // Background-tab detail reading for the browser extension's results-page
 // capture (Mode B, mechanism P2, Welcome to the Jungle / Otta). After "Save
@@ -87,8 +88,12 @@ export interface PageCaptureTabDependencies {
   repository: Pick<
     PrismaPageCaptureRepository,
     "findById" | "startTabItem" | "settleTabItem" | "stopTabItems" | "stopTabSite" | "siteStoppedUntil"
-  >;
+  > &
+    Partial<Pick<PrismaPageCaptureRepository, "skipItems">>;
   ingestor: Pick<PageCaptureIngestor, "ingest">;
+  // The target job titles (November 22, 2026): a job queued before they
+  // applied whose title is outside them is skipped, not opened.
+  titlePolicy?: () => Promise<TitlePolicy>;
   // The enabled sites (details); a tab site that is no longer enabled is not
   // read further.
   enabledSites: () => { cards: string[]; details: string[] };
@@ -174,6 +179,14 @@ export function createPageCaptureTabService(dependencies: PageCaptureTabDependen
         stoppedUntil: stoppedUntil?.toISOString() ?? null,
       });
       if (item.status !== "QUEUED") return refused(item.status, item.lastReason);
+      if (dependencies.titlePolicy && repository.skipItems) {
+        const skipped = itemsSkippedByTitle([item], await dependencies.titlePolicy());
+        const reason = skipped.missing.length ? "MISSING_TITLE" : skipped.outside.length ? "OUTSIDE_TARGET_TITLES" : null;
+        if (reason) {
+          await repository.skipItems([item.id], reason);
+          return refused("SKIPPED", reason);
+        }
+      }
       const at = now();
       const stoppedUntil = await repository.siteStoppedUntil(site.key, at);
       if (stoppedUntil) {

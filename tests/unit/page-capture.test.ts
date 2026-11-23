@@ -408,7 +408,7 @@ describe("automatic detail acquisition", () => {
 });
 
 describe("the evaluation hand-off", () => {
-  it("only asks the existing evaluation request, and treats an existing evaluation, deferral or triage record as handled", async () => {
+  it("only asks the existing evaluation request, and treats an existing evaluation, deferral or triage hold as handled", async () => {
     const service = {
       requestEvaluation: vi.fn(async () => ({ outcome: "REJECT" })),
       getTriage: vi.fn(async () => null),
@@ -421,9 +421,25 @@ describe("the evaluation hand-off", () => {
     expect(await handoff.alreadyHandled("o")).toBe(false);
     expect(await handoff.request("o")).toBe("REJECT");
     expect(service.requestEvaluation).toHaveBeenCalledWith("o", {});
+    // A triage hold keeps its safeguard (the effective outcome: a manual
+    // decision wins).
     service.getTriage.mockResolvedValueOnce({ outcome: "NEEDS_REVIEW" } as never);
     expect(await handoff.alreadyHandled("o")).toBe(true);
+    service.getTriage.mockResolvedValueOnce({ outcome: "REJECT" } as never);
+    expect(await handoff.alreadyHandled("o")).toBe(true);
+    // Triaged is not submitted (November 23, 2026): an EVALUATE triage alone
+    // (configured-source retrieval, Single Capture) is sent on to the request,
+    // which re-runs the triage gate, admission and budget.
+    service.getTriage.mockResolvedValueOnce({ outcome: "EVALUATE" } as never);
+    expect(await handoff.alreadyHandled("o")).toBe(false);
+    // Any evaluation or open deferral is handled, whatever the triage says.
+    service.getTriage.mockResolvedValue({ outcome: "EVALUATE" } as never);
     service.getLatestEvaluation.mockResolvedValueOnce({ evaluationId: "e" } as never);
     expect(await handoff.alreadyHandled("o")).toBe(true);
+    service.getOpenDeferral.mockResolvedValueOnce({ id: "d" } as never);
+    expect(await handoff.alreadyHandled("o")).toBe(true);
+    // Any other failure to read is not taken for "not handled".
+    service.getLatestEvaluation.mockRejectedValueOnce(new Error("database down"));
+    await expect(handoff.alreadyHandled("o")).rejects.toThrow("database down");
   });
 });

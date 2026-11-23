@@ -55,7 +55,9 @@ class World {
   pages: string[][] = [];
   paginationSignals = true;
   friction = false;
-  // The server.
+  // The server. outsideTitles (November 22, 2026): jobs whose titles are
+  // outside the target job titles (selection answers OUTSIDE_TARGET_TITLES).
+  outsideTitles = new Set<string>();
   captured = new Set<string>();
   items = new Map<string, Item>();
   sessions = new Map<string, string[]>();
@@ -100,6 +102,9 @@ class World {
               stoppedUntil: null,
               cards: body.cards.map((card) => {
                 const key = cardKey(card.url);
+                if (world.outsideTitles.has(key) && card.title) {
+                  return { url: card.url, disposition: "OUTSIDE_TARGET_TITLES", selectable: false, reason: "Outside your target job titles" };
+                }
                 const item = world.item(key);
                 const selectable = !world.captured.has(key) && (!item || (wttj && item.status === "AWAITING_DETAILS"));
                 return { url: card.url, disposition: selectable ? "NEW" : "ALREADY_SAVED", selectable, reason: null };
@@ -826,5 +831,53 @@ describe("what a numbered results page shows", () => {
 
   it("a sign-in wall or challenge is a restriction", () => {
     expect(verdict({ reading: { ...reading([]), problem: "FRICTION" } })).toBe("RESTRICTED");
+  });
+});
+
+describe("universal target job titles in continuous runs (November 22, 2026)", () => {
+  it("LinkedIn: titles outside the target job titles take no batch slot and are never submitted; the run reads on until 25 eligible jobs fill each batch, then completes on the end marker", async () => {
+    const world = linkedInWorld(80);
+    // Every other job of the first 60 is outside the target job titles.
+    for (let index = 1; index <= 60; index += 2) world.outsideTitles.add(cardKey(linkedInJob(index)));
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("COMPLETED");
+    expect(sizes(world)).toEqual([25, 25]);
+    const submitted = allSubmitted(world);
+    for (const key of world.outsideTitles) expect(submitted).not.toContain(key);
+    expect(new Set(submitted).size).toBe(50);
+    expect(state.totals).toMatchObject({ captured: 50, skipped: 0, outsideTitles: 30, failures: 0 });
+    expect(state.diagnostics.some((entry) => entry.event === "COLLECTED" && entry.detail.includes("outside the target job titles"))).toBe(true);
+    expect(continuousView(state, world.clock, true)!.totals).toContain("Skipped (outside target titles): 30");
+  });
+
+  it("LinkedIn: a page whose new jobs are all outside the target job titles still counts as progress (no early stop)", async () => {
+    const world = linkedInWorld(75);
+    for (let index = 26; index <= 50; index += 1) world.outsideTitles.add(cardKey(linkedInJob(index)));
+    await drive(world, await start(world, "linkedin"));
+    const state = world.state()!;
+    expect(state.status).toBe("COMPLETED");
+    expect(sizes(world)).toEqual([25, 25]);
+    expect(state.totals.outsideTitles).toBe(25);
+  });
+
+  it("LinkedIn: unreadable cards still end the run unconfirmed (never Completed), title skips notwithstanding", async () => {
+    const world = linkedInWorld(30);
+    for (let index = 1; index <= 10; index += 1) world.outsideTitles.add(cardKey(linkedInJob(index)));
+    world.renderDelayMs.set(30, Infinity);
+    await drive(world, await start(world, "linkedin"));
+    expect(world.state()!.status).toBe("STOPPED_UNCONFIRMED");
+  });
+
+  it("Welcome to the Jungle: outside titles are handled on each page, so the last page is still confirmed and only eligible jobs are batched", async () => {
+    const world = wttjWorld([10, 10, 5]);
+    const keys = world.pages.flat().map(cardKey);
+    for (const key of keys.filter((_key, index) => index % 3 === 0)) world.outsideTitles.add(key);
+    await drive(world, await start(world, "welcome-to-the-jungle"));
+    const state = world.state()!;
+    expect(state.status).toBe("COMPLETED");
+    expect(allSubmitted(world)).toEqual(keys.filter((key) => !world.outsideTitles.has(key)));
+    expect(state.totals.outsideTitles).toBe(world.outsideTitles.size);
+    expect(state.diagnostics.some((entry) => entry.event === "LAST_PAGE_CONFIRMED")).toBe(true);
   });
 });

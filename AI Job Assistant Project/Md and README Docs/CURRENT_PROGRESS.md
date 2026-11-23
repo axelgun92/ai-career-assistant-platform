@@ -1,7 +1,88 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 18, 2026
+**Last updated:** November 23, 2026
+
+## Automatic Triage After Ingestion and Processing-Status Visibility (November 23, 2026; on top of the uncommitted November 22 work; implemented and verified offline; not committed, awaiting Alex's review)
+
+Additional work identified in the November 22 report. No live source test was run. WTTJ live acceptance stays closed. The triage coverage audit and the proposed triage-only backfill for existing opportunities remain follow-up work; the backfill was not run.
+
+### Automatic triage after ingestion and deduplication
+
+- **What existed:** results-page capture (Mode B: the LinkedIn worker and WTTJ tabs) triages through its evaluation hand-off (`requestEvaluation` runs triage before admission); Single Capture triages at save (`assessTriage`). Configured-source retrieval stored jobs untriaged: the gap.
+- **One shared step** (`apps/web/src/server/automatic-triage.ts`): after a listing is stored and deduplicated, `createAutomaticTriage` runs the existing `EvaluationService.assessTriage` (the active User Profile, the same deterministic gate, the same `PreEvaluatorTriage` upsert). No second triage system, no admission, budget reservation, queueing or provider call. EVALUATE only makes the job eligible for a later evaluation.
+- **Which outcomes:** CREATED (also a new job with a suggested possible duplicate); CHANGED only when the opportunity has no triage yet. ATTACHED (an exact duplicate attached to an existing opportunity) and UNCHANGED (a re-observation) never. An existing assessment, and any manual decision, is kept (the evaluation request re-runs triage on the current facts before any paid evaluation).
+- **Failures:** the step never throws. No active profile, a safe refusal (for example an opportunity that must be restored first) and an unexpected error are counted; the stored opportunity and the rest of the run are unaffected, and the run's status is unchanged.
+- **Wired into** the retrieval worker (`triage` dependency; `retrieval-worker-cli.ts`, and the E2E retrieval helper the same way). Run counts gain `triage` (`EVALUATE`, `NEEDS_REVIEW`, `REJECT`, `noProfile`, `unavailable`, `failed`; present only when used), stored with the run's counts and logged in the worker's `run.finished` line (the Sources page's run history line is unchanged).
+- **Unchanged:** the Mode B evaluation hand-off's title check and the budget safeguards; Single Capture's triage at save; the manual form (triage when an evaluation is requested).
+- **Triaged is not submitted (correction after review):** Mode B's hand-off used to treat any triage record as "already handled", so a configured-source job triaged EVALUATE and later captured by Mode B (attached to it by deduplication) was never sent for evaluation. `evaluationHandoff.alreadyHandled` (`page-capture-acquisition.ts`) now counts as handled only an open deferral, any evaluation (queued, running, completed or failed), or a triage hold (effective Needs review or Reject, including a manual Reject). An EVALUATE triage alone is sent on to `requestEvaluation`, which still refuses an active evaluation, resumes an open deferral, re-runs the triage gate (manual decisions kept) and goes through admission and budget. The same rule applies to a Single Capture job that reaches the hand-off. Unchanged: a Mode B card whose job was already saved under the same identity (Single Capture of the same page, or the LinkedIn adapter's job ID) is ALREADY_SAVED at intake and is not read or handed off; configured-source retrieval itself still never requests an evaluation.
+
+### Processing-status visibility
+
+- **What existed:** the opportunity page had the triage panel (outcome, reasons, manual decision, Evaluate/Reject for Needs review), the evaluation status heading, the result, the duplicate notices and provenance. Dashboard rows had lifecycle, recommendation, priority, evaluation state ("Not evaluated", queued, running, completed, failed), "Evaluation deferred" and the duplicate badge.
+- **Gaps found:** rows showed no triage at all, so a job that passed triage and one never triaged both read "Not evaluated"; the recommendation badge ("Review") was unlabelled beside triage terms; the page had no single per-stage summary.
+- **Changes (no stored status, no new tab or workflow):**
+  - Shared presentation `apps/web/src/components/processing-status.ts` (`processingStatusOf`), read from existing records. Triage is always labelled "Triage: Evaluate / Needs review / Reject / not assessed"; the evaluator's is "AI recommendation: Apply / Review / Skip".
+  - Dashboard rows (`opportunity-list.tsx`): a triage badge before the evaluation badges, the recommendation labelled "AI recommendation:", and the group's accessible name is a one-phrase summary ("Passed triage; not yet evaluated", "Not yet triaged", "Held by triage for your review", "Rejected by triage before evaluation", "Evaluated: Apply", …). The list query reads the triage row with one LEFT JOIN on `PreEvaluatorTriage` (unique per opportunity).
+  - Opportunity page: a **Processing status** breakdown (`processing-breakdown.tsx`, inside the evaluation section so the evaluation stage follows the live status): Capture (normalized, source observations, first found), Duplicate check, Pre-evaluator triage, AI evaluation, AI recommendation. The "triage has not run" note now names automatic capture.
+- The triage coverage audit's reason for an untriaged configured-source job now reads "retrieved before automatic triage (November 23), or with no active profile".
+
+### Verified offline (`ai_career_assistant_test` only)
+
+- Typecheck, lint: pass.
+- Unit 2,584 passed / 6 skipped (new `automatic-triage` 7, `processing-status` 8).
+- After review: new integration `mode-b-handoff-after-triage` (configured-source jobs triaged EVALUATE / Needs review / Reject / manual Reject, then captured by Mode B: each attaches to the same opportunity; only EVALUATE is requested, once (admission, evaluation and task 1 each; no AI attempt); the holds are ALREADY_HANDLED with nothing admitted and their triage rows unchanged; a second request is refused `EVALUATION_ALREADY_ACTIVE`). It fails with the old rule. Unit `page-capture` hand-off test extended (holds, EVALUATE, evaluation, deferral, read failure).
+- Final gate after the correction: typecheck, lint, `git diff --check` pass; unit 2,584 passed / 6 skipped; integration 503/503; E2E 71/71 in one pass.
+- Integration 502/502 before the correction (new `automatic-triage` 3: the three outcomes once per new job with no evaluation, admission, deferral or AI attempt; unchanged re-run not re-triaged; a manual decision kept on a changed listing; a changed never-assessed job triaged; no active profile counted with the run completed; an attached exact duplicate not triaged; the dashboard row reading the triage).
+- E2E 71/71 in one pass (the retrieval spec now asserts the run's triage count, the row's triage badge with "Not evaluated" and no AI recommendation, and the page's Processing status).
+
+## Universal Target Job Titles and Opportunity Management (November 22, 2026; on top of `85727dd`; implemented and verified offline; not committed, awaiting Alex's review)
+
+Both approved product improvements are done before the remaining live work (one LinkedIn Mode B batch, then final triage/evaluator acceptance). No live source test was run. WTTJ live acceptance stays closed.
+
+### Task 1: universal pre-capture title filtering
+
+- **One policy, every automatic source:** `createTitlePolicy` (`packages/core/src/title-policy.ts`) is used by configured sources (the retrieval worker, every adapter's list stage), results-page capture (staging and selection), jobs queued earlier (worker claim, tab start) and the post-ingest safety net. The title is read from the listing, card or feed, never by opening the job page.
+- **Matching:** whole words in order, ignoring case, accents, punctuation, `&`/"and" and plurals. The most specific pattern decides: an excluded pattern beats an accepted one only with at least as many words, so no title is rejected for one shared word. Missing titles are never accepted. Seniority is never filtered.
+- **Defaults (Alex's career targets, November 22):**
+  - accepted: Customer/Client/Member/User/Partner Success, CSM; Customer/Client/Member Experience; **Onboarding Specialist** and Onboarding Manager/Coordinator/Consultant/Lead, Customer/Client Onboarding; **Customer Education Specialist**, Customer/Client Education, Learning, Training; Customer/Client Enablement; Implementation Specialist/Manager/Consultant/Lead/Coordinator/Project Manager, Customer/Client Implementation; Product/Customer/Digital Adoption, Adoption Specialist/Manager; Customer/Client Engagement, Learner/Student/Community Success, Customer Journey, Customer Outcomes.
+  - Education, learning, training and enablement need a Customer or Client qualifier (Education Specialist, Learning Specialist, Learning Experience, Training Specialist, Learning and Development and Enablement Specialist are not accepted by default); other families need none.
+  - excluded: Customer Experience Designer/Design/Researcher; Employee/HR/People/New Hire Onboarding.
+  - Rejected as required: Payroll Support Representative, Employee Onboarding Specialist, Customer Experience Designer, Program Manager, M&A Recruiting. Accepted examples in `tests/unit/title-policy.test.ts`.
+- **Editable without code:** **Target job titles (automatic capture)** on the Profile page (add and remove accepted and excluded patterns, Test a title, Reset to defaults), stored in the new `TitlePolicySetting` table (not the versioned evaluator profile). Each run, pass or request reads it afresh; saved jobs are never reprocessed.
+- **Skipped titles:** not read, not saved, no opportunity, no triage, no Pre-Evaluation Review, no evaluation, not in Dismissed, no new queue. Only counts remain: `skippedByTitle` / `missingTitle` on retrieval runs, `outsideTitles` on page-capture sessions, and the extension's **Skipped (outside target titles)** total.
+- **Mode B batches:** off-title cards are handled (seen, so they count as progress and for the last-page check) but never buffered: a batch holds up to 25 eligible jobs and the run reads on. The November 18 progress, unread-card and stop rules are unchanged.
+- **Deliberate actions:** Single Capture and the manual form always save. In the single-pass save, off-title cards start unticked; a ticked one is saved with `titleOverride` and handed off normally. Continuous runs never override.
+- **Earlier queued jobs and missing titles:** a queued item whose title fails becomes `SKIPPED` (`OUTSIDE_TARGET_TITLES` or `MISSING_TITLE`) without being read; `SKIPPED` counts as settled, so no batch waits on it, and a later capture whose title passes stages it again. LinkedIn pending listings now keep their search title and are re-checked; ones recorded before (no title) wait until the search shows them again.
+- **Existing opportunities:** nothing changes automatically. The dashboard's **Find opportunities whose titles are outside your target job titles** filter (`titles=outside`) lists them for review and moving to Dismissed.
+
+### Task 2: opportunity management
+
+- **Shared rules** (`packages/core/src/opportunity-lifecycle.ts`, `apps/web/src/server/opportunity-move-service.ts`): Move to destinations Active, Saved, Dismissed, Archived and Restore. Pre-Evaluation Review, All and Applied are never destinations; Applied stays with the Application Tracker, so a move creates no application data. New `REACTIVATE` action (to the system state the evaluations give); SAVE also from Dismissed/Archived; DISMISS also from Archived. Every move is a recorded user action through the guarded writer (row lock, application guard, compare-and-set).
+- **Dashboard:** checkbox per row, ⋯ Move to menu with only the row's valid destinations, Select all on this page, Clear selection, "N selected", Move selected to…, a result with every failure and its reason. Selection is page-scoped and cleared by any change of search, filter, sort or page; bulk actions send explicit IDs only (at most 50).
+- **Opportunity page:** Save / Mark as applied / Dismiss / Archive replaced by one Move to dropdown (with Restore), the blocked moves and their reasons, and a pointer to the Application Tracker for Applied.
+- **Dismissed as a recycle bin:** Restore selected; Delete selected permanently… and Empty Dismissed (N)…, each with a confirmation naming the exact count; Empty Dismissed refuses if the count changed. Deletion exists only there.
+- **Deletion safeguards** (`database/src/opportunity-deletion-repository.ts`): only dismissed opportunities, one transaction each under a row lock; refused with a reason for application history or open evaluation work (queued/running task, unconsumed admission, open deferral). Its AI usage accounting is copied to `RetainedEvaluationUsage` / `RetainedEvaluationAdmission` (no job content, no link), so budget, spend, throughput and usage totals are unchanged. SHA-256 fingerprints of its listing identities go to `DeletedOpportunityTombstone` (no title, company or content), so no automatic source captures it again; a deliberate manual capture clears them. Its source records stay unlinked with their content cleared; its page-capture items are removed; existing cascades remove evaluations, duplicate references (both sides), provenance, triage and lifecycle history. Deleted jobs leave analytics.
+
+### Triage coverage audit (read-only; follow-up investigation)
+
+- `pnpm triage:audit --database <name>` (`apps/web/src/server/triage-coverage-audit.ts`, `-cli.ts`) reads, in a read-only session and transaction, each opportunity's stored triage row, Mode B hand-off outcome, evaluations, admissions, deferrals, AI usage, application and duplicate references. It counts each opportunity once per dimension, never infers anything from the dashboard view, and also runs on a database without migration 29. `--json` and `--candidates <new file>` are optional.
+- Backfill classes: ALREADY_ASSESSED, CANDIDATE (customer-success, Active/Saved, no triage, no evaluation or open work, title inside the target job titles), OUTSIDE_TARGET_TITLES, ALREADY_EVALUATED, EVALUATION_IN_PROGRESS, USER_ACTED, CANNOT_ASSESS.
+- Not yet run on Alex's database (not reachable from this environment). The triage-only backfill is a proposal only, awaiting separate approval.
+- Verified: integration `triage-coverage-audit` (categories, candidates and a rejected write); pre-29 database and a mismatched `--database` name checked by hand.
+
+### Deduplication
+
+Unchanged. The title check runs before ingestion; eligible jobs take the same ingestion and deduplication path. Regression tests: a repeated eligible capture attaches to the same opportunity and is not handed off again; deleting one of a PROBABLE_MATCH pair leaves the other intact.
+
+### Schema
+
+Migration 29 `20261122090000_title_policy_and_opportunity_management` (additive): `TitlePolicySetting`, `DeletedOpportunityTombstone`, `RetainedEvaluationUsage`, `RetainedEvaluationAdmission`; `REACTIVATE`; `SKIPPED`; `PageCaptureItem.titleOverride`; `RetrievedListing.title`. Extension version 0.4.0 (rebuild and reload).
+
+### Verified offline (`ai_career_assistant_test` only)
+
+- Typecheck (including the extension), lint, Prisma validate, migrations 29 (`db:verify-migrations`), extension build, `git diff --check`: pass.
+- Unit 2,569 passed / 6 skipped (new: `title-policy`, `title-policy-acquisition`, `opportunity-management`, `target-job-titles-ui`, plus continuous-capture, LinkedIn collection and lifecycle additions); integration 498/498 (new `title-policy-and-opportunity-management`, 11); E2E 71/71 in one pass (new `opportunity-management` project; continuous-capture "titles" scenario; detail-page specs moved to Move to).
 
 ## Mode B Acceptance Follow-up (November 18, 2026; on top of the November 15 candidate; verified offline; E1 done; approved by Alex and committed as `e881b4c`, pushed to `integration/final-evaluator-product`)
 

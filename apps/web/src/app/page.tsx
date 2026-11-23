@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
-import { platformMetadata } from "@ai-career/core";
+import { opportunityMoveOptions, platformMetadata, type OpportunityLifecycleState } from "@ai-career/core";
 import {
   PrismaOpportunityDashboardRepository,
   PrismaUsageSummaryRepository,
+  PrismaTitlePolicyRepository,
   PrismaUserEligibilityRepository,
   type DashboardFilterOptions,
   type DashboardSummary,
@@ -12,6 +13,9 @@ import {
   type UsageTotals as UsageTotalsData,
 } from "@ai-career/database";
 import { OpportunityList } from "@/components/dashboard/opportunity-list";
+import { OpportunitySelectionProvider, SelectionToolbar } from "@/components/dashboard/selection/opportunity-selection";
+import { applicationMoveState } from "@/server/opportunity-move-service";
+import { opportunitiesOutsideTargetTitles } from "@/server/title-policy-service";
 import { UsageTotals } from "@/components/dashboard/usage-totals";
 import { ActiveFilters } from "@/components/dashboard/active-filters";
 import { NeedsAttention, PipelineOverview } from "@/components/dashboard/dashboard-summary";
@@ -52,9 +56,13 @@ export default async function HomePage({
   const eligibility = await new PrismaUserEligibilityRepository().get().catch(() => null);
 
   let result: OpportunityListPage | null = null;
+  let outsideTitles: string[] | null = null;
   try {
+    // The cleanup filter: earlier captures whose titles are outside the
+    // current target job titles (November 22, 2026).
+    if (query.titles === "outside") outsideTitles = await opportunitiesOutsideTargetTitles(new PrismaTitlePolicyRepository());
     result = await getOpportunityListReader().listPage({
-      filters: toListFilters(query),
+      filters: { ...toListFilters(query), ...(outsideTitles ? { idIn: outsideTitles } : {}) },
       sort: query.sort,
       page: query.page,
       pageSize: query.pageSize,
@@ -135,6 +143,22 @@ export default async function HomePage({
           ))}
         </nav>
         <OpportunityFilters query={query} options={filterOptions} />
+        {query.titles === "outside" ? (
+          <div className="title-cleanup-banner" role="status">
+            <p>
+              Showing the opportunities whose titles are outside your target job titles
+              {outsideTitles ? ` (${outsideTitles.length} in all views)` : ""}. Nothing is changed automatically: select the ones
+              you do not want and move them to Dismissed, where they can be restored or deleted permanently.
+            </p>
+            <Link href={opportunityHref(withChanges(query, { titles: undefined }))}>Show all titles</Link>
+          </div>
+        ) : (
+          <p className="title-cleanup-link">
+            <Link href={opportunityHref(withChanges(query, { titles: "outside" }))}>
+              Find opportunities whose titles are outside your target job titles
+            </Link>
+          </p>
+        )}
         {result === null ? (
           <p className="error-message" role="alert">
             Opportunities could not be loaded. Check the database connection and try again.
@@ -157,7 +181,22 @@ export default async function HomePage({
                 {filtered ? <Link href={opportunityHref(clearFilters(query))}>Clear all filters</Link> : null}
               </div>
             ) : (
-              <OpportunityList opportunities={result.items} eligibility={eligibility} />
+              <OpportunitySelectionProvider
+                key={opportunityHref(query)}
+                rows={result.items.map((item) => ({ id: item.id, title: item.title ?? "Untitled opportunity" }))}
+              >
+                <SelectionToolbar dismissedView={query.view === "dismissed"} dismissedTotal={summary?.dismissed ?? 0} />
+                <OpportunityList
+                  opportunities={result.items}
+                  eligibility={eligibility}
+                  moveOptions={Object.fromEntries(
+                    result.items.map((item) => [
+                      item.id,
+                      opportunityMoveOptions({ status: item.status as OpportunityLifecycleState, application: applicationMoveState(item.application) }),
+                    ]),
+                  )}
+                />
+              </OpportunitySelectionProvider>
             )}
             <Pagination query={query} page={result.page} pageCount={result.pageCount} />
           </>

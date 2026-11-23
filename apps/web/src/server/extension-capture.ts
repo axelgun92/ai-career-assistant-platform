@@ -8,6 +8,7 @@ import {
   normalizedSiteHost,
   linkedInJobIdFromUrl,
   RetrievedListingNormalizationError,
+  titlePolicyAccepts,
   type ApplicationUrlBasis,
   type DiscoveryConfiguration,
   type ExtensionCapture,
@@ -15,6 +16,7 @@ import {
   type RetrievalIngestionService,
   type RetrievedListingOutcome,
   type SourceCategory,
+  type TitlePolicy,
 } from "@ai-career/core";
 import type { ExtensionPairingRecord } from "@ai-career/database";
 import { listingUrlKey } from "@ai-career/deduplication";
@@ -372,6 +374,13 @@ export interface ExtensionCaptureDependencies {
   // at save, as before.
   triage?: (opportunityId: string) => Promise<CaptureTriage>;
   discovery: DiscoveryConfiguration;
+  // The target job titles (November 22, 2026): informational only here (a
+  // job captured deliberately is always kept). Without it the domain's
+  // discovery title terms are used.
+  titlePolicy?: () => Promise<TitlePolicy>;
+  // A deliberate capture of a job the user permanently deleted clears its
+  // tombstone, so automatic re-observation deduplicates into it again.
+  clearDeleted?: (identity: { source: string; externalId: string | null; sourceUrl: string; pageCaptureExternalId: string | null }) => Promise<unknown>;
   now?: () => Date;
 }
 
@@ -400,6 +409,14 @@ export function createExtensionCaptureService(dependencies: ExtensionCaptureDepe
       });
       let ingested;
       try {
+        if (dependencies.clearDeleted) {
+          await dependencies.clearDeleted({
+            source: raw.source,
+            externalId: raw.externalId ?? null,
+            sourceUrl: identity.sourceUrl,
+            pageCaptureExternalId: identity.externalId,
+          });
+        }
         ingested = await dependencies.ingestion.ingest(raw);
       } catch (error) {
         if (error instanceof RetrievedListingNormalizationError) {
@@ -418,7 +435,7 @@ export function createExtensionCaptureService(dependencies: ExtensionCaptureDepe
         sourceCategory: identity.site.category,
         probableDuplicate: ingested.decision === "PROBABLE_MATCH",
         // Informational only: a capture is kept whatever its title.
-        outsideRoleFamilies: !keepTitle(raw.title),
+        outsideRoleFamilies: dependencies.titlePolicy ? !titlePolicyAccepts((await dependencies.titlePolicy())(raw.title)) : !keepTitle(raw.title),
         evaluation: await dependencies.latestEvaluation(ingested.opportunityId),
       };
       if (dependencies.triage) {

@@ -109,6 +109,29 @@ const toNumber = (value: Prisma.Decimal | number | bigint | null) =>
 // Read-only budget accounting over persisted semantic-operation attempts,
 // plus the budget settings and reservations. It aggregates attempt rows
 // directly and never recalculates or estimates provider cost.
+// AI usage as accounted for budget, spend and usage figures (November 22,
+// 2026): every persisted semantic-operation attempt, plus the retained
+// accounting of attempts whose opportunity the user permanently deleted, so
+// deleting an opportunity never changes these totals.
+const accountedAttempts = Prisma.sql`(
+  SELECT a."evaluationId", a."domain", o."sourceType"::text AS "sourceType", COALESCE(a."jobSource", o."source") AS "source",
+    a."inputTokens", a."outputTokens", a."totalTokens", a."estimatedCost", a."pricingConfigurationId", a."createdAt"
+  FROM "SemanticOperationAttempt" a
+  JOIN "Opportunity" o ON o."id" = a."opportunityId"
+  UNION ALL
+  SELECT r."evaluationId", r."domain", r."sourceType", COALESCE(r."jobSource", r."source") AS "source",
+    r."inputTokens", r."outputTokens", r."totalTokens", r."estimatedCost", r."pricingConfigurationId", r."createdAt"
+  FROM "RetainedEvaluationUsage" r
+)`;
+
+// Evaluation admissions as counted for throughput: live ones and those of
+// permanently deleted opportunities (November 22, 2026).
+const accountedAdmissions = Prisma.sql`(
+  SELECT "createdAt", "abandonedAt" FROM "EvaluationAdmission"
+  UNION ALL
+  SELECT "createdAt", NULL::timestamptz AS "abandonedAt" FROM "RetainedEvaluationAdmission"
+)`;
+
 export class PrismaBudgetRepository {
   private readonly database = getDatabaseClient();
 
@@ -178,7 +201,7 @@ export class PrismaBudgetRepository {
         COUNT(*) FILTER (
           WHERE a."estimatedCost" IS NOT NULL AND p."id" IS NOT NULL AND p."currency" <> ${input.currency}
         ) AS other
-      FROM "SemanticOperationAttempt" a
+      FROM ${accountedAttempts} a
       LEFT JOIN "AiModelPricingConfiguration" p ON p."id" = a."pricingConfigurationId"
       WHERE a."createdAt" >= ${start} AND a."createdAt" < ${end}
     `;
@@ -286,7 +309,7 @@ export class PrismaBudgetRepository {
       SELECT
         COUNT(*) FILTER (WHERE "createdAt" >= ${input.day.start} AND "createdAt" < ${input.day.end}) AS daily,
         COUNT(*) FILTER (WHERE "createdAt" >= ${input.week.start} AND "createdAt" < ${input.week.end}) AS weekly
-      FROM "EvaluationAdmission"
+      FROM ${accountedAdmissions} ad
       WHERE "abandonedAt" IS NULL
         AND "createdAt" >= ${input.day.start < input.week.start ? input.day.start : input.week.start}
     `;
@@ -294,7 +317,7 @@ export class PrismaBudgetRepository {
       SELECT
         SUM("outputTokens") AS output,
         COUNT(*) FILTER (WHERE "outputTokens" IS NULL) AS unreported
-      FROM "SemanticOperationAttempt"
+      FROM ${accountedAttempts} a
       WHERE "createdAt" >= ${input.period.start} AND "createdAt" < ${input.period.end}
     `;
     return {
@@ -315,7 +338,7 @@ export class PrismaBudgetRepository {
         COUNT(*) FILTER (WHERE "inputTokens" IS NULL) AS "attemptsWithoutInputTokens",
         COUNT(*) FILTER (WHERE "outputTokens" IS NULL) AS "attemptsWithoutOutputTokens",
         COUNT(*) FILTER (WHERE "totalTokens" IS NULL) AS "attemptsWithoutTotalTokens"
-      FROM "SemanticOperationAttempt"
+      FROM ${accountedAttempts} a
       WHERE "createdAt" >= ${period.start} AND "createdAt" < ${period.end}
     `;
     const value = (key: string) => Number(row?.[key] ?? 0);
@@ -349,8 +372,8 @@ export class PrismaBudgetRepository {
     >`
       SELECT
         a."domain",
-        o."sourceType"::text AS "sourceType",
-        COALESCE(a."jobSource", o."source") AS "source",
+        a."sourceType",
+        a."source",
         COUNT(*) AS attempts,
         COUNT(DISTINCT a."evaluationId") AS evaluations,
         SUM(a."inputTokens") AS "inputTokens",
@@ -363,8 +386,7 @@ export class PrismaBudgetRepository {
         COUNT(*) FILTER (
           WHERE NOT (a."estimatedCost" IS NOT NULL AND p."currency" IS NOT NULL AND p."currency" = ${currency})
         ) AS unknown
-      FROM "SemanticOperationAttempt" a
-      JOIN "Opportunity" o ON o."id" = a."opportunityId"
+      FROM ${accountedAttempts} a
       LEFT JOIN "AiModelPricingConfiguration" p ON p."id" = a."pricingConfigurationId"
       WHERE a."createdAt" >= ${input.period.start} AND a."createdAt" < ${input.period.end}
       GROUP BY 1, 2, 3
@@ -408,7 +430,7 @@ export class PrismaBudgetRepository {
         COUNT(*) FILTER (
           WHERE NOT (a."estimatedCost" IS NOT NULL AND p."currency" IS NOT NULL AND p."currency" = ${input.currency})
         ) AS unknown
-      FROM "SemanticOperationAttempt" a
+      FROM ${accountedAttempts} a
       LEFT JOIN "AiModelPricingConfiguration" p ON p."id" = a."pricingConfigurationId"
       WHERE a."createdAt" >= ${input.from} AND a."createdAt" < ${input.to}
       GROUP BY 1

@@ -5,7 +5,9 @@ import {
   PrismaExtensionLookupRepository,
   PrismaExtensionPairingRepository,
   PrismaManualOpportunityRepository,
+  PrismaOpportunityTombstoneRepository,
   PrismaPageCaptureRepository,
+  PrismaTitlePolicyRepository,
   type ExtensionPairingRecord,
 } from "@ai-career/database";
 import { createRetrievedOpportunityNormalizer } from "@ai-career/normalization";
@@ -33,6 +35,7 @@ import { createPageCaptureService, type PageCaptureService } from "./page-captur
 import { createPageCaptureIngestor, evaluationHandoff } from "./page-capture-acquisition";
 import { createPageCaptureTabService, PageCaptureTabError, type PageCaptureTabService } from "./page-capture-tabs";
 import { extensionCaptureSession, extensionCaptureSessions } from "./page-capture-progress";
+import { createTitlePolicyLoader } from "./title-policy-service";
 
 // The browser extension companion's API (feature 14B). Two groups of
 // routes:
@@ -324,7 +327,15 @@ export function getExtensionApi(): ExtensionApiHandlers {
     normalizer: createRetrievedOpportunityNormalizer(),
   });
   const pageCaptureRepository = new PrismaPageCaptureRepository();
-  const pageCaptures = createPageCaptureService({ repository: pageCaptureRepository });
+  // The target job titles, read for each request (November 22, 2026), and
+  // the tombstones of jobs the user permanently deleted.
+  const titlePolicy = createTitlePolicyLoader(new PrismaTitlePolicyRepository());
+  const tombstones = new PrismaOpportunityTombstoneRepository();
+  const pageCaptures = createPageCaptureService({
+    repository: pageCaptureRepository,
+    titlePolicy,
+    isDeletedCard: (card) => tombstones.isDeleted({ sourceUrl: card.sourceUrl, pageCaptureExternalId: card.externalId }),
+  });
   // The evaluation service is reached only when a job is handed off.
   const handoff = () => evaluationHandoff(getEvaluationService());
   handlers = createExtensionApiHandlers({
@@ -342,6 +353,8 @@ export function getExtensionApi(): ExtensionApiHandlers {
       // Triage only at save (D2): never admission or evaluation.
       triage: async (opportunityId) => captureTriageFrom(await getEvaluationService().assessTriage(opportunityId)),
       discovery: customerSuccessDiscoveryConfiguration,
+      titlePolicy,
+      clearDeleted: (identity) => tombstones.clear(identity),
     }),
     pageCaptures,
     pageCaptureTabs: createPageCaptureTabService({
@@ -351,8 +364,10 @@ export function getExtensionApi(): ExtensionApiHandlers {
         ingestion,
         handoff: { alreadyHandled: (id) => handoff().alreadyHandled(id), request: (id) => handoff().request(id) },
         discovery: customerSuccessDiscoveryConfiguration,
+        titlePolicy,
       }),
       enabledSites: pageCaptures.enabledSites,
+      titlePolicy,
     }),
     captureHistory: {
       sessions: (limit) => extensionCaptureSessions(limit, pageCaptureRepository),

@@ -107,6 +107,8 @@ export interface ListingObservationInput {
   // not be stored yet; each gets a row (no opportunity) if it has none, so a
   // later run can fetch its details. See pendingListings.
   discovered?: readonly string[];
+  // Their search-result titles (November 22, 2026), kept for re-checking.
+  discoveredTitles?: Readonly<Record<string, string>>;
   // Feature 14: pending listings (no opportunity yet) whose job page the
   // source no longer serves; their rows are dropped from the queue.
   unavailable?: readonly string[];
@@ -588,9 +590,19 @@ export class PrismaRetrievalSourceRepository {
             firstSeenAt: input.at,
             lastSeenAt: input.at,
             lastSeenRunId: input.runId,
+            title: input.discoveredTitles?.[externalId] ?? null,
           })),
           skipDuplicates: true,
         });
+        // A pending listing seen again keeps its latest search-result title.
+        for (const externalId of discovered) {
+          const title = input.discoveredTitles?.[externalId];
+          if (!title) continue;
+          await transaction.retrievedListing.updateMany({
+            where: { ...scope, externalId, opportunityId: null, OR: [{ title: null }, { NOT: { title } }] },
+            data: { title },
+          });
+        }
       }
       const unavailable = [...new Set(input.unavailable ?? [])].filter((externalId) => !storedIds.has(externalId));
       if (unavailable.length) {
@@ -669,12 +681,17 @@ export class PrismaRetrievalSourceRepository {
   // whose details are not stored yet (a ledger row without an opportunity),
   // first discovered since the given time, oldest first. A browser-assisted
   // adapter fetches them gradually across runs.
-  async pendingListings(sourceId: string, trackingScopeKey: string, since: Date, limit = 200): Promise<Array<{ externalId: string; firstSeenAt: Date }>> {
+  async pendingListings(
+    sourceId: string,
+    trackingScopeKey: string,
+    since: Date,
+    limit = 200,
+  ): Promise<Array<{ externalId: string; firstSeenAt: Date; title: string | null }>> {
     return this.database.retrievedListing.findMany({
       where: { retrievalSourceId: sourceId, trackingScopeKey, opportunityId: null, state: "LISTED", firstSeenAt: { gte: since } },
       orderBy: [{ firstSeenAt: "asc" }, { externalId: "asc" }],
       take: limit,
-      select: { externalId: true, firstSeenAt: true },
+      select: { externalId: true, firstSeenAt: true, title: true },
     });
   }
 

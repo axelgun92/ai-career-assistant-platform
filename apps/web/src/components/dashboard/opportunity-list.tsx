@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { workAuthorizationRelevance, type UserWorkEligibility } from "@ai-career/core";
+import { workAuthorizationRelevance, type OpportunityMoveDestination, type UserWorkEligibility } from "@ai-career/core";
 import type { OpportunityListItem } from "@ai-career/database";
 import { formatDate, formatLabel, formatLifecycle, formatText } from "./format";
 import { evaluationStatusLabel, priorityBandLabel } from "./labels";
@@ -7,13 +7,15 @@ import { sourceTypeLabel } from "../opportunity-provenance";
 import { ExternalLink, safeExternalUrl } from "../external-link";
 import { applicationStatusLabel } from "../application/labels";
 import { formatResidency, formatSalary, formatWorkArrangements } from "../opportunity-facts";
+import { RowMoveMenu, RowSelect } from "./selection/opportunity-selection";
+import { processingStatusOf } from "../processing-status";
 
 type Optional =
   | "discoveredAt" | "updatedAt" | "applicationUrl" | "currentRecommendation" | "priorityBand" | "roleFamily"
   | "customerSegment" | "application" | "salaryMin" | "salaryMax" | "currency" | "remoteStatus" | "seniority"
   | "residencyRequirement" | "residencyRegions" | "duplicate" | "foundVia" | "listingChanged" | "noLongerListed"
   | "workAuthorizationRequirement" | "workAuthorizationRegions" | "visaSponsorship" | "relocationSupport"
-  | "employerOfRecordRegions" | "compensationBasis" | "workArrangements";
+  | "employerOfRecordRegions" | "compensationBasis" | "workArrangements" | "triage";
 type Row = Omit<OpportunityListItem, Optional> & Partial<Pick<OpportunityListItem, Optional>>;
 
 // The application tracker's state, kept to one badge plus the next follow-up.
@@ -41,20 +43,35 @@ function ApplicationBadges({ opportunity }: { opportunity: Row }) {
   );
 }
 
+// The job's processing status (November 23, 2026), from its stored records:
+// pre-evaluator triage, then the evaluation, then the AI evaluator's
+// recommendation. Triage outcomes are always labelled "Triage", so a triage
+// Needs review or Reject is never read as the evaluator's Review or Skip.
 function EvaluationBadges({ opportunity }: { opportunity: Row }) {
   const evaluation = opportunity.latestEvaluation;
   const recommendation = opportunity.currentRecommendation ??
     (evaluation?.decision ? { decision: evaluation.decision, isLatest: true } : null);
+  const status = processingStatusOf({
+    triage: opportunity.triage ?? null,
+    latestEvaluationStatus: evaluation?.status ?? null,
+    deferred: opportunity.deferred,
+    recommendation,
+  });
   const priority = priorityBandLabel(opportunity.priorityBand);
   return (
-    <>
-      {recommendation ? (
+    <span className="processing-status" role="group" aria-label={`Processing status: ${status.summary}`}>
+      <span
+        className={status.triage.stage === "NOT_ASSESSED" ? "status-label status-label-muted status-label-triage" : "status-label status-label-triage"}
+        title={status.triage.detail}
+      >
+        {status.triage.label}
+      </span>
+      {status.recommendation ? (
         <span
           className="status-label status-label-decision"
-          title={recommendation.isLatest ? undefined : "From the last completed evaluation"}
+          title={status.recommendation.isLatest ? "The AI evaluator's recommendation" : "The AI evaluator's recommendation, from the last completed evaluation"}
         >
-          {formatLabel(recommendation.decision)}
-          {recommendation.isLatest ? "" : " (last completed)"}
+          AI recommendation: {status.recommendation.label}
         </span>
       ) : null}
       {priority ? <span className="status-label status-label-priority">{priority}</span> : null}
@@ -66,7 +83,7 @@ function EvaluationBadges({ opportunity }: { opportunity: Row }) {
       {opportunity.deferred ? (
         <span className="status-label status-label-deferred">Evaluation deferred</span>
       ) : null}
-    </>
+    </span>
   );
 }
 
@@ -89,7 +106,17 @@ function needsEligibilityCheck(opportunity: Row, eligibility: UserWorkEligibilit
   return status === "REVIEW" || status === "UNKNOWN_CHECK";
 }
 
-export function OpportunityList({ opportunities, eligibility }: { opportunities: Row[]; eligibility?: UserWorkEligibility | null }) {
+export function OpportunityList({
+  opportunities,
+  eligibility,
+  moveOptions,
+}: {
+  opportunities: Row[];
+  eligibility?: UserWorkEligibility | null;
+  // Move to (November 22, 2026): each row's valid destinations. Without it
+  // (or outside the selection provider) rows show no selection controls.
+  moveOptions?: Readonly<Record<string, readonly OpportunityMoveDestination[]>>;
+}) {
   if (opportunities.length === 0) {
     return (
       <p className="empty-state">
@@ -106,6 +133,7 @@ export function OpportunityList({ opportunities, eligibility }: { opportunities:
         return (
           <li key={opportunity.id} className="opportunity-row">
             <div className="opportunity-row-main">
+              {moveOptions ? <RowSelect id={opportunity.id} title={opportunity.title ?? "Untitled opportunity"} /> : null}
               <Link href={`/opportunities/${opportunity.id}`} className="opportunity-row-title">
                 {opportunity.title ?? "Untitled opportunity"}
               </Link>
@@ -169,6 +197,13 @@ export function OpportunityList({ opportunities, eligibility }: { opportunities:
               ) : null}
               {applicationUrl ? (
                 <ExternalLink href={applicationUrl}>Application page</ExternalLink>
+              ) : null}
+              {moveOptions ? (
+                <RowMoveMenu
+                  id={opportunity.id}
+                  title={opportunity.title ?? "Untitled opportunity"}
+                  destinations={moveOptions[opportunity.id] ?? []}
+                />
               ) : null}
             </div>
           </li>

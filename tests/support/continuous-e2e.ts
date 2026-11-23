@@ -25,6 +25,9 @@ export interface ContinuousScenario {
   // get their titles only after a delay (rendered late).
   repeatLoads?: number;
   lateTitlesMs?: number;
+  // 1-based positions of jobs whose titles are outside the target job
+  // titles (November 22, 2026): never batched, read or saved.
+  outsideTitles?: number[];
 }
 
 export const continuousScenarios: Record<string, ContinuousScenario> = {
@@ -41,6 +44,9 @@ export const continuousScenarios: Record<string, ContinuousScenario> = {
   // 50 jobs: four presses that only repeat shown jobs (the old rule stopped
   // after three), then cards whose titles render 6 s late: 25 + 25.
   late: { kind: "show-more", total: 50, captured: [], repeatLoads: 4, lateTitlesMs: 6_000 },
+  // 70 jobs, 20 of them outside the target job titles (every other job of
+  // the first 40): 50 eligible, 25 + 25, and the outside ones take no slot.
+  titles: { kind: "show-more", total: 70, captured: [], outsideTitles: Array.from({ length: 20 }, (_unused, index) => index * 2 + 1) },
 };
 
 const host = (kind: ContinuousScenario["kind"]) => (kind === "show-more" ? "jobs.e2e.invalid" : "pages.e2e.invalid");
@@ -53,14 +59,15 @@ export const capturedBefore = (scenario: string, run: string) => continuousScena
 export const eligible = (scenario: string, run: string) => {
   const spec = continuousScenarios[scenario]!;
   return Array.from({ length: spec.total }, (_unused, index) => index + 1)
-    .filter((index) => !spec.captured.includes(index))
+    .filter((index) => !spec.captured.includes(index) && !(spec.outsideTitles ?? []).includes(index))
     .map((index) => continuousJobUrl(scenario, run, index));
 };
 
 const card = (scenario: string, run: string, index: number) => {
   const id = continuousJobId(scenario, run, index);
   const url = continuousJobUrl(scenario, run, index);
-  return `<li class="card" data-job-id="${id}"><a class="card-title" href="${url}">Customer Success Manager ${index}</a><span class="card-company">Continuous ${run}</span><span class="card-location">Remote, United States</span><span class="card-posted">1 day ago</span></li>`;
+  const title = (continuousScenarios[scenario]!.outsideTitles ?? []).includes(index) ? `Payroll Support Representative ${index}` : `Customer Success Manager ${index}`;
+  return `<li class="card" data-job-id="${id}"><a class="card-title" href="${url}">${title}</a><span class="card-company">Continuous ${run}</span><span class="card-location">Remote, United States</span><span class="card-posted">1 day ago</span></li>`;
 };
 
 function showMorePage(scenario: string, run: string, spec: ContinuousScenario): string {

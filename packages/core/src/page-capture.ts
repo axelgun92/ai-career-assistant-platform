@@ -549,6 +549,9 @@ export const pageCaptureCardSchema = z
     company: optionalText(pageCaptureLimits.shortText),
     location: optionalText(pageCaptureLimits.shortText),
     postedText: optionalText(pageCaptureLimits.postedText),
+    // The user deliberately chose this job although its title is outside
+    // the target job titles (single-pass save only; November 22, 2026).
+    titleOverride: z.boolean().optional(),
   })
   .strict();
 
@@ -591,7 +594,17 @@ export const pageCaptureSelectionSchema = z
   .object({
     site: z.string().trim().min(1).max(60),
     cards: z
-      .array(z.object({ url: httpUrl, siteJobId: z.string().trim().min(1).max(pageCaptureLimits.siteJobId).regex(/^\S+$/).nullable().default(null) }).strict())
+      .array(
+        z
+          .object({
+            url: httpUrl,
+            siteJobId: z.string().trim().min(1).max(pageCaptureLimits.siteJobId).regex(/^\S+$/).nullable().default(null),
+            // The card's title (November 22, 2026), checked against the
+            // target job titles exactly as staging checks it.
+            title: z.string().trim().max(pageCaptureLimits.title).nullable().optional(),
+          })
+          .strict(),
+      )
       .min(1)
       .max(pageCaptureSelectionMaxCards),
   })
@@ -604,8 +617,22 @@ export type PageCaptureSelectionInput = z.input<typeof pageCaptureSelectionSchem
 // details and never added: a new save reads it again). Never selectable:
 // ALREADY_SAVED, IN_PROGRESS (queued or being read), DISMISSED, UNAVAILABLE,
 // AWAITING on the worker's sites (its own retry rules apply) and REJECTED
-// (not a job of this site).
-export const pageCaptureDispositionValues = ["NEW", "REFRESH_DUE", "AWAITING", "ALREADY_SAVED", "IN_PROGRESS", "DISMISSED", "UNAVAILABLE", "REJECTED"] as const;
+// (not a job of this site). November 22, 2026: OUTSIDE_TARGET_TITLES (the
+// card's title is outside the target job titles, or has none: never read or
+// saved by automatic capture) and DELETED (the user permanently deleted this
+// job), never selectable.
+export const pageCaptureDispositionValues = [
+  "NEW",
+  "REFRESH_DUE",
+  "AWAITING",
+  "ALREADY_SAVED",
+  "IN_PROGRESS",
+  "DISMISSED",
+  "UNAVAILABLE",
+  "REJECTED",
+  "OUTSIDE_TARGET_TITLES",
+  "DELETED",
+] as const;
 export type PageCaptureDisposition = (typeof pageCaptureDispositionValues)[number];
 
 export type PageCaptureCard = z.infer<typeof pageCaptureCardSchema>;
@@ -621,6 +648,9 @@ export const pageCaptureItemStatusValues = [
   "UNAVAILABLE",
   "ALREADY_SAVED",
   "DISMISSED",
+  // Not read (November 22, 2026): its title is outside the target job
+  // titles or missing (lastReason). Settled; stageable again.
+  "SKIPPED",
 ] as const;
 export type PageCaptureItemStatus = (typeof pageCaptureItemStatusValues)[number];
 
@@ -639,6 +669,11 @@ export const pageCaptureReasonValues = [
   "BATCH_STOPPED",
   "USER_STOPPED",
   "PERMISSION_MISSING",
+  // November 22, 2026: skipped by the target job titles, or the user
+  // permanently deleted the job.
+  "OUTSIDE_TARGET_TITLES",
+  "MISSING_TITLE",
+  "DELETED_BY_USER",
 ] as const;
 export type PageCaptureReason = (typeof pageCaptureReasonValues)[number];
 

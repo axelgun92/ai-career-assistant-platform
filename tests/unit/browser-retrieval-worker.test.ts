@@ -76,7 +76,7 @@ function setup(options: { pages?: Record<string, FixturePage>; browser?: boolean
     env: () => options.env ?? env,
     now: () => now,
     log: { info: vi.fn(), warn: vi.fn() },
-    pendingListings: async (id, scope, since) => (pendingCalls.push([id, scope, since]), [{ externalId: "4300000009", firstSeenAt: new Date(now.getTime() - 86_400_000) }]),
+    pendingListings: async (id, scope, since) => (pendingCalls.push([id, scope, since]), [{ externalId: "4300000009", firstSeenAt: new Date(now.getTime() - 86_400_000), title: "Customer Success Manager" }]),
     ...(options.browser === false
       ? {}
       : {

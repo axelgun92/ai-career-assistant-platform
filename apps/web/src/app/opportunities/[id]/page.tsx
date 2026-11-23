@@ -26,6 +26,7 @@ import { getDuplicateStore } from "@/server/duplicate-service";
 import { getCompanyIntelligenceService } from "@/server/company-intelligence-service";
 import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-service";
 import { DuplicateNotices } from "@/components/duplicate-notices";
+import { duplicateStageOf } from "@/components/processing-breakdown";
 import {
   applicationUrlBasisNotes,
   employerOnTargetStatement,
@@ -288,8 +289,11 @@ export default async function OpportunityPage({
         <OpportunityActions
           opportunityId={detail.opportunity.id}
           statusLabel={formatLifecycle(lifecycle.status)}
-          availableActions={lifecycle.availableActions}
-          blockedActions={lifecycle.blockedActions}
+          moveDestinations={lifecycle.moveDestinations}
+          blockedMoves={lifecycle.blockedMoves}
+          applicationPointer={
+            lifecycle.availableActions.includes("MARK_APPLIED") || lifecycle.blockedActions.some((blocked) => blocked.action === "MARK_APPLIED")
+          }
         />
       ) : null}
 
@@ -315,6 +319,12 @@ export default async function OpportunityPage({
         evaluable={lifecycle?.evaluable ?? true}
         deferral={deferral}
         activeProfile={activeProfile}
+        capture={{
+          normalized: detail.opportunity.status !== "DISCOVERED",
+          observations: detail.sourceRecords.length,
+          firstFoundAt: new Date(detail.opportunity.discoveredAt ?? detail.opportunity.createdAt).toISOString(),
+        }}
+        duplicate={duplicateStageOf(duplicates)}
         triage={triage ? {
           outcome: triage.outcome,
           automaticOutcome: triage.automaticOutcome,

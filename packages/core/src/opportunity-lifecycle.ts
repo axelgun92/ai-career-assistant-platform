@@ -34,18 +34,23 @@ export const opportunityUserActionSchema = z.enum([
   "DISMISS",
   "ARCHIVE",
   "RESTORE",
+  // Move to Active (November 22, 2026): back to the system state the
+  // opportunity's evaluations give.
+  "REACTIVATE",
 ]);
 export type OpportunityUserAction = z.infer<typeof opportunityUserActionSchema>;
 
-type ForwardAction = Exclude<OpportunityUserAction, "RESTORE">;
+type ForwardAction = Exclude<OpportunityUserAction, "RESTORE" | "REACTIVATE">;
 
 const forwardTransitions: Record<
   ForwardAction,
   { from: readonly OpportunityLifecycleState[]; to: OpportunityLifecycleState }
 > = {
-  SAVE: { from: systemLifecycleStates, to: "SAVED" },
+  // November 22, 2026 (Move to): a dismissed or archived opportunity can be
+  // saved, and an archived one dismissed, directly.
+  SAVE: { from: [...systemLifecycleStates, "REJECTED_BY_USER", "ARCHIVED"], to: "SAVED" },
   MARK_APPLIED: { from: [...systemLifecycleStates, "SAVED"], to: "APPLIED" },
-  DISMISS: { from: [...systemLifecycleStates, "SAVED"], to: "REJECTED_BY_USER" },
+  DISMISS: { from: [...systemLifecycleStates, "SAVED", "ARCHIVED"], to: "REJECTED_BY_USER" },
   ARCHIVE: {
     from: [...systemLifecycleStates, "SAVED", "APPLIED", "REJECTED_BY_USER", "CLOSED"],
     to: "ARCHIVED",
@@ -124,6 +129,11 @@ export function resolveUserAction(input: {
   currentSystemState: SystemLifecycleState;
 }): UserActionResolution {
   if (input.action === "RESTORE") return restoreTarget(input);
+  if (input.action === "REACTIVATE") {
+    return (userLifecycleStates as readonly string[]).includes(input.currentStatus)
+      ? { allowed: true, to: input.currentSystemState }
+      : { allowed: false, reason: `REACTIVATE is not allowed from ${input.currentStatus}` };
+  }
   const transition = forwardTransitions[input.action];
   return transition.from.includes(input.currentStatus)
     ? { allowed: true, to: transition.to }
@@ -139,4 +149,52 @@ export function availableUserActions(input: {
   return opportunityUserActionSchema.options.filter(
     (action) => resolveUserAction({ ...input, action }).allowed,
   );
+}
+
+// ---- Move to (November 22, 2026) -------------------------------------------
+// The destinations of the dashboard's and the opportunity page's Move to.
+// Pre-Evaluation Review and All are views, never destinations; Applied is
+// recorded through the Application Tracker, never by moving a card, so a
+// move never creates application data. Each destination is one ordinary
+// user action, recorded in the action history like any other.
+export const opportunityMoveDestinationSchema = z.enum(["ACTIVE", "SAVED", "DISMISSED", "ARCHIVED", "RESTORE"]);
+export type OpportunityMoveDestination = z.infer<typeof opportunityMoveDestinationSchema>;
+
+export const opportunityMoveDestinationActions: Record<Exclude<OpportunityMoveDestination, "RESTORE">, OpportunityUserAction> = {
+  ACTIVE: "REACTIVATE",
+  SAVED: "SAVE",
+  DISMISSED: "DISMISS",
+  ARCHIVED: "ARCHIVE",
+};
+
+// The destinations offered for an opportunity in this state. RESTORE (back
+// to the state before it was dismissed or archived, or Active when the
+// history does not say) is offered for Dismissed and Archived. A submitted
+// application keeps an Applied or archived-after-applying opportunity out of
+// Active and Saved, and an active application keeps it out of Dismissed
+// (lifecycleActionGuard decides the same on the server).
+export function opportunityMoveOptions(input: {
+  status: OpportunityLifecycleState;
+  application: { submitted: boolean; active: boolean } | null;
+}): OpportunityMoveDestination[] {
+  const submitted = input.application?.submitted === true;
+  const active = input.application?.active === true;
+  switch (input.status) {
+    case "NORMALIZED":
+    case "EVALUATED":
+    case "RECOMMENDED":
+      return ["SAVED", ...(active ? [] : (["DISMISSED"] as const)), "ARCHIVED"];
+    case "SAVED":
+      return ["ACTIVE", ...(active ? [] : (["DISMISSED"] as const)), "ARCHIVED"];
+    case "APPLIED":
+      return [...(submitted ? [] : (["ACTIVE"] as const)), "ARCHIVED"];
+    case "REJECTED_BY_USER":
+      return ["RESTORE", "ACTIVE", "SAVED", "ARCHIVED"];
+    case "ARCHIVED":
+      return ["RESTORE", ...(submitted ? [] : (["ACTIVE", "SAVED"] as const)), ...(active ? [] : (["DISMISSED"] as const))];
+    case "CLOSED":
+      return ["ARCHIVED"];
+    default:
+      return [];
+  }
 }

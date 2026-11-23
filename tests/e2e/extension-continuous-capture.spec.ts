@@ -52,7 +52,7 @@ interface RunState {
   batchNumber: number;
   buffer: unknown[];
   inFlight: unknown;
-  totals: { captured: number; skipped: number; failures: number };
+  totals: { captured: number; skipped: number; failures: number; outsideTitles?: number };
   workerStarts: number;
 }
 
@@ -239,6 +239,20 @@ test("'See more jobs' that first repeats shown jobs and then adds cards rendered
   expect(batches.map((batch) => batch.urls.length)).toEqual([25, 25]);
   expect(new Set(batches.flatMap((batch) => batch.urls))).toEqual(new Set(eligible("late", run)));
   expect(state.diagnostics.map((entry) => entry.event)).not.toContain("NO_MORE_RESULTS");
+  await search.close();
+  await panel.close();
+});
+
+test("titles outside the target job titles take no batch slot and are never read: 70 jobs, 20 outside, are 25 + 25 eligible, Completed (November 22, 2026)", async () => {
+  const { panel, search } = await startRun("titles");
+  const state = await workUntilEnd(panel);
+  expect(state.status).toBe("COMPLETED");
+  const batches = await batchesOf(state.runId);
+  expect(batches.map((batch) => batch.urls.length)).toEqual([25, 25]);
+  const submitted = batches.flatMap((batch) => batch.urls);
+  expect(new Set(submitted)).toEqual(new Set(eligible("titles", run)));
+  expect(state.totals.outsideTitles).toBe(20);
+  await expect(panel.locator("#continuous-totals")).toContainText("Skipped (outside target titles): 20");
   await search.close();
   await panel.close();
 });

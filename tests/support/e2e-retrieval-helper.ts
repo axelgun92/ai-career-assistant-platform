@@ -11,6 +11,8 @@ import {
 import { createFixtureTransport, defaultAdapterRegistry, fixtureRequestKey, workdayListBody } from "../../packages/discovery/src/index";
 import { createRetrievedOpportunityNormalizer } from "../../packages/normalization/src/index";
 import { createRetrievalWorker } from "../../apps/web/src/server/retrieval-worker";
+import { createAutomaticTriage } from "../../apps/web/src/server/automatic-triage";
+import { getEvaluationService } from "../../apps/web/src/server/evaluation-service";
 
 // Deterministic E2E helper for Features 11A and 11B. run-retrieval runs one
 // retrieval worker iteration with the fixture transport serving the
@@ -22,7 +24,8 @@ import { createRetrievalWorker } from "../../apps/web/src/server/retrieval-worke
 // the Greenhouse fixture as a whole, consistent board (meta.total equal to
 // its jobs) and "board-shrunk" the same board without the Customer Success
 // posting; --at-hours=N runs the iteration N hours from now (without queueing
-// scheduled runs), so the 24-hour removal rule can be exercised. Only the isolated test
+// scheduled runs), so the 24-hour removal rule can be exercised. Each new
+// opportunity is triaged as the worker CLI does (November 23, 2026). Only the isolated test
 // database is ever used (Playwright points DATABASE_URL at it).
 
 const database = getDatabaseClient();
@@ -112,6 +115,11 @@ try {
       now: clock,
       log: { info: () => undefined, warn: () => undefined },
       lastChecked: (source, externalIds) => store.lastCheckedListings(source, externalIds),
+      // As the worker CLI wires it: triage only, never an evaluation.
+      triage: createAutomaticTriage({
+        assess: (opportunityId) => getEvaluationService().assessTriage(opportunityId),
+        existing: (opportunityId) => getEvaluationService().getTriage(opportunityId),
+      }),
     });
     process.stdout.write(JSON.stringify(await worker.runOnce()));
   } else if (command === "expire-gate") {

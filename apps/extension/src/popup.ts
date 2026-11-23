@@ -210,6 +210,22 @@ function openInApp() {
 // read once, shown for the user to keep or drop, and sent only on Save.
 let pageSite: PageCaptureSiteSpec | null = null;
 let reading: ResultCardsReading | null = null;
+let outsideTitleIndexes: ReadonlySet<number> = new Set();
+
+async function outsideTargetTitles(cards: ResultCardsReading["cards"]): Promise<ReadonlySet<number>> {
+  if (!api || !pageSite?.continuation || !cards.length) return new Set();
+  try {
+    const reply = await api.pageCaptureSelection({
+      site: pageSite.key,
+      cards: cards.map((card) => ({ url: card.url, siteJobId: card.siteJobId, title: card.title })),
+    });
+    if (!reply.ok) return new Set();
+    const outside = new Set(reply.body.cards.filter((card) => card.disposition === "OUTSIDE_TARGET_TITLES").map((card) => card.url));
+    return new Set(cards.flatMap((card, index) => (outside.has(card.url) ? [index] : [])));
+  } catch {
+    return new Set();
+  }
+}
 
 async function readJobsOnPage() {
   showError(null);
@@ -228,6 +244,10 @@ async function readJobsOnPage() {
   }
   if (!reading) return showError("This page could not be read.");
   setText("jobs-summary", readingSummary(reading));
+  // Titles outside the target job titles (November 22, 2026) start unticked;
+  // ticking one is a deliberate choice and saves it anyway. Without an
+  // answer from the app every card starts ticked, as before.
+  outsideTitleIndexes = await outsideTargetTitles(reading.cards);
   const list = element("jobs-list");
   list.replaceChildren();
   reading.cards.forEach((card, index) => {
@@ -235,9 +255,10 @@ async function readJobsOnPage() {
     const label = document.createElement("label");
     const box = document.createElement("input");
     box.type = "checkbox";
-    box.checked = true;
+    const outside = outsideTitleIndexes.has(index);
+    box.checked = !outside;
     box.dataset.index = String(index);
-    label.append(box, document.createTextNode(` ${cardLine(card)}`));
+    label.append(box, document.createTextNode(` ${cardLine(card)}${outside ? " (outside your target job titles: tick to save anyway)" : ""}`));
     item.append(label);
     list.append(item);
   });
@@ -251,12 +272,18 @@ function saveJobs() {
   showError(null);
   if (!api || !reading || !pageSite) return;
   const kept = [...element("jobs-list").querySelectorAll<HTMLInputElement>("input[type=checkbox]")].map((box) => box.checked);
-  const built = buildPageCaptureBatch(reading, kept, {
-    site: pageSite.key,
-    batchId: crypto.randomUUID(),
-    extensionVersion: chrome.runtime.getManifest().version,
-    capturedAt: new Date(),
-  });
+  const overrides = new Set([...outsideTitleIndexes].filter((index) => kept[index] === true));
+  const built = buildPageCaptureBatch(
+    reading,
+    kept,
+    {
+      site: pageSite.key,
+      batchId: crypto.randomUUID(),
+      extensionVersion: chrome.runtime.getManifest().version,
+      capturedAt: new Date(),
+    },
+    overrides,
+  );
   if (!built.ok) return showError(built.problem);
   const button = element<HTMLButtonElement>("save-jobs");
   button.disabled = true;

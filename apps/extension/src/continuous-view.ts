@@ -60,6 +60,7 @@ export function continuousView(state: ContinuousRunState | null, now: number, of
     `Batch ${state.batchNumber || 0}${state.inFlight ? " (in progress)" : ""}`,
     `Captured: ${state.totals.captured}`,
     `Skipped (captured before): ${state.totals.skipped}`,
+    ...(state.totals.outsideTitles ? [`Skipped (outside target titles): ${state.totals.outsideTitles}`] : []),
     `Awaiting retrieval: ${state.totals.awaiting || (state.inFlight ? inFlight : 0)}`,
     `Failures: ${state.totals.failures}`,
     ...(state.totals.refreshed ? [`Read again: ${state.totals.refreshed}`] : []),

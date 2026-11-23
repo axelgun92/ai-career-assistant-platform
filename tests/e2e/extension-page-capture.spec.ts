@@ -230,7 +230,10 @@ test("pair, read the loaded cards of a results page, leave one out, and stage th
   expect(saved.counts).toEqual({ queued: 3, seenAgain: 0, alreadySaved: 0, refreshing: 0, rejected: 0 });
   await expect(savePopup.locator("#jobs-result-message")).toHaveText("3 queued to get their details.");
   expect(saveRequests.filter((entry) => entry === "POST /api/extension/page-captures")).toHaveLength(1);
-  expect(requests.filter((entry) => entry.startsWith("POST"))).toEqual([]);
+  // Reading the cards saved nothing: its only request to the app is the
+  // read-only selection check of the cards' titles against the target job
+  // titles (November 22, 2026), which stages nothing.
+  expect(requests.filter((entry) => entry.startsWith("POST"))).toEqual(["POST /api/extension/page-captures/selection"]);
 
   // Staged only: no opportunity yet, and nothing left out was saved.
   const items = await stagedItems();

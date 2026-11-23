@@ -14,6 +14,7 @@ import {
   pageCaptureTabStaleMs,
   pageCaptureTabUrlAllowed,
   type PageCaptureSiteSpec,
+  type TitlePolicy,
 } from "@ai-career/core";
 import type { ExtensionPairingRecord, PrismaPageCaptureRepository, StagedCardInput } from "@ai-career/database";
 import type { ZodError } from "zod";
@@ -64,8 +65,10 @@ export interface PageCaptureOutcome {
   url: string;
   title: string;
   // REFRESHING: already saved, and read again by this save (selective
-  // re-observation, November 5, 2026).
-  outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REFRESHING" | "REJECTED";
+  // re-observation, November 5, 2026). SKIPPED (November 22, 2026): its title
+  // is outside the target job titles (or missing), or the user permanently
+  // deleted the job; it is not staged, read or saved.
+  outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REFRESHING" | "REJECTED" | "SKIPPED";
   reason: string | null;
   opportunityId: string | null;
 }
@@ -76,7 +79,18 @@ export interface PageCaptureResult {
   // card could be staged.
   sessionId: string | null;
   site: { key: string; name: string; automaticDetails: boolean };
-  counts: { queued: number; seenAgain: number; alreadySaved: number; refreshing: number; rejected: number };
+  counts: {
+    queued: number;
+    seenAgain: number;
+    alreadySaved: number;
+    refreshing: number;
+    rejected: number;
+    // November 22, 2026: not staged because of the target job titles
+    // (outside them, or no readable title) or because the user deleted it.
+    // Present only when non-zero.
+    outsideTitles?: number;
+    deletedByUser?: number;
+  };
   outcomes: PageCaptureOutcome[];
   progressUrl: string;
   // Background-tab sites only: the jobs the extension now reads, in order,
@@ -134,10 +148,30 @@ export interface PageCaptureSelectionResult {
   cards: Array<{ url: string; disposition: PageCaptureDisposition; selectable: boolean; reason: string | null }>;
 }
 
+// Why a card is not taken by automatic capture because of its title
+// (November 22, 2026), or null when its title passes (or the user chose it).
+export const pageCaptureOutsideTitlesReason = "Outside your target job titles (not read or saved)";
+export const pageCaptureMissingTitleReason = "No readable title (not read or saved)";
+export const pageCaptureDeletedReason = "You permanently deleted this job (not saved again)";
+
+function titleSkipReason(policy: TitlePolicy | null, title: string | null | undefined, override: boolean): string | null {
+  if (!policy || override) return null;
+  const decision = policy(title ?? null);
+  if (decision.verdict === "ACCEPTED") return null;
+  return decision.verdict === "MISSING_TITLE" ? pageCaptureMissingTitleReason : pageCaptureOutsideTitlesReason;
+}
+
 export function createPageCaptureService(dependencies: {
   repository: Pick<PrismaPageCaptureRepository, "stageBatch" | "siteStoppedUntil" | "expireTabItems"> & Partial<Pick<PrismaPageCaptureRepository, "selectionFor">>;
   enabledSites?: () => { cards: string[]; details: string[] };
   now?: () => Date;
+  // The target job titles (November 22, 2026), read for each request: a
+  // card whose title is outside them is never staged, so no job page is
+  // read and nothing is saved, unless the user deliberately chose it
+  // (titleOverride, single-pass save only). Without it every card is taken.
+  titlePolicy?: () => Promise<TitlePolicy>;
+  // Whether a card is a job the user permanently deleted (tombstone).
+  isDeletedCard?: (card: { externalId: string; sourceUrl: string }) => Promise<boolean>;
 }) {
   const now = dependencies.now ?? (() => new Date());
   const enabledSites = dependencies.enabledSites ?? (() => enabledSitesFromEnvironment());
@@ -173,14 +207,40 @@ export function createPageCaptureService(dependencies: {
       const outcomes: PageCaptureOutcome[] = [];
       const staged: Array<StagedCardInput & { index: number }> = [];
       const seen = new Set<string>();
-      batch.cards.forEach((card, index) => {
+      const policy = dependencies.titlePolicy ? await dependencies.titlePolicy() : null;
+      let outsideTitles = 0;
+      let deletedByUser = 0;
+      for (const [index, card] of batch.cards.entries()) {
         const title = cleanCapturedText(card.title);
         const reject = (reason: string) => outcomes.push({ url: card.url, title: title || card.url, outcome: "REJECTED", reason, opportunityId: null });
-        if (!title) return reject("The job's link or title could not be read");
+        const skip = (reason: string) => outcomes.push({ url: card.url, title: title || card.url, outcome: "SKIPPED", reason, opportunityId: null });
+        if (!title) {
+          reject("The job's link or title could not be read");
+          continue;
+        }
         const identity = cardIdentity(site, tabs !== null, card);
-        if (!identity.ok) return reject(identity.reason);
-        if (seen.has(identity.externalId)) return reject("The same job appears twice in this batch");
+        if (!identity.ok) {
+          reject(identity.reason);
+          continue;
+        }
+        if (seen.has(identity.externalId)) {
+          reject("The same job appears twice in this batch");
+          continue;
+        }
         seen.add(identity.externalId);
+        // The target job titles decide from the card's title alone, before
+        // anything is staged or read.
+        const titleSkip = titleSkipReason(policy, title, card.titleOverride === true);
+        if (titleSkip) {
+          outsideTitles += 1;
+          skip(titleSkip);
+          continue;
+        }
+        if (dependencies.isDeletedCard && card.titleOverride !== true && (await dependencies.isDeletedCard(identity))) {
+          deletedByUser += 1;
+          skip(pageCaptureDeletedReason);
+          continue;
+        }
         staged.push({
           index,
           externalId: identity.externalId,
@@ -190,8 +250,9 @@ export function createPageCaptureService(dependencies: {
           company: optional(card.company),
           location: optional(card.location),
           postedText: optional(card.postedText),
+          ...(card.titleOverride === true ? { titleOverride: true } : {}),
         });
-      });
+      }
       const results = staged.length
         ? await dependencies.repository.stageBatch({
             site: site.key,
@@ -212,6 +273,8 @@ export function createPageCaptureService(dependencies: {
                 ...batch.counts,
                 staged: staged.length,
                 rejected: outcomes.filter((item) => item.outcome === "REJECTED").length,
+                ...(outsideTitles ? { outsideTitles } : {}),
+                ...(deletedByUser ? { deletedByUser } : {}),
                 // A continuous run's batch: a grouping label only.
                 ...(batch.continuous ? { continuousRunId: batch.continuous.runId, continuousBatch: batch.continuous.batchNumber } : {}),
               },
@@ -227,7 +290,15 @@ export function createPageCaptureService(dependencies: {
         batchId: batch.batchId,
         sessionId: results.length ? batch.batchId : null,
         site: { key: site.key, name: site.name, automaticDetails },
-        counts: { queued: count("QUEUED"), seenAgain: count("SEEN_AGAIN"), alreadySaved: count("ALREADY_SAVED"), refreshing: count("REFRESHING"), rejected: count("REJECTED") },
+        counts: {
+          queued: count("QUEUED"),
+          seenAgain: count("SEEN_AGAIN"),
+          alreadySaved: count("ALREADY_SAVED"),
+          refreshing: count("REFRESHING"),
+          rejected: count("REJECTED"),
+          ...(outsideTitles ? { outsideTitles } : {}),
+          ...(deletedByUser ? { deletedByUser } : {}),
+        },
         outcomes,
         progressUrl: "/extension/jobs",
         ...(tabs
@@ -266,8 +337,20 @@ export function createPageCaptureService(dependencies: {
       const at = now();
       if (tabs) await dependencies.repository.expireTabItems([site.key], new Date(at.getTime() - pageCaptureTabStaleMs));
       const stoppedUntil = automaticDetails ? await dependencies.repository.siteStoppedUntil(site.key, at) : null;
-      const identities = input.cards.map((card) => ({ card, identity: cardIdentity(site, tabs, card) }));
-      const known = identities.flatMap(({ identity }) => (identity.ok ? [{ externalId: identity.externalId, siteJobId: identity.siteJobId }] : []));
+      const policy = dependencies.titlePolicy ? await dependencies.titlePolicy() : null;
+      const identities = await Promise.all(
+        input.cards.map(async (card) => {
+          const identity = cardIdentity(site, tabs, card);
+          // A card sent without its title (an older extension) is decided by
+          // staging, which always has the title.
+          const titleSkip = identity.ok && card.title !== undefined ? titleSkipReason(policy, card.title, false) : null;
+          const deleted = identity.ok && !titleSkip && dependencies.isDeletedCard ? await dependencies.isDeletedCard(identity) : false;
+          return { card, identity, titleSkip, deleted };
+        }),
+      );
+      const known = identities.flatMap(({ identity, titleSkip, deleted }) =>
+        identity.ok && !titleSkip && !deleted ? [{ externalId: identity.externalId, siteJobId: identity.siteJobId }] : [],
+      );
       const decisions = await dependencies.repository.selectionFor({
         site: site.key,
         cards: known,
@@ -279,8 +362,10 @@ export function createPageCaptureService(dependencies: {
       return {
         site: site.key,
         stoppedUntil: stoppedUntil?.toISOString() ?? null,
-        cards: identities.map(({ card, identity }) => {
+        cards: identities.map(({ card, identity, titleSkip, deleted }) => {
           if (!identity.ok) return { url: card.url, disposition: "REJECTED" as const, selectable: false, reason: identity.reason };
+          if (titleSkip) return { url: card.url, disposition: "OUTSIDE_TARGET_TITLES" as const, selectable: false, reason: titleSkip };
+          if (deleted) return { url: card.url, disposition: "DELETED" as const, selectable: false, reason: pageCaptureDeletedReason };
           const decision = decisions.get(identity.externalId) ?? { disposition: "NEW" as const, selectable: true };
           return { url: card.url, disposition: decision.disposition, selectable: decision.selectable && !stoppedUntil, reason: null };
         }),

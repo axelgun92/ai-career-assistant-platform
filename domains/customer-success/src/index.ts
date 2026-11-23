@@ -1,6 +1,7 @@
 export * from "./config/preferences";
 export * from "./config/salary-policy";
 export * from "./discovery/discovery-config";
+export * from "./discovery/title-policy-defaults";
 export * from "./evaluator";
 export * from "./extraction/extractor";
 export * from "./schemas/maps";

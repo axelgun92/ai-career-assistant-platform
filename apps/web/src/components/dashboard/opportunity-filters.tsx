@@ -119,6 +119,7 @@ export function OpportunityFilters({
     <form ref={formRef} className="opportunity-filters" method="get" action="/" role="search" aria-label="Search and filter opportunities" onChange={autoSubmit}>
       {query.view !== defaultView ? <input type="hidden" name="view" value={query.view} /> : null}
       {query.pageSize !== defaultPageSize ? <input type="hidden" name="pageSize" value={query.pageSize} /> : null}
+      {query.titles ? <input type="hidden" name="titles" value={query.titles} /> : null}
       <div className="filter-bar">
         <label className="filter-search">
           <span className="visually-hidden">Search opportunities</span>

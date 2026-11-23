@@ -120,7 +120,8 @@ test("golden path: capture, evaluate, decide, apply, track", async ({ page }) =>
 
   // Decide and apply, then track the application.
   await row.getByRole("link", { name: title }).click();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByLabel("Move to").selectOption("SAVED");
+  await page.getByRole("button", { name: "Move", exact: true }).click();
   await expect(page.locator("#opportunity-status-title")).toHaveText("Saved");
   await panel(page).getByRole("button", { name: "Planning to apply" }).click();
   await expect(panel(page).locator(".application-summary .status-label-application")).toHaveText(

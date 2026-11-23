@@ -72,9 +72,11 @@ test("track an application from plan to outcome, with follow-ups on the dashboar
   await expect(lifecycleHeading(page)).toHaveText("Saved");
   await panel(page).getByRole("button", { name: "Planning to apply" }).click();
   await expect(stageBadge(page)).toHaveText("Planning to apply");
-  // While planned, "Mark as applied" is replaced by a pointer to the tracker.
+  // Applied is never a Move to destination: the status card points to the
+  // tracker (November 22, 2026).
   await expect(page.getByRole("button", { name: "Mark as applied" })).toHaveCount(0);
-  await expect(page.getByText("Mark as applied — Record the submission in the Application section")).toBeVisible();
+  await expect(page.getByLabel("Move to").locator("option", { hasText: "Applied" })).toHaveCount(0);
+  await expect(page.getByText("Applied: record your application in the Application Tracker below.")).toBeVisible();
 
   const submit = panel(page).getByRole("form", { name: "Record submission" });
   await submit.getByLabel("Applied on (UTC date)").fill(utcDate(-3));
@@ -290,7 +292,7 @@ test.describe("tracker completion", () => {
     expect(dismiss.status()).toBe(409);
     expect(await dismiss.json()).toMatchObject({ code: "APPLICATION_BLOCKS_ACTION" });
     await page.goto(`/opportunities/${opportunityId}`);
-    await expect(page.getByText("Dismiss — Close the application first, for example as 'Decided not to apply'")).toBeVisible();
+    await expect(page.getByText("Dismissed — Close the application first, for example as 'Decided not to apply'")).toBeVisible();
     await expect(lifecycleHeading(page)).toHaveText("Saved");
 
     const closed = await request.post(`/api/applications/${application.id}`, {

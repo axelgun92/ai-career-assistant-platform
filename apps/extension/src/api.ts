@@ -47,7 +47,7 @@ export interface ApiClient {
   captureSessions(limit: number): Promise<ApiResult<{ sessions: CaptureSessionSummary[] }>>;
   captureSession(id: string): Promise<ApiResult<CaptureSessionDetail>>;
   // Continuous capture: which loaded cards a batch may take (read-only).
-  pageCaptureSelection(body: { site: string; cards: Array<{ url: string; siteJobId: string | null }> }): Promise<ApiResult<PageCaptureSelectionResponse>>;
+  pageCaptureSelection(body: { site: string; cards: Array<{ url: string; siteJobId: string | null; title?: string | null }> }): Promise<ApiResult<PageCaptureSelectionResponse>>;
 }
 
 export interface PageCaptureSelectionResponse {

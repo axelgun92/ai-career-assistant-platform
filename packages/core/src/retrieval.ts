@@ -213,6 +213,18 @@ export interface RetrievalRunCounts {
   changed: number;
   probable: number;
   failed: number;
+  // November 22, 2026: listings skipped by the target job titles before any
+  // job page was read (outside the titles, or with no readable title), and
+  // listings of opportunities the user permanently deleted. Present only
+  // when non-zero.
+  skippedByTitle?: number;
+  missingTitle?: number;
+  deletedByUser?: number;
+  // November 23, 2026: automatic pre-evaluator triage of the run's new
+  // opportunities (outcome counts, then listings not triaged for want of an
+  // active profile, not triageable, or failed). Present only when a listing
+  // was triaged or could not be; a triage problem never fails the run.
+  triage?: Partial<Record<"EVALUATE" | "NEEDS_REVIEW" | "REJECT" | "noProfile" | "unavailable" | "failed", number>>;
   // Feature 13: tracked listings seen listed, newly missing, confirmed
   // removed and listed again after a removal in this run.
   listings?: { observed: number; missing: number; removed: number; reappeared: number };

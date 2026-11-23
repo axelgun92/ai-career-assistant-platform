@@ -539,6 +539,44 @@ blockquote {
   font-weight: 800;
 }
 
+/* The row's processing badges stay items of the row's own flex layout. */
+.processing-status {
+  display: contents;
+}
+
+/* Pre-evaluator triage: a deterministic admission check, styled apart from
+   the AI evaluator's recommendation. */
+.status-label-triage {
+  border-color: #0f766e;
+  color: #134e4a;
+  background: #f0fdfa;
+}
+
+.status-label-triage.status-label-muted {
+  border-color: #64748b;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.processing-breakdown dl {
+  display: grid;
+  grid-template-columns: minmax(9rem, max-content) 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+
+.processing-breakdown dl > div {
+  display: contents;
+}
+
+.processing-breakdown dt {
+  font-weight: 700;
+}
+
+.processing-breakdown dd {
+  margin: 0;
+}
+
 .evaluation-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1680,6 +1718,43 @@ main {
   color: #475569;
 }
 
+/* Target job titles (November 22, 2026) */
+.target-job-titles {
+  margin-top: 2rem;
+  max-width: 48rem;
+}
+
+.title-pattern-list {
+  margin: 1rem 0;
+}
+
+.title-pattern-list ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.title-pattern-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.15rem 0.25rem 0.15rem 0.65rem;
+}
+
+.title-pattern-add,
+.title-test,
+.title-policy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
 /* Job-Market Analytics (feature 16) */
 .market-section {
   margin-top: 2rem;
@@ -1777,4 +1852,64 @@ main {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* Dashboard selection and Move to (November 22, 2026) */
+.selection-toolbar {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.selection-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.selection-count {
+  font-weight: 600;
+}
+
+.opportunity-row-select {
+  display: inline-flex;
+  align-items: center;
+}
+
+.row-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.row-menu summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0 0.5rem;
+  font-weight: 700;
+}
+
+.row-menu-items {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.row-menu-heading {
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.delete-confirmation {
+  border: 1px solid #b91c1c;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: #fef2f2;
+}
+
+.move-to label {
+  font-weight: 600;
 }

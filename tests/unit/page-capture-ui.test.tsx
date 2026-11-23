@@ -67,7 +67,7 @@ describe("page-capture progress text", () => {
     // A title outside every role family: saved, not sent automatically; once
     // the user requests the evaluation, its triage and evaluation show.
     expect(addedStateText({ ...added, handoffOutcome: "NOT_SENT:OUTSIDE_ROLE_FAMILIES" })).toBe(
-      "Added; not sent for evaluation automatically: its title is outside the Customer Success role families. Open it to request an evaluation.",
+      "Added; not sent for evaluation automatically: its title is outside your target job titles. Open it to request an evaluation.",
     );
     expect(addedStateText({ ...added, handoffOutcome: "NOT_SENT:OUTSIDE_ROLE_FAMILIES", triageOutcome: "NEEDS_REVIEW" })).toBe("Needs Review before evaluation");
   });

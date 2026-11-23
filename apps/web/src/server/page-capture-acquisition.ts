@@ -10,6 +10,8 @@ import {
   pageCaptureSiteByKey,
   RetrievedListingNormalizationError,
   reobservationEvent,
+  titlePolicyAccepts,
+  type TitlePolicy,
   type DiscoveryConfiguration,
   type ExtensionCapture,
   type PageCapturePageScripts,
@@ -104,7 +106,7 @@ export interface PageCaptureAcquisitionDependencies {
     | "finalizeProvisionalFailure"
     | "requeueUncounted"
   > &
-    Partial<Pick<PrismaPageCaptureRepository, "holdForBrowser" | "releaseBrowserHold" | "describeCaptureOutcome">>;
+    Partial<Pick<PrismaPageCaptureRepository, "holdForBrowser" | "releaseBrowserHold" | "describeCaptureOutcome" | "skipItems">>;
   // The capture path's health without capturing anything (a transaction that
   // takes the capture lock and commits): decides whether a lone transient
   // database failure was the job's own. Absent: such a failure stays
@@ -113,6 +115,9 @@ export interface PageCaptureAcquisitionDependencies {
   ingestion: RetrievalIngestionService;
   handoff: EvaluationHandoff;
   discovery: DiscoveryConfiguration;
+  // The target job titles (November 22, 2026), read for each pass: queued
+  // jobs whose titles are outside them are skipped before any page is read.
+  titlePolicy?: () => Promise<TitlePolicy>;
   // The site keys whose details may be fetched (verified, or the test site).
   detailSites: () => string[];
   // A fresh logged-out browser per pass; absent when none is configured.
@@ -212,15 +217,35 @@ export function pageCaptureFrictionDetector(siteKey: string) {
   return siteKey === "linkedin" ? detectLinkedInFriction : undefined;
 }
 
-// The hand-off outcome of a job whose title is outside the domain's role
-// families: saved, not sent to the evaluation request automatically.
+// The hand-off outcome of a job whose title is outside the target job
+// titles: saved, not sent to the evaluation request automatically. Since
+// November 22, 2026 such a job is normally never read at all (the title is
+// checked before staging); this safety net only catches a job page whose own
+// title differs from its card's. The stored code is unchanged.
 export const pageCaptureOutsideRoleFamilies = "NOT_SENT:OUTSIDE_ROLE_FAMILIES";
+
+// Which queued jobs the target job titles skip before reading (jobs staged
+// before the titles applied): never a saved job or one the user chose.
+export function itemsSkippedByTitle(items: readonly PageCaptureItemRecord[], policy: TitlePolicy) {
+  const outside: string[] = [];
+  const missing: string[] = [];
+  for (const item of items) {
+    if (item.opportunityId || item.titleOverride) continue;
+    const decision = policy(item.title);
+    if (decision.verdict === "MISSING_TITLE") missing.push(item.id);
+    else if (decision.verdict !== "ACCEPTED") outside.push(item.id);
+  }
+  return { outside, missing };
+}
 
 export interface PageCaptureIngestorDependencies {
   repository: Pick<PrismaPageCaptureRepository, "markIngested" | "markHandedOff">;
   ingestion: RetrievalIngestionService;
   handoff: EvaluationHandoff;
   discovery: DiscoveryConfiguration;
+  // The target job titles (November 22, 2026), read for each hand-off.
+  // Without it the domain's discovery title terms are used (tests).
+  titlePolicy?: () => Promise<TitlePolicy>;
   now?: () => Date;
   log?: { info(message: string): void; warn(message: string): void };
   diagnostics?: DiagnosticsSink;
@@ -321,7 +346,9 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
   // one whose title is outside every family is not sent to the evaluation
   // request automatically. It stays a saved opportunity with its provenance,
   // and its own page can still request an evaluation.
-  const inRoleFamilies = createTitleMatcher(dependencies.discovery.titleTerms);
+  const termsMatcher = createTitleMatcher(dependencies.discovery.titleTerms);
+  const inTargetTitles = async (title: string | null) =>
+    dependencies.titlePolicy ? titlePolicyAccepts((await dependencies.titlePolicy())(title)) : termsMatcher(title);
 
   async function handOff(item: PageCaptureItemRecord, opportunityId: string, outcome: RetrievedListingOutcome, title: string | null) {
     const at = now();
@@ -332,10 +359,10 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
         log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; already handed to the evaluation request`);
         return;
       }
-      if (!inRoleFamilies(title)) {
+      if (!item.titleOverride && !(await inTargetTitles(title))) {
         await dependencies.repository.markHandedOff(item.id, pageCaptureOutsideRoleFamilies, at);
         diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result: pageCaptureOutsideRoleFamilies });
-        log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; its title is outside the role families, so it was not sent for evaluation`);
+        log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; its title is outside the target job titles, so it was not sent for evaluation`);
         return;
       }
       const result = await dependencies.handoff.request(opportunityId);
@@ -471,7 +498,22 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
           if (held) diagnostics.event("site.browser", { site: siteKey, decision: "HELD_NO_BROWSER", jobs: held });
           continue;
         }
-        const items = await dependencies.repository.claimQueued(siteKey, at, pageCaptureDetailsPerPass);
+        const claimedItems = await dependencies.repository.claimQueued(siteKey, at, pageCaptureDetailsPerPass);
+        if (!claimedItems.length) continue;
+        // Jobs queued before the target job titles applied are checked by
+        // title before any page is opened (November 22, 2026).
+        let items = claimedItems;
+        if (dependencies.titlePolicy && dependencies.repository.skipItems) {
+          const skipped = itemsSkippedByTitle(claimedItems, await dependencies.titlePolicy());
+          if (skipped.outside.length || skipped.missing.length) {
+            await dependencies.repository.skipItems(skipped.outside, "OUTSIDE_TARGET_TITLES");
+            await dependencies.repository.skipItems(skipped.missing, "MISSING_TITLE");
+            const gone = new Set([...skipped.outside, ...skipped.missing]);
+            items = claimedItems.filter((item) => !gone.has(item.id));
+            diagnostics.event("site.titles", { site: siteKey, decision: "SKIPPED_BY_TITLE", outside: skipped.outside.length, missing: skipped.missing.length });
+            log.info(`page capture: ${gone.size} queued job(s) skipped: their titles are outside the target job titles (not read)`);
+          }
+        }
         if (!items.length) continue;
         const scripts = (dependencies.pageScripts ?? registryPageScripts)(siteKey);
         if (scripts.source === "invalid-setting" && !invalidSettingWarned.has(siteKey)) {
@@ -935,23 +977,32 @@ export type PageCaptureAcquisition = ReturnType<typeof createPageCaptureAcquisit
 
 // The hand-off into the existing evaluation request (EvaluationService), whose
 // pre-evaluator triage runs before any admission.
+//
+// Already handled: an open deferred request, any evaluation (queued,
+// running, completed or failed), or a triage hold (Needs review or Reject,
+// automatic or the user's decision), which keeps its safeguard. Being triaged
+// is not being submitted (November 23, 2026): a job whose only record is an
+// EVALUATE triage (configured-source retrieval or Single Capture triage it
+// without requesting an evaluation) is sent on, and the evaluation request
+// re-runs the triage gate, admission, budget and duplicate protections.
 export function evaluationHandoff(service: {
   requestEvaluation(opportunityId: string, body: unknown): Promise<{ outcome: string }>;
-  getTriage(opportunityId: string): Promise<unknown>;
+  // The effective outcome (a manual decision wins), or null when never triaged.
+  getTriage(opportunityId: string): Promise<{ outcome: string } | null>;
   getOpenDeferral(opportunityId: string): Promise<unknown>;
   getLatestEvaluation(opportunityId: string): Promise<unknown>;
 }): EvaluationHandoff {
   return {
     async alreadyHandled(opportunityId) {
-      if (await service.getTriage(opportunityId)) return true;
       if (await service.getOpenDeferral(opportunityId)) return true;
       try {
         await service.getLatestEvaluation(opportunityId);
         return true;
       } catch (error) {
-        if (error instanceof EvaluationApiError && error.code === "EVALUATION_NOT_FOUND") return false;
-        throw error;
+        if (!(error instanceof EvaluationApiError && error.code === "EVALUATION_NOT_FOUND")) throw error;
       }
+      const triage = await service.getTriage(opportunityId);
+      return triage !== null && triage.outcome !== "EVALUATE";
     },
     async request(opportunityId) {
       const result = await service.requestEvaluation(opportunityId, {});

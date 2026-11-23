@@ -234,21 +234,22 @@ describe("application display", () => {
       .toBe("Applied date corrected from 2026-09-01 to 2026-08-30");
   });
 
-  it("the lifecycle card hides actions the application blocks and says why", () => {
+  it("the status card offers Move to with only valid destinations, says why others are blocked, and points to the tracker for Applied", () => {
     const markup = renderToStaticMarkup(
       <OpportunityActions
         opportunityId={opportunityId}
         statusLabel="Saved"
-        availableActions={["ARCHIVE", "RESTORE"]}
-        blockedActions={[
-          { action: "MARK_APPLIED", reason: "Record the submission in the Application section" },
-          { action: "DISMISS", reason: "Close the application first" },
-        ]}
+        moveDestinations={["ACTIVE", "ARCHIVED"]}
+        blockedMoves={[{ destination: "DISMISSED", reason: "Close the application first" }]}
+        applicationPointer
       />,
     );
-    expect(markup).toContain(">Archive<");
+    expect(markup).toContain(">Move to<");
+    expect(markup).toContain(">Active<");
+    expect(markup).toContain(">Archived<");
+    expect(markup).not.toContain('value="DISMISSED"');
     expect(markup).not.toContain(">Mark as applied<");
-    expect(markup).not.toContain(">Dismiss<");
-    expect(markup).toContain("Mark as applied — Record the submission in the Application section");
+    expect(markup).toContain("Dismissed — Close the application first");
+    expect(markup).toContain("Applied: record your application in the Application Tracker below.");
   });
 });

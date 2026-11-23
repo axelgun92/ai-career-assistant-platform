@@ -112,7 +112,9 @@ export interface ContinuousRunState {
   stoppedUntil: string | null;
   backoffMs: number;
   nextAttemptAt: number | null;
-  totals: { captured: number; skipped: number; failures: number; refreshed: number; awaiting: number };
+  // outsideTitles (November 22, 2026): loaded jobs whose titles are outside
+  // the target job titles; never read, saved or counted in a batch.
+  totals: { captured: number; skipped: number; failures: number; refreshed: number; awaiting: number; outsideTitles?: number };
   workerStarts: number;
   // Every write of the run counts one revision. The user's Stop records the
   // revision it stopped, so a step that was running then keeps its own
@@ -127,7 +129,7 @@ export interface ContinuousRunState {
 
 export interface ContinuousEnvironment {
   api: {
-    selection(body: { site: string; cards: Array<{ url: string; siteJobId: string | null }> }): Promise<ApiResult<PageCaptureSelectionResponse>>;
+    selection(body: { site: string; cards: Array<{ url: string; siteJobId: string | null; title?: string | null }> }): Promise<ApiResult<PageCaptureSelectionResponse>>;
     pageCapture(batch: PageCaptureBatchInput): Promise<ApiResult<PageCaptureResponse>>;
     captureSession(id: string): Promise<ApiResult<CaptureSessionDetail>>;
   };
@@ -445,7 +447,10 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
   // ------------------------------------------------------------ phase 3
   async function recheckBuffer(state: ContinuousRunState, cards: BufferedCard[]): Promise<{ keep: BufferedCard[]; skipped: BufferedCard[] } | "unreachable" | "restricted"> {
     if (!cards.length) return { keep: [], skipped: [] };
-    const reply = await environment.api.selection({ site: state.site, cards: cards.map((item) => ({ url: item.card.url, siteJobId: item.card.siteJobId })) });
+    const reply = await environment.api.selection({
+      site: state.site,
+      cards: cards.map((item) => ({ url: item.card.url, siteJobId: item.card.siteJobId, title: item.card.title })),
+    });
     if (!reply.ok) return unreachable(reply) ? "unreachable" : { keep: cards, skipped: [] };
     if (reply.body.stoppedUntil) {
       state.stoppedUntil = reply.body.stoppedUntil;
@@ -550,7 +555,12 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
       state.pageTitle = reading.pageTitle ?? state.pageTitle;
       const open = reading.cards;
       if (open.length) {
-        const selection = await environment.api.selection({ site: state.site, cards: open.map((card) => ({ url: card.url, siteJobId: card.siteJobId })) });
+        // Titles go with the cards: the server checks them against the target
+        // job titles exactly as staging would (November 22, 2026).
+        const selection = await environment.api.selection({
+          site: state.site,
+          cards: open.map((card) => ({ url: card.url, siteJobId: card.siteJobId, title: card.title })),
+        });
         if (!selection.ok) return unreachable(selection) ? backoff(state, "Backend unreachable, retrying") : failed(state, selection.error);
         state.backoffMs = 0;
         state.nextAttemptAt = null;
@@ -560,12 +570,22 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
           return { delayMs: Infinity };
         }
         const selectable = new Set(selection.body.cards.filter((card) => card.selectable).map((card) => cardKey(card.url)));
+        // A title outside the target job titles is handled (seen, so it counts
+        // for progress and the last-page check) but never buffered: it takes
+        // no room in the batch of 25 and is never read or saved.
+        const outsideTitles = new Set(
+          selection.body.cards.filter((card) => card.disposition === "OUTSIDE_TARGET_TITLES").map((card) => cardKey(card.url)),
+        );
         const room = Math.max(0, pageCaptureMaxCards - state.buffer.length);
         let taken = 0;
         let skipped = 0;
+        let outside = 0;
         for (const card of open) {
           const key = cardKey(card.url);
-          if (!selectable.has(key)) {
+          if (outsideTitles.has(key)) {
+            state.handled.push(key);
+            outside += 1;
+          } else if (!selectable.has(key)) {
             state.handled.push(key);
             skipped += 1;
           } else if (taken < room) {
@@ -574,11 +594,12 @@ export function createContinuousCapture(environment: ContinuousEnvironment) {
           }
         }
         state.totals.skipped += skipped;
+        if (outside) state.totals.outsideTitles = (state.totals.outsideTitles ?? 0) + outside;
         state.activity = `Reading results (${state.buffer.length} of ${pageCaptureMaxCards} for batch ${state.batchNumber + (state.inFlight ? 2 : 1)})`;
-        if (taken || skipped) note(state, "COLLECTED", `${taken} selected, ${skipped} captured before`);
+        if (taken || skipped || outside) note(state, "COLLECTED", `${taken} selected, ${skipped} captured before, ${outside} outside the target job titles`);
         // Selectable cards left unexamined on this page wait for room.
         if (open.some((card) => selectable.has(cardKey(card.url)) && !state.buffer.some((item) => item.key === cardKey(card.url)))) return { delayMs: 0 };
-        if (taken || skipped) return { delayMs: 0 };
+        if (taken || skipped || outside) return { delayMs: 0 };
       }
     }
     // Every loaded job is handled or buffered: more results.

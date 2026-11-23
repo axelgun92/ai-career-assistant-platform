@@ -57,10 +57,12 @@ describe("lifecycle predicates", () => {
 });
 
 describe("forward user actions", () => {
-  const allowed: Record<Exclude<OpportunityUserAction, "RESTORE">, OpportunityLifecycleState[]> = {
-    SAVE: ["NORMALIZED", "EVALUATED", "RECOMMENDED"],
+  // November 22, 2026 (Move to): SAVE also from Dismissed and Archived,
+  // DISMISS also from Archived.
+  const allowed: Record<Exclude<OpportunityUserAction, "RESTORE" | "REACTIVATE">, OpportunityLifecycleState[]> = {
+    SAVE: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "REJECTED_BY_USER", "ARCHIVED"],
     MARK_APPLIED: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"],
-    DISMISS: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"],
+    DISMISS: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED", "ARCHIVED"],
     ARCHIVE: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED", "APPLIED", "REJECTED_BY_USER", "CLOSED"],
   };
   const targets = { SAVE: "SAVED", MARK_APPLIED: "APPLIED", DISMISS: "REJECTED_BY_USER", ARCHIVE: "ARCHIVED" };
@@ -173,8 +175,25 @@ describe("available user actions", () => {
       currentStatus: "SAVED",
       history: [{ action: "SAVE", fromStatus: "RECOMMENDED", toStatus: "SAVED" }],
       currentSystemState: "RECOMMENDED",
-    })).toEqual(["MARK_APPLIED", "DISMISS", "ARCHIVE", "RESTORE"]);
+    })).toEqual(["MARK_APPLIED", "DISMISS", "ARCHIVE", "RESTORE", "REACTIVATE"]);
     expect(availableUserActions({ currentStatus: "DISCOVERED", history: [], currentSystemState: "NORMALIZED" }))
       .toEqual([]);
+  });
+});
+
+describe("Move to Active (REACTIVATE, November 22, 2026)", () => {
+  it("returns any user state to the system state the evaluations give, and is refused elsewhere", () => {
+    for (const status of opportunityLifecycleStateSchema.options) {
+      const resolution = resolveUserAction({ action: "REACTIVATE", currentStatus: status, history: [], currentSystemState: "EVALUATED" });
+      if (["SAVED", "APPLIED", "REJECTED_BY_USER", "ARCHIVED"].includes(status)) expect(resolution).toEqual({ allowed: true, to: "EVALUATED" });
+      else expect(resolution.allowed).toBe(false);
+    }
+  });
+
+  it("a REACTIVATE row is an ordinary action on the undo stack: RESTORE afterwards is refused in a system state", () => {
+    const opportunity = simulate("RECOMMENDED");
+    opportunity.act("DISMISS");
+    expect(opportunity.act("REACTIVATE")).toBe("RECOMMENDED");
+    expect(() => opportunity.act("RESTORE")).toThrow(/Only a saved, applied, dismissed, or archived/);
   });
 });

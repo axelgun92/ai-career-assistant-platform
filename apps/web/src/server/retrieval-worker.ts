@@ -1,6 +1,7 @@
 import {
   classifyRunOutcome,
   emptyRetrievalRunCounts,
+  type TitlePolicy,
   type DiscoveryConfiguration,
   type RawOpportunity,
   type RetrievalIngestionService,
@@ -18,6 +19,7 @@ import {
   type BrowserSession,
   type RetrievalTransport,
 } from "@ai-career/discovery";
+import { countAutomaticTriage, type AutomaticTriage } from "./automatic-triage";
 import { classifyRetrievalWorkerError, formatWorkerError } from "./worker-errors";
 
 // The retrieval worker (feature 11). Each iteration queues scheduled runs
@@ -26,6 +28,8 @@ import { classifyRetrievalWorkerError, formatWorkerError } from "./worker-errors
 // fails is counted and the run continues. Retrieval never starts an
 // evaluation: retrieved opportunities arrive unevaluated, and evaluation
 // stays the user's explicit action through the budget and admission path.
+// Each new opportunity gets the deterministic pre-evaluator triage only
+// (November 23, 2026), so the dashboard shows which jobs are cleared for it.
 
 export type RetrievalRunStore = Pick<
   PrismaRetrievalSourceRepository,
@@ -40,6 +44,17 @@ export interface RetrievalWorkerDependencies {
   // request interval where it declares one.
   transport: (options: { minIntervalMs?: number }) => RetrievalTransport;
   discovery: DiscoveryConfiguration;
+  // The target job titles (November 22, 2026), read afresh for each run:
+  // every listing's title is checked before any job page is read. Without
+  // it, the domain's discovery title terms are used (tests).
+  titlePolicy?: () => Promise<TitlePolicy>;
+  // Whether a listing belongs to an opportunity the user permanently
+  // deleted (tombstone); such listings are never stored again.
+  isDeletedListing?: (listing: Pick<RawOpportunity, "source" | "externalId" | "sourceUrl">) => Promise<boolean>;
+  // Automatic pre-evaluator triage of each stored listing (November 23,
+  // 2026; see automatic-triage.ts): triage only, never an evaluation.
+  // Without it nothing is triaged (tests).
+  triage?: AutomaticTriage;
   env: () => Readonly<Record<string, string | undefined>>;
   now: () => Date;
   log: { info(message: string): void; warn(message: string): void };
@@ -49,7 +64,11 @@ export interface RetrievalWorkerDependencies {
   lastChecked?: (source: string, externalIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
   // Feature 14: the source's discovered listings still waiting for their
   // details. See PrismaRetrievalSourceRepository.pendingListings.
-  pendingListings?: (sourceId: string, trackingScopeKey: string, since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date }>>;
+  pendingListings?: (
+    sourceId: string,
+    trackingScopeKey: string,
+    since: Date,
+  ) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date; title?: string | null }>>;
   // Feature 14: launches a fresh logged-out browser for one run of an
   // adapter that requires one (see packages/browser-retrieval), and turns
   // its pages into documents. Without it such an adapter cannot run.
@@ -100,7 +119,23 @@ function sourceExpiresAt(listing: RawOpportunity): Date | null {
 }
 
 export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies) {
-  const keepTitle = createTitleMatcher(dependencies.discovery.titleTerms);
+  const termsMatcher = createTitleMatcher(dependencies.discovery.titleTerms);
+
+  // The run's title check: the current target job titles, counting what it
+  // skips (before any job page is read).
+  async function titleCheck() {
+    const policy = dependencies.titlePolicy ? await dependencies.titlePolicy() : null;
+    const tally = { skipped: 0, missing: 0 };
+    const keepTitle = (title: string | null) => {
+      if (!policy) return termsMatcher(title);
+      const decision = policy(title);
+      if (decision.verdict === "ACCEPTED") return true;
+      if (decision.verdict === "MISSING_TITLE") tally.missing += 1;
+      else tally.skipped += 1;
+      return false;
+    };
+    return { keepTitle, tally };
+  }
 
   // The run's outcome; a failure from the source carries any Retry-After it
   // sent, which sets how long the source waits (feature 12).
@@ -155,6 +190,16 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     }
     const trackingScopeKey = source.trackingScopeKey;
 
+    let title: Awaited<ReturnType<typeof titleCheck>>;
+    try {
+      title = await titleCheck();
+    } catch (error) {
+      if (driver) await driver.close().catch(() => undefined);
+      dependencies.log.warn(`run ${run.id} could not read the target job titles ${formatWorkerError(error)}`);
+      return finish(run, "FAILED", counts, "INTERNAL");
+    }
+    const keepTitle = title.keepTitle;
+
     let result;
     try {
       result = await adapter.collect(
@@ -187,9 +232,15 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
     counts.fetched = result.fetched;
     counts.keptByTerms = result.listings.length + result.issues.length;
     counts.failed = result.issues.length;
+    if (title.tally.skipped) counts.skippedByTitle = title.tally.skipped;
+    if (title.tally.missing) counts.missingTitle = title.tally.missing;
     const stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }> = [];
     for (const listing of result.listings) {
       try {
+        if (dependencies.isDeletedListing && (await dependencies.isDeletedListing(listing))) {
+          counts.deletedByUser = (counts.deletedByUser ?? 0) + 1;
+          continue;
+        }
         const ingested = await dependencies.ingestion.ingest({
           ...listing,
           retrieval: { ...listing.retrieval!, retrievalSourceId: source.id, retrievalRunId: run.id },
@@ -203,6 +254,9 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
         } else if (ingested.outcome === "ATTACHED") counts.attached += 1;
         else if (ingested.outcome === "UNCHANGED") counts.unchanged += 1;
         else counts.changed += 1;
+        // Retrieval never starts an evaluation: an EVALUATE outcome only
+        // makes the job eligible for a later one. The step never throws.
+        if (dependencies.triage) countAutomaticTriage(counts, await dependencies.triage(ingested));
       } catch (error) {
         counts.failed += 1;
         dependencies.log.warn(`run ${run.id} could not store a listing ${formatWorkerError(error)}`);
@@ -227,6 +281,7 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
       coverage?: { observedListingIds: string[]; complete: boolean };
       halted: AdapterError | null;
       discovered?: string[];
+      discoveredTitles?: Record<string, string>;
       unavailable?: string[];
     },
     stored: Array<{ externalId: string; opportunityId: string | null; sourceExpiresAt: Date | null }>,
@@ -245,6 +300,7 @@ export function createRetrievalWorker(dependencies: RetrievalWorkerDependencies)
         stored,
         observedListingIds: result.coverage?.observedListingIds ?? [],
         ...(result.discovered?.length ? { discovered: result.discovered } : {}),
+        ...(result.discoveredTitles ? { discoveredTitles: result.discoveredTitles } : {}),
         ...(result.unavailable?.length ? { unavailable: result.unavailable } : {}),
         coverageComplete: result.coverage ? complete : null,
         qualifying: removalCapable && complete && classifyRunOutcome(outcome) === "success",

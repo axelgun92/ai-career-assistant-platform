@@ -114,7 +114,11 @@ export interface CollectContext {
   // matches) whose details have not been stored yet, oldest first, so a
   // later run can fetch them even after they leave the search window. Only
   // those first discovered since the given time.
-  pendingListings?: (since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date }>>;
+  // Each carries the title its search results showed when it was recorded
+  // (November 22, 2026; null for listings recorded before), so it is
+  // re-checked against the current target job titles before its page is
+  // read.
+  pendingListings?: (since: Date) => Promise<ReadonlyArray<{ externalId: string; firstSeenAt: Date; title?: string | null }>>;
 }
 
 // Which listing IDs one run saw in the source's own listing, before the
@@ -146,6 +150,8 @@ export interface CollectResult {
   // details are not stored is tracked as pending, so later runs can fetch
   // it (CollectContext.pendingListings).
   discovered?: string[];
+  // The search-result title of each discovered listing (November 22, 2026).
+  discoveredTitles?: Record<string, string>;
   // Feature 14: pending listings whose page the source no longer serves
   // (HTTP 404 or 410); they leave the pending queue.
   unavailable?: string[];

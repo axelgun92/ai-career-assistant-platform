@@ -55,6 +55,10 @@ export interface OpportunityListItem {
   applicationUrl: string | null;
   // An evaluation request is waiting in the deferred backlog.
   deferred: boolean;
+  // The stored pre-evaluator triage (November 23, 2026): its effective
+  // outcome (a manual decision wins) and whether the user decided it; null
+  // when the job was never triaged. Not an evaluator recommendation.
+  triage: { outcome: "EVALUATE" | "NEEDS_REVIEW" | "REJECT"; manual: boolean } | null;
   latestEvaluation: {
     id: string;
     status: string;
@@ -125,6 +129,9 @@ export interface OpportunityListFilters {
   salaryAtMost?: number | null;
   discoveredFrom?: Date | null;
   discoveredBefore?: Date | null;
+  // Only these opportunities (November 22, 2026: the dashboard's cleanup of
+  // titles outside the target job titles).
+  idIn?: readonly string[];
 }
 
 export type OpportunityListSort =
@@ -184,6 +191,7 @@ const joins = Prisma.sql`
   LEFT JOIN latest_eval le ON le."opportunityId" = o."id"
   LEFT JOIN current_rec cr ON cr."opportunityId" = o."id"
   LEFT JOIN open_deferral od ON od."opportunityId" = o."id"
+  LEFT JOIN "PreEvaluatorTriage" pt ON pt."opportunityId" = o."id"
   LEFT JOIN "Application" app ON app."opportunityId" = o."id"
   LEFT JOIN LATERAL (
     SELECT MIN(f."dueOn") AS "dueOn" FROM "ApplicationFollowUp" f
@@ -321,6 +329,9 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   }
   if (filters.discoveredFrom) add(Prisma.sql`o."discoveredAt" >= ${filters.discoveredFrom}`);
   if (filters.discoveredBefore) add(Prisma.sql`o."discoveredAt" < ${filters.discoveredBefore}`);
+  if (filters.idIn) {
+    add(filters.idIn.length ? Prisma.sql`o."id" IN (${Prisma.join(filters.idIn.map((id) => Prisma.sql`${id}::uuid`))})` : Prisma.sql`FALSE`);
+  }
   return conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.empty;
 }
 
@@ -369,6 +380,8 @@ type Row = {
   updatedAt: Date;
   applicationUrl: string | null;
   deferred: boolean;
+  triageOutcome: "EVALUATE" | "NEEDS_REVIEW" | "REJECT" | null;
+  triageManual: boolean | null;
   latestId: string | null;
   latestStatus: string | null;
   latestCreatedAt: Date | null;
@@ -462,6 +475,7 @@ function toItem(row: Row, today: string): OpportunityListItem {
     updatedAt: row.updatedAt,
     applicationUrl: row.applicationUrl,
     deferred: row.deferred,
+    triage: row.triageOutcome ? { outcome: row.triageOutcome, manual: row.triageManual === true } : null,
     latestEvaluation: row.latestId
       ? {
           id: row.latestId,
@@ -555,6 +569,8 @@ export class PrismaOpportunityListRepository {
             o."employerOfRecordRegions", o."compensationBasis", o."compensationTiers",
             o."createdAt", o."discoveredAt", o."updatedAt", o."applicationUrl",
             (od."opportunityId" IS NOT NULL) AS "deferred",
+            COALESCE(pt."manualDecision"::text, pt."outcome"::text) AS "triageOutcome",
+            (pt."manualDecision" IS NOT NULL) AS "triageManual",
             le."id" AS "latestId", le."status" AS "latestStatus",
             le."createdAt" AS "latestCreatedAt", le."completedAt" AS "latestCompletedAt",
             cr."decision" AS "recDecision", cr."evaluationId" AS "recEvaluationId",

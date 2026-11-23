@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { PrismaOpportunityTombstoneRepository } from "@ai-career/database";
 import { getManualOpportunityService } from "@/server/manual-opportunity-service";
 import {
   createOpportunityListHandler,
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
 
   try {
     const detail = await getManualOpportunityService().submit(requestBody);
+    // A job added deliberately is kept even if the user once deleted it
+    // permanently (November 22, 2026): its tombstone is cleared, so later
+    // automatic observations deduplicate into it again.
+    const sourceUrl = (requestBody as { sourceUrl?: unknown } | null)?.sourceUrl;
+    if (typeof sourceUrl === "string" && sourceUrl.trim()) {
+      await new PrismaOpportunityTombstoneRepository().clear({ sourceUrl }).catch(() => undefined);
+    }
 
     // An exact duplicate is attached to the opportunity already saved: 200
     // with that opportunity, never a second one.

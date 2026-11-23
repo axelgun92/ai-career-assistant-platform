@@ -314,6 +314,13 @@ export function lifecycleActionGuard(
       return currentStatus === "APPLIED" && submitted
         ? refuse("This opportunity has a submitted application; restoring it would contradict the application record")
         : allowed;
+    // Move to Active or Saved (November 22, 2026): never away from a
+    // submitted application, whether it is shown as Applied or archived.
+    case "REACTIVATE":
+    case "SAVE":
+      return submitted && (currentStatus === "APPLIED" || currentStatus === "ARCHIVED")
+        ? refuse("This opportunity has a submitted application; moving it would contradict the application record. Use Restore instead")
+        : allowed;
     case "DISMISS":
       return isActiveApplication(application.stage)
         ? refuse("Close the application first, for example as 'Decided not to apply'")

@@ -69,6 +69,89 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: Automatic Triage After Ingestion and Processing-Status Visibility — Review Requested
+
+**Date:** 2026-11-23
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Verification Needed (implemented and verified offline on top of the uncommitted November 22 work; not committed, awaiting review)
+
+#### Completed
+
+- Shared post-ingestion triage step (`apps/web/src/server/automatic-triage.ts`) using the existing `assessTriage`; wired into configured-source retrieval (the only automatic path that stored jobs untriaged). Triage only; counts in `RetrievalRunCounts.triage`.
+- Dashboard triage badge, "AI recommendation:" label and processing summary; opportunity-page Processing status breakdown.
+
+#### Files Changed
+
+- New: `apps/web/src/server/automatic-triage.ts`, `apps/web/src/components/processing-status.ts`, `apps/web/src/components/processing-breakdown.tsx`; tests `tests/unit/automatic-triage.test.ts`, `tests/unit/processing-status.test.tsx`, `tests/integration/automatic-triage.test.ts`, `tests/integration/mode-b-handoff-after-triage.test.ts`.
+- Changed: `packages/core/src/retrieval.ts` (counts type), `apps/web/src/server/page-capture-acquisition.ts` (`evaluationHandoff.alreadyHandled`), `apps/web/src/server/retrieval-worker.ts`, `retrieval-worker-cli.ts`, `triage-coverage-audit.ts` (reason text), `database/src/opportunity-list-repository.ts`, `apps/web/src/components/dashboard/opportunity-list.tsx`, `apps/web/src/components/evaluation/evaluation-experience.tsx`, `apps/web/src/app/opportunities/[id]/page.tsx`, `apps/web/src/app/globals.css`, `tests/support/e2e-retrieval-helper.ts`, `tests/e2e/retrieval.spec.ts`; docs.
+
+#### Current Contract / Assumptions
+
+- Retrieval never requests an evaluation; EVALUATE only establishes eligibility. Mode B's hand-off requests it for a job whose only record is an EVALUATE triage; budget safeguards and Single Capture unchanged.
+- One triage record per opportunity; ATTACHED/UNCHANGED never re-triaged; manual decisions never touched.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS (November 23).
+
+#### Known Issues / Blockers
+
+- Resolved after review: Mode B's `alreadyHandled` no longer treats an EVALUATE triage as handled (holds, evaluations and deferrals still are); see CURRENT_PROGRESS (November 23).
+- Existing untriaged opportunities stay untriaged until the approved backfill (not run).
+
+#### Next Task
+
+- Alex's review of the November 22 and 23 work together; then the audit and backfill decision as in the November 22 handoff.
+
+#### Do Not Change Without Coordination
+
+- `createAutomaticTriage` outcome rules; `evaluationHandoff.alreadyHandled` (triaged is not submitted; holds stay held); `processingStatusOf` labels (triage never shown as a recommendation).
+
+### Handoff: Universal Target Job Titles and Opportunity Management — Review Requested
+
+**Date:** 2026-11-22
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Verification Needed (implemented and verified offline on top of `85727dd`; not committed, awaiting review)
+
+#### Completed
+
+- One Target Job Titles policy (Profile page; `TitlePolicySetting`) applied by every automatic source to listing titles before any job page is read; off-title jobs are skipped with counts only. Deliberate captures and single-pass ticks override.
+- Mode B batches hold up to 25 eligible jobs; off-title cards count as progress but take no slot. Jobs queued earlier become `SKIPPED` unread and settle.
+- Move to (dashboard row menu, bulk with per-item results, opportunity page), `REACTIVATE`, Dismissed Restore / Delete selected permanently / Empty Dismissed, retained usage accounting and fingerprint tombstones, and the titles cleanup filter.
+
+#### Files Changed
+
+- Core: `packages/core/src/title-policy.ts`, `opportunity-lifecycle.ts`, `application.ts`, `page-capture.ts`, `retrieval.ts`; defaults `domains/customer-success/src/discovery/title-policy-defaults.ts`.
+- Database: migration 29; `title-policy-repository.ts`, `opportunity-tombstone-repository.ts`, `opportunity-deletion-repository.ts`, `budget-repository.ts`, `usage-summary-repository.ts`, `page-capture-repository.ts`, `retrieval-source-repository.ts`, `opportunity-list-repository.ts`.
+- Web: title-policy, move and deletion services and routes; `retrieval-worker(-cli).ts`, `page-capture(-acquisition, -tabs).ts`, `extension-api.ts`, `extension-capture.ts`; dashboard, selection, opportunity page, Profile form.
+- Discovery: LinkedIn adapter, contract. Extension: continuous capture, popup, view, API (0.4.0).
+- Tests and docs as listed in CURRENT_PROGRESS (November 22).
+
+#### Current Contract / Assumptions
+
+- The saved setting is the only title source for automatic acquisition; `customerSuccessDiscoveryConfiguration.titleTerms` remains for analytics grouping only.
+- Deletion only from Dismissed; refused for application history and open evaluation work; AI usage totals never change.
+- No change to triage, the evaluator, deduplication or normalization.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS (November 22): typecheck, lint, Prisma, migrations 29, build, diff check; full unit, integration and E2E.
+
+#### Known Issues / Blockers
+
+- Live behaviour of the title filter on LinkedIn is unverified until the planned LinkedIn Mode B live batch.
+- Defaults deliberately leave out ambiguous titles such as Implementation Engineer, Technical Account Manager or a standalone Education Specialist; add them on the Profile page if wanted.
+
+#### Next Task
+
+- Alex's review and approval; closeout; Alex runs the read-only `pnpm triage:audit` on his database; a decision on the proposed triage-only backfill (separate approval); then one LinkedIn Mode B live batch and final triage/evaluator acceptance.
+
+#### Do Not Change Without Coordination
+
+- `createTitlePolicy` rules and the defaults; `OUTSIDE_TARGET_TITLES` handling in continuous capture (handled, never buffered); the deletion transaction and retained accounting; `REACTIVATE` and the extended transitions.
+
 ### Handoff: Mode B Acceptance Follow-up — Committed
 
 **Date:** 2026-11-18

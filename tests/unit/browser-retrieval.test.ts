@@ -284,7 +284,7 @@ describe("LinkedIn collection", () => {
 
   function run(
     pages: Record<string, FixturePage>,
-    options: { config?: Record<string, unknown>; checked?: Map<string, Date>; pending?: Array<{ externalId: string; firstSeenAt: Date }> } = {},
+    options: { config?: Record<string, unknown>; checked?: Map<string, Date>; pending?: Array<{ externalId: string; firstSeenAt: Date; title?: string | null }> } = {},
   ) {
     const browser = createFixtureBrowser((url) => pages[url] ?? (url.includes("/jobs/view/") ? page(jobPage({ id: url.split("/").pop()!, title: "Customer Success Manager" })) : undefined));
     const config = linkedinAdapter.configSchema.parse(options.config ?? {});
@@ -372,8 +372,8 @@ describe("LinkedIn collection", () => {
     const day = 86_400_000;
     const cards = [cs(1), cs(2), cs(3), cs(4)];
     const pending = [
-      { externalId: "4300000001", firstSeenAt: new Date(now.getTime() - 3 * day) },
-      { externalId: cards[0]!.id, firstSeenAt: new Date(now.getTime() - 2 * day) },
+      { externalId: "4300000001", firstSeenAt: new Date(now.getTime() - 3 * day), title: "Customer Success Manager" },
+      { externalId: cards[0]!.id, firstSeenAt: new Date(now.getTime() - 2 * day), title: "Customer Success Manager" },
     ];
     const checked = new Map([
       [cards[1]!.id, new Date(now.getTime() - 1 * day)],
@@ -383,6 +383,31 @@ describe("LinkedIn collection", () => {
     expect(navigations.filter((url) => url.includes("/jobs/view/"))).toEqual(
       ["4300000001", cards[0]!.id, cards[3]!.id, cards[2]!.id].map(linkedInJobUrl),
     );
+  });
+
+  it("re-checks pending listings against the current target job titles before reading their pages (November 22, 2026)", async () => {
+    const day = 86_400_000;
+    const cards = [cs(1)];
+    const pending = [
+      // Recorded with a title still inside the target job titles: read.
+      { externalId: "4300000001", firstSeenAt: new Date(now.getTime() - 3 * day), title: "Customer Success Manager" },
+      // Recorded with a title now outside them: never read.
+      { externalId: "4300000002", firstSeenAt: new Date(now.getTime() - 3 * day), title: "Backend Engineer" },
+      // Recorded before titles were kept: waits until the search shows it.
+      { externalId: "4300000003", firstSeenAt: new Date(now.getTime() - 3 * day), title: null },
+    ];
+    const { result, navigations } = await run({ [searchUrl(0)]: page(searchPage(cards)) }, { pending });
+    expect(navigations.filter((url) => url.includes("/jobs/view/"))).toEqual(["4300000001", cards[0]!.id].map(linkedInJobUrl));
+    expect(result.discoveredTitles).toEqual({ [cards[0]!.id]: cards[0]!.title });
+  });
+
+  it("checks the job page's own title too, and keeps no listing whose page title is outside", async () => {
+    const card = cs(1);
+    const { result } = await run({
+      [searchUrl(0)]: page(searchPage([card])),
+      [linkedInJobUrl(card.id)]: page(jobPage({ id: card.id, title: "Payroll Specialist", company: "Acme" })),
+    });
+    expect(result.listings).toEqual([]);
   });
 
   it("maps a job to a retrieved listing with the public job URL and only a stated application address", async () => {

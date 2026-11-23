@@ -219,10 +219,16 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   eacf5c2, committed unchanged as 05cb9c6, live-accepted November 17–18 (WTTJ 79 jobs, LinkedIn 112 jobs after one Resume); November 18
   follow-up (bounded LinkedIn load progress, Mode B role-family title check, verify-command apply evidence)
   verified offline; E1 kept the Salesforce listing fallback (no employer link in the logged-out page); committed
-  as e881b4c (TDD v1.22 amendment proposed separately)
+  as e881b4c (TDD v1.22 amendment proposed separately); November 22 universal target job titles (one
+  configurable pre-capture title policy for every automatic source) and opportunity management (Move to,
+  bulk actions, Dismissed restore and permanent deletion) verified offline on top of 85727dd, awaiting
+  Alex's review; November 23 automatic triage of new configured-source jobs after ingestion (triage only)
+  and processing-status visibility (dashboard triage badge, opportunity-page breakdown) verified offline,
+  awaiting the same review
 → current sequence: (LinkedIn and WTTJ Mode B live-accepted November 17–18; unattended LinkedIn completion
-  verified offline only) → User Profile activation → final end-to-end triage/evaluator acceptance →
-  production readiness and merge
+  verified offline only) → November 22–23 review and closeout → one LinkedIn Mode B live batch (unattended
+  capture, continuation, title filter) → User Profile activation → final end-to-end triage/evaluator
+  acceptance → production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff
 → later add-ons 19–23 (watchlists, proactive notifications/follow-ups, calendar, email, application assistance)
 ```

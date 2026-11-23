@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Job Assistant Companion",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Saves the job posting you are viewing into your local AI Job Assistant, when you ask it to.",
   "minimum_chrome_version": "120",
   "action": {

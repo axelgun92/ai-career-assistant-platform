@@ -1,13 +1,15 @@
 import { connection } from "next/server";
 import { z } from "zod";
-import { PrismaUserEligibilityRepository } from "@ai-career/database";
+import { PrismaTitlePolicyRepository, PrismaUserEligibilityRepository } from "@ai-career/database";
 import { WorkEligibilityForm } from "@/components/eligibility/work-eligibility-form";
 import { ProfileEditor } from "@/components/profile/profile-editor";
 import { ProfileHeader } from "@/components/profile/profile-header";
+import { TargetJobTitlesForm } from "@/components/profile/target-job-titles-form";
 import { StartingProfileButton } from "@/components/profile/starting-profile-button";
 import type { ProfileDocument } from "@/components/profile/structured-fields";
 import { alexandraNugentCustomerSuccessProfile } from "@/server/profile-import/alexandra-nugent-customer-success-profile";
 import { getProfileService, structuredFieldDefaults } from "@/server/profile-service";
+import { defaultTitlePolicyPatterns, snapshotOf, titlePolicyDomain } from "@/server/title-policy-service";
 
 export const metadata = { title: "Profile & preferences" };
 
@@ -26,6 +28,24 @@ async function workEligibility() {
   } catch {
     return { authorizedRegions: [], citizenshipRegions: [] };
   }
+}
+
+// Target job titles for automatic capture (not part of the evaluation
+// profile). If the setting cannot be read, the defaults are shown.
+async function targetJobTitles() {
+  let saved = null;
+  try {
+    saved = await new PrismaTitlePolicyRepository().get(titlePolicyDomain);
+  } catch {
+    saved = null;
+  }
+  const snapshot = snapshotOf(saved);
+  return {
+    accepted: snapshot.patterns.accepted,
+    excluded: snapshot.patterns.excluded,
+    isDefault: snapshot.isDefault,
+    defaults: defaultTitlePolicyPatterns,
+  };
 }
 
 function first(value: string | string[] | undefined) {
@@ -66,6 +86,7 @@ export default async function ProfilePage({
           No profile exists yet. Evaluations need a profile with your Customer Success preferences.
         </p>
         <StartingProfileButton document={alexandraNugentCustomerSuccessProfile} />
+        <TargetJobTitlesForm initial={await targetJobTitles()} />
         <WorkEligibilityForm initial={await workEligibility()} />
       </main>
     );
@@ -116,7 +137,8 @@ export default async function ProfilePage({
         activeId={activeId}
         effectiveId={overview.active?.userProfileId ?? null}
       />
-      <WorkEligibilityForm initial={await workEligibility()} />
+      <TargetJobTitlesForm initial={await targetJobTitles()} />
+        <WorkEligibilityForm initial={await workEligibility()} />
     </main>
   );
 }

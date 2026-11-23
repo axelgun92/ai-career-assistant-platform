@@ -344,14 +344,26 @@ export const linkedinAdapter: SourceAdapter<LinkedInConfig> = {
     }
     result.fetched = cards.length;
     result.coverage = { observedListingIds: cards.map((card) => card.id), complete: false };
+    const cardById = new Map(cards.map((card) => [card.id, card]));
     const matches = cards.filter((card) => context.keepTitle(card.title));
     result.discovered = matches.map((card) => card.id);
+    result.discoveredTitles = Object.fromEntries(matches.flatMap((card) => (card.title ? [[card.id, card.title] as const] : [])));
+    const matchedIds = new Set(result.discovered);
     if (result.halted && isStopError(result.halted)) return result;
 
     // Detail: pending first (oldest discovery first), then new matches, then
     // stored matches due a refresh.
     const pendingSince = new Date(context.now().getTime() - pendingMaxAgeDays * 86_400_000);
-    const pending = (await context.pendingListings?.(pendingSince)) ?? [];
+    // A pending listing is read only if its title still passes the current
+    // target job titles: the title on this run's search page when it is
+    // there, otherwise the title recorded when it was discovered. One with
+    // no recorded title (recorded before November 22, 2026) waits until the
+    // search shows it again with a title.
+    const pending = ((await context.pendingListings?.(pendingSince)) ?? []).filter((item) =>
+      cardById.has(item.externalId)
+        ? matchedIds.has(item.externalId)
+        : Boolean(item.title) && context.keepTitle(item.title ?? null),
+    );
     const candidateIds = [...new Set([...pending.map((item) => item.externalId), ...matches.map((card) => card.id)])];
     const checked = context.lastChecked ? await context.lastChecked(candidateIds) : new Map<string, Date>();
     const refreshBefore = context.now().getTime() - refreshAfterDays * 86_400_000;
@@ -364,7 +376,6 @@ export const linkedinAdapter: SourceAdapter<LinkedInConfig> = {
         .map((card) => card.id),
     ];
     const toFetch = [...new Set(queue)].slice(0, config.maxDetailsPerRun);
-    const cardById = new Map(cards.map((card) => [card.id, card]));
     const discoveredAt = context.now();
     let unreadableInARow = 0;
     for (const id of toFetch) {
@@ -397,6 +408,8 @@ export const linkedinAdapter: SourceAdapter<LinkedInConfig> = {
         continue;
       }
       unreadableInARow = 0;
+      // The job page's own title is checked too (as mapKeptItems does).
+      if (!context.keepTitle(job.title)) continue;
       const card = cardById.get(id);
       const sourceUrl = linkedInJobUrl(id);
       try {

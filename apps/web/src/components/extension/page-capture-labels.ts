@@ -80,10 +80,11 @@ export function addedStateText(row: Pick<PageCaptureRowView, "triageOutcome" | "
   if (triage === "NEEDS_REVIEW") return "Needs Review before evaluation";
   if (triage === "REJECT") return "Rejected before evaluation";
   if (row.handoffOutcome === "DEFERRED") return "Waiting: AI budget";
-  // Saved, but not sent for evaluation automatically: the title is outside
-  // every role family of the domain (November 18, 2026). The job's page can
-  // still request an evaluation.
-  if (row.handoffOutcome === "NOT_SENT:OUTSIDE_ROLE_FAMILIES") return "Added; not sent for evaluation automatically: its title is outside the Customer Success role families. Open it to request an evaluation.";
+  // Saved, but not sent for evaluation automatically: the job page's title
+  // is outside the target job titles (November 18, 2026; the target job
+  // titles since November 22, 2026). The job's page can still request an
+  // evaluation.
+  if (row.handoffOutcome === "NOT_SENT:OUTSIDE_ROLE_FAMILIES") return "Added; not sent for evaluation automatically: its title is outside your target job titles. Open it to request an evaluation.";
   // No active profile: nothing was triaged (no outcome is invented); the
   // job is saved and is triaged when a profile is active and evaluation is
   // requested.
@@ -142,6 +143,10 @@ export function statusText(row: PageCaptureRowView): string {
       return "No longer available";
     case "DISMISSED":
       return "Dismissed";
+    // Not read (November 22, 2026): queued before the target job titles
+    // applied, with a title outside them or none.
+    case "SKIPPED":
+      return row.lastReason === "MISSING_TITLE" ? "Not read: no readable title" : "Not read: its title is outside your target job titles";
     default:
       return row.status;
   }

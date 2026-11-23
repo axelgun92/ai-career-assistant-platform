@@ -48,7 +48,7 @@ export function captureMessage(capture: CaptureResponse): string {
       : base[capture.outcome],
   ];
   if (capture.probableDuplicate) parts.push("It may duplicate an opportunity you already have; review it in AI Job Assistant.");
-  if (capture.outsideRoleFamilies) parts.push("Its title is outside your Customer Success role families.");
+  if (capture.outsideRoleFamilies) parts.push("Its title is outside your target job titles (saved because you chose it).");
   if (!capture.site.knownHost) parts.push("It came from an unrecognised site, so it is kept as a lower-priority source.");
   return parts.join(" ");
 }

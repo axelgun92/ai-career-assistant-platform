@@ -14,6 +14,8 @@ import type {
   OpportunityPresentation,
 } from "./types";
 import { DeferredNotice } from "../budget/deferred-notice";
+import { ProcessingBreakdown, type CaptureStage, type DuplicateStage } from "../processing-breakdown";
+import { processingStatusOf } from "../processing-status";
 import type { DeferralView } from "../budget/types";
 import {
   PreEvaluatorTriagePanel,
@@ -75,6 +77,8 @@ export function EvaluationExperience({
   activeProfile = null,
   listingWarning = null,
   triage = null,
+  capture = null,
+  duplicate = "NONE",
 }: {
   opportunity: OpportunityPresentation;
   // False for archived/closed opportunities; the API enforces the same rule.
@@ -86,6 +90,10 @@ export function EvaluationExperience({
   // no longer listed; a warning, never a block.
   listingWarning?: string | null;
   triage?: PreEvaluatorTriagePresentation | null;
+  // The capture and duplicate-check stages of the processing breakdown
+  // (November 23, 2026); without them the breakdown is not shown.
+  capture?: CaptureStage | null;
+  duplicate?: DuplicateStage;
 }) {
   // `evaluation` is what is displayed; `latest` is the newest evaluation, which
   // drives status, failure details, and the queued-too-long notice.
@@ -280,9 +288,31 @@ export function EvaluationExperience({
   const fallbackShown = fallbackEvaluationId !== null &&
     evaluation?.evaluationId === fallbackEvaluationId;
   const triageHeld = triage?.outcome === "NEEDS_REVIEW" || triage?.outcome === "REJECT";
+  // The newest evaluation's recommendation, or the last completed one's while
+  // the newest failed.
+  const shownRecommendation = latest?.recommendation
+    ? { decision: latest.recommendation.decision, isLatest: true }
+    : fallbackShown && evaluation?.recommendation
+      ? { decision: evaluation.recommendation.decision, isLatest: false }
+      : null;
+  const processing = processingStatusOf({
+    triage: triage ? { outcome: triage.outcome, manual: triage.manualDecision !== null } : null,
+    latestEvaluationStatus: latestStatus ?? null,
+    deferred: deferral !== null,
+    recommendation: shownRecommendation,
+  });
 
   return (
     <div className="evaluation-shell">
+      {capture ? (
+        <ProcessingBreakdown
+          opportunityId={opportunity.id}
+          capture={capture}
+          duplicate={duplicate}
+          status={processing}
+          checkingEvaluation={loading && !evaluation && !deferral}
+        />
+      ) : null}
       {triage ? (
         <PreEvaluatorTriagePanel
           opportunityId={opportunity.id}
@@ -296,8 +326,8 @@ export function EvaluationExperience({
         />
       ) : (
         <p className="field-help pre-evaluator-triage-pending">
-          Pre-evaluator triage has not run for this job yet. It runs, with an active profile, when the job is saved from the browser
-          extension or when you request evaluation.
+          Pre-evaluator triage has not run for this job yet. With an active profile it runs when automatic capture saves a new job, when
+          the job is saved from the browser extension, and when you request evaluation.
         </p>
       )}
       <section className="evaluation-controls" aria-labelledby="evaluation-status-title">

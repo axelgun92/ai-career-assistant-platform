@@ -16,7 +16,8 @@ export type PageCaptureItemStatusValue =
   | "AWAITING_DETAILS"
   | "UNAVAILABLE"
   | "ALREADY_SAVED"
-  | "DISMISSED";
+  | "DISMISSED"
+  | "SKIPPED";
 
 export interface StagedCardInput {
   externalId: string;
@@ -26,6 +27,9 @@ export interface StagedCardInput {
   company: string | null;
   location: string | null;
   postedText: string | null;
+  // The user deliberately chose this job although its title is outside the
+  // target job titles (November 22, 2026).
+  titleOverride?: boolean;
 }
 
 // REFRESHING: a job already saved, read again by this save (selective
@@ -66,6 +70,9 @@ export interface PageCaptureItemRecord {
   opportunityId: string | null;
   handoffOutcome: string | null;
   handedOffAt: Date | null;
+  // The user deliberately chose it although its title is outside the target
+  // job titles (November 22, 2026).
+  titleOverride: boolean;
 }
 
 export interface PageCaptureSessionRow {
@@ -192,6 +199,9 @@ export function classifyPageCaptureCard(input: {
   }
   if (!existing) return saved ? { disposition: "ALREADY_SAVED", selectable: false } : { disposition: "NEW", selectable: true };
   if (existing.status === "DISMISSED") return { disposition: "DISMISSED", selectable: false };
+  // Skipped by the target job titles (never read, never added): a capture
+  // whose title passes now stages it like a new job.
+  if (existing.status === "SKIPPED" && !saved && !existing.opportunityId) return { disposition: "NEW", selectable: true };
   if (saved || existing.opportunityId || existing.status === "INGESTED" || existing.status === "ALREADY_SAVED") return { disposition: "ALREADY_SAVED", selectable: false };
   if (existing.status === "AWAITING_DETAILS") {
     return { disposition: "AWAITING", selectable: input.requeueAwaiting && input.detailsAvailable };
@@ -365,13 +375,16 @@ export class PrismaPageCaptureRepository {
         }
         if (existing) {
           const repeat = existing.lastBatchId === input.batchId;
-          const requeue = decision.disposition === "AWAITING" && decision.selectable;
+          const skipped = existing.status === "SKIPPED" && decision.disposition === "NEW";
+          const requeue = (decision.disposition === "AWAITING" && decision.selectable) || (skipped && input.detailsAvailable);
           const status =
             saved && existing.status !== "INGESTED" && existing.status !== "DISMISSED"
               ? "ALREADY_SAVED"
               : requeue
                 ? "QUEUED"
-                : existing.status;
+                : skipped
+                  ? "AWAITING_DETAILS"
+                  : existing.status;
           const updated = repeat
             ? existing
             : await transaction.pageCaptureItem.update({
@@ -389,6 +402,8 @@ export class PrismaPageCaptureRepository {
                   lastBatchId: input.batchId,
                   status,
                   ...(requeue ? { attempts: 0, lastReason: null, nextAttemptAt: null, lastAttemptAt: null } : {}),
+                  ...(skipped && !requeue ? { attempts: 0, lastReason: input.awaitingReason ?? "NOT_SUPPORTED", nextAttemptAt: null } : {}),
+                  ...(card.titleOverride ? { titleOverride: true } : {}),
                 },
               });
           // A job already in the app (added by an earlier capture, from a
@@ -422,6 +437,7 @@ export class PrismaPageCaptureRepository {
             pairingId: input.pairingId,
             status: saved ? "ALREADY_SAVED" : input.detailsAvailable ? "QUEUED" : "AWAITING_DETAILS",
             lastReason: saved || input.detailsAvailable ? null : (input.awaitingReason ?? "NOT_SUPPORTED"),
+            titleOverride: card.titleOverride === true,
           },
         });
         results.push({ externalId: card.externalId, outcome: saved ? "ALREADY_SAVED" : "QUEUED", opportunityId: saved, itemId: created.id, status: created.status });
@@ -628,6 +644,19 @@ export class PrismaPageCaptureRepository {
       data: { status: "ACQUIRING", lastAttemptAt: now },
     });
     return items.map((item) => ({ ...item, status: "ACQUIRING" as const, lastAttemptAt: now }));
+  }
+
+  // Jobs queued before the target job titles applied whose title is outside
+  // them, or missing (November 22, 2026): settled as SKIPPED without being
+  // read. Only jobs still queued or just claimed, never added. Returns how
+  // many.
+  async skipItems(ids: readonly string[], reason: "OUTSIDE_TARGET_TITLES" | "MISSING_TITLE"): Promise<number> {
+    if (!ids.length) return 0;
+    const result = await this.database.pageCaptureItem.updateMany({
+      where: { id: { in: [...ids] }, status: { in: ["QUEUED", "ACQUIRING"] }, opportunityId: null },
+      data: { status: "SKIPPED", lastReason: reason, nextAttemptAt: null },
+    });
+    return result.count;
   }
 
   // The queued sites with work due.

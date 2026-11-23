@@ -22,8 +22,13 @@ export function buildPageCaptureBatch(
   reading: ResultCardsReading,
   kept: readonly boolean[],
   context: { site: string; batchId: string; extensionVersion: string; capturedAt: Date },
+  // Cards (by index) the user ticked although their titles are outside the
+  // target job titles: a deliberate choice, saved anyway (November 22, 2026).
+  overrides: ReadonlySet<number> = new Set(),
 ): BatchResult {
-  const cards = reading.cards.filter((_, index) => kept[index] !== false);
+  const cards = reading.cards.flatMap((card, index) =>
+    kept[index] === false ? [] : [overrides.has(index) ? { ...card, titleOverride: true } : card],
+  );
   if (!cards.length) return { ok: false, problem: "Select at least one job to save." };
   const batch = {
     schemaVersion: pageCaptureSchemaVersion,
@@ -73,8 +78,17 @@ export interface PageCaptureResponse {
   site: { key: string; name: string; automaticDetails: boolean };
   // refreshing: jobs already saved that this save reads again (absent from
   // older servers).
-  counts: { queued: number; seenAgain: number; alreadySaved: number; refreshing?: number; rejected: number };
-  outcomes: Array<{ url: string; title: string; outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REFRESHING" | "REJECTED"; reason: string | null; opportunityId: string | null }>;
+  // outsideTitles / deletedByUser (November 22, 2026; absent from older
+  // servers): not saved because of the target job titles, or because the
+  // user permanently deleted the job.
+  counts: { queued: number; seenAgain: number; alreadySaved: number; refreshing?: number; rejected: number; outsideTitles?: number; deletedByUser?: number };
+  outcomes: Array<{
+    url: string;
+    title: string;
+    outcome: "QUEUED" | "SEEN_AGAIN" | "ALREADY_SAVED" | "REFRESHING" | "REJECTED" | "SKIPPED";
+    reason: string | null;
+    opportunityId: string | null;
+  }>;
   progressUrl: string;
   // Sites whose details the extension reads in background tabs.
   acquisition?: {
@@ -110,9 +124,13 @@ export function pageCaptureMessage(response: PageCaptureResponse): string {
   if (seenAgain && !tabs?.stoppedUntil) parts.push(`${seenAgain} already in progress`);
   if (refreshing) parts.push(`${refreshing} already in AI Job Assistant, read again to update ${refreshing === 1 ? "it" : "them"}`);
   if (alreadySaved) parts.push(`${alreadySaved} already in AI Job Assistant`);
+  if (response.counts.outsideTitles) parts.push(`${response.counts.outsideTitles} outside your target job titles, not saved`);
+  if (response.counts.deletedByUser) parts.push(`${response.counts.deletedByUser} you deleted before, not saved again`);
   if (rejected) parts.push(`${rejected} not saved`);
   return `${parts.join(" · ") || "Nothing was saved"}.`;
 }
 
 export const rejectedLines = (response: PageCaptureResponse) =>
-  response.outcomes.filter((item) => item.outcome === "REJECTED").map((item) => `${item.title}: ${item.reason ?? "not saved"}`);
+  response.outcomes
+    .filter((item) => item.outcome === "REJECTED" || item.outcome === "SKIPPED")
+    .map((item) => `${item.title}: ${item.reason ?? "not saved"}`);

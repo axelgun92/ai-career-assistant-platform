@@ -4,8 +4,10 @@ import { customerSuccessDiscoveryConfiguration } from "@ai-career/customer-succe
 import {
   getDatabaseClient,
   PrismaManualOpportunityRepository,
+  PrismaOpportunityTombstoneRepository,
   PrismaPageCaptureRepository,
   PrismaRetrievalSourceRepository,
+  PrismaTitlePolicyRepository,
   RetrievalWorkerLock,
 } from "@ai-career/database";
 import { createFetchTransport, createPoliteTransport, defaultAdapterRegistry } from "@ai-career/discovery";
@@ -16,7 +18,9 @@ import { getEvaluationService } from "./evaluation-service";
 import { enabledSitesFromEnvironment } from "./page-capture";
 import { createPageCaptureAcquisition, evaluationHandoff, type PageCaptureAcquisition } from "./page-capture-acquisition";
 import { createPageCaptureEvidence } from "./page-capture-evidence";
+import { createAutomaticTriage } from "./automatic-triage";
 import { createRetrievalWorker, runRetrievalWorkerLoop, type RetrievalWorker } from "./retrieval-worker";
+import { createTitlePolicyLoader } from "./title-policy-service";
 import { gitHead, workerDiagnosticsFromEnvironment, type WorkerDiagnostics } from "./worker-diagnostics";
 import { formatWorkerError } from "./worker-errors";
 
@@ -177,11 +181,16 @@ async function main(): Promise<number> {
     normalizer: createRetrievedOpportunityNormalizer(),
   });
   const browser = settings.RETRIEVAL_BROWSER_EXECUTABLE ? browserLauncher(settings.RETRIEVAL_BROWSER_EXECUTABLE) : null;
+  // The target job titles, read afresh for each run and pass (November 22,
+  // 2026), and the tombstones of jobs the user permanently deleted.
+  const titlePolicy = createTitlePolicyLoader(new PrismaTitlePolicyRepository());
+  const tombstones = new PrismaOpportunityTombstoneRepository();
   const acquisition = createPageCaptureAcquisition({
     repository: new PrismaPageCaptureRepository(),
     ingestion,
     handoff: evaluationHandoff(getEvaluationService()),
     discovery: customerSuccessDiscoveryConfiguration,
+    titlePolicy,
     detailSites: () => enabledSitesFromEnvironment().details,
     probeCapture: () => captureRepository.probeCaptureLock(),
     pageScripts,
@@ -196,6 +205,15 @@ async function main(): Promise<number> {
     registry: defaultAdapterRegistry,
     transport: (options) => createPoliteTransport(createFetchTransport({ userAgent: settings.RETRIEVAL_USER_AGENT }), options),
     discovery: customerSuccessDiscoveryConfiguration,
+    titlePolicy,
+    isDeletedListing: (listing) => tombstones.isDeleted({ source: listing.source, externalId: listing.externalId ?? null, sourceUrl: listing.sourceUrl ?? null }),
+    // Triage only (November 23, 2026): configured sources never request an
+    // evaluation; Mode B keeps its own evaluation hand-off above.
+    triage: createAutomaticTriage({
+      assess: (opportunityId) => getEvaluationService().assessTriage(opportunityId),
+      existing: (opportunityId) => getEvaluationService().getTriage(opportunityId),
+      log,
+    }),
     env: () => process.env,
     now: () => new Date(),
     log,

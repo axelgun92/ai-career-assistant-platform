@@ -16,18 +16,23 @@ export class PrismaUsageSummaryRepository {
   private readonly database = getDatabaseClient();
 
   async summarizeAllUsage(): Promise<UsageTotals> {
-    const attempts = await this.database.semanticOperationAttempt.findMany({
-      select: {
-        evaluationId: true,
-        inputTokens: true,
-        outputTokens: true,
-        cachedInputTokens: true,
-        reasoningTokens: true,
-        totalTokens: true,
-        estimatedCost: true,
-        pricingConfiguration: { select: { version: true, currency: true } },
-      },
-    });
+    const select = {
+      evaluationId: true,
+      inputTokens: true,
+      outputTokens: true,
+      cachedInputTokens: true,
+      reasoningTokens: true,
+      totalTokens: true,
+      estimatedCost: true,
+      pricingConfiguration: { select: { version: true, currency: true } },
+    } as const;
+    // The retained accounting of permanently deleted opportunities (November
+    // 22, 2026) counts too, so deleting never changes the totals.
+    const [live, retained] = await Promise.all([
+      this.database.semanticOperationAttempt.findMany({ select }),
+      this.database.retainedEvaluationUsage.findMany({ select }),
+    ]);
+    const attempts = [...live, ...retained];
     const summaryAttempts = attempts.map((attempt) => ({
       inputTokens: attempt.inputTokens,
       outputTokens: attempt.outputTokens,

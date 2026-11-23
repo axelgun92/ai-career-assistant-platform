@@ -241,7 +241,9 @@ test("lifecycle actions, dashboard views, and reevaluation of a saved opportunit
   await expect(dashboardRow()).toContainText("Apply");
 
   await page.goto(`/opportunities/${opportunityId}`);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  // Move to (November 22, 2026) replaces the separate status buttons.
+  await page.getByLabel("Move to").selectOption("SAVED");
+  await page.getByRole("button", { name: "Move", exact: true }).click();
   await expect(statusHeading("Saved")).toBeVisible();
 
   // Reevaluation keeps the user's Saved state and adds evaluation history.
@@ -251,7 +253,8 @@ test("lifecycle actions, dashboard views, and reevaluation of a saved opportunit
   await expect(page.getByText("Evaluation history (2)")).toBeVisible({ timeout: 15_000 });
   await expect(statusHeading("Saved")).toBeVisible();
 
-  await page.getByRole("button", { name: "Dismiss" }).click();
+  await page.getByLabel("Move to").selectOption("DISMISSED");
+  await page.getByRole("button", { name: "Move", exact: true }).click();
   await expect(statusHeading("Dismissed")).toBeVisible();
   await page.goto("/");
   await expect(dashboardRow()).toHaveCount(0);
@@ -259,14 +262,17 @@ test("lifecycle actions, dashboard views, and reevaluation of a saved opportunit
   await expect(dashboardRow()).toContainText("Dismissed");
 
   await page.goto(`/opportunities/${opportunityId}`);
-  await page.getByRole("button", { name: "Restore" }).click();
+  await page.getByLabel("Move to").selectOption("RESTORE");
+  await page.getByRole("button", { name: "Move", exact: true }).click();
   await expect(statusHeading("Saved")).toBeVisible();
 
-  await page.getByRole("button", { name: "Archive" }).click();
+  await page.getByLabel("Move to").selectOption("ARCHIVED");
+  await page.getByRole("button", { name: "Move", exact: true }).click();
   await expect(statusHeading("Archived")).toBeVisible();
   await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeDisabled();
   await expect(page.getByText(/This opportunity is archived. Restore it/)).toBeVisible();
-  await page.getByRole("button", { name: "Restore" }).click();
+  await page.getByLabel("Move to").selectOption("RESTORE");
+  await page.getByRole("button", { name: "Move", exact: true }).click();
   await expect(statusHeading("Saved")).toBeVisible();
   await expect(page.getByRole("button", { name: "Reevaluate opportunity" })).toBeEnabled();
 });

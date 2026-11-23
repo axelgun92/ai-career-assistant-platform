@@ -240,7 +240,7 @@ describe("the popup's messages", () => {
   it("describe the saved outcome, a possible duplicate, the role families and an unrecognised site", () => {
     expect(captureMessage(capture)).toBe(
       "Saved as a new opportunity. It may duplicate an opportunity you already have; review it in AI Job Assistant. " +
-        "Its title is outside your Customer Success role families. It came from an unrecognised site, so it is kept as a lower-priority source.",
+        "Its title is outside your target job titles (saved because you chose it). It came from an unrecognised site, so it is kept as a lower-priority source.",
     );
     expect(captureMessage({ ...capture, outcome: "UNCHANGED", probableDuplicate: false, outsideRoleFamilies: false, site: { ...capture.site, knownHost: true } })).toBe("Already saved. Nothing changed.");
     expect(siteLine({ name: "LinkedIn", knownHost: true })).toBe("LinkedIn");

@@ -39,7 +39,7 @@ export default defineConfig({
     {
       name: "chromium",
       use: chromium,
-      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/, /\/extension-page-capture\.spec\.ts$/, /\/extension-continuous-capture\.spec\.ts$/],
+      testIgnore: [/profile-management\.spec\.ts$/, /\/budget\.spec\.ts$/, /\/dashboard\.spec\.ts$/, /\/golden-path\.spec\.ts$/, /\/extension\.spec\.ts$/, /\/source-insights\.spec\.ts$/, /\/market\.spec\.ts$/, /\/my-search\.spec\.ts$/, /\/companies\.spec\.ts$/, /\/pre-evaluator-triage\.spec\.ts$/, /\/extension-page-capture\.spec\.ts$/, /\/extension-continuous-capture\.spec\.ts$/, /\/opportunity-management\.spec\.ts$/],
     },
     {
       // Profile specs change which profile version is active, which every
@@ -140,6 +140,14 @@ export default defineConfig({
       use: chromium,
       testMatch: /\/extension-continuous-capture\.spec\.ts$/,
       dependencies: ["page-capture"],
+    },
+    {
+      // Opportunity management (November 22, 2026): Empty Dismissed deletes
+      // every dismissed opportunity of the test database, so it runs last.
+      name: "opportunity-management",
+      use: chromium,
+      testMatch: /\/opportunity-management\.spec\.ts$/,
+      dependencies: ["continuous-capture"],
     },
   ],
   webServer: {

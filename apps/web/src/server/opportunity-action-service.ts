@@ -4,6 +4,7 @@ import {
   lifecycleActionGuard,
   opportunityUserActionSchema,
   type OpportunityLifecycleState,
+  type OpportunityMoveDestination,
   type OpportunityUserAction,
 } from "@ai-career/core";
 import {
@@ -12,6 +13,7 @@ import {
   type GuardedUserActionResult,
 } from "@ai-career/database";
 import { z } from "zod";
+import { moveChoices } from "./opportunity-move-service";
 
 export interface OpportunityActionWriter {
   applyUserAction(input: {
@@ -40,6 +42,10 @@ export interface OpportunityLifecyclePresentation {
   availableActions: OpportunityUserAction[];
   // Actions the lifecycle rules allow but the application record blocks.
   blockedActions: Array<{ action: OpportunityUserAction; reason: string }>;
+  // Move to (November 22, 2026): the destinations available now, and those
+  // the application record blocks (with the reason).
+  moveDestinations: OpportunityMoveDestination[];
+  blockedMoves: Array<{ destination: OpportunityMoveDestination; reason: string }>;
   evaluable: boolean;
 }
 
@@ -64,7 +70,15 @@ export async function getOpportunityLifecyclePresentation(
     if (guard.allowed) availableActions.push(action);
     else blockedActions.push({ action, reason: guard.reason });
   }
-  return { status: view.status, availableActions, blockedActions, evaluable: canRequestEvaluation(view.status) };
+  const moves = moveChoices({ status: view.status, history: view.history, systemState: view.systemState, application });
+  return {
+    status: view.status,
+    availableActions,
+    blockedActions,
+    moveDestinations: moves.available,
+    blockedMoves: moves.blocked,
+    evaluable: canRequestEvaluation(view.status),
+  };
 }
 
 // POST /api/opportunities/[id]/action — explicit user lifecycle actions only.

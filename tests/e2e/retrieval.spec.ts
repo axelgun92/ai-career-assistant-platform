@@ -84,8 +84,22 @@ test("a Greenhouse source is added disabled, enabled, run, and its listing shows
   await expect(row).toContainText("Found via Greenhouse");
   await expect(row).toContainText("GitLab");
   await expect(row).not.toContainText("Listing changed");
+  // November 23, 2026: the new opportunity was triaged automatically (with
+  // the active profile; without one it is counted and stays untriaged), and
+  // it is never evaluated by retrieval. The row and the page say so.
+  const triage = (outcome as { counts: { triage?: Record<string, number> } }).counts.triage ?? {};
+  expect(Object.values(triage).reduce((sum, value) => sum + value, 0)).toBe(1);
+  const label = triage.EVALUATE ? "Triage: Evaluate" : triage.NEEDS_REVIEW ? "Triage: Needs review" : triage.REJECT ? "Triage: Reject" : "Triage: not assessed";
+  await expect(row).toContainText(label);
+  await expect(row).toContainText("Not evaluated");
+  await expect(row).not.toContainText("AI recommendation");
   await row.getByRole("link", { name: "Customer Success Architect" }).click();
   await expect(page.getByRole("heading", { name: "Not evaluated" })).toBeVisible();
+  const processing = page.getByRole("region", { name: "Processing status" });
+  await expect(processing).toContainText("Captured and normalized (1 source observation;");
+  await expect(processing).toContainText(`Pre-evaluator triage${label}.`);
+  await expect(processing).toContainText("AI evaluationNot evaluated");
+  await expect(processing).toContainText("AI recommendationNone yet: a recommendation needs a completed AI evaluation.");
   const provenance = page.getByRole("region", { name: "Source and provenance" });
   await expect(provenance).toContainText("Greenhouse (employer ATS · official API or feed)");
   await expect(provenance).toContainText(`Retrieved by your source “${name}”`);

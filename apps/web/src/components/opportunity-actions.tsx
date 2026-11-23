@@ -2,54 +2,63 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { OpportunityUserAction } from "@ai-career/core";
+import type { OpportunityMoveDestination } from "@ai-career/core";
 
-const actionLabels: Record<OpportunityUserAction, string> = {
-  SAVE: "Save",
-  MARK_APPLIED: "Mark as applied",
-  DISMISS: "Dismiss",
-  ARCHIVE: "Archive",
-  RESTORE: "Restore",
+// The opportunity page's status section (November 22, 2026): ordinary
+// lifecycle changes under one Move to, through the same rules as the
+// dashboard. Applied is not a folder: an application is recorded in the
+// Application Tracker, which is unchanged.
+
+export const moveDestinationLabels: Record<OpportunityMoveDestination, string> = {
+  ACTIVE: "Active",
+  SAVED: "Saved",
+  DISMISSED: "Dismissed",
+  ARCHIVED: "Archived",
+  RESTORE: "Restore (previous state)",
 };
 
 export function OpportunityActions({
   opportunityId,
   statusLabel,
-  availableActions,
-  blockedActions = [],
+  moveDestinations,
+  blockedMoves = [],
+  applicationPointer = false,
 }: {
   opportunityId: string;
   statusLabel: string;
-  availableActions: OpportunityUserAction[];
+  moveDestinations: OpportunityMoveDestination[];
   // Allowed by the lifecycle but blocked by the application record.
-  blockedActions?: Array<{ action: OpportunityUserAction; reason: string }>;
+  blockedMoves?: Array<{ destination: OpportunityMoveDestination; reason: string }>;
+  // Whether recording an application is possible now (shown as a pointer to
+  // the Application Tracker).
+  applicationPointer?: boolean;
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState<OpportunityUserAction | null>(null);
+  const [destination, setDestination] = useState<OpportunityMoveDestination | "">(moveDestinations[0] ?? "");
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selected = moveDestinations.includes(destination as OpportunityMoveDestination) ? destination : (moveDestinations[0] ?? "");
 
-  async function apply(action: OpportunityUserAction) {
-    setPending(action);
+  async function move() {
+    if (!selected) return;
+    setPending(true);
     setError(null);
     try {
-      const response = await fetch(
-        `/api/opportunities/${encodeURIComponent(opportunityId)}/action`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
-        },
-      );
+      const response = await fetch(`/api/opportunities/${encodeURIComponent(opportunityId)}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destination: selected }),
+      });
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? "The action could not be completed.");
+        setError(body.error ?? "The move could not be completed.");
         return;
       }
       router.refresh();
     } catch {
       setError("The application could not reach the server.");
     } finally {
-      setPending(null);
+      setPending(false);
     }
   }
 
@@ -57,26 +66,34 @@ export function OpportunityActions({
     <section className="opportunity-actions" aria-labelledby="opportunity-status-title">
       <p className="eyebrow">Opportunity status</p>
       <h2 id="opportunity-status-title">{statusLabel}</h2>
-      {availableActions.length ? (
-        <div className="evaluation-actions">
-          {availableActions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              className={action === "SAVE" || action === "MARK_APPLIED" ? undefined : "secondary-button"}
-              disabled={pending !== null}
-              onClick={() => apply(action)}
-            >
-              {pending === action ? "Updating…" : actionLabels[action]}
-            </button>
-          ))}
+      {moveDestinations.length ? (
+        <div className="evaluation-actions move-to">
+          <label htmlFor="opportunity-move-to">Move to</label>
+          <select
+            id="opportunity-move-to"
+            value={selected}
+            disabled={pending}
+            onChange={(event) => setDestination(event.target.value as OpportunityMoveDestination)}
+          >
+            {moveDestinations.map((item) => (
+              <option key={item} value={item}>
+                {moveDestinationLabels[item]}
+              </option>
+            ))}
+          </select>
+          <button type="button" disabled={pending || !selected} onClick={() => void move()}>
+            {pending ? "Moving…" : "Move"}
+          </button>
         </div>
       ) : null}
-      {blockedActions.length ? (
+      {applicationPointer ? (
+        <p className="field-help">Applied: record your application in the Application Tracker below.</p>
+      ) : null}
+      {blockedMoves.length ? (
         <ul className="blocked-actions">
-          {blockedActions.map((blocked) => (
-            <li key={blocked.action} className="field-help">
-              {actionLabels[blocked.action]} — {blocked.reason}
+          {blockedMoves.map((blocked) => (
+            <li key={blocked.destination} className="field-help">
+              {moveDestinationLabels[blocked.destination]} — {blocked.reason}
             </li>
           ))}
         </ul>
