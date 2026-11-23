@@ -69,12 +69,12 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
-### Handoff: Automatic Triage After Ingestion and Processing-Status Visibility — Review Requested
+### Handoff: Automatic Triage After Ingestion and Processing-Status Visibility — Committed
 
 **Date:** 2026-11-23
 **From:** Claude (main-product workstream)
 **To:** Alex
-**Status:** Verification Needed (implemented and verified offline on top of the uncommitted November 22 work; not committed, awaiting review)
+**Status:** Completed (approved by Alex; committed with the November 22 work as `eaa0297` on `integration/final-evaluator-product`)
 
 #### Completed
 
@@ -102,18 +102,18 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 #### Next Task
 
-- Alex's review of the November 22 and 23 work together; then the audit and backfill decision as in the November 22 handoff.
+- Alex runs the read-only `pnpm triage:audit --database <Alex's database name>`; then a separate decision on the triage-only backfill (not run).
 
 #### Do Not Change Without Coordination
 
 - `createAutomaticTriage` outcome rules; `evaluationHandoff.alreadyHandled` (triaged is not submitted; holds stay held); `processingStatusOf` labels (triage never shown as a recommendation).
 
-### Handoff: Universal Target Job Titles and Opportunity Management — Review Requested
+### Handoff: Universal Target Job Titles and Opportunity Management — Committed
 
 **Date:** 2026-11-22
 **From:** Claude (main-product workstream)
 **To:** Alex
-**Status:** Verification Needed (implemented and verified offline on top of `85727dd`; not committed, awaiting review)
+**Status:** Completed (approved by Alex; committed as `eaa0297` on `integration/final-evaluator-product`)
 
 #### Completed
 
@@ -146,7 +146,7 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 #### Next Task
 
-- Alex's review and approval; closeout; Alex runs the read-only `pnpm triage:audit` on his database; a decision on the proposed triage-only backfill (separate approval); then one LinkedIn Mode B live batch and final triage/evaluator acceptance.
+- Done: review, approval and closeout. Next: the read-only `pnpm triage:audit` on Alex's database; a decision on the proposed triage-only backfill (separate approval); then one LinkedIn Mode B live batch and final triage/evaluator acceptance.
 
 #### Do Not Change Without Coordination
 

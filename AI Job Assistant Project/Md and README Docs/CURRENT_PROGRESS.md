@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 23, 2026
 
-## Automatic Triage After Ingestion and Processing-Status Visibility (November 23, 2026; on top of the uncommitted November 22 work; implemented and verified offline; not committed, awaiting Alex's review)
+## Automatic Triage After Ingestion and Processing-Status Visibility (November 23, 2026; implemented and verified offline; approved by Alex and committed with the November 22 work as `eaa0297`, pushed to `integration/final-evaluator-product`)
 
 Additional work identified in the November 22 report. No live source test was run. WTTJ live acceptance stays closed. The triage coverage audit and the proposed triage-only backfill for existing opportunities remain follow-up work; the backfill was not run.
 
@@ -36,7 +36,7 @@ Additional work identified in the November 22 report. No live source test was ru
 - Integration 502/502 before the correction (new `automatic-triage` 3: the three outcomes once per new job with no evaluation, admission, deferral or AI attempt; unchanged re-run not re-triaged; a manual decision kept on a changed listing; a changed never-assessed job triaged; no active profile counted with the run completed; an attached exact duplicate not triaged; the dashboard row reading the triage).
 - E2E 71/71 in one pass (the retrieval spec now asserts the run's triage count, the row's triage badge with "Not evaluated" and no AI recommendation, and the page's Processing status).
 
-## Universal Target Job Titles and Opportunity Management (November 22, 2026; on top of `85727dd`; implemented and verified offline; not committed, awaiting Alex's review)
+## Universal Target Job Titles and Opportunity Management (November 22, 2026; on top of `85727dd`; implemented and verified offline; approved by Alex and committed as `eaa0297`, pushed to `integration/final-evaluator-product`)
 
 Both approved product improvements are done before the remaining live work (one LinkedIn Mode B batch, then final triage/evaluator acceptance). No live source test was run. WTTJ live acceptance stays closed.
 
