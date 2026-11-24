@@ -1,7 +1,20 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 23, 2026
+**Last updated:** November 24, 2026
+
+## Triage-Only Backfill Command (November 24, 2026; on top of `e5c44d6`; implemented and verified offline; approved by Alex and committed on `integration/final-evaluator-product` as "Triage-only backfill command (pnpm triage:backfill)"; not run on any real database)
+
+- **Audit (Alex, read-only, `ai_career_assistant_acceptance`):** 290 opportunities, all NEVER_ASSESSED and unevaluated, no paid AI usage; active profile version 1; 287 results-page hand-offs refused with USER_PROFILE_NOT_FOUND (no active profile at capture), 3 Single Capture jobs without triage; backfill candidates 210, outside the target job titles 80; duplicates MATCH 0, PROBABLE_MATCH 124. Alex approved the one-time triage-only backfill.
+- **Command:** `pnpm triage:backfill --database <name>` (`apps/web/src/server/triage-backfill.ts`, `-cli.ts`). Candidates are exactly the audit's CANDIDATE class (`backfillClassOf`): customer-success, Active or Saved, never triaged, no evaluation or open evaluation work, title inside the active target job titles.
+  - Dry run by default, in a read-only session: the classes, each candidate (ID, state, title) and the `--apply --expect <count>` to use.
+  - `--apply --expect <count>` refuses unless the current candidate count equals the reviewed one. Each candidate is read again immediately before it is processed and skipped (with the reason) unless it is still a candidate, the active profile is the one the run started with, and no triage record has appeared; then the existing `EvaluationService.assessTriage` runs (active profile, deterministic gate, one `PreEvaluatorTriage` upsert that never touches a manual decision).
+  - Writes triage records only: no evaluation request, admission, budget reservation, queued task or provider call; lifecycle states, applications, duplicate relationships and lifecycle history unchanged. A failure or refusal is recorded per job and the run continues; each result is printed as it happens, then the totals. Exit code 1 when refused or when any job failed.
+  - `--database` must name the database `DATABASE_URL` points to; unknown options and a stray `--expect` are refused.
+- **Not changed:** results-page items whose hand-off was refused keep that outcome and are not handed off again; a backfilled EVALUATE job is eligible for evaluation, which stays an explicit request (or a later Mode B capture that attaches to it from another listing).
+- The audit query gained an optional single-opportunity filter (used by the recheck); the audit itself is unchanged.
+- **Next (Alex, separately approved):** in the acceptance checkout (`~/aija/mode-b-rev3-acceptance`, detached HEAD; the branch is checked out in another worktree) `git fetch origin` then `git switch --detach origin/integration/final-evaluator-product`, `pnpm install`, `pnpm db:status` (and `pnpm db:migrate` if migration 29 is pending), a `pg_dump` backup, the read-only dry run, then separate approval of `--apply --expect <count>`, then the audit again.
+- **Verified offline (`ai_career_assistant_test` only):** typecheck, lint, `git diff --check`; unit 2,587 passed / 6 skipped (new `triage-backfill` 3: dry run calls nothing, recheck skips for a job gone, moved, raced or under a changed profile, refusal and failure recorded and the run continued, refusals without a profile or the reviewed count); integration 507/507 (new `triage-backfill` 4: real assessTriage on nine jobs (four recorded EVALUATE/NEEDS_REVIEW/REJECT, one dismissed mid-run and skipped, existing manual decision, off-title, dismissed and evaluated jobs untouched); dry run and refused applies write nothing; no evaluation, admission, deferral, task or AI attempt; lifecycle, application and duplicate records identical; a second dry run finds nothing; no active profile refused; the command's guards and a read-only dry run). No UI change, so E2E was not re-run (71/71 at `e5c44d6`).
 
 ## Automatic Triage After Ingestion and Processing-Status Visibility (November 23, 2026; implemented and verified offline; approved by Alex and committed with the November 22 work as `eaa0297`, pushed to `integration/final-evaluator-product`)
 

@@ -225,8 +225,8 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   configured-source jobs after ingestion (triage only), processing-status visibility and the Mode B
   hand-off correction (triaged is not submitted): verified offline, approved and committed as eaa0297
 → current sequence: (LinkedIn and WTTJ Mode B live-accepted November 17–18; unattended LinkedIn completion
-  verified offline only) → read-only triage coverage audit of Alex's opportunities → triage-only backfill
-  decision (separate approval) → one LinkedIn Mode B live batch (unattended
+  verified offline only) → read-only triage coverage audit (done November 24: 210 candidates) → triage-only
+  backfill command (committed November 24; Alex runs the dry run, then the apply after separate approval) → one LinkedIn Mode B live batch (unattended
   capture, continuation, title filter) → User Profile activation → final end-to-end triage/evaluator
   acceptance → production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

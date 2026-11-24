@@ -3,7 +3,7 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Primary implemented domain:** Customer Success  
 **Status:** Active development; pre-evaluator triage complete; extension Mode B committed, LinkedIn enabled (awaiting end-to-end acceptance), Welcome to the Jungle / Otta P2 committed (awaiting live acceptance; not complete); workstreams C–E and Workstream B capture correctness committed; Workstream B Mode B live-round fixes (worker resilience, selective re-observation, evidence-based updates, LinkedIn listing fallback, residency exclusions, country salary tiers) and every E4-independent gap implemented and verified offline; committed as `58ef504`; Mode B Rev 3 final review committed as `4847751`; **WTTJ Mode B Rev 3 accepted by Alex in the November 7 live round**; LinkedIn Mode B not yet accepted (three jobs read, then LinkedIn answered HTTP 429 to its fourth logged-out page in five minutes); the November 7 follow-up fixes (no Retry per job when the worker has no browser; TENEX.AI Hybrid with remote only by exception; Nearmap Remote within the continental U.S.; Thomson Reuters target total cash; WTTJ refresh dates) implemented, verified offline and approved (not LinkedIn acceptance); a controlled LinkedIn live round pending separate authorization; **November 15: normalization fixes F1–F7 and continuous Mode B (LinkedIn and Welcome to the Jungle) implemented and verified offline on top of `eacf5c2`, live-accepted November 17–18 (LinkedIn after one Resume) and committed as `05cb9c6`; the November 18 follow-up (bounded LinkedIn loading, Mode B role-family title check, apply-link evidence) committed as `e881b4c`**; **November 22: universal pre-capture target job titles and opportunity management (Move to, bulk actions, Dismissed restore and permanent deletion) implemented and verified offline on top of `85727dd`, approved and committed as `eaa0297`**; **November 23: automatic triage of configured-source jobs after ingestion and processing-status visibility (dashboard triage badge and summary, opportunity-page breakdown) implemented and verified offline, approved and committed with it as `eaa0297`; next: the read-only triage coverage audit of Alex's opportunities, then a separate backfill decision**
-**Last updated:** November 23, 2026
+**Last updated:** November 24, 2026
 
 ## Purpose
 
@@ -155,6 +155,10 @@ Supported results page (Alex's Chrome)
     - *(Earlier, November 4, before implementation: "It is not yet implemented (implementation needs separate approval), then needs live acceptance." Superseded plan: a separate three-job proof-of-concept phase, removed November 4, 2026.)*
   - Mode B is complete for a site only when an approved automatic detail mechanism moves its batch jobs into real opportunities without Alex opening each one. Awaiting details never counts.
   - *(Earlier, November 3: "Neither is enabled or complete yet", pending F0 and P1.)*
+
+### Triage-only backfill command (November 24, 2026; verified offline; approved and committed; not run on any real database)
+
+- After the read-only audit of Alex's acceptance database (290 opportunities, none triaged, 210 backfill candidates), `pnpm triage:backfill` triages the audit's candidates once with the existing deterministic triage and the active profile. Dry run by default; `--apply --expect <count>` only after reviewing it; each job rechecked first. No paid evaluation is requested or reserved, and nothing else about the jobs changes.
 
 ### Automatic triage after ingestion and processing-status visibility (November 23, 2026; implemented and verified offline; committed as `eaa0297`)
 

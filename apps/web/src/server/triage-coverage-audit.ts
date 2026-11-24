@@ -163,10 +163,12 @@ export function buildTriageCoverageReport(input: {
 }
 
 // The stored records, one row per opportunity, in plain SQL that also runs on
-// a database without the November 22 migration.
+// a database without the November 22 migration. With an opportunity ID, only
+// that opportunity's row (the triage backfill's recheck before each job).
 type ReadTransaction = Parameters<Parameters<typeof readOnlyTransaction>[1]>[0];
 
-export async function readTriageCoverage(transaction: ReadTransaction) {
+export async function readTriageCoverage(transaction: ReadTransaction, options: { opportunityId?: string } = {}) {
+  const only = options.opportunityId ?? null;
   const rows = await transaction.$queryRaw<Array<Record<string, unknown>>>`
     SELECT
       o."id", o."status"::text AS "status", o."domain", o."title", o."sourceType"::text AS "sourceType",
@@ -186,6 +188,7 @@ export async function readTriageCoverage(transaction: ReadTransaction) {
         ORDER BY CASE r."decision"::text WHEN 'MATCH' THEN 0 WHEN 'PROBABLE_MATCH' THEN 1 ELSE 2 END LIMIT 1) AS "duplicateDecision"
     FROM "Opportunity" o
     LEFT JOIN "PreEvaluatorTriage" t ON t."opportunityId" = o."id"
+    WHERE (${only}::uuid IS NULL OR o."id" = ${only}::uuid)
     ORDER BY o."discoveredAt" ASC, o."id" ASC`;
   const [active] = await transaction.$queryRaw<Array<{ id: string; version: number }>>`
     SELECT p."id", p."version" FROM "ActiveUserProfile" a JOIN "UserProfile" p ON p."id" = a."userProfileId" WHERE a."domain" = 'customer-success'`;

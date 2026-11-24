@@ -69,6 +69,42 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: Triage-Only Backfill Command — Committed
+
+**Date:** 2026-11-24
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Completed (approved by Alex; committed on `integration/final-evaluator-product` as "Triage-only backfill command (pnpm triage:backfill)"; not run on any real database)
+
+#### Completed
+
+- `pnpm triage:backfill` (dry run by default; `--apply --expect <count>`), reusing the audit's candidate rule and `EvaluationService.assessTriage`; per-job recheck; triage records only.
+
+#### Files Changed
+
+- New: `apps/web/src/server/triage-backfill.ts`, `apps/web/src/server/triage-backfill-cli.ts`, `tests/unit/triage-backfill.test.ts`, `tests/integration/triage-backfill.test.ts`.
+- Changed: `apps/web/src/server/triage-coverage-audit.ts` (optional single-opportunity filter), `package.json` (script); docs.
+
+#### Current Contract / Assumptions
+
+- Candidates = the audit's CANDIDATE class under the active target job titles; apply needs the reviewed count; existing assessments and manual decisions are never overwritten; no evaluation work of any kind.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS (November 24).
+
+#### Known Issues / Blockers
+
+- Results-page items whose hand-off was refused are not handed off again; evaluation of backfilled EVALUATE jobs stays an explicit request.
+
+#### Next Task
+
+- Alex updates the acceptance checkout (detached HEAD: `git fetch origin`, `git switch --detach origin/integration/final-evaluator-product`), takes a database backup, reviews the read-only dry run, and separately approves `--apply --expect <count>`; then the audit again.
+
+#### Do Not Change Without Coordination
+
+- The recheck rules and the `--expect` guard.
+
 ### Handoff: Automatic Triage After Ingestion and Processing-Status Visibility — Committed
 
 **Date:** 2026-11-23
