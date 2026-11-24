@@ -40,7 +40,8 @@
     "diagnostics:cleanup": "tsx apps/web/src/server/diagnostics-cleanup-cli.ts",
     "triage:audit": "tsx apps/web/src/server/triage-coverage-audit-cli.ts",
     "triage:backfill": "tsx apps/web/src/server/triage-backfill-cli.ts",
-    "triage:review-diagnostic": "tsx apps/web/src/server/needs-review-diagnostic-cli.ts"
+    "triage:review-diagnostic": "tsx apps/web/src/server/needs-review-diagnostic-cli.ts",
+    "duplicates:history": "tsx apps/web/src/server/duplicate-history-cli.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

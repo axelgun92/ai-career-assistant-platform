@@ -69,6 +69,43 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: Historical Duplicate Investigation Command — Committed
+
+**Date:** 2026-11-24
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Completed (approved by Alex; committed on `integration/final-evaluator-product` as "Historical duplicate investigation command (pnpm duplicates:history)"; not run on any real database)
+
+#### Completed
+
+- `pnpm duplicates:history` (read-only): every stored duplicate reference examined pair by pair from both sides' stored history, classified into five classes with the evidence and any missing evidence, with reconciliation, clusters, complementary facts and possible current defects.
+
+#### Files Changed
+
+- New: `apps/web/src/server/duplicate-history-diagnostic.ts`, `apps/web/src/server/duplicate-history-cli.ts`, `tests/unit/duplicate-history.test.ts`, `tests/integration/duplicate-history.test.ts`.
+- Changed: `package.json` (script); docs.
+
+#### Current Contract / Assumptions
+
+- Investigation only: no reference, opportunity, normalized field or deduplication rule is changed. The audit's "124" counts opportunities, not relationships.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS (November 24, historical duplicate investigation).
+
+#### Known Issues / Blockers
+
+- The acceptance database is not reachable from the cloud session; Alex runs the command and shares the output.
+
+#### Next Task
+
+- Alex updates `~/aija/mode-b-rev3-acceptance` (detached HEAD: `git fetch origin`, `git switch --detach origin/integration/final-evaluator-product`, `pnpm install`), runs `pnpm duplicates:history --database ai_career_assistant_acceptance` and shares the output.
+- Claude's analysis, as Alex required: every stored PROBABLE_MATCH relationship (not only those touching NEEDS_REVIEW jobs); relationship counts reconciled against the audit's 124 opportunities; confirmed duplicates, likely duplicates, distinct vacancies and genuinely unresolved cases separated by their historical evidence; the most complete and accurate record identified for each duplicate group; how complementary information, source observations, capture history, normalized facts, triage decisions and evaluation records would be preserved before any consolidation is recommended; no consolidation merely because descriptions are identical; possible current deduplication defects kept separate from historical capture problems. No records modified, nothing re-normalized, re-triaged, merged, deleted or evaluated without separate approval.
+
+#### Do Not Change Without Coordination
+
+- The read-only guards and the classification rules.
+
 ### Handoff: NEEDS_REVIEW Diagnostic Command — Committed
 
 **Date:** 2026-11-24
