@@ -3,7 +3,24 @@
 **Project:** AI Career Platform / AI Job Assistant  
 **Last updated:** November 24, 2026
 
-## Triage-Only Backfill Command (November 24, 2026; on top of `e5c44d6`; implemented and verified offline; approved by Alex and committed on `integration/final-evaluator-product` as "Triage-only backfill command (pnpm triage:backfill)"; not run on any real database)
+## NEEDS_REVIEW Diagnostic Command (November 24, 2026; on top of `1a975f5`; implemented and verified offline; approved by Alex and committed on `integration/final-evaluator-product` as "NEEDS_REVIEW diagnostic command (pnpm triage:review-diagnostic)"; not run on any real database)
+
+- **Backfill result (Alex, `ai_career_assistant_acceptance`):** 210 assessed (9 EVALUATE, 146 NEEDS_REVIEW, 55 REJECT), 80 outside the target job titles, 124 PROBABLE_MATCH, 0 MATCH, no paid evaluation. Before any triage-rule change or manual review, Alex asked why 146 are NEEDS_REVIEW.
+- **Command:** `pnpm triage:review-diagnostic --database <name> [--examples 0-10] [--json <new file>]` (`apps/web/src/server/needs-review-diagnostic.ts`, `-cli.ts`). Read-only session and READ ONLY transactions; `--database` must match `DATABASE_URL`; the URL is never printed; no site, evaluator or provider call.
+- **What it reports for every effective NEEDS_REVIEW opportunity:** the recorded reasons (frequency, field, reasons per job, top combinations), by source / site / capture method, read quality and capture day; each reason classified from the stored evidence; probable duplicates; examples with stored values, current values and a short evidence snippet.
+- **Classification (per reason; per opportunity a mutually exclusive signature that reconciles to the total):**
+  - B: every stored source version is run again in memory through the current normalization (the existing source-version check) and the same pure triage; a reason that disappears for the facts version is a historical normalization problem; B (other observation) when another stored version resolves it.
+  - A: a missing-type reason (salary, currency, residency, work arrangement, unstated work authorization) with no field mention in at least 400 characters of stored text.
+  - Possible current gap: still missing, but the stored text mentions the subject; listed for confirmation by hand, never assumed to be a defect.
+  - C: a value is present but undecided (review bands, OTE only, conflicting or incomplete structured evidence, an explicit authorization requirement not established as satisfied).
+  - D: under 400 characters of stored text.
+  - CONFIG: caused by the user's configuration (work eligibility not configured, unreadable location policy).
+  - STALE: the stored facts no longer give the reason (record or policy changed after triage).
+  - The report also states how many stored triage records the stored facts still reproduce, and the outcome each job would get under the current normalization.
+- **Duplicates:** for each reference touching a NEEDS_REVIEW job, the class from the deduplication evidence stored with it (shared URL/listing/requisition ID or title, location and description similarity >= 0.9 → same posting likely; a stated conflict or description similarity < 0.5 → distinct likely; otherwise uncertain), same or different source, the related job's triage outcome, shared reason codes, and whether the related record states a field this job lacks. Nothing is merged or changed.
+- **Verified offline (`ai_career_assistant_test` only):** typecheck, lint, `git diff --check`; unit 2,593 passed / 6 skipped (new `needs-review-diagnostic` 6); integration 509/509 (new `needs-review-diagnostic` 2: B with the outcome changing to EVALUATE, A, C, D, a manual decision excluded, a probable duplicate whose related job states the missing salary, table counts identical before and after; the command's guards and a read-only run that never prints the URL).
+
+ on top of `e5c44d6`; implemented and verified offline; approved by Alex and committed on `integration/final-evaluator-product` as "Triage-only backfill command (pnpm triage:backfill)"; not run on any real database)
 
 - **Audit (Alex, read-only, `ai_career_assistant_acceptance`):** 290 opportunities, all NEVER_ASSESSED and unevaluated, no paid AI usage; active profile version 1; 287 results-page hand-offs refused with USER_PROFILE_NOT_FOUND (no active profile at capture), 3 Single Capture jobs without triage; backfill candidates 210, outside the target job titles 80; duplicates MATCH 0, PROBABLE_MATCH 124. Alex approved the one-time triage-only backfill.
 - **Command:** `pnpm triage:backfill --database <name>` (`apps/web/src/server/triage-backfill.ts`, `-cli.ts`). Candidates are exactly the audit's CANDIDATE class (`backfillClassOf`): customer-success, Active or Saved, never triaged, no evaluation or open evaluation work, title inside the active target job titles.

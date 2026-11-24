@@ -69,6 +69,42 @@ It is not a product specification and does not replace the PRDs, TDDs, `PRODUCT_
 
 ## Current Handoffs
 
+### Handoff: NEEDS_REVIEW Diagnostic Command — Committed
+
+**Date:** 2026-11-24
+**From:** Claude (main-product workstream)
+**To:** Alex
+**Status:** Completed (approved by Alex; committed on `integration/final-evaluator-product` as "NEEDS_REVIEW diagnostic command (pnpm triage:review-diagnostic)"; not run on any real database)
+
+#### Completed
+
+- `pnpm triage:review-diagnostic` (read-only): why each effective NEEDS_REVIEW job is held, classified from the stored evidence, with probable-duplicate analysis and examples.
+
+#### Files Changed
+
+- New: `apps/web/src/server/needs-review-diagnostic.ts`, `apps/web/src/server/needs-review-diagnostic-cli.ts`, `tests/unit/needs-review-diagnostic.test.ts`, `tests/integration/needs-review-diagnostic.test.ts`.
+- Changed: `package.json` (script); docs.
+
+#### Current Contract / Assumptions
+
+- Diagnostic only: no triage rule, normalization, stored record or duplicate is changed. A "possible current gap" is a lead for manual confirmation, not a finding.
+
+#### Verification Completed
+
+- See CURRENT_PROGRESS (November 24, NEEDS_REVIEW diagnostic).
+
+#### Known Issues / Blockers
+
+- The acceptance database is not reachable from the cloud session; Alex runs the command and shares the output.
+
+#### Next Task
+
+- Alex updates `~/aija/mode-b-rev3-acceptance` (detached HEAD: `git fetch origin`, `git switch --detach origin/integration/final-evaluator-product`, `pnpm install`), runs `pnpm triage:review-diagnostic --database ai_career_assistant_acceptance --examples 5` and shares the output; Claude writes the findings report and recommendations (no changes without separate approval).
+
+#### Do Not Change Without Coordination
+
+- The read-only guards and the classification rules (reason catalog, thresholds).
+
 ### Handoff: Triage-Only Backfill Command — Committed
 
 **Date:** 2026-11-24
