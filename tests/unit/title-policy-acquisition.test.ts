@@ -358,6 +358,35 @@ describe("results-page capture (Mode B)", () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect(markHandedOff).toHaveBeenLastCalledWith("g2", "QUEUED", now);
   });
+
+  // November 25, 2026: the triage-to-lifecycle routing runs after a job's
+  // first hand-off only, and never for a card the user chose.
+  it("routes a job after its first hand-off, never an overridden card, a refresh or one handled before", async () => {
+    const route = vi.fn(async () => ({ status: "DISMISSED" as const, reason: "OUTSIDE_TARGET_TITLES" as const, from: "NORMALIZED" }));
+    let handled = false;
+    const ingestor = createPageCaptureIngestor({
+      repository: { markIngested: vi.fn(), markHandedOff: vi.fn() } as never,
+      ingestion: { ingest: async () => ({ outcome: "CREATED", opportunityId: "o-1", sourceRecordId: "s", decision: "NO_MATCH" }) } as never,
+      handoff: { alreadyHandled: async () => handled, request: vi.fn(async () => "TRIAGE_REJECTED") },
+      discovery: customerSuccessDiscoveryConfiguration,
+      titlePolicy: loader(),
+      route,
+      now: () => now,
+    });
+    const capture = (id: string, title: string) => {
+      const built = buildCaptureEnvelope(runExtractor(testSiteJobPage({ id, title }), `https://jobs.e2e.invalid/jobs/${id}`), "page", { extensionVersion: "0.3.0", capturedAt: now });
+      if (!built.ok) throw new Error("expected a capture");
+      return built.envelope;
+    };
+    await ingestor.ingest(item("r1", "Customer Success Manager"), capture("r1", "Payroll Support Representative"));
+    await ingestor.ingest(item("r2", "Customer Success Manager"), capture("r2", "Customer Success Manager"));
+    expect(route).toHaveBeenCalledTimes(2);
+    await ingestor.ingest(item("r3", "Payroll Support Representative", { titleOverride: true }), capture("r3", "Payroll Support Representative"));
+    await ingestor.ingest(item("r4", "Customer Success Manager", { handoffOutcome: "QUEUED" }), capture("r4", "Customer Success Manager"));
+    handled = true;
+    await ingestor.ingest(item("r5", "Customer Success Manager"), capture("r5", "Customer Success Manager"));
+    expect(route).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("the popup's single-pass save", () => {

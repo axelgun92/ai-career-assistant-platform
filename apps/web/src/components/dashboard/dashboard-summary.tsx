@@ -125,3 +125,56 @@ export function PipelineOverview({ summary }: { summary: Summary }) {
     </section>
   );
 }
+
+// The triage summary (November 25, 2026): what the pre-evaluator triage and
+// the target job titles made of every saved job, whatever its lifecycle
+// state. Each count opens exactly its list in the All view, so jobs already
+// moved to Dismissed are included. These are triage results, not lifecycle
+// states: a job counted here can be Active, Saved or Dismissed.
+export const triageSummaryLinks = {
+  evaluate: "/?view=all&triage=evaluate",
+  review: "/?view=all&triage=review",
+  reject: "/?view=all&triage=reject",
+  outsideTitles: "/?view=all&titles=outside",
+} as const;
+
+export function TriageSummary({
+  summary,
+  outsideTitles,
+}: {
+  summary: Summary;
+  // Null when the target job titles could not be read.
+  outsideTitles: { total: number; dismissed: number } | null;
+}) {
+  const items = [
+    { key: "evaluate", label: "Evaluate", count: summary.triage.EVALUATE, href: triageSummaryLinks.evaluate, help: "Passed triage; ready for evaluation" },
+    { key: "review", label: "Needs Review", count: summary.triage.NEEDS_REVIEW, href: triageSummaryLinks.review, help: "Held for your decision before evaluation" },
+    { key: "reject", label: "Rejected", count: summary.triage.REJECT, href: triageSummaryLinks.reject, help: "Rejected by triage before evaluation" },
+    ...(outsideTitles
+      ? [{ key: "outside", label: "Outside target titles", count: outsideTitles, href: triageSummaryLinks.outsideTitles, help: "Title outside your target job titles" }]
+      : []),
+  ];
+  return (
+    <section className="triage-summary" aria-labelledby="triage-summary-title">
+      <h2 id="triage-summary-title">Triage results</h2>
+      <p className="field-help">
+        Every saved job, whatever its place in your pipeline. These are triage results, not lifecycle views; a job here can be
+        Active, Saved or Dismissed.
+      </p>
+      <ul className="triage-summary-grid">
+        {items.map((item) => (
+          <li key={item.key} className={`triage-summary-item triage-summary-${item.key}`}>
+            <Link href={item.href} aria-label={`${item.label}: ${item.count.total}${item.count.dismissed ? `, ${item.count.dismissed} in Dismissed` : ""}`}>
+              <span className="attention-count">{item.count.total}</span>
+              <span className="attention-label">{item.label}</span>
+            </Link>
+            <span className="field-help">
+              {item.help}
+              {item.count.dismissed ? ` · ${item.count.dismissed} in Dismissed` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

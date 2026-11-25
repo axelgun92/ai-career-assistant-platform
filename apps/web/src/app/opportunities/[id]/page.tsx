@@ -14,7 +14,7 @@ import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
 import { ListingVersionHint } from "@/components/evaluation/listing-version-hint";
-import { findListingVersionHint, PrismaUserEligibilityRepository } from "@ai-career/database";
+import { findListingVersionHint, PrismaTriageRoutingRepository, PrismaUserEligibilityRepository } from "@ai-career/database";
 import { WorkEligibilityNote } from "@/components/eligibility/work-eligibility-note";
 import { getProfileService } from "@/server/profile-service";
 import { getBudgetService } from "@/server/budget-service";
@@ -153,6 +153,12 @@ export default async function OpportunityPage({
       return null;
     });
 
+  // A dismissal the app made itself, by triage-to-lifecycle routing.
+  const automaticDismissal =
+    lifecycle?.status === "REJECTED_BY_USER"
+      ? await new PrismaTriageRoutingRepository().automaticDismissal(detail.opportunity.id).catch(() => null)
+      : null;
+
   const duplicates = await getDuplicateStore()
     .relationships(detail.opportunity.id)
     .catch((error: unknown) => {
@@ -289,6 +295,7 @@ export default async function OpportunityPage({
         <OpportunityActions
           opportunityId={detail.opportunity.id}
           statusLabel={formatLifecycle(lifecycle.status)}
+          automaticDismissal={automaticDismissal?.reason ?? null}
           moveDestinations={lifecycle.moveDestinations}
           blockedMoves={lifecycle.blockedMoves}
           applicationPointer={

@@ -7,7 +7,7 @@ import {
 
 export interface DuplicateStore {
   relationships(opportunityId: string): Promise<DuplicateRelationship[]>;
-  resolve(input: { opportunityId: string; otherOpportunityId: string; resolution: "DISTINCT" | null }): Promise<DuplicateRelationship>;
+  resolve(input: { opportunityId: string; otherOpportunityId: string; resolution: "DISTINCT" | "SAME_JOB" | null }): Promise<DuplicateRelationship>;
 }
 
 let store: DuplicateStore | undefined;
@@ -17,12 +17,13 @@ export function getDuplicateStore(): DuplicateStore {
   return store;
 }
 
-// DISTINCT marks a detected pair as different jobs; null reopens it so the
-// pair is treated as duplicates again.
+// DISTINCT marks a detected pair as different jobs; SAME_JOB records that
+// both advertise one vacancy (nothing is merged; a second paid evaluation is
+// then refused like an exact duplicate's); null reopens the pair.
 const resolutionBodySchema = z
   .object({
     otherOpportunityId: z.uuid(),
-    resolution: z.enum(["DISTINCT"]).nullable(),
+    resolution: z.enum(["DISTINCT", "SAME_JOB"]).nullable(),
   })
   .strict();
 

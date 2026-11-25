@@ -47,13 +47,21 @@ export function createTitlePolicyLoader(store: Pick<TitlePolicyStore, "get">): T
   return async () => snapshotOf(await store.get(titlePolicyDomain)).policy;
 }
 
-// Earlier captures whose titles are outside the current target job titles
-// (the dashboard's cleanup filter; nothing is changed automatically).
-export async function opportunitiesOutsideTargetTitles(
-  store: Pick<TitlePolicyStore, "get"> & { opportunityTitles(): Promise<Array<{ id: string; title: string | null }>> },
-): Promise<string[]> {
+// Saved opportunities whose titles are outside the current target job
+// titles (the dashboard's "Outside target titles" list), in any lifecycle
+// state, and how many of them are in Dismissed.
+export async function outsideTargetTitles(
+  store: Pick<TitlePolicyStore, "get"> & { opportunityTitles(): Promise<Array<{ id: string; title: string | null; status?: string }>> },
+): Promise<{ ids: string[]; dismissed: number }> {
   const policy = snapshotOf(await store.get(titlePolicyDomain)).policy;
-  return (await store.opportunityTitles()).filter((row) => policy(row.title).verdict !== "ACCEPTED").map((row) => row.id);
+  const outside = (await store.opportunityTitles()).filter((row) => policy(row.title).verdict !== "ACCEPTED");
+  return { ids: outside.map((row) => row.id), dismissed: outside.filter((row) => row.status === "REJECTED_BY_USER").length };
+}
+
+export async function opportunitiesOutsideTargetTitles(
+  store: Parameters<typeof outsideTargetTitles>[0],
+): Promise<string[]> {
+  return (await outsideTargetTitles(store)).ids;
 }
 
 const patternList = z.array(z.string().max(titlePolicyPatternMaxLength)).max(titlePolicyMaxPatterns);

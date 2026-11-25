@@ -9,6 +9,10 @@ import {
 } from "@ai-career/core";
 import { getDatabaseClient } from "./client";
 
+// Why the app itself moved an opportunity (November 25, 2026); never set on
+// the user's own actions.
+export type AutomaticDismissalReason = "TRIAGE_REJECT" | "OUTSIDE_TARGET_TITLES";
+
 type Database = ReturnType<typeof getDatabaseClient>;
 type Transaction = Parameters<Parameters<Database["$transaction"]>[0]>[0];
 type Client = Database | Transaction;
@@ -128,7 +132,7 @@ export class PrismaOpportunityLifecycleRepository {
 // Same rules and same history row as applyUserAction.
 export async function applyUserActionInTransaction(
   transaction: Transaction,
-  input: { opportunityId: string; action: OpportunityUserAction },
+  input: { opportunityId: string; action: OpportunityUserAction; automaticReason?: AutomaticDismissalReason },
 ): Promise<UserActionResult> {
   const opportunity = await transaction.opportunity.findUnique({
     where: { id: input.opportunityId },
@@ -161,6 +165,7 @@ export async function applyUserActionInTransaction(
       action: input.action,
       fromStatus: opportunity.status,
       toStatus: resolution.to,
+      automaticReason: input.automaticReason ?? null,
       createdAt: new Date(Math.max(Date.now(), last + 1)),
     },
   });

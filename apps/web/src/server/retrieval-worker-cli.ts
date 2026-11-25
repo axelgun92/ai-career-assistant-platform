@@ -19,6 +19,7 @@ import { enabledSitesFromEnvironment } from "./page-capture";
 import { createPageCaptureAcquisition, evaluationHandoff, type PageCaptureAcquisition } from "./page-capture-acquisition";
 import { createPageCaptureEvidence } from "./page-capture-evidence";
 import { createAutomaticTriage } from "./automatic-triage";
+import { createProductionTriageRouting } from "./triage-routing";
 import { createRetrievalWorker, runRetrievalWorkerLoop, type RetrievalWorker } from "./retrieval-worker";
 import { createTitlePolicyLoader } from "./title-policy-service";
 import { gitHead, workerDiagnosticsFromEnvironment, type WorkerDiagnostics } from "./worker-diagnostics";
@@ -191,6 +192,7 @@ async function main(): Promise<number> {
     handoff: evaluationHandoff(getEvaluationService()),
     discovery: customerSuccessDiscoveryConfiguration,
     titlePolicy,
+    route: createProductionTriageRouting(titlePolicy, log),
     detailSites: () => enabledSitesFromEnvironment().details,
     probeCapture: () => captureRepository.probeCaptureLock(),
     pageScripts,
@@ -212,6 +214,8 @@ async function main(): Promise<number> {
     triage: createAutomaticTriage({
       assess: (opportunityId) => getEvaluationService().assessTriage(opportunityId),
       existing: (opportunityId) => getEvaluationService().getTriage(opportunityId),
+      // REJECT and off-title jobs go to Dismissed (November 25, 2026).
+      route: createProductionTriageRouting(titlePolicy, log),
       log,
     }),
     env: () => process.env,

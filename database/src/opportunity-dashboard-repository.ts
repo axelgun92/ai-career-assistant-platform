@@ -32,6 +32,10 @@ export interface DashboardSummary {
   // Active applications whose next follow-up is overdue or due today (UTC);
   // equal to the /applications?followUp=due view.
   followUpsDue: number;
+  // Pre-evaluator triage outcomes across every opportunity, whatever its
+  // lifecycle state (November 25, 2026; a manual decision wins), and how
+  // many of each are in Dismissed. Distinct from the lifecycle views.
+  triage: Record<"EVALUATE" | "NEEDS_REVIEW" | "REJECT", { total: number; dismissed: number }>;
 }
 
 export interface DashboardFilterOptions {
@@ -123,6 +127,16 @@ export class PrismaOpportunityDashboardRepository {
       GROUP BY cr."band"
     `;
     const followUpsDue = await new PrismaApplicationListRepository().countFollowUpsDue(toIsoDate(now));
+    const triageRows = await this.database.$queryRaw<Array<{ outcome: string; total: number; dismissed: number }>>`
+      SELECT COALESCE(t."manualDecision"::text, t."outcome"::text) AS "outcome", COUNT(*)::int AS "total",
+             COUNT(*) FILTER (WHERE o."status" = 'REJECTED_BY_USER')::int AS "dismissed"
+      FROM "PreEvaluatorTriage" t JOIN "Opportunity" o ON o."id" = t."opportunityId"
+      GROUP BY 1
+    `;
+    const triageOf = (outcome: string) => {
+      const row = triageRows.find((item) => item.outcome === outcome);
+      return { total: Number(row?.total ?? 0), dismissed: Number(row?.dismissed ?? 0) };
+    };
     const c = counts ?? {};
     const n = (key: string) => Number(c[key] ?? 0);
     return {
@@ -147,6 +161,7 @@ export class PrismaOpportunityDashboardRepository {
       bySourceType,
       byPriorityBand,
       followUpsDue,
+      triage: { EVALUATE: triageOf("EVALUATE"), NEEDS_REVIEW: triageOf("NEEDS_REVIEW"), REJECT: triageOf("REJECT") },
     };
   }
 

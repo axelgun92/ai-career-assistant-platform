@@ -19,6 +19,11 @@ enum OpportunityStatus {
   ARCHIVED
 }
 
+enum AutomaticDismissalReason {
+  TRIAGE_REJECT
+  OUTSIDE_TARGET_TITLES
+}
+
 enum OpportunityUserActionType {
   SAVE
   MARK_APPLIED
@@ -51,6 +56,10 @@ enum DuplicateDecision {
 // reopens the pair.
 enum DuplicateResolution {
   DISTINCT
+  // The user confirmed two listings advertise one vacancy (November 25,
+  // 2026). Nothing is merged: both opportunities, their sources and history
+  // are kept; the user dismisses the copy they do not want.
+  SAME_JOB
 }
 
 enum EvaluationStatus {
@@ -697,6 +706,11 @@ model OpportunityUserAction {
   action        OpportunityUserActionType
   fromStatus    OpportunityStatus
   toStatus      OpportunityStatus
+  // Set only when the app moved the opportunity itself (November 25, 2026:
+  // a triage REJECT or a title outside the target job titles goes to
+  // Dismissed); null for every action the user took. Restorable like any
+  // other move.
+  automaticReason AutomaticDismissalReason?
   createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
 
   @@index([opportunityId, createdAt])

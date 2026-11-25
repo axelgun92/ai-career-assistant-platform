@@ -29,8 +29,8 @@ export class PrismaTitlePolicyRepository {
   // Every captured opportunity's id and title (not DISCOVERED placeholders),
   // for finding earlier captures whose titles are outside the current target
   // job titles. Read-only.
-  async opportunityTitles(): Promise<Array<{ id: string; title: string | null }>> {
-    return this.database.opportunity.findMany({ where: { status: { not: "DISCOVERED" } }, select: { id: true, title: true } });
+  async opportunityTitles(): Promise<Array<{ id: string; title: string | null; status: string }>> {
+    return this.database.opportunity.findMany({ where: { status: { not: "DISCOVERED" } }, select: { id: true, title: true, status: true } });
   }
 
   // Reset to defaults: the saved row is removed.

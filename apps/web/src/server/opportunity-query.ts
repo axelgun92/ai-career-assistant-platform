@@ -158,7 +158,13 @@ export interface OpportunityQuery {
   // Cleanup of earlier captures (November 22, 2026): only opportunities whose
   // titles are outside the current target job titles. Absent otherwise.
   titles?: "outside";
+  // The triage summary's lists (November 25, 2026): the effective
+  // pre-evaluator triage outcome (a manual decision wins). Absent otherwise.
+  triage?: TriageFilter;
 }
+
+export const triageFilterOptions = { evaluate: "EVALUATE", review: "NEEDS_REVIEW", reject: "REJECT" } as const;
+export type TriageFilter = keyof typeof triageFilterOptions;
 
 export type SearchParamsInput =
   | URLSearchParams
@@ -286,6 +292,10 @@ export function parseOpportunityQuery(
     page: positiveInteger(firstValue(params, "page")) ?? 1,
     pageSize: pageSize && pageSize <= maximumPageSize ? pageSize : defaultPageSize,
     ...(firstValue(params, "titles")?.trim().toLowerCase() === "outside" ? { titles: "outside" as const } : {}),
+    ...(() => {
+      const value = firstValue(params, "triage")?.trim().toLowerCase();
+      return value && Object.hasOwn(triageFilterOptions, value) ? { triage: value as TriageFilter } : {};
+    })(),
   };
 }
 
@@ -312,6 +322,7 @@ export function serializeOpportunityQuery(
     if (value) params.set(key, value);
   }
   if (query.titles) params.set("titles", query.titles);
+  if (query.triage) params.set("triage", query.triage);
   if (query.sort !== defaultSort) params.set("sort", query.sort);
   if (query.pageSize !== defaultPageSize) params.set("pageSize", String(query.pageSize));
   if (query.page > 1) params.set("page", String(query.page));
@@ -345,7 +356,7 @@ const filterKeys = [
 ] as const;
 
 export function hasActiveFilters(query: OpportunityQuery): boolean {
-  if (query.titles) return true;
+  if (query.titles || query.triage) return true;
   return filterKeys.some((key) => {
     const value = query[key];
     return Array.isArray(value) ? value.length > 0 : value !== null && value !== "";
@@ -361,7 +372,7 @@ export function clearFilters(query: OpportunityQuery): OpportunityQuery {
   return withChanges(query, {
     q: "", rec: [], eval: [], priority: [], role: [], segment: [], sourceType: [], arrangement: [], seniority: [], residency: [],
     source: null, company: null, domain: null, title: null, location: null, salary: null,
-    currency: null, salaryMin: null, salaryMax: null, from: null, to: null, titles: undefined,
+    currency: null, salaryMin: null, salaryMax: null, from: null, to: null, titles: undefined, triage: undefined,
   });
 }
 
@@ -392,6 +403,7 @@ export interface OpportunityListFilters {
   discoveredBefore: Date | null;
   // Only these opportunities (the titles cleanup filter).
   idIn?: readonly string[];
+  triageOutcome?: "EVALUATE" | "NEEDS_REVIEW" | "REJECT";
 }
 
 export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
@@ -420,6 +432,7 @@ export function toListFilters(query: OpportunityQuery): OpportunityListFilters {
     discoveredFrom: query.from ? new Date(`${query.from}T00:00:00.000Z`) : null,
     // Inclusive "to" date: everything before the next UTC midnight.
     discoveredBefore: query.to ? new Date(new Date(`${query.to}T00:00:00.000Z`).getTime() + 86_400_000) : null,
+    ...(query.triage ? { triageOutcome: triageFilterOptions[query.triage] } : {}),
   };
 }
 

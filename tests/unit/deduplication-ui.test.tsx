@@ -126,6 +126,59 @@ describe("DuplicateNotices", () => {
     expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({ otherOpportunityId: otherId, resolution: null });
   });
 
+  // November 25, 2026: the "entries disappear and reappear" report.
+  it("keeps every relationship in place and manages each one independently", async () => {
+    const third = "9d2e4c1a-7b3f-4e5d-8a6c-1f0e2d3c4b55";
+    let release!: () => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      release = () => resolve(new Response(JSON.stringify({ relationship: { resolution: "DISTINCT" } }), { status: 200 }));
+    }));
+    render(
+      <DuplicateNotices
+        opportunityId={opportunityId}
+        capture={null}
+        relationships={[
+          relationship({ decision: "PROBABLE_MATCH", confidence: 0.8 }),
+          relationship({ otherOpportunityId: third, otherTitle: "Customer Success Lead", decision: "PROBABLE_MATCH", confidence: 0.7 }),
+        ]}
+      />,
+    );
+    const order = () => [...container.querySelectorAll("li a")].map((anchor) => anchor.getAttribute("href"));
+    expect(order()).toEqual([`/opportunities/${otherId}`, `/opportunities/${third}`]);
+    expect(container.textContent).toContain("2 to review");
+    const first = () => container.querySelectorAll("li")[0]!.querySelector("button")!;
+    // Unresolved: "Not the same job" comes first, then "Same job".
+    const second = () => container.querySelectorAll("li")[1]!.querySelector("button")!;
+    await act(async () => first().click());
+    // Saving one leaves the other usable, and the related-job links wait.
+    expect(first().textContent).toBe("Saving…");
+    expect(first().disabled).toBe(true);
+    expect(second().disabled).toBe(false);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    container.querySelector<HTMLAnchorElement>(`a[href="/opportunities/${third}"]`)!.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    await act(async () => release());
+    await flush();
+    // The saved decision shows at once, in the same place.
+    expect(order()).toEqual([`/opportunities/${otherId}`, `/opportunities/${third}`]);
+    expect(container.querySelectorAll("li")[0]!.getAttribute("data-resolution")).toBe("DISTINCT");
+    expect(container.querySelectorAll("li")[1]!.getAttribute("data-resolution")).toBe("UNRESOLVED");
+    expect(first().textContent).toBe("Undo");
+    expect(container.textContent).toContain("1 to review · 1 decided");
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a failed decision on its own relationship only", async () => {
+    fetchMock.mockReturnValue(json({ error: "The duplicate decision could not be saved" }, 500));
+    const third = "9d2e4c1a-7b3f-4e5d-8a6c-1f0e2d3c4b55";
+    render(<DuplicateNotices opportunityId={opportunityId} capture={null} relationships={[relationship(), relationship({ otherOpportunityId: third })]} />);
+    await act(async () => container.querySelectorAll("li")[1]!.querySelector("button")!.click());
+    await flush();
+    expect(container.querySelectorAll("li")[0]!.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelectorAll("li")[1]!.querySelector('[role="alert"]')?.textContent).toBe("The duplicate decision could not be saved");
+    expect(container.querySelectorAll("li")[1]!.getAttribute("data-resolution")).toBe("UNRESOLVED");
+  });
+
   it("shows a refusal without refreshing", async () => {
     fetchMock.mockReturnValue(json({ error: "These opportunities are not detected as duplicates" }, 409));
     render(<DuplicateNotices opportunityId={opportunityId} relationships={[relationship()]} capture={null} />);

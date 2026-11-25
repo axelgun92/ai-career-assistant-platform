@@ -132,6 +132,8 @@ export interface OpportunityListFilters {
   // Only these opportunities (November 22, 2026: the dashboard's cleanup of
   // titles outside the target job titles).
   idIn?: readonly string[];
+  // The effective pre-evaluator triage outcome (November 25, 2026).
+  triageOutcome?: "EVALUATE" | "NEEDS_REVIEW" | "REJECT";
 }
 
 export type OpportunityListSort =
@@ -332,6 +334,10 @@ export function buildFilterPredicate(filters: OpportunityListFilters): Prisma.Sq
   if (filters.idIn) {
     add(filters.idIn.length ? Prisma.sql`o."id" IN (${Prisma.join(filters.idIn.map((id) => Prisma.sql`${id}::uuid`))})` : Prisma.sql`FALSE`);
   }
+  if (filters.triageOutcome) {
+    add(Prisma.sql`EXISTS (SELECT 1 FROM "PreEvaluatorTriage" tf WHERE tf."opportunityId" = o."id"
+      AND COALESCE(tf."manualDecision"::text, tf."outcome"::text) = ${filters.triageOutcome})`);
+  }
   return conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.empty;
 }
 
@@ -432,12 +438,13 @@ const retrievalStatus = Prisma.sql`(
   SELECT 1 FROM "SourceRecord" sr WHERE sr."opportunityId" = o."id" AND sr."previousSourceRecordId" IS NOT NULL
 ) AS "listingChanged", ${noLongerListedCondition} AS "noLongerListed"`;
 
-// The strongest unresolved stored duplicate relationship, either direction.
+// The strongest unresolved stored duplicate relationship, either direction;
+// a pair the user confirmed is the same job counts as a duplicate listing.
 const duplicateStatus = Prisma.sql`(
-  SELECT CASE WHEN bool_or(dr."decision" = 'MATCH') THEN 'MATCH'
+  SELECT CASE WHEN bool_or(dr."decision" = 'MATCH' OR dr."resolution" = 'SAME_JOB') THEN 'MATCH'
               WHEN COUNT(*) > 0 THEN 'PROBABLE_MATCH' END
   FROM "DuplicateReference" dr
-  WHERE dr."resolution" IS NULL AND dr."decision" <> 'NO_MATCH'
+  WHERE (dr."resolution" IS NULL OR dr."resolution" = 'SAME_JOB') AND dr."decision" <> 'NO_MATCH'
     AND (dr."opportunityId" = o."id" OR dr."relatedOpportunityId" = o."id")
 ) AS "duplicate"`;
 

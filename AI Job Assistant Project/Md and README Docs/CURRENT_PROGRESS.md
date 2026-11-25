@@ -1,7 +1,65 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 24, 2026
+**Last updated:** November 25, 2026
+
+## Feature 14B Final Dashboard, Deduplication and Job-Management Corrections (November 25, 2026; on top of the November 24 head; implemented and verified offline on `ai_career_assistant_test`, with Alex's per-listing Keep/Dismiss correction; approved by Alex and committed on `integration/final-evaluator-product` as "Feature 14B final corrections: triage routing, triage results, Possible Duplicates"; nothing run on the acceptance database)
+
+- **Errors Alex reported, diagnosed first:**
+  - A ("could not load AI usage totals") and B ("could not load opportunities" in the outside-titles list) are one cause: a generated Prisma client older than the November 22 schema. `database/generated` is not committed and `pnpm install` never regenerates it, and the earlier sync steps omitted `pnpm prisma:generate`. Reproduced exactly with a client generated from `85727dd`'s schema: `retainedEvaluationUsage` and `titlePolicySetting` are undefined (`TypeError: Cannot read properties of undefined (reading 'findMany' / 'findUnique')`). PostgreSQL was not the cause.
+  - Fix: `pnpm app:doctor` now compares the client's embedded schema with `database/prisma/schema.prisma` and fails "out of date; run pnpm prisma:generate, then restart the app and workers"; README troubleshooting rows added.
+  - C (hydration mismatch on `cz-shortcut-listen="true"`): the ColorZilla browser extension; the string is nowhere in the repository. `<body suppressHydrationWarning>` in the root layout (attributes of `<body>` only).
+  - The 2.5-minute first load: `next dev` compiling routes on first request (46 s for the first route here; 0.2–1.2 s afterwards); not the database.
+- **Duplicate-notice bug (reproduced before changing):**
+  - Server data was consistent from both opportunities, and so was slow navigation, in dev and production builds.
+  - Reproduced in a browser: deciding and then following the related link before the save and refresh finished showed the other page without the decision for about a second, then `router.refresh()` (which refreshes whichever route is current) flipped it. A decision also moved the entry from the top list to a separate "Marked as a different job" list, and every row shared one pending state.
+  - Fix (`duplicate-notices.tsx`): one list in a stable order; each relationship stays in place with its own saving state; the stored decision from the server's reply shows at once; links to related jobs wait while a decision is being saved; a per-row error; counts ("N to review · M decided"); a link to the group's side-by-side review; "Same job" alongside "Not the same job".
+- **Triage-to-lifecycle routing (`apps/web/src/server/triage-routing.ts`, `database/src/triage-routing-repository.ts`):**
+  - EVALUATE and NEEDS_REVIEW stay Active. REJECT goes to Dismissed with reason `TRIAGE_REJECT`; a title outside the target job titles (or no readable title) goes to Dismissed with reason `OUTSIDE_TARGET_TITLES`. REJECT is recorded when both apply.
+  - The move is the existing DISMISS (status `REJECTED_BY_USER`, one `OpportunityUserAction` row), now marked with `automaticReason`, so Restore and Move to bring the job back. Triage, sources, capture history and evaluations are never touched.
+  - One guarded writer, under the Opportunity row lock, never moves a job that:
+    - has application history;
+    - has any earlier lifecycle action by the user (Save, Dismiss, Archive, Restore, Move; a restored automatic dismissal included, so it is never moved again);
+    - has a manual triage decision;
+    - has evaluation work queued, running or deferred;
+    - is not in a system state.
+  - Wired into every automatic path: configured and ATS sources and the LinkedIn adapter (after automatic triage; run counts `dismissedReject` / `dismissedOutsideTitles`); LinkedIn and Welcome to the Jungle Mode B (after a job's first hand-off; never for an overridden card, a refresh or a job handed off before).
+  - Deliberate captures (Single Capture, the manual form) are never routed. A routing problem leaves the job Active.
+  - The opportunity page says when and why a job was moved automatically.
+- **Historical cleanup (`pnpm triage:route-historical`, `apps/web/src/server/triage-routing-cleanup*.ts`):**
+  - Dry run by default, in a read-only session. It reports totals by status, Active and Dismissed, the REJECT, outside-titles and overlap counts, what would move (`--list` for every ID), and what stays with its reason. The projected result is shown before anything is changed, and it prints a `pg_dump` backup reminder.
+  - `--apply --expect <count> --manifest <new file>` refuses on any count difference or an existing manifest. It moves each job through the same guarded writer (rechecked under its lock), writes the manifest (ID, previous status, reason, title), reads every moved job back, and prints the new totals.
+  - `--verify <manifest>` repeats the check. `--restore <manifest> --expect <count>` returns exactly the still-dismissed jobs with the existing RESTORE.
+  - `--database` must match `DATABASE_URL`; the URL is never printed.
+  - Expected on Alex's data (the backfill and the outside-titles count were disjoint): 55 + 80 = 135 to Dismissed, Active 155, total 290 — to be confirmed by the dry run.
+- **Dashboard (`apps/web/src/app/page.tsx`):**
+  - A "Triage results" summary leads: Evaluate, Needs Review, Rejected and Outside target titles, live counts across every opportunity. Each says how many are in Dismissed and links to its exact list in the All view (`triage=evaluate|review|reject`, `titles=outside`), and it is labeled as distinct from the lifecycle views.
+  - "N opportunities in total · Active N · Dismissed N · Possible duplicates" line, and counts on every lifecycle tab.
+  - "Needs attention" moved below the list.
+  - Filters: search and sort stay on top, Recommendation, Evaluation, Work arrangement and Company in the panel, the rest under "More filters" (open whenever one is set).
+  - The lifecycle states and views are unchanged.
+- **Possible Duplicates (`/duplicates`, `database/src/duplicate-review-repository.ts`):**
+  - Stored MATCH and PROBABLE_MATCH relationships are grouped into connected sets ("Company / Title"), each pair once. Tabs To review / Decided / All with counts, ten groups per page, `?group=<id>` from an opportunity page, and a link back to the list.
+  - Only relationship IDs and states are read to build groups; member details are read for the current page only (3,000 groups build in memory in milliseconds in the unit test).
+  - Listings are numbered side by side: title, company, location, salary, work arrangement, source website, where it is now, triage, and description similarity with the sentences only one listing has. URLs, listing and requisition IDs are in an expandable section, and differing rows are marked.
+  - Pair actions: Not the same job, Same job, Undo.
+  - Listing actions, each on that listing only (Alex's correction, November 25: no "keep one, dismiss the others"; any combination can be kept):
+    - Keep: a listing in Dismissed is restored, an archived or closed one returns to Active; a listing already in Active shows "In Active".
+    - Dismiss: moves only that listing to Dismissed, where it stays in its group and can be kept again.
+    - Neither records "same job" or "not the same job"; those stay separate, explicit pair decisions.
+    - A listing with application history shows "managed in Applications" and has no Keep or Dismiss here; the server guard refuses it as well.
+    - Delete permanently: only from Dismissed, after a confirmation naming the listing, with the existing application and in-flight guards. Nothing is deleted or merged automatically.
+    - Review later (writes nothing).
+  - **Same job (`DuplicateResolution.SAME_JOB`):** nothing is merged and no source evidence is touched. The dashboard shows it as a duplicate listing, and the duplicate-spend guard refuses a second paid evaluation as for an exact duplicate.
+- **500-candidate cap (`findDuplicateCandidates`):** identifier and URL candidates are read by their own uncapped query; company similarity keeps its 500 cap. No threshold or engine rule changed. The 600-opportunity regression tests fail without the fix (4 of 6) and pass with it.
+- **Preserved:** repeated-capture behavior (exact re-captures attach; unchanged re-observations are neither triaged nor routed). At most 3 probable references are stored per new opportunity, none on unchanged re-captures. No manual resolution is required before triage or evaluation, and there is no automatic merge. Mode B stays at 25 jobs per batch. No evaluator, model routing, semantic schema or recommendation change; no paid call.
+- **Schema:** migration 30 `20261125090000_triage_routing_and_duplicate_review`, additive only: enum `AutomaticDismissalReason`, `OpportunityUserAction.automaticReason` (nullable), `DuplicateResolution.SAME_JOB`. After pulling: `pnpm prisma:generate`, `pnpm db:migrate`, restart `pnpm dev` and the workers.
+- **Verified offline (`ai_career_assistant_test` only):**
+  - Typecheck and lint clean.
+  - Unit: 124 files passed (1 skipped); 2,625 tests passed, 6 skipped. New: `triage-routing`, `duplicate-review`, `duplicate-group-card`, notice independence, triage summary, the doctor check, Mode B routing.
+  - Integration: 69 files, 529/529. New: `duplicate-group-keep`, `triage-routing` (plan, apply, verify, restore, never re-moved), `duplicate-review` (both pages, persistence, Undo, independent pairs, same job and the spend guard, the group view), `duplicate-candidate-cap` (600 opportunities).
+  - E2E: 73/73 (dev server); `pnpm build` passes, and a production build was checked by hand: decide, follow the link, Undo on the other job, browser Back and Forward all show the stored state. New: navigation between related jobs (decide, follow the link at once, back, forward, reload, Undo from the other page), and per-listing Keep and Dismiss in a group (dismiss 2, then 3, keep 2 again, reload; pair states unchanged; Same job separately).
+  - Correction tests (per-listing control): unit `duplicate-group-card` 6 (no keep-one action; Dismiss and Keep send one move for that listing only and never a duplicate decision; Active listings show no Keep; application history protected; deletion only from Dismissed after confirmation; Same job per pair); integration `duplicate-group-keep` 4 (five listings in one group reach all 32 keep/dismiss combinations one listing at a time with every duplicate decision unchanged; dismissed listings stay in the group; application history refused).
 
 ## Historical Duplicate Investigation Command (November 24, 2026; on top of `0827c4f`; implemented and verified offline; approved by Alex and committed on `integration/final-evaluator-product` as "Historical duplicate investigation command (pnpm duplicates:history)"; not run on any real database)
 

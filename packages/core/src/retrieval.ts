@@ -224,7 +224,9 @@ export interface RetrievalRunCounts {
   // opportunities (outcome counts, then listings not triaged for want of an
   // active profile, not triageable, or failed). Present only when a listing
   // was triaged or could not be; a triage problem never fails the run.
-  triage?: Partial<Record<"EVALUATE" | "NEEDS_REVIEW" | "REJECT" | "noProfile" | "unavailable" | "failed", number>>;
+  // dismissedReject / dismissedOutsideTitles: moved to Dismissed by the
+  // triage-to-lifecycle routing (November 25, 2026).
+  triage?: Partial<Record<"EVALUATE" | "NEEDS_REVIEW" | "REJECT" | "noProfile" | "unavailable" | "failed" | "dismissedReject" | "dismissedOutsideTitles", number>>;
   // Feature 13: tracked listings seen listed, newly missing, confirmed
   // removed and listed again after a removal in this run.
   listings?: { observed: number; missing: number; removed: number; reappeared: number };

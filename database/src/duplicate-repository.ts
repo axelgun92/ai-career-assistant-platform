@@ -29,7 +29,9 @@ export interface DuplicateRelationship {
   matchedOn: string[];
   conflicts: string[];
   // DISTINCT when the user said the two are different jobs (reversible).
-  resolution: "DISTINCT" | null;
+  // DISTINCT: different jobs; SAME_JOB: one vacancy (November 25, 2026;
+  // nothing is merged); null: not decided.
+  resolution: "DISTINCT" | "SAME_JOB" | null;
   resolvedAt: Date | null;
   persisted: boolean;
 }
@@ -106,12 +108,15 @@ export async function findDuplicateCandidates(
   const listingIds = unique(subject.listingIds.map(listingIdKey));
   const requisitionIds = unique(subject.requisitionIds.map(listingIdKey));
   const urlPatterns = unique(subject.urls.map(listingUrlPrefix)).map(containsPattern);
-  const conditions: Prisma.Sql[] = [];
+  // Company similarity is capped; reliable identifiers are not (November 25,
+  // 2026): an exact listing-ID, requisition-ID or URL match must never be
+  // pushed out by an employer's 500 older opportunities.
+  const companyConditions: Prisma.Sql[] = [];
   if (companyKey) {
-    conditions.push(Prisma.sql`c."normalizedName" = ${companyKey}`);
+    companyConditions.push(Prisma.sql`c."normalizedName" = ${companyKey}`);
     // Companies not yet backfilled are compared by the engine itself.
     if (firstCompanyWord) {
-      conditions.push(Prisma.sql`(c."normalizedName" IS NULL AND c."name" ILIKE ${containsPattern(firstCompanyWord)})`);
+      companyConditions.push(Prisma.sql`(c."normalizedName" IS NULL AND c."name" ILIKE ${containsPattern(firstCompanyWord)})`);
     }
   }
   const idMatch = (column: Prisma.Sql, values: string[]) =>
@@ -121,12 +126,13 @@ export async function findDuplicateCandidates(
     Prisma.sql`(CASE WHEN ${sourceType} IS NULL OR ${sourceType} = 'MANUAL' OR nullif(btrim(${source}), '') IS NULL
       THEN lower(btrim(${id})) ELSE lower(btrim(${source})) || '::' || lower(btrim(${id})) END) = ANY(${values}::text[])`;
   const urlMatch = (column: Prisma.Sql) => Prisma.sql`${column} ILIKE ANY(${urlPatterns}::text[])`;
+  const identifierConditions: Prisma.Sql[] = [];
   if (listingIds.length) {
-    conditions.push(scopedIdMatch(Prisma.sql`o."source"`, Prisma.sql`o."sourceType"::text`, Prisma.sql`o."externalListingId"`, listingIds));
+    identifierConditions.push(scopedIdMatch(Prisma.sql`o."source"`, Prisma.sql`o."sourceType"::text`, Prisma.sql`o."externalListingId"`, listingIds));
   }
-  if (requisitionIds.length) conditions.push(idMatch(Prisma.sql`o."atsRequisitionId"`, requisitionIds));
+  if (requisitionIds.length) identifierConditions.push(idMatch(Prisma.sql`o."atsRequisitionId"`, requisitionIds));
   if (urlPatterns.length) {
-    conditions.push(urlMatch(Prisma.sql`o."canonicalUrl"`), urlMatch(Prisma.sql`o."applicationUrl"`));
+    identifierConditions.push(urlMatch(Prisma.sql`o."canonicalUrl"`), urlMatch(Prisma.sql`o."applicationUrl"`));
   }
   const sourceConditions: Prisma.Sql[] = [];
   if (listingIds.length) {
@@ -135,11 +141,11 @@ export async function findDuplicateCandidates(
   if (requisitionIds.length) sourceConditions.push(idMatch(Prisma.sql`s."requisitionId"`, requisitionIds));
   if (urlPatterns.length) sourceConditions.push(urlMatch(Prisma.sql`s."sourceUrl"`), urlMatch(Prisma.sql`s."applicationUrl"`));
   if (sourceConditions.length) {
-    conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "SourceRecord" s WHERE s."opportunityId" = o."id" AND (${Prisma.join(sourceConditions, " OR ")}))`);
+    identifierConditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "SourceRecord" s WHERE s."opportunityId" = o."id" AND (${Prisma.join(sourceConditions, " OR ")}))`);
   }
-  if (!conditions.length) return { candidates: [], labels: new Map() };
+  if (!companyConditions.length && !identifierConditions.length) return { candidates: [], labels: new Map() };
 
-  const rows = await client.$queryRaw<CandidateRow[]>`
+  const select = (conditions: Prisma.Sql[], limit: Prisma.Sql) => client.$queryRaw<CandidateRow[]>`
     SELECT o."id", o."firstSeenAt", o."title", o."location", o."jobDescription", o."canonicalUrl",
            o."applicationUrl", o."externalListingId", o."atsRequisitionId", o."source", o."sourceType"::text AS "sourceType", o."salaryMin", o."salaryMax",
            o."currency", c."name" AS "companyName"
@@ -148,8 +154,16 @@ export async function findDuplicateCandidates(
     WHERE (${Prisma.join(conditions, " OR ")})
       ${excludeOpportunityId ? Prisma.sql`AND o."id" <> ${excludeOpportunityId}::uuid` : Prisma.empty}
     ORDER BY o."firstSeenAt" ASC, o."id" ASC
-    LIMIT ${candidateLimit}
+    ${limit}
   `;
+  // Sequential: the client may be one transaction's single connection.
+  const identified = identifierConditions.length ? await select(identifierConditions, Prisma.empty) : [];
+  const similar = companyConditions.length ? await select(companyConditions, Prisma.sql`LIMIT ${candidateLimit}`) : [];
+  const byId = new Map<string, CandidateRow>();
+  for (const row of [...identified, ...similar]) byId.set(row.id, row);
+  const rows = [...byId.values()].sort(
+    (left, right) => left.firstSeenAt.getTime() - right.firstSeenAt.getTime() || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+  );
   return candidatesFromRows(client, rows);
 }
 
@@ -306,7 +320,7 @@ export class PrismaDuplicateRepository {
   async resolve(input: {
     opportunityId: string;
     otherOpportunityId: string;
-    resolution: "DISTINCT" | null;
+    resolution: "DISTINCT" | "SAME_JOB" | null;
     now?: Date;
   }): Promise<DuplicateRelationship> {
     const now = input.now ?? new Date();
@@ -362,7 +376,8 @@ export class PrismaDuplicateRepository {
     const ownCompleted = await client.evaluation.count({ where: { opportunityId, status: "COMPLETED" } });
     if (ownCompleted > 0) return null;
     const twins = (await this.relationships(opportunityId, client)).filter(
-      (relationship) => relationship.decision === "MATCH" && relationship.resolution === null,
+      // An unresolved exact match, or a pair the user confirmed is one job.
+      (relationship) => (relationship.decision === "MATCH" && relationship.resolution === null) || relationship.resolution === "SAME_JOB",
     );
     for (const twin of twins) {
       const [spend] = await client.$queryRaw<Array<{ spend: boolean }>>`

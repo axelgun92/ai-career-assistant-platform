@@ -67,6 +67,9 @@ export interface DoctorInputs {
   nodeVersion: string;
   migrationFolders: string[];
   prismaClientGenerated: boolean;
+  // False when the generated client was built from an older schema.prisma
+  // (pnpm install never regenerates it). Undefined when not checked.
+  prismaClientCurrent?: boolean;
   // Null when the database package could not be loaded.
   reads: DoctorReads | null;
   now: Date;
@@ -94,6 +97,22 @@ function minutes(ms: number) {
   return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)} min`;
 }
 
+// The generated client embeds the schema it was built from (as the
+// "inlineSchema" string in internal/class.ts). A client generated before the
+// checkout's latest schema change lacks the newer models, and the app then
+// fails at runtime with "Cannot read properties of undefined". Null when the
+// embedded schema cannot be read, so the check never guesses.
+export function generatedClientMatchesSchema(generatedClassSource: string, schemaSource: string): boolean | null {
+  const match = /"inlineSchema":\s*("(?:[^"\\]|\\.)*")/.exec(generatedClassSource);
+  if (!match) return null;
+  try {
+    const embedded = JSON.parse(match[1]!) as unknown;
+    return typeof embedded === "string" ? embedded.replace(/\r\n/g, "\n") === schemaSource.replace(/\r\n/g, "\n") : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   const add = (level: CheckLevel, label: string, detail: string) => checks.push({ level, label, detail });
@@ -113,11 +132,10 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
     add("FAIL", "DATABASE_URL", `missing or invalid (${variableNames(error)}); copy .env.example to .env and set it`);
   }
 
-  add(
-    inputs.prismaClientGenerated ? "PASS" : "FAIL",
-    "Prisma client",
-    inputs.prismaClientGenerated ? "generated" : "not generated; run pnpm prisma:generate",
-  );
+  if (!inputs.prismaClientGenerated) add("FAIL", "Prisma client", "not generated; run pnpm prisma:generate");
+  else if (inputs.prismaClientCurrent === false)
+    add("FAIL", "Prisma client", "out of date with database/prisma/schema.prisma; run pnpm prisma:generate, then restart the app and workers");
+  else add("PASS", "Prisma client", "generated");
 
   const ai = aiConfigurationStatus(inputs.environment);
   add(

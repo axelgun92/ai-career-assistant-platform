@@ -25,6 +25,7 @@ const duplicateText: Record<DuplicateStage, string> = {
 export function duplicateStageOf(relationships: ReadonlyArray<{ decision: string; resolution: string | null }>): DuplicateStage {
   const open = relationships.filter((relationship) => relationship.resolution === null && relationship.decision !== "NO_MATCH");
   if (open.some((relationship) => relationship.decision === "MATCH")) return "MATCH";
+  if (relationships.some((relationship) => relationship.resolution === "SAME_JOB")) return "MATCH";
   if (open.length) return "PROBABLE_MATCH";
   return relationships.some((relationship) => relationship.resolution === "DISTINCT") ? "RESOLVED_DISTINCT" : "NONE";
 }

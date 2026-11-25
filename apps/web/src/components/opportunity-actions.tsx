@@ -23,9 +23,12 @@ export function OpportunityActions({
   moveDestinations,
   blockedMoves = [],
   applicationPointer = false,
+  automaticDismissal = null,
 }: {
   opportunityId: string;
   statusLabel: string;
+  // Set when the app moved the job to Dismissed itself (November 25, 2026).
+  automaticDismissal?: "TRIAGE_REJECT" | "OUTSIDE_TARGET_TITLES" | null;
   moveDestinations: OpportunityMoveDestination[];
   // Allowed by the lifecycle but blocked by the application record.
   blockedMoves?: Array<{ destination: OpportunityMoveDestination; reason: string }>;
@@ -66,6 +69,13 @@ export function OpportunityActions({
     <section className="opportunity-actions" aria-labelledby="opportunity-status-title">
       <p className="eyebrow">Opportunity status</p>
       <h2 id="opportunity-status-title">{statusLabel}</h2>
+      {automaticDismissal ? (
+        <p className="field-help" role="note">
+          Moved to Dismissed automatically:{" "}
+          {automaticDismissal === "TRIAGE_REJECT" ? "pre-evaluator triage rejected it" : "its title is outside your target job titles"}. Its
+          triage, sources and history are kept; restore it to bring it back.
+        </p>
+      ) : null}
       {moveDestinations.length ? (
         <div className="evaluation-actions move-to">
           <label htmlFor="opportunity-move-to">Move to</label>

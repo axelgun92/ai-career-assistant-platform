@@ -15,10 +15,10 @@ import {
 import { OpportunityList } from "@/components/dashboard/opportunity-list";
 import { OpportunitySelectionProvider, SelectionToolbar } from "@/components/dashboard/selection/opportunity-selection";
 import { applicationMoveState } from "@/server/opportunity-move-service";
-import { opportunitiesOutsideTargetTitles } from "@/server/title-policy-service";
+import { outsideTargetTitles } from "@/server/title-policy-service";
 import { UsageTotals } from "@/components/dashboard/usage-totals";
 import { ActiveFilters } from "@/components/dashboard/active-filters";
-import { NeedsAttention, PipelineOverview } from "@/components/dashboard/dashboard-summary";
+import { NeedsAttention, PipelineOverview, TriageSummary } from "@/components/dashboard/dashboard-summary";
 import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-service";
 import { OpportunityFilters } from "@/components/dashboard/opportunity-filters";
 import { Pagination } from "@/components/dashboard/pagination";
@@ -34,11 +34,29 @@ import {
   canonicalRedirect,
   parseOpportunityQuery,
   toListFilters,
+  opportunityViews,
   withChanges,
+  type OpportunityView,
   type SearchParamsInput,
+  type TriageFilter,
 } from "@/server/opportunity-query";
 
 export const metadata = { title: "Dashboard" };
+
+const triageFilterLabels: Record<TriageFilter, string> = { evaluate: "Evaluate", review: "Needs Review", reject: "Rejected" };
+
+// Each tab's count, from the same summary the views match.
+function viewCount(summary: DashboardSummary, view: OpportunityView): number {
+  switch (view) {
+    case "active": return summary.active;
+    case "triage": return summary.toTriage;
+    case "saved": return summary.saved;
+    case "applied": return summary.applied;
+    case "dismissed": return summary.dismissed;
+    case "archived": return summary.archived;
+    case "all": return summary.total;
+  }
+}
 
 function logFailure(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : "UnknownError" });
@@ -56,13 +74,17 @@ export default async function HomePage({
   const eligibility = await new PrismaUserEligibilityRepository().get().catch(() => null);
 
   let result: OpportunityListPage | null = null;
-  let outsideTitles: string[] | null = null;
+  // Saved jobs whose titles are outside the current target job titles: the
+  // triage summary's count and, with titles=outside, the list (November 22
+  // and 25, 2026). Null when the titles could not be read.
+  const outsideTitles = await outsideTargetTitles(new PrismaTitlePolicyRepository()).catch((error: unknown) => {
+    logFailure("Opportunity dashboard could not read the target job titles", error);
+    return null;
+  });
   try {
-    // The cleanup filter: earlier captures whose titles are outside the
-    // current target job titles (November 22, 2026).
-    if (query.titles === "outside") outsideTitles = await opportunitiesOutsideTargetTitles(new PrismaTitlePolicyRepository());
+    if (query.titles === "outside" && !outsideTitles) throw new Error("target job titles unavailable");
     result = await getOpportunityListReader().listPage({
-      filters: { ...toListFilters(query), ...(outsideTitles ? { idIn: outsideTitles } : {}) },
+      filters: { ...toListFilters(query), ...(query.titles === "outside" && outsideTitles ? { idIn: outsideTitles.ids } : {}) },
       sort: query.sort,
       page: query.page,
       pageSize: query.pageSize,
@@ -127,38 +149,55 @@ export default async function HomePage({
         </div>
       </div>
 
-      {summary ? <NeedsAttention summary={summary} needsReview={needsReview} /> : null}
+      {summary ? (
+        <TriageSummary
+          summary={summary}
+          outsideTitles={outsideTitles ? { total: outsideTitles.ids.length, dismissed: outsideTitles.dismissed } : null}
+        />
+      ) : null}
 
       <section aria-labelledby="opportunities-title">
         <h2 id="opportunities-title">Opportunities</h2>
+        {summary ? (
+          // The total is every saved job; Active is one lifecycle view of it.
+          <p className="opportunity-totals">
+            <strong>{summary.total}</strong> {summary.total === 1 ? "opportunity" : "opportunities"} in total · Active {summary.active} ·{" "}
+            <Link href="/?view=dismissed">Dismissed {summary.dismissed}</Link> ·{" "}
+            <Link href="/duplicates">Possible duplicates</Link>
+          </p>
+        ) : null}
         <nav className="view-tabs" aria-label="Opportunity views">
-          {viewTabs.map((tab) => (
-            <Link
-              key={tab.key}
-              href={opportunityHref(withChanges(query, { view: tab.key }))}
-              aria-current={tab.key === query.view ? "page" : undefined}
-            >
-              {tab.label}
-            </Link>
-          ))}
+          {viewTabs.map((tab) => {
+            const count = summary ? viewCount(summary, tab.key) : null;
+            return (
+              <Link
+                key={tab.key}
+                href={opportunityHref(withChanges(query, { view: tab.key }))}
+                aria-current={tab.key === query.view ? "page" : undefined}
+              >
+                {tab.label}
+                {count === null ? null : <span className="view-tab-count"> {count}</span>}
+              </Link>
+            );
+          })}
         </nav>
         <OpportunityFilters query={query} options={filterOptions} />
+        {query.triage ? (
+          <div className="title-cleanup-banner" role="status">
+            <p>Showing the opportunities whose triage result is {triageFilterLabels[query.triage]}, in {opportunityViews[query.view].label === "All" ? "every view" : `the ${opportunityViews[query.view].label} view`}.</p>
+            <Link href={opportunityHref(withChanges(query, { triage: undefined }))}>Show every triage result</Link>
+          </div>
+        ) : null}
         {query.titles === "outside" ? (
           <div className="title-cleanup-banner" role="status">
             <p>
               Showing the opportunities whose titles are outside your target job titles
-              {outsideTitles ? ` (${outsideTitles.length} in all views)` : ""}. Nothing is changed automatically: select the ones
-              you do not want and move them to Dismissed, where they can be restored or deleted permanently.
+              {outsideTitles ? ` (${outsideTitles.ids.length} in all views, ${outsideTitles.dismissed} in Dismissed)` : ""}. New automatic
+              captures with such titles go to Dismissed by themselves; you can restore any of them, or move these ones yourself.
             </p>
             <Link href={opportunityHref(withChanges(query, { titles: undefined }))}>Show all titles</Link>
           </div>
-        ) : (
-          <p className="title-cleanup-link">
-            <Link href={opportunityHref(withChanges(query, { titles: "outside" }))}>
-              Find opportunities whose titles are outside your target job titles
-            </Link>
-          </p>
-        )}
+        ) : null}
         {result === null ? (
           <p className="error-message" role="alert">
             Opportunities could not be loaded. Check the database connection and try again.
@@ -203,6 +242,7 @@ export default async function HomePage({
         )}
       </section>
 
+      {summary ? <NeedsAttention summary={summary} needsReview={needsReview} /> : null}
       {summary ? <PipelineOverview summary={summary} /> : null}
       {budgetStatus ? <BudgetCard status={budgetStatus} /> : null}
       {usageTotals ? <UsageTotals totals={usageTotals} /> : null}

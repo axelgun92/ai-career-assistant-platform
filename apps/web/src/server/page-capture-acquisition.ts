@@ -32,6 +32,7 @@ import { JSDOM } from "jsdom";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { buildCaptureEnvelope } from "../../../extension/src/envelope";
 import { extractJobPosting, type PageExtraction } from "../../../extension/src/extract";
+import type { TriageRouting } from "./triage-routing";
 import { EvaluationApiError } from "./evaluation-errors";
 import { capturedListing, ExtensionCaptureError } from "./extension-capture";
 import { applyEvidence, type ApplyEvidence, type PageCaptureEvidence } from "./page-capture-evidence";
@@ -118,6 +119,8 @@ export interface PageCaptureAcquisitionDependencies {
   // The target job titles (November 22, 2026), read for each pass: queued
   // jobs whose titles are outside them are skipped before any page is read.
   titlePolicy?: () => Promise<TitlePolicy>;
+  // Triage-to-lifecycle routing after the hand-off (November 25, 2026).
+  route?: TriageRouting;
   // The site keys whose details may be fetched (verified, or the test site).
   detailSites: () => string[];
   // A fresh logged-out browser per pass; absent when none is configured.
@@ -246,6 +249,11 @@ export interface PageCaptureIngestorDependencies {
   // The target job titles (November 22, 2026), read for each hand-off.
   // Without it the domain's discovery title terms are used (tests).
   titlePolicy?: () => Promise<TitlePolicy>;
+  // Triage-to-lifecycle routing (November 25, 2026; triage-routing.ts): after
+  // a job's first hand-off, a REJECT or a title outside the target job titles
+  // goes to Dismissed. Never for an overridden card (the user chose it), a
+  // refresh, or a job handed off before. Absent: nothing is moved (tests).
+  route?: TriageRouting;
   now?: () => Date;
   log?: { info(message: string): void; warn(message: string): void };
   diagnostics?: DiagnosticsSink;
@@ -357,18 +365,19 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
         await dependencies.repository.markHandedOff(item.id, "ALREADY_HANDLED", at);
         diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result: "ALREADY_HANDLED" });
         log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; already handed to the evaluation request`);
-        return;
+        return false;
       }
       if (!item.titleOverride && !(await inTargetTitles(title))) {
         await dependencies.repository.markHandedOff(item.id, pageCaptureOutsideRoleFamilies, at);
         diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result: pageCaptureOutsideRoleFamilies });
         log.info(`page capture: job ${item.id} ${outcome.toLowerCase()}; its title is outside the target job titles, so it was not sent for evaluation`);
-        return;
+        return true;
       }
       const result = await dependencies.handoff.request(opportunityId);
       await dependencies.repository.markHandedOff(item.id, result, at);
       diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result });
       log.info(`page capture: job ${item.id} ${outcome.toLowerCase()} and handed to the evaluation request (${result})`);
+      return true;
     } catch (error) {
       const code = error instanceof EvaluationApiError ? error.code : "HANDOFF_FAILED";
       await dependencies.repository.markHandedOff(item.id, `FAILED:${code}`, at);
@@ -376,6 +385,17 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
       // outcome, not a failure of the job's capture.
       diagnostics.event("job.handoff", { site: item.site, itemId: item.id, opportunityId, result: `FAILED:${code}`, ...(code === "HANDOFF_FAILED" ? { error } : {}) });
       log.warn(`page capture: job ${item.id} ingested; the evaluation request was refused (${code})`);
+      return true;
+    }
+  }
+
+  // Never throws (the routing keeps a job Active on any problem).
+  async function route(item: PageCaptureItemRecord, opportunityId: string) {
+    if (!dependencies.route || item.titleOverride) return;
+    const routed = await dependencies.route(opportunityId);
+    if (routed.status === "DISMISSED") {
+      diagnostics.event("job.routed", { site: item.site, itemId: item.id, opportunityId, result: `DISMISSED:${routed.reason}` });
+      log.info(`page capture: job ${item.id} moved to Dismissed (${routed.reason === "TRIAGE_REJECT" ? "triage rejected it" : "its title is outside the target job titles"})`);
     }
   }
 
@@ -413,7 +433,7 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
       // failure), is never handed off again: no second triage, no evaluation.
       if (!refresh && (item.handoffOutcome === null || item.handoffOutcome === undefined)) {
         try {
-          await handOff(item, ingested.opportunityId, ingested.outcome, raw.title);
+          if (await handOff(item, ingested.opportunityId, ingested.outcome, raw.title)) await route(item, ingested.opportunityId);
         } catch (error) {
           throw new PageCaptureSavedError("handoff", ingested.opportunityId, error);
         }

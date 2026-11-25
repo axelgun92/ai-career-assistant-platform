@@ -104,6 +104,10 @@ export function OpportunityFilters({
     if (formRef.current && changedBeforeHydration(formRef.current)) formRef.current.requestSubmit();
   }, []);
   const filtersOpen = hasActiveFilters({ ...query, q: "" });
+  const moreOpen =
+    [query.priority, query.role, query.segment, query.sourceType, query.seniority, query.residency].some((values) => values.length > 0) ||
+    [query.source, query.domain, query.salary, query.currency, query.title, query.location, query.from, query.to].some(Boolean) ||
+    query.salaryMin !== null || query.salaryMax !== null;
   // Keep the current selections visible even when no row has them yet.
   const currencyChoices = [
     ...new Set([defaultSalaryCurrency, ...options.currencies.map((currency) => currency.value), ...(query.currency ? [query.currency] : [])]),
@@ -120,6 +124,7 @@ export function OpportunityFilters({
       {query.view !== defaultView ? <input type="hidden" name="view" value={query.view} /> : null}
       {query.pageSize !== defaultPageSize ? <input type="hidden" name="pageSize" value={query.pageSize} /> : null}
       {query.titles ? <input type="hidden" name="titles" value={query.titles} /> : null}
+      {query.triage ? <input type="hidden" name="triage" value={query.triage} /> : null}
       <div className="filter-bar">
         <label className="filter-search">
           <span className="visually-hidden">Search opportunities</span>
@@ -145,21 +150,17 @@ export function OpportunityFilters({
       </div>
       <details className="filter-panel" open={filtersOpen}>
         <summary>Filters</summary>
+        {/* The essential filters (November 25, 2026); the less-used ones are
+            folded into "More filters", open whenever one of them is set. */}
         <div className="filter-grid">
           <CheckboxFilter name="rec" legend="Recommendation" options={recommendationOptions} labels={recommendationLabels} selected={query.rec} />
           <CheckboxFilter name="eval" legend="Evaluation" options={evaluationStateOptions} labels={evaluationStateLabels} selected={query.eval} />
-          <CheckboxFilter name="priority" legend="Priority" options={priorityOptions} labels={priorityLabels} selected={query.priority} />
-          <CheckboxFilter name="role" legend="Role family" options={roleFamilyOptions} labels={roleFamilyLabels} selected={query.role} />
-          <CheckboxFilter name="segment" legend="Customer segment" options={segmentOptions} labels={segmentLabels} selected={query.segment} />
-          <CheckboxFilter name="sourceType" legend="Source type" options={sourceTypeOptions} labels={sourceTypeFilterLabels} selected={query.sourceType} />
           <CheckboxFilter name="arrangement" legend="Work arrangement" options={arrangementOptions} labels={arrangementLabels} selected={query.arrangement} />
-          <CheckboxFilter name="seniority" legend="Seniority (as stated)" options={seniorityOptions} labels={seniorityLabels} selected={query.seniority} />
-          <CheckboxFilter name="residency" legend="Residency requirement" options={residencyOptions} labels={residencyFilterLabels} selected={query.residency} />
           <fieldset className="filter-group filter-group-details">
-            <legend>Details</legend>
+            <legend>Company</legend>
             <label>
-              Company
-              <select name="company" defaultValue={selectedCompany(query.company, options.companies)}>
+              <span className="visually-hidden">Company</span>
+              <select name="company" aria-label="Company" defaultValue={selectedCompany(query.company, options.companies)}>
                 <option value="">Any company</option>
                 {options.companies.map((company) => (
                   <option key={company.value} value={company.value}>
@@ -168,6 +169,19 @@ export function OpportunityFilters({
                 ))}
               </select>
             </label>
+          </fieldset>
+        </div>
+        <details className="filter-more" open={moreOpen}>
+          <summary>More filters</summary>
+        <div className="filter-grid">
+          <CheckboxFilter name="priority" legend="Priority" options={priorityOptions} labels={priorityLabels} selected={query.priority} />
+          <CheckboxFilter name="role" legend="Role family" options={roleFamilyOptions} labels={roleFamilyLabels} selected={query.role} />
+          <CheckboxFilter name="segment" legend="Customer segment" options={segmentOptions} labels={segmentLabels} selected={query.segment} />
+          <CheckboxFilter name="sourceType" legend="Source type" options={sourceTypeOptions} labels={sourceTypeFilterLabels} selected={query.sourceType} />
+          <CheckboxFilter name="seniority" legend="Seniority (as stated)" options={seniorityOptions} labels={seniorityLabels} selected={query.seniority} />
+          <CheckboxFilter name="residency" legend="Residency requirement" options={residencyOptions} labels={residencyFilterLabels} selected={query.residency} />
+          <fieldset className="filter-group filter-group-details">
+            <legend>Details</legend>
             <label>
               Source
               <select name="source" defaultValue={query.source ?? ""}>
@@ -241,6 +255,7 @@ export function OpportunityFilters({
             </label>
           </fieldset>
         </div>
+        </details>
         <div className="evaluation-actions">
           <button type="submit">Apply filters</button>
         </div>

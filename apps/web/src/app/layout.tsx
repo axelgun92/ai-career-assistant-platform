@@ -11,7 +11,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body>
+      {/* Browser extensions (e.g. ColorZilla: cz-shortcut-listen) add attributes
+          to <body> before hydration; that mismatch is not the app's. */}
+      <body suppressHydrationWarning>
         <SiteHeader />
         <div id="main-content" tabIndex={-1}>
           {children}

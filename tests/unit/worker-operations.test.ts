@@ -6,6 +6,7 @@ import {
 import { customerSuccessProductionSemanticPolicyVersion } from "@ai-career/shared";
 import {
   formatDoctorChecks,
+  generatedClientMatchesSchema,
   runDoctorChecks,
   type DoctorReads,
 } from "../../apps/web/src/server/doctor";
@@ -390,5 +391,23 @@ describe("pnpm app:doctor checks", () => {
       reads: reads({ ping: async () => { throw new Error("down"); } }),
     });
     expect(unreachable.at(-1)).toMatchObject({ level: "FAIL", label: "Database" });
+  });
+
+  // November 25, 2026: a client generated before the checkout's latest
+  // schema lacks the newer models ("Cannot read properties of undefined").
+  it("fails a generated client that is out of date with schema.prisma", async () => {
+    const schema = "generator client {\n  provider = \"prisma-client\"\n}\n\nmodel A {\n  id String @id\n}\n";
+    const generated = (embedded: string) => `const config = {\n  "inlineSchema": ${JSON.stringify(embedded)},\n  "runtimeDataModel": {}\n}`;
+    expect(generatedClientMatchesSchema(generated(schema), schema)).toBe(true);
+    expect(generatedClientMatchesSchema(generated(schema), schema.replace(/\n/g, "\r\n"))).toBe(true);
+    expect(generatedClientMatchesSchema(generated(schema), `${schema}\nmodel B {\n  id String @id\n}\n`)).toBe(false);
+    expect(generatedClientMatchesSchema("no embedded schema", schema)).toBeNull();
+    const checks = await runDoctorChecks({
+      environment, nodeVersion: "22.1.0", migrationFolders: [], prismaClientGenerated: true, prismaClientCurrent: false, reads: null, now,
+    });
+    expect(checks.find((check) => check.label === "Prisma client")).toEqual({
+      level: "FAIL", label: "Prisma client",
+      detail: "out of date with database/prisma/schema.prisma; run pnpm prisma:generate, then restart the app and workers",
+    });
   });
 });

@@ -131,3 +131,89 @@ test("a stated time-zone requirement is kept, and long URLs fit a phone screen",
   await expect(page.getByRole("heading", { name: "Source and provenance" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+// November 25, 2026: the "entries disappear and reappear" report. A decision
+// shows at once, in place, and reads the same from every related job, after
+// following the links, going back, and reloading; each pair is its own.
+test("duplicate decisions stay consistent while moving between related jobs", async ({ page }) => {
+  const token = randomUUID().slice(0, 8);
+  const text = (city: string) =>
+    `Customer Success Manager at Movee2e ${token}, ${city}. Own onboarding, adoption, renewals and business reviews for mid-market customers.`;
+  const first = await capture(page, { title: "Customer Success Manager", company: `Movee2e ${token}`, text: text("Denver") });
+  const second = await capture(page, { title: "Customer Success Manager", company: `Movee2e ${token}`, text: text("Austin") });
+  const third = await capture(page, { title: "Customer Success Manager", company: `Movee2e ${token}`, text: text("Boston") });
+  const notices = page.getByRole("region", { name: "Duplicates" });
+  const row = (other: string) => notices.locator(`li:has(a[href="/opportunities/${other}"])`);
+
+  await page.goto(`/opportunities/${third}`);
+  await expect(row(first)).toHaveAttribute("data-resolution", "UNRESOLVED");
+  await expect(row(second)).toHaveAttribute("data-resolution", "UNRESOLVED");
+  const order = await notices.locator("li a").evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+
+  // Decide one pair, then follow its link straight away.
+  await row(first).getByRole("button", { name: "Not the same job" }).click();
+  await expect(row(first)).toHaveAttribute("data-resolution", "DISTINCT");
+  expect(await notices.locator("li a").evaluateAll((links) => links.map((link) => link.getAttribute("href")))).toEqual(order);
+  await expect(row(second)).toHaveAttribute("data-resolution", "UNRESOLVED");
+  await row(first).getByRole("link").click();
+  await expect(page).toHaveURL(new RegExp(`/opportunities/${first}$`));
+  await expect(row(third)).toHaveAttribute("data-resolution", "DISTINCT");
+  await expect(row(second)).toHaveAttribute("data-resolution", "UNRESOLVED");
+
+  // Back, forward and reload never hide or resurrect it.
+  await page.goBack();
+  await expect(row(first)).toHaveAttribute("data-resolution", "DISTINCT");
+  await page.goForward();
+  await expect(row(third)).toHaveAttribute("data-resolution", "DISTINCT");
+  await page.reload();
+  await expect(row(third)).toHaveAttribute("data-resolution", "DISTINCT");
+
+  // Undo from the other page restores it everywhere.
+  await row(third).getByRole("button", { name: "Undo" }).click();
+  await expect(row(third)).toHaveAttribute("data-resolution", "UNRESOLVED");
+  await page.goto(`/opportunities/${third}`);
+  await expect(row(first)).toHaveAttribute("data-resolution", "UNRESOLVED");
+});
+
+test("the Possible Duplicates review keeps or dismisses each listing on its own", async ({ page }) => {
+  const token = randomUUID().slice(0, 8);
+  const text = (city: string) =>
+    `Customer Success Manager at Groupe2e ${token}, ${city}. Own onboarding, adoption, renewals and business reviews for mid-market customers.`;
+  const ids: string[] = [];
+  for (const city of ["Denver", "Austin", "Boston"]) {
+    ids.push(await capture(page, { title: "Customer Success Manager", company: `Groupe2e ${token}`, text: text(city) }));
+  }
+
+  await page.goto(`/opportunities/${ids[1]}`);
+  await page.getByRole("link", { name: "Compare this group side by side" }).click();
+  await expect(page).toHaveURL(new RegExp(`/duplicates\\?group=${ids[1]}$`));
+  const group = page.getByRole("article", { name: `Groupe2e ${token} / Customer Success Manager` });
+  await expect(group).toContainText("3 listings");
+  await expect(group.getByRole("button", { name: /dismiss the others/i })).toHaveCount(0);
+  const where = group.getByRole("row", { name: /Where it is now/ }).getByRole("cell");
+  const pairStates = () => group.locator(".duplicate-pairs li").evaluateAll((items) => items.map((item) => item.getAttribute("data-state")));
+  const before = await pairStates();
+
+  // Keep listings 1 and 3, dismiss listing 2 only.
+  await group.getByRole("button", { name: "Dismiss Listing 2" }).click();
+  await expect(group.getByRole("status")).toContainText("moved to Dismissed");
+  await expect(where).toHaveText(["New", "Dismissed", "New"]);
+  // Dismiss listing 3 as well; listing 2 stays where it is.
+  await group.getByRole("button", { name: "Dismiss Listing 3" }).click();
+  await expect(where).toHaveText(["New", "Dismissed", "Dismissed"]);
+  // Keep listing 2 again: only it returns to Active, and it never left the group.
+  await group.getByRole("button", { name: "Keep Listing 2" }).click();
+  await expect(where).toHaveText(["New", "New", "Dismissed"]);
+  await page.reload();
+  await expect(where).toHaveText(["New", "New", "Dismissed"]);
+  // No duplicate decision was recorded by keeping or dismissing.
+  expect(await pairStates()).toEqual(before);
+  expect(before.every((state) => state === "UNRESOLVED")).toBe(true);
+
+  // Same job stays an explicit decision of its own.
+  await group.locator(".duplicate-pairs li").first().getByRole("button", { name: "Same job", exact: true }).click();
+  await expect(group.locator(".duplicate-pairs li").first()).toHaveAttribute("data-state", "SAME_JOB");
+  await expect(where).toHaveText(["New", "New", "Dismissed"]);
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Possible duplicates" })).toBeVisible();
+});

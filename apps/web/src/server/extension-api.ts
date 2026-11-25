@@ -33,6 +33,7 @@ import {
 } from "./extension-auth";
 import { createPageCaptureService, type PageCaptureService } from "./page-capture";
 import { createPageCaptureIngestor, evaluationHandoff } from "./page-capture-acquisition";
+import { createProductionTriageRouting } from "./triage-routing";
 import { createPageCaptureTabService, PageCaptureTabError, type PageCaptureTabService } from "./page-capture-tabs";
 import { extensionCaptureSession, extensionCaptureSessions } from "./page-capture-progress";
 import { createTitlePolicyLoader } from "./title-policy-service";
@@ -365,6 +366,8 @@ export function getExtensionApi(): ExtensionApiHandlers {
         handoff: { alreadyHandled: (id) => handoff().alreadyHandled(id), request: (id) => handoff().request(id) },
         discovery: customerSuccessDiscoveryConfiguration,
         titlePolicy,
+        // REJECT and off-title jobs go to Dismissed (November 25, 2026).
+        route: createProductionTriageRouting(titlePolicy, console),
       }),
       enabledSites: pageCaptures.enabledSites,
       titlePolicy,

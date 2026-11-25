@@ -1,13 +1,23 @@
 import "dotenv/config";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { createDoctorReads, formatDoctorChecks, runDoctorChecks, type DoctorReads } from "./doctor";
+import { createDoctorReads, formatDoctorChecks, generatedClientMatchesSchema, runDoctorChecks, type DoctorReads } from "./doctor";
 
 // pnpm app:doctor — read-only setup and operations check. Run from the repo root.
 
 const root = process.cwd();
 const migrationsDirectory = path.join(root, "database/prisma/migrations");
 const prismaClientGenerated = existsSync(path.join(root, "database/generated/prisma/client.ts"));
+
+function prismaClientCurrent(): boolean | undefined {
+  try {
+    const generated = readFileSync(path.join(root, "database/generated/prisma/internal/class.ts"), "utf8");
+    const schema = readFileSync(path.join(root, "database/prisma/schema.prisma"), "utf8");
+    return generatedClientMatchesSchema(generated, schema) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function migrationFolders(): string[] {
   if (!existsSync(migrationsDirectory)) return [];
@@ -20,7 +30,8 @@ function migrationFolders(): string[] {
 async function main() {
   let reads: DoctorReads | null = null;
   let disconnect: () => Promise<void> = async () => undefined;
-  if (prismaClientGenerated && process.env.DATABASE_URL) {
+  const clientCurrent = prismaClientGenerated ? prismaClientCurrent() : undefined;
+  if (prismaClientGenerated && clientCurrent !== false && process.env.DATABASE_URL) {
     try {
       const database = await import("@ai-career/database");
       const client = database.getDatabaseClient();
@@ -40,6 +51,7 @@ async function main() {
       nodeVersion: process.versions.node,
       migrationFolders: migrationFolders(),
       prismaClientGenerated,
+      prismaClientCurrent: clientCurrent,
       reads,
       now: new Date(),
     });
