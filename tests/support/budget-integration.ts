@@ -100,6 +100,7 @@ export async function captureOpportunity(cleanup: { opportunityIds: string[] }) 
     rawText: [
       "Customer Success Manager at a SaaS workflow platform.",
       "Remote. Applicants must reside in the United States.",
+      "Employment type: Full-time",
       "Salary $72,000-$88,000. No travel required.",
       "Own onboarding, adoption, education, retention, and business reviews.",
       "3 years of Customer Success experience required.",

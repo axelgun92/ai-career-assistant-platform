@@ -40,6 +40,7 @@ export {
   type TextFact,
 } from "./job-text-facts";
 export { seniorityFromTitle, standardizeEmploymentType, workArrangementFromLocation } from "./position";
+export { readPositionEvidence, type PositionEvidence, type PositionEvidenceFact } from "./position-evidence";
 export { decodeHtmlEntities, htmlToText, markdownToText } from "./html-text";
 export { createRetrievedOpportunityNormalizer, structuredCompensationApplies } from "./retrieved";
 export { explicitArrangementOpen, explicitNoDeadline, explicitSalaryWithheld, withdrawalSourceFields } from "./withdrawal";

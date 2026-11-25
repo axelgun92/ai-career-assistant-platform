@@ -43,6 +43,9 @@ export const employmentTypeValues = [
   "CONTRACT",
   "TEMPORARY",
   "INTERNSHIP",
+  // Apprenticeships and work-study (alternance) contracts (November 25,
+  // 2026): neither a full-time permanent role nor an internship.
+  "APPRENTICESHIP",
 ] as const;
 // ISO 4217 codes the product recognizes in compensation text. No conversion
 // exists: amounts are only ever compared within one currency.

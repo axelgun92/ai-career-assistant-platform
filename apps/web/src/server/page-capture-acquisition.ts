@@ -119,8 +119,14 @@ export interface PageCaptureAcquisitionDependencies {
   // The target job titles (November 22, 2026), read for each pass: queued
   // jobs whose titles are outside them are skipped before any page is read.
   titlePolicy?: () => Promise<TitlePolicy>;
+  // The stricter policy for that pre-read skip only (November 25, 2026: the
+  // target titles plus what a title alone rules out for Customer Success).
+  // A job that is read is handed off by titlePolicy, so triage decides it.
+  skipTitlePolicy?: () => Promise<TitlePolicy>;
   // Triage-to-lifecycle routing after the hand-off (November 25, 2026).
   route?: TriageRouting;
+  // Stale triage reassessment after a re-read (see the ingestor).
+  reassess?: (opportunityId: string) => Promise<unknown>;
   // The site keys whose details may be fetched (verified, or the test site).
   detailSites: () => string[];
   // A fresh logged-out browser per pass; absent when none is configured.
@@ -254,6 +260,10 @@ export interface PageCaptureIngestorDependencies {
   // goes to Dismissed. Never for an overridden card (the user chose it), a
   // refresh, or a job handed off before. Absent: nothing is moved (tests).
   route?: TriageRouting;
+  // Stale triage reassessment (November 25, 2026): a job read again whose
+  // capture changed a fact is assessed again when a hard-requirement input
+  // changed. Never an evaluation request, never routed. Absent: nothing.
+  reassess?: (opportunityId: string) => Promise<unknown>;
   now?: () => Date;
   log?: { info(message: string): void; warn(message: string): void };
   diagnostics?: DiagnosticsSink;
@@ -437,6 +447,10 @@ export function createPageCaptureIngestor(dependencies: PageCaptureIngestorDepen
         } catch (error) {
           throw new PageCaptureSavedError("handoff", ingested.opportunityId, error);
         }
+      } else if (dependencies.reassess && (ingested.outcome === "CHANGED" || Boolean(ingested.normalizationCorrected?.length))) {
+        // A refresh or repeated read that changed the saved facts.
+        await dependencies.reassess(ingested.opportunityId).catch((error: unknown) =>
+          log.warn(`page capture: job ${item.id} triage reassessment failed (${error instanceof Error ? error.name : "UnknownError"})`));
       }
       return ingested;
     },
@@ -523,8 +537,9 @@ export function createPageCaptureAcquisition(dependencies: PageCaptureAcquisitio
         // Jobs queued before the target job titles applied are checked by
         // title before any page is opened (November 22, 2026).
         let items = claimedItems;
-        if (dependencies.titlePolicy && dependencies.repository.skipItems) {
-          const skipped = itemsSkippedByTitle(claimedItems, await dependencies.titlePolicy());
+        const skipPolicy = dependencies.skipTitlePolicy ?? dependencies.titlePolicy;
+        if (skipPolicy && dependencies.repository.skipItems) {
+          const skipped = itemsSkippedByTitle(claimedItems, await skipPolicy());
           if (skipped.outside.length || skipped.missing.length) {
             await dependencies.repository.skipItems(skipped.outside, "OUTSIDE_TARGET_TITLES");
             await dependencies.repository.skipItems(skipped.missing, "MISSING_TITLE");

@@ -32,10 +32,12 @@ export interface DashboardSummary {
   // Active applications whose next follow-up is overdue or due today (UTC);
   // equal to the /applications?followUp=due view.
   followUpsDue: number;
-  // Pre-evaluator triage outcomes across every opportunity, whatever its
-  // lifecycle state (November 25, 2026; a manual decision wins), and how
-  // many of each are in Dismissed. Distinct from the lifecycle views.
-  triage: Record<"EVALUATE" | "NEEDS_REVIEW" | "REJECT", { total: number; dismissed: number }>;
+  // The triage working categories (November 25, 2026; a manual decision
+  // wins): opportunities in Active (the Active view's states) by their
+  // effective triage outcome, and, separately, how many with that outcome
+  // are already in Dismissed. A job's lifecycle state decides its working
+  // category; its historical triage result never keeps it in one.
+  triage: Record<"EVALUATE" | "NEEDS_REVIEW" | "REJECT", { active: number; dismissed: number }>;
 }
 
 export interface DashboardFilterOptions {
@@ -127,15 +129,16 @@ export class PrismaOpportunityDashboardRepository {
       GROUP BY cr."band"
     `;
     const followUpsDue = await new PrismaApplicationListRepository().countFollowUpsDue(toIsoDate(now));
-    const triageRows = await this.database.$queryRaw<Array<{ outcome: string; total: number; dismissed: number }>>`
-      SELECT COALESCE(t."manualDecision"::text, t."outcome"::text) AS "outcome", COUNT(*)::int AS "total",
+    const triageRows = await this.database.$queryRaw<Array<{ outcome: string; active: number; dismissed: number }>>`
+      SELECT COALESCE(t."manualDecision"::text, t."outcome"::text) AS "outcome",
+             COUNT(*) FILTER (WHERE ${active})::int AS "active",
              COUNT(*) FILTER (WHERE o."status" = 'REJECTED_BY_USER')::int AS "dismissed"
       FROM "PreEvaluatorTriage" t JOIN "Opportunity" o ON o."id" = t."opportunityId"
       GROUP BY 1
     `;
     const triageOf = (outcome: string) => {
       const row = triageRows.find((item) => item.outcome === outcome);
-      return { total: Number(row?.total ?? 0), dismissed: Number(row?.dismissed ?? 0) };
+      return { active: Number(row?.active ?? 0), dismissed: Number(row?.dismissed ?? 0) };
     };
     const c = counts ?? {};
     const n = (key: string) => Number(c[key] ?? 0);

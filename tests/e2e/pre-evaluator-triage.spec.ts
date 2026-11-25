@@ -48,19 +48,22 @@ async function runHelper(...args: string[]) {
 async function createOpportunity(
   request: APIRequestContext,
   kind: "eligible" | "unknown" | "reject",
+  suffix = "",
 ) {
   const compensationText = kind === "unknown" ? undefined : kind === "reject" ? "$45,000-$50,000" : "$72,000-$88,000";
   const response = await request.post("/api/opportunities", {
     data: {
       title: "Customer Success Manager",
-      company: `E2E pre-evaluator ${kind}`,
+      company: `E2E pre-evaluator ${kind}${suffix}`,
       location: "Remote - United States",
       ...(compensationText ? { compensationText } : {}),
       postingDate: "2026-11-01",
       domain: "customer-success",
       rawText: [
         "Customer Success Manager at a SaaS workflow platform.",
-        "This is a fully remote role. Applicants must reside in the United States.",
+        // The employment type is a Customer Success hard requirement
+        // (November 25, 2026): stated, so salary alone decides here.
+        "This is a full-time, fully remote role. Applicants must reside in the United States.",
         compensationText ? `Base salary ${compensationText}.` : "Compensation is not stated.",
         "Own onboarding, adoption, education, and retention.",
       ].join("\n"),
@@ -109,4 +112,65 @@ test("eligible, review-held, manually resolved, and rejected jobs stay on the co
   await expect(page.getByRole("heading", { name: "Rejected before evaluation" })).toBeVisible();
   await expect(page.getByText(/definite base-salary ceiling is below/)).toBeVisible();
   await expectNoEvaluation(request, rejected);
+});
+
+// Add missing information (November 25, 2026): a fact the user confirms from
+// the job description re-runs triage at once, moves the job to the right
+// working category without starting an evaluation, persists, and can be
+// edited and undone; the captured listing is unchanged.
+test("Add missing information re-runs triage, moves the job's category, and can be edited and undone", async ({ page, request }) => {
+  const token = `MI${Date.now()}`;
+  const id = await createOpportunity(request, "unknown", ` ${token}`);
+  await page.goto(`/opportunities/${id}`);
+  await page.getByRole("button", { name: "Evaluate Customer Success fit" }).click();
+  await expect(page.getByRole("heading", { name: "Needs Review before evaluation" })).toBeVisible();
+  await page.goto(`/?q=${token}&triage=review`);
+  await expect(page.locator(".opportunity-row")).toHaveCount(1);
+
+  await page.goto(`/opportunities/${id}`);
+  const panel = page.getByRole("region", { name: "Information you confirmed" });
+  await expect(panel.getByRole("note")).toContainText("some information is Unknown");
+  // A click before the panel hydrates does nothing: retry until the form opens.
+  await expect(async () => {
+    await panel.getByRole("button", { name: "Add missing information" }).click({ timeout: 2_000 });
+    await expect(panel.getByRole("button", { name: "Save and re-run triage" })).toBeVisible({ timeout: 2_000 });
+  }).toPass();
+  await panel.getByRole("combobox", { name: "Information", exact: true }).selectOption("salaryRange");
+  await panel.getByLabel("Minimum (base, per year)").fill("72000");
+  await panel.getByLabel("Maximum (base, per year)").fill("88000");
+  await panel.getByLabel("Quotation from the job description (optional)").fill("Base salary $72,000 - $88,000");
+  await panel.getByRole("button", { name: "Save and re-run triage" }).click();
+  await expect(panel.getByRole("status")).toContainText("Saved: Salary range.");
+  // The currency is still Unknown: confirm it too.
+  await panel.getByRole("button", { name: "Add missing information" }).click();
+  await panel.getByRole("combobox", { name: "Information", exact: true }).selectOption("currency");
+  await panel.getByRole("combobox", { name: "Currency", exact: true }).selectOption("USD");
+  await panel.getByRole("button", { name: "Save and re-run triage" }).click();
+  await expect(panel.getByRole("status")).toContainText("Saved: Salary currency. Triage now: Evaluate.");
+  await expect(panel.locator("li[data-field=salaryRange]")).toContainText("Base salary $72,000 - $88,000");
+  await expect(page.getByText("Triage history (3 assessments)")).toBeVisible();
+  // No evaluation is started by a correction.
+  await expectNoEvaluation(request, id);
+
+  // Persisted, and in the Evaluate category now.
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Information you confirmed" }).locator("li[data-field=currency]")).toBeVisible();
+  await page.goto(`/?q=${token}&triage=evaluate`);
+  await expect(page.locator(".opportunity-row")).toHaveCount(1);
+  await page.goto(`/?q=${token}&triage=review`);
+  await expect(page.locator(".opportunity-row")).toHaveCount(0);
+
+  // Edit, then undo: the captured (Unknown) salary applies again.
+  await page.goto(`/opportunities/${id}`);
+  const salary = page.getByRole("region", { name: "Information you confirmed" }).locator("li[data-field=salaryRange]");
+  await salary.getByRole("button", { name: "Edit" }).click();
+  await panel.getByLabel("Maximum (base, per year)").fill("90000");
+  await panel.getByRole("button", { name: "Save and re-run triage" }).click();
+  await expect(panel.getByRole("status")).toContainText("Saved: Salary range. Triage now: Evaluate.");
+  await expect(salary).toContainText("90,000");
+  await salary.getByRole("button", { name: "Undo" }).click();
+  await expect(panel.getByRole("status")).toContainText("Undone: Salary range. Triage now: Needs Review.");
+  await expect(panel.locator("li[data-field=salaryRange]")).toHaveCount(0);
+  const history = await (await request.get(`/api/opportunities/${id}/confirmed-facts`)).json() as { history: Array<{ fieldName: string; action: string }> };
+  expect(history.history.filter((event) => event.fieldName === "salaryRange").map((event) => event.action).sort()).toEqual(["CONFIRMED", "EDITED", "UNDONE"]);
 });

@@ -36,7 +36,7 @@ import { createPageCaptureIngestor, evaluationHandoff } from "./page-capture-acq
 import { createProductionTriageRouting } from "./triage-routing";
 import { createPageCaptureTabService, PageCaptureTabError, type PageCaptureTabService } from "./page-capture-tabs";
 import { extensionCaptureSession, extensionCaptureSessions } from "./page-capture-progress";
-import { createTitlePolicyLoader } from "./title-policy-service";
+import { createAcquisitionTitlePolicyLoader, createTitlePolicyLoader } from "./title-policy-service";
 
 // The browser extension companion's API (feature 14B). Two groups of
 // routes:
@@ -331,10 +331,14 @@ export function getExtensionApi(): ExtensionApiHandlers {
   // The target job titles, read for each request (November 22, 2026), and
   // the tombstones of jobs the user permanently deleted.
   const titlePolicy = createTitlePolicyLoader(new PrismaTitlePolicyRepository());
+  // Automatic paths also skip titles the Customer Success hard requirements
+  // clearly rule out (November 25, 2026); Single Capture keeps the plain
+  // target-title flag, and routing reads the plain policy (triage decides).
+  const acquisitionTitlePolicy = createAcquisitionTitlePolicyLoader(new PrismaTitlePolicyRepository());
   const tombstones = new PrismaOpportunityTombstoneRepository();
   const pageCaptures = createPageCaptureService({
     repository: pageCaptureRepository,
-    titlePolicy,
+    titlePolicy: acquisitionTitlePolicy,
     isDeletedCard: (card) => tombstones.isDeleted({ sourceUrl: card.sourceUrl, pageCaptureExternalId: card.externalId }),
   });
   // The evaluation service is reached only when a job is handed off.
@@ -365,12 +369,15 @@ export function getExtensionApi(): ExtensionApiHandlers {
         ingestion,
         handoff: { alreadyHandled: (id) => handoff().alreadyHandled(id), request: (id) => handoff().request(id) },
         discovery: customerSuccessDiscoveryConfiguration,
+        // Handed off by the plain target titles, so triage decides (and
+        // records) a level or employment type the job page states.
         titlePolicy,
         // REJECT and off-title jobs go to Dismissed (November 25, 2026).
         route: createProductionTriageRouting(titlePolicy, console),
+        reassess: (opportunityId) => getEvaluationService().assessTriage(opportunityId, { onlyIfStale: true, trigger: "CAPTURE_CHANGED" }),
       }),
       enabledSites: pageCaptures.enabledSites,
-      titlePolicy,
+      titlePolicy: acquisitionTitlePolicy,
     }),
     captureHistory: {
       sessions: (limit) => extensionCaptureSessions(limit, pageCaptureRepository),

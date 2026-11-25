@@ -20,8 +20,9 @@ import { createPageCaptureAcquisition, evaluationHandoff, type PageCaptureAcquis
 import { createPageCaptureEvidence } from "./page-capture-evidence";
 import { createAutomaticTriage } from "./automatic-triage";
 import { createProductionTriageRouting } from "./triage-routing";
+import { reassessStaleTriage } from "./triage-reassessment";
 import { createRetrievalWorker, runRetrievalWorkerLoop, type RetrievalWorker } from "./retrieval-worker";
-import { createTitlePolicyLoader } from "./title-policy-service";
+import { createAcquisitionTitlePolicyLoader, createTitlePolicyLoader } from "./title-policy-service";
 import { gitHead, workerDiagnosticsFromEnvironment, type WorkerDiagnostics } from "./worker-diagnostics";
 import { formatWorkerError } from "./worker-errors";
 
@@ -48,6 +49,32 @@ function withPageCaptureAcquisition(worker: RetrievalWorker, acquisition: PageCa
             `unavailable=${pass.unavailable} incomplete=${pass.incomplete} stopped=${pass.stopped ?? "-"} pageScripts=${pass.pageScripts} ` +
             `pages=${pass.requests.pages} documentRequests=${pass.requests.documentRequests} sentRequests=${pass.requests.sentRequests} blockedRequests=${pass.requests.blockedRequests}`,
         );
+      }
+      return null;
+    },
+  };
+}
+
+// Stale triage reassessment (November 25, 2026): when the worker is idle,
+// at most every 30 minutes, jobs whose triage inputs changed (a profile or
+// eligibility change made elsewhere, a rule change after an upgrade) are
+// assessed again. Never routed; a failure never stops the worker.
+const reassessmentIntervalMs = 30 * 60_000;
+function withTriageReassessment(worker: RetrievalWorker): RetrievalWorker {
+  let lastAt = 0;
+  return {
+    ...worker,
+    async runOnce() {
+      const outcome = await worker.runOnce();
+      if (outcome || Date.now() - lastAt < reassessmentIntervalMs) return outcome;
+      lastAt = Date.now();
+      try {
+        const summary = await reassessStaleTriage({ log });
+        if (summary.reassessed || summary.failed) {
+          log.info(`triage reassessment checked=${summary.checked} reassessed=${summary.reassessed} unchanged=${summary.unchanged} failed=${summary.failed}`);
+        }
+      } catch (error) {
+        log.warn(`triage reassessment could not run ${formatWorkerError(error)}`);
       }
       return null;
     },
@@ -185,6 +212,9 @@ async function main(): Promise<number> {
   // The target job titles, read afresh for each run and pass (November 22,
   // 2026), and the tombstones of jobs the user permanently deleted.
   const titlePolicy = createTitlePolicyLoader(new PrismaTitlePolicyRepository());
+  // Discovery also skips titles the Customer Success hard requirements
+  // clearly rule out (November 25, 2026); routing reads the plain policy.
+  const acquisitionTitlePolicy = createAcquisitionTitlePolicyLoader(new PrismaTitlePolicyRepository());
   const tombstones = new PrismaOpportunityTombstoneRepository();
   const acquisition = createPageCaptureAcquisition({
     repository: new PrismaPageCaptureRepository(),
@@ -192,7 +222,9 @@ async function main(): Promise<number> {
     handoff: evaluationHandoff(getEvaluationService()),
     discovery: customerSuccessDiscoveryConfiguration,
     titlePolicy,
+    skipTitlePolicy: acquisitionTitlePolicy,
     route: createProductionTriageRouting(titlePolicy, log),
+    reassess: (opportunityId) => getEvaluationService().assessTriage(opportunityId, { onlyIfStale: true, trigger: "CAPTURE_CHANGED" }),
     detailSites: () => enabledSitesFromEnvironment().details,
     probeCapture: () => captureRepository.probeCaptureLock(),
     pageScripts,
@@ -207,12 +239,12 @@ async function main(): Promise<number> {
     registry: defaultAdapterRegistry,
     transport: (options) => createPoliteTransport(createFetchTransport({ userAgent: settings.RETRIEVAL_USER_AGENT }), options),
     discovery: customerSuccessDiscoveryConfiguration,
-    titlePolicy,
+    titlePolicy: acquisitionTitlePolicy,
     isDeletedListing: (listing) => tombstones.isDeleted({ source: listing.source, externalId: listing.externalId ?? null, sourceUrl: listing.sourceUrl ?? null }),
     // Triage only (November 23, 2026): configured sources never request an
     // evaluation; Mode B keeps its own evaluation hand-off above.
     triage: createAutomaticTriage({
-      assess: (opportunityId) => getEvaluationService().assessTriage(opportunityId),
+      assess: (opportunityId, options) => getEvaluationService().assessTriage(opportunityId, options),
       existing: (opportunityId) => getEvaluationService().getTriage(opportunityId),
       // REJECT and off-title jobs go to Dismissed (November 25, 2026).
       route: createProductionTriageRouting(titlePolicy, log),
@@ -225,7 +257,7 @@ async function main(): Promise<number> {
     pendingListings: (sourceId, trackingScopeKey, since) => sources.pendingListings(sourceId, trackingScopeKey, since),
     ...(browser ? { browser } : {}),
   });
-  const worker = withPageCaptureAcquisition(retrievalWorker, acquisition);
+  const worker = withTriageReassessment(withPageCaptureAcquisition(retrievalWorker, acquisition));
   try {
     return await runRetrievalWorkerLoop({
       worker,

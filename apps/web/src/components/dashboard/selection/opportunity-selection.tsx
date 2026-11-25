@@ -14,6 +14,9 @@ import { moveDestinationLabels } from "../../opportunity-actions";
 export interface SelectableRow {
   id: string;
   title: string;
+  // The Move to destinations valid for this row's current state (absent:
+  // every destination is offered, and the server reports each result).
+  destinations?: readonly OpportunityMoveDestination[];
 }
 
 interface SelectionState {
@@ -24,8 +27,46 @@ interface SelectionState {
   clear(): void;
   busy: boolean;
   run(work: () => Promise<string | null>): Promise<void>;
-  message: { kind: "success" | "error"; text: string; failures: string[] } | null;
-  report(message: SelectionState["message"]): void;
+  message: SelectionMessage | null;
+  report(message: SelectionMessage | null): void;
+}
+
+// One listing's own result in a bulk action (November 25, 2026): keyed by
+// its opportunity ID, never by its title or message, which two listings can
+// share.
+export interface SelectionResultItem {
+  opportunityId: string;
+  title: string;
+  outcome: "skipped" | "failed";
+  reason: string;
+}
+
+export interface SelectionMessage {
+  kind: "success" | "error";
+  text: string;
+  items: SelectionResultItem[];
+}
+
+// The per-listing summary of a bulk action: moved or deleted, skipped
+// (already in the destination), and refused, each listing independently.
+export function summarizeBulkResults(
+  results: ReadonlyArray<{ opportunityId: string; result: string; reason?: string }>,
+  rows: readonly SelectableRow[],
+  verb: string,
+): SelectionMessage {
+  const done = results.filter((item) => item.result === "MOVED" || item.result === "DELETED").length;
+  const items: SelectionResultItem[] = results
+    .filter((item) => item.result !== "MOVED" && item.result !== "DELETED")
+    .map((item) => ({
+      opportunityId: item.opportunityId,
+      title: titleOf(rows, item.opportunityId),
+      outcome: item.result === "ALREADY_THERE" ? "skipped" : "failed",
+      reason: item.reason ?? "not changed",
+    }));
+  const skipped = items.filter((item) => item.outcome === "skipped").length;
+  const failed = items.length - skipped;
+  const parts = [`${done} ${verb}`, ...(skipped ? [`${skipped} skipped (already there)`] : []), ...(failed ? [`${failed} could not be`] : [])];
+  return { kind: failed ? "error" : "success", text: `${parts.join("; ")}.`, items };
 }
 
 const SelectionContext = createContext<SelectionState | null>(null);
@@ -78,7 +119,10 @@ export function RowSelect({ id, title }: { id: string; title: string }) {
 interface MoveResponse {
   results?: Array<{ opportunityId: string; result: string; reason?: string }>;
   moved?: number;
+  skipped?: number;
   failed?: number;
+  result?: string;
+  reason?: string;
   error?: string;
 }
 
@@ -105,7 +149,11 @@ export function RowMoveMenu({ id, title, destinations }: { id: string; title: st
         setError(typeof body.error === "string" ? body.error : "The move could not be completed.");
         return;
       }
-      selection?.report({ kind: "success", text: `Moved “${title}” to ${moveDestinationLabels[destination]}.`, failures: [] });
+      selection?.report({
+        kind: "success",
+        text: body.result === "ALREADY_THERE" ? `“${title}”: ${body.reason ?? "already there"}; nothing changed.` : `Moved “${title}” to ${moveDestinationLabels[destination]}.`,
+        items: [],
+      });
       router.refresh();
     } catch {
       setError("The application could not reach the server.");
@@ -140,34 +188,29 @@ export function SelectionToolbar({ dismissedView, dismissedTotal }: { dismissedV
   const [confirming, setConfirming] = useState<"selected" | "all" | null>(null);
   if (!selection) return null;
   const { rows, selected, busy, message } = selection;
-  const ids = rows.filter((row) => selected.has(row.id)).map((row) => row.id);
+  const selectedRows = rows.filter((row) => selected.has(row.id));
+  const ids = selectedRows.map((row) => row.id);
   const count = ids.length;
+  // Only destinations that would move at least one selected listing; a
+  // listing already there is skipped by the server, never failed.
+  const offered = bulkDestinations.filter((item) => selectedRows.some((row) => !row.destinations || row.destinations.includes(item)));
+  const chosen = offered.includes(destination) ? destination : (offered[0] ?? destination);
 
-  const summarize = (body: MoveResponse, verb: string) => {
-    const failures = (body.results ?? [])
-      .filter((item) => item.result !== "MOVED" && item.result !== "DELETED")
-      .map((item) => `${titleOf(rows, item.opportunityId)}: ${item.reason ?? "not changed"}`);
-    const done = (body.results ?? []).length - failures.length;
-    selection.report({
-      kind: failures.length ? "error" : "success",
-      text: failures.length ? `${done} ${verb}; ${failures.length} could not be:` : `${done} ${verb}.`,
-      failures,
-    });
-  };
+  const summarize = (body: MoveResponse, verb: string) => selection.report(summarizeBulkResults(body.results ?? [], rows, verb));
 
   const move = (target: OpportunityMoveDestination) =>
     selection.run(async () => {
       try {
         const { ok, body } = await postJson("/api/opportunities/bulk/move", { destination: target, opportunityIds: ids });
         if (!ok) {
-          selection.report({ kind: "error", text: body.error ?? "The move could not be completed.", failures: [] });
+          selection.report({ kind: "error", text: body.error ?? "The move could not be completed.", items: [] });
           return null;
         }
         summarize(body, `moved to ${moveDestinationLabels[target]}`);
         selection.clear();
         router.refresh();
       } catch {
-        selection.report({ kind: "error", text: "The application could not reach the server.", failures: [] });
+        selection.report({ kind: "error", text: "The application could not reach the server.", items: [] });
       }
       return null;
     });
@@ -181,14 +224,14 @@ export function SelectionToolbar({ dismissedView, dismissedTotal }: { dismissedV
             : await postJson("/api/opportunities/dismissed/empty", { expectedCount: dismissedTotal });
         setConfirming(null);
         if (!ok) {
-          selection.report({ kind: "error", text: body.error ?? "Nothing was deleted.", failures: [] });
+          selection.report({ kind: "error", text: body.error ?? "Nothing was deleted.", items: [] });
           return null;
         }
         summarize(body, "permanently deleted");
         selection.clear();
         router.refresh();
       } catch {
-        selection.report({ kind: "error", text: "The application could not reach the server.", failures: [] });
+        selection.report({ kind: "error", text: "The application could not reach the server.", items: [] });
       }
       return null;
     });
@@ -209,14 +252,14 @@ export function SelectionToolbar({ dismissedView, dismissedTotal }: { dismissedV
       {count ? (
         <div className="selection-toolbar-row">
           <label htmlFor="bulk-move-to">Move selected to</label>
-          <select id="bulk-move-to" value={destination} disabled={busy} onChange={(event) => setDestination(event.target.value as OpportunityMoveDestination)}>
-            {bulkDestinations.map((item) => (
+          <select id="bulk-move-to" value={chosen} disabled={busy || !offered.length} onChange={(event) => setDestination(event.target.value as OpportunityMoveDestination)}>
+            {offered.map((item) => (
               <option key={item} value={item}>
                 {moveDestinationLabels[item]}
               </option>
             ))}
           </select>
-          <button type="button" disabled={busy} onClick={() => void move(destination)}>
+          <button type="button" disabled={busy || !offered.length} onClick={() => void move(chosen)}>
             Move {count} selected
           </button>
           {dismissedView ? (
@@ -265,10 +308,12 @@ export function SelectionToolbar({ dismissedView, dismissedTotal }: { dismissedV
       {message ? (
         <div className={message.kind === "success" ? "success-message" : "error-message"} role={message.kind === "success" ? "status" : "alert"}>
           <p>{message.text}</p>
-          {message.failures.length ? (
+          {message.items.length ? (
             <ul>
-              {message.failures.map((failure) => (
-                <li key={failure}>{failure}</li>
+              {message.items.map((item) => (
+                <li key={item.opportunityId} data-outcome={item.outcome}>
+                  {item.title}: {item.reason}
+                </li>
               ))}
             </ul>
           ) : null}

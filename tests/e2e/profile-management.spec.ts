@@ -160,7 +160,7 @@ test("an opportunity evaluated under an older version shows a reevaluation hint"
       domain: "customer-success",
       rawText: [
         "Customer Success Manager at a SaaS workflow platform.",
-        "Remote. Applicants must reside in the United States.",
+        "Full-time. Remote. Applicants must reside in the United States.",
         "Salary $72,000-$88,000. No travel required.",
         "Own onboarding, adoption, education, retention, and business reviews.",
       ].join("\n"),

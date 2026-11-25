@@ -6,7 +6,7 @@ import {
   type TitlePolicy,
   type TitlePolicyPatterns,
 } from "@ai-career/core";
-import { customerSuccessDefaultTitlePolicy } from "@ai-career/customer-success";
+import { clearlyDisallowedCustomerSuccessTitle, customerSuccessDefaultTitlePolicy } from "@ai-career/customer-success";
 import { z } from "zod";
 
 // Target job titles for automatic acquisition (November 22, 2026). The saved
@@ -47,15 +47,41 @@ export function createTitlePolicyLoader(store: Pick<TitlePolicyStore, "get">): T
   return async () => snapshotOf(await store.get(titlePolicyDomain)).policy;
 }
 
+// Automatic acquisition (November 25, 2026): the target job titles, plus the
+// Customer Success hard requirements a title alone clearly rules out (a
+// level above mid-level; internship, stage, alternance, apprenticeship or
+// part-time), so such listings are skipped before any job page is read. A
+// deliberate capture never uses this loader, and every captured job is
+// still decided by triage.
+export function createAcquisitionTitlePolicyLoader(store: Pick<TitlePolicyStore, "get">): TitlePolicyLoader {
+  const load = createTitlePolicyLoader(store);
+  return async () => {
+    const policy = await load();
+    return (title) => {
+      const decision = policy(title);
+      if (decision.verdict !== "ACCEPTED") return decision;
+      const disallowed = clearlyDisallowedCustomerSuccessTitle(title);
+      return disallowed ? { verdict: "EXCLUDED", pattern: disallowed } : decision;
+    };
+  };
+}
+
 // Saved opportunities whose titles are outside the current target job
-// titles (the dashboard's "Outside target titles" list), in any lifecycle
-// state, and how many of them are in Dismissed.
+// titles (the dashboard's "Outside target titles" list; the list itself is
+// narrowed by the selected lifecycle view), how many of them are in Active
+// (the working category) and how many are in Dismissed.
+const activeStatuses = new Set(["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"]);
+
 export async function outsideTargetTitles(
   store: Pick<TitlePolicyStore, "get"> & { opportunityTitles(): Promise<Array<{ id: string; title: string | null; status?: string }>> },
-): Promise<{ ids: string[]; dismissed: number }> {
+): Promise<{ ids: string[]; active: number; dismissed: number }> {
   const policy = snapshotOf(await store.get(titlePolicyDomain)).policy;
   const outside = (await store.opportunityTitles()).filter((row) => policy(row.title).verdict !== "ACCEPTED");
-  return { ids: outside.map((row) => row.id), dismissed: outside.filter((row) => row.status === "REJECTED_BY_USER").length };
+  return {
+    ids: outside.map((row) => row.id),
+    active: outside.filter((row) => row.status !== undefined && activeStatuses.has(row.status)).length,
+    dismissed: outside.filter((row) => row.status === "REJECTED_BY_USER").length,
+  };
 }
 
 export async function opportunitiesOutsideTargetTitles(

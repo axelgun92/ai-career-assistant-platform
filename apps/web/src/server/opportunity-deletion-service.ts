@@ -1,5 +1,6 @@
 import type { OpportunityDeletionOutcome, OpportunityDeletionResult } from "@ai-career/database";
 import { z } from "zod";
+import { safeErrorDetails } from "./safe-error";
 
 // Permanent deletion, from Dismissed only (November 22, 2026). Ordinary
 // Move to never deletes. "Delete selected" takes the explicitly selected IDs
@@ -45,7 +46,9 @@ export function createOpportunityDeletionHandlers(store: OpportunityDeletionStor
       try {
         results.push(view(await store.deleteDismissed(id)));
       } catch (error) {
-        console.error("Opportunity deletion failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
+        // The error name, code and a redacted message (November 25, 2026):
+        // never job text or connection details.
+        console.error("Opportunity deletion failed", safeErrorDetails(error));
         results.push({ opportunityId: id, result: "FAILED" as const, reason: "Could not be deleted; nothing was changed for it" });
       }
     }

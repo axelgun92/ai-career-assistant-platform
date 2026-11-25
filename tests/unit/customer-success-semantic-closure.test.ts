@@ -894,6 +894,15 @@ const allowedTextDependencies: Record<string, { lines: number; kind: TextDepende
   "schemas/resume-match.ts#restoreProviderNarrativeCitations": { lines: 4, kind: "DISPLAY", reason: "translates resolvable narrative citations; never rejects" },
   "schemas/resume-match.ts#createResumeMatchProviderInputProjection": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience flag for the candidate's own profile statements" },
   "schemas/resume-match.ts#supportsStartupSpecialization": { lines: 1, kind: "USER_PROFILE_TEXT", reason: "startup-experience evidence in the candidate's own profile statements" },
+  // Pre-evaluator triage (November 25, 2026): deterministic hard
+  // requirements over the listing's own normalized title, tier labels and
+  // location, before any provider call; never provider output.
+  "triage/position-requirements.ts#seniorityReasons": { lines: 5, kind: "SOURCE_TEXT", reason: "explicit level words in the listing's normalized title" },
+  "triage/position-requirements.ts#employmentReasons": { lines: 2, kind: "SOURCE_TEXT", reason: "employment type stated in the listing's normalized title; label formatting" },
+  "triage/position-requirements.ts#clearlyDisallowedCustomerSuccessTitle": { lines: 2, kind: "SOURCE_TEXT", reason: "pre-capture skip of titles that state a disallowed level or employment type" },
+  "triage/pre-evaluator-triage.ts#applicableCompensationTiers": { lines: 2, kind: "SOURCE_TEXT", reason: "matching a stated pay tier's label to the listing's normalized location" },
+  "triage/pre-evaluator-triage.ts#salaryCode": { lines: 1, kind: "IDENTIFIER", reason: "reason code formatting from the salary policy's reason identifier" },
+  "triage/pre-evaluator-triage.ts#tierSalaryReasons": { lines: 1, kind: "IDENTIFIER", reason: "message formatting of tier results" },
 };
 
 function textOperationsBySymbol(root: string) {

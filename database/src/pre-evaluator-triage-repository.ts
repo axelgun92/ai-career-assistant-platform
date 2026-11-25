@@ -1,4 +1,6 @@
 import {
+  applyConfirmedFacts,
+  compensationTierSchema,
   preEvaluatorTriageReasonSchema,
   type PreEvaluatorTriageAssessment,
   type PreEvaluatorTriageManualDecision,
@@ -7,6 +9,7 @@ import {
 } from "@ai-career/core";
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { activeConfirmedFacts } from "./confirmed-fact-repository";
 import {
   residencyRequirement,
   storedEligibilityFacts,
@@ -58,7 +61,7 @@ export class PrismaPreEvaluatorTriageRepository {
   private readonly database = getDatabaseClient();
 
   async loadAssessmentInput(opportunityId: string, userProfileId: string) {
-    const [opportunity, profile, eligibility] = await Promise.all([
+    const [opportunity, profile, eligibility, confirmed] = await Promise.all([
       this.database.opportunity.findUnique({
         where: { id: opportunityId },
         select: {
@@ -78,6 +81,22 @@ export class PrismaPreEvaluatorTriageRepository {
           visaSponsorship: true,
           relocationSupport: true,
           employerOfRecordRegions: true,
+          // November 25, 2026: the position facts and compensation tiers the
+          // opportunity page shows, and the listing's own text for the
+          // explicit position evidence.
+          title: true,
+          seniority: true,
+          seniorityLabel: true,
+          employmentType: true,
+          compensationTiers: true,
+          jobDescription: true,
+          responsibilities: true,
+          requirements: true,
+          fieldProvenance: {
+            where: { fieldName: "remoteStatus", supersededAt: null, normalizedValue: { equals: "REMOTE_BY_EXCEPTION" } },
+            select: { id: true },
+            take: 1,
+          },
         },
       }),
       this.database.userProfile.findUnique({
@@ -85,10 +104,12 @@ export class PrismaPreEvaluatorTriageRepository {
         select: { id: true, version: true, domainPreferences: true },
       }),
       this.database.userEligibility.findUnique({ where: { id: "user" } }),
+      activeConfirmedFacts(this.database, opportunityId),
     ]);
     if (!opportunity || !profile) return null;
-    return {
-      opportunity: {
+    // The captured, normalized facts with the user's confirmed facts applied
+    // (November 25, 2026): the same facts the opportunity page shows.
+    const captured = {
         salaryMin: opportunity.salaryMin?.toNumber() ?? null,
         salaryMax: opportunity.salaryMax?.toNumber() ?? null,
         currency: opportunity.currency,
@@ -98,7 +119,21 @@ export class PrismaPreEvaluatorTriageRepository {
         workArrangements: storedWorkArrangements(opportunity.workArrangements),
         location: opportunity.location,
         ...storedEligibilityFacts(opportunity),
-      },
+        title: opportunity.title,
+        seniority: opportunity.seniority,
+        seniorityLabel: opportunity.seniorityLabel,
+        employmentType: opportunity.employmentType,
+        compensationTiers: compensationTierSchema.array().catch([]).parse(opportunity.compensationTiers),
+        remoteByException: opportunity.fieldProvenance.length > 0,
+        fullTimeScheduleConfirmed: false,
+    };
+    return {
+      opportunity: applyConfirmedFacts(captured, confirmed),
+      captured,
+      confirmed: confirmed.map((fact) => ({ fieldName: fact.fieldName, value: fact.value })),
+      // The complete stored description, read for explicit position
+      // evidence (never shown or stored by triage itself).
+      text: [opportunity.jobDescription, opportunity.responsibilities, opportunity.requirements].filter(Boolean).join("\n\n"),
       domain: opportunity.domain,
       profile,
       eligibility: eligibility
@@ -118,6 +153,8 @@ export class PrismaPreEvaluatorTriageRepository {
     assessment: PreEvaluatorTriageAssessment;
     inputFingerprint: string;
     assessedAt: Date;
+    // What prompted this assessment, kept in the history (November 25).
+    trigger?: string;
   }): Promise<PreEvaluatorTriageRecord> {
     const data = {
       domain: input.domain,
@@ -128,15 +165,53 @@ export class PrismaPreEvaluatorTriageRepository {
       inputFingerprint: input.inputFingerprint,
       assessedAt: input.assessedAt,
     };
-    const row = await this.database.preEvaluatorTriage.upsert({
-      where: { opportunityId: input.opportunityId },
-      create: { opportunityId: input.opportunityId, ...data },
-      // Deliberately do not update manualDecision or manuallyDecidedAt. A
-      // later observation may refresh the automatic assessment, but never
-      // silently erases Alex's explicit decision.
-      update: data,
+    const row = await this.database.$transaction(async (transaction) => {
+      const previous = await transaction.preEvaluatorTriage.findUnique({
+        where: { opportunityId: input.opportunityId },
+        select: { outcome: true, inputFingerprint: true },
+      });
+      const saved = await transaction.preEvaluatorTriage.upsert({
+        where: { opportunityId: input.opportunityId },
+        create: { opportunityId: input.opportunityId, ...data },
+        // Deliberately do not update manualDecision or manuallyDecidedAt. A
+        // later observation may refresh the automatic assessment, but never
+        // silently erases Alex's explicit decision.
+        update: data,
+      });
+      // Every assessment is kept, never overwritten (November 25, 2026); a
+      // repeat with the same inputs and outcome adds nothing.
+      if (previous && previous.inputFingerprint === input.inputFingerprint && previous.outcome === input.assessment.outcome) return saved;
+      await transaction.preEvaluatorTriageHistory.create({
+        data: {
+          opportunityId: input.opportunityId,
+          outcome: input.assessment.outcome,
+          reasons: input.assessment.reasons as Prisma.InputJsonValue,
+          inputFingerprint: input.inputFingerprint,
+          userProfileId: input.userProfileId,
+          userProfileVersion: input.userProfileVersion,
+          trigger: input.trigger ?? "INITIAL",
+          assessedAt: input.assessedAt,
+        },
+      });
+      return saved;
     });
     return recordOf(row);
+  }
+
+  // Every assessment of an opportunity, oldest first.
+  async history(opportunityId: string) {
+    const rows = await this.database.preEvaluatorTriageHistory.findMany({
+      where: { opportunityId },
+      orderBy: [{ assessedAt: "asc" }, { createdAt: "asc" }],
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      outcome: row.outcome as PreEvaluatorTriageOutcome,
+      reasons: reasonsSchema.parse(row.reasons),
+      trigger: row.trigger,
+      userProfileVersion: row.userProfileVersion,
+      assessedAt: row.assessedAt,
+    }));
   }
 
   async get(opportunityId: string): Promise<PreEvaluatorTriageRecord | null> {
@@ -171,8 +246,11 @@ export class PrismaPreEvaluatorTriageRepository {
   }
 
   async listNeedsReview() {
+    // The Needs Review queue holds jobs still in Active only (November 25,
+    // 2026): a job moved to Dismissed, Archived or Applied keeps its triage
+    // result in its history but is no longer waiting for a decision.
     const rows = await this.database.preEvaluatorTriage.findMany({
-      where: { outcome: "NEEDS_REVIEW", manualDecision: null },
+      where: { outcome: "NEEDS_REVIEW", manualDecision: null, opportunity: { status: { in: ["NORMALIZED", "EVALUATED", "RECOMMENDED", "SAVED"] } } },
       orderBy: [{ assessedAt: "asc" }, { id: "asc" }],
       include: {
         opportunity: {

@@ -194,24 +194,29 @@ model Opportunity {
   benefits         String? @db.Text
   additionalNotes  String? @db.Text
 
-  status                OpportunityStatus          @default(DISCOVERED)
-  sourceRecords         SourceRecord[]
-  fieldProvenance       FieldProvenance[]
-  evaluations           Evaluation[]
-  evidenceRecords       EvidenceRecord[]
-  recommendations       Recommendation[]
-  evaluationAdmissions  EvaluationAdmission[]
-  deferredEvaluations   DeferredEvaluation[]
-  preEvaluatorTriage    PreEvaluatorTriage?
-  userActions           OpportunityUserAction[]
-  pageCaptureItems      PageCaptureItem[]
-  application           Application?
-  semanticOperations    SemanticOperationAttempt[]
-  duplicateReferences   DuplicateReference[]       @relation("DuplicateReferenceSource")
-  referencedAsDuplicate DuplicateReference[]       @relation("DuplicateReferenceTarget")
-  retrievedListings     RetrievedListing[]
-  createdAt             DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime                   @updatedAt @db.Timestamptz(3)
+  status                    OpportunityStatus           @default(DISCOVERED)
+  sourceRecords             SourceRecord[]
+  fieldProvenance           FieldProvenance[]
+  evaluations               Evaluation[]
+  evidenceRecords           EvidenceRecord[]
+  recommendations           Recommendation[]
+  evaluationAdmissions      EvaluationAdmission[]
+  deferredEvaluations       DeferredEvaluation[]
+  preEvaluatorTriage        PreEvaluatorTriage?
+  // November 25, 2026: every triage assessment kept for the audit trail,
+  // and the facts the user confirmed (with their history).
+  preEvaluatorTriageHistory PreEvaluatorTriageHistory[]
+  confirmedFacts            UserConfirmedFact[]
+  confirmedFactEvents       UserConfirmedFactEvent[]
+  userActions               OpportunityUserAction[]
+  pageCaptureItems          PageCaptureItem[]
+  application               Application?
+  semanticOperations        SemanticOperationAttempt[]
+  duplicateReferences       DuplicateReference[]        @relation("DuplicateReferenceSource")
+  referencedAsDuplicate     DuplicateReference[]        @relation("DuplicateReferenceTarget")
+  retrievedListings         RetrievedListing[]
+  createdAt                 DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime                    @updatedAt @db.Timestamptz(3)
 
   @@index([domain, status])
   @@index([companyId])
@@ -700,18 +705,18 @@ model SemanticOperationAttempt {
 // Explicit user lifecycle actions only. Evaluations and automatic system
 // lifecycle sync never write here.
 model OpportunityUserAction {
-  id            String                    @id @default(uuid()) @db.Uuid
-  opportunityId String                    @db.Uuid
-  opportunity   Opportunity               @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  action        OpportunityUserActionType
-  fromStatus    OpportunityStatus
-  toStatus      OpportunityStatus
+  id              String                    @id @default(uuid()) @db.Uuid
+  opportunityId   String                    @db.Uuid
+  opportunity     Opportunity               @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  action          OpportunityUserActionType
+  fromStatus      OpportunityStatus
+  toStatus        OpportunityStatus
   // Set only when the app moved the opportunity itself (November 25, 2026:
   // a triage REJECT or a title outside the target job titles goes to
   // Dismissed); null for every action the user took. Restorable like any
   // other move.
   automaticReason AutomaticDismissalReason?
-  createdAt     DateTime                  @default(now()) @db.Timestamptz(3)
+  createdAt       DateTime                  @default(now()) @db.Timestamptz(3)
 
   @@index([opportunityId, createdAt])
 }
@@ -1229,4 +1234,67 @@ model RetainedEvaluationAdmission {
   retainedAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([createdAt])
+}
+
+// Every pre-evaluator triage assessment of an opportunity (November 25,
+// 2026), oldest first: the current one is also PreEvaluatorTriage. A
+// reassessment adds a row with what prompted it; rows are never changed.
+model PreEvaluatorTriageHistory {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  opportunityId      String                    @db.Uuid
+  opportunity        Opportunity               @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  outcome            PreEvaluatorTriageOutcome
+  reasons            Json
+  inputFingerprint   String
+  userProfileId      String?                   @db.Uuid
+  userProfileVersion Int?
+  // INITIAL, CAPTURE_CHANGED, PROFILE_CHANGED, USER_CORRECTION,
+  // RULES_CHANGED, INPUT_CHANGED (another material input).
+  trigger            String
+  assessedAt         DateTime                  @db.Timestamptz(3)
+  createdAt          DateTime                  @default(now()) @db.Timestamptz(3)
+
+  @@index([opportunityId, assessedAt])
+}
+
+// A fact the user confirmed from the job description (November 25, 2026),
+// one current row per opportunity and field. It overlays the captured,
+// normalized value wherever facts are read (triage, the opportunity page)
+// without changing the captured evidence; a later capture never overwrites
+// it. Undo marks it revoked.
+model UserConfirmedFact {
+  id            String      @id @default(uuid()) @db.Uuid
+  opportunityId String      @db.Uuid
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  // salaryRange, currency, compensationBasis, applicableTier, residency,
+  // workArrangements, employmentType, workAuthorization, seniority.
+  fieldName     String
+  value         Json
+  // The captured value when the user confirmed this one, to tell a later
+  // capture that disagrees (a conflict to review) from the original gap.
+  capturedValue Json?
+  quotation     String?     @db.Text
+  note          String?     @db.Text
+  confirmedAt   DateTime    @db.Timestamptz(3)
+  revokedAt     DateTime?   @db.Timestamptz(3)
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@unique([opportunityId, fieldName])
+}
+
+// The audit history of confirmed facts: every save, edit and undo.
+model UserConfirmedFactEvent {
+  id            String      @id @default(uuid()) @db.Uuid
+  opportunityId String      @db.Uuid
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  fieldName     String
+  // CONFIRMED, EDITED, UNDONE.
+  action        String
+  value         Json?
+  quotation     String?     @db.Text
+  note          String?     @db.Text
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([opportunityId, createdAt])
 }

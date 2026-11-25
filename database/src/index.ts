@@ -37,3 +37,4 @@ export * from "./pre-evaluator-triage-repository";
 export * from "./page-capture-repository";
 export * from "./triage-routing-repository";
 export * from "./duplicate-review-repository";
+export * from "./confirmed-fact-repository";

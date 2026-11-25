@@ -173,6 +173,25 @@ export const opportunityMoveDestinationActions: Record<Exclude<OpportunityMoveDe
 // application keeps an Applied or archived-after-applying opportunity out of
 // Active and Saved, and an active application keeps it out of Dismissed
 // (lifecycleActionGuard decides the same on the server).
+// Whether an opportunity in this state is already where the destination
+// would put it (November 25, 2026): a move there is a no-op, reported as
+// skipped, never as a failure. Restore has nothing to do for a job that is
+// neither dismissed nor archived.
+export function moveDestinationReached(status: OpportunityLifecycleState, destination: OpportunityMoveDestination): boolean {
+  switch (destination) {
+    case "DISMISSED":
+      return status === "REJECTED_BY_USER";
+    case "SAVED":
+      return status === "SAVED";
+    case "ARCHIVED":
+      return status === "ARCHIVED";
+    case "ACTIVE":
+      return status === "NORMALIZED" || status === "EVALUATED" || status === "RECOMMENDED";
+    case "RESTORE":
+      return status === "NORMALIZED" || status === "EVALUATED" || status === "RECOMMENDED" || status === "SAVED";
+  }
+}
+
 export function opportunityMoveOptions(input: {
   status: OpportunityLifecycleState;
   application: { submitted: boolean; active: boolean } | null;

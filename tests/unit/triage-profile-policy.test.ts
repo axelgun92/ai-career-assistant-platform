@@ -21,6 +21,11 @@ const usCitizen = { authorizedRegions: ["US"], citizenshipRegions: ["US"] };
 
 type Opportunity = Parameters<typeof triageCustomerSuccessOpportunity>[0]["opportunity"];
 const remoteUs: Opportunity = {
+  title: "Customer Success Manager",
+  seniority: null,
+  seniorityLabel: null,
+  employmentType: "FULL_TIME",
+  evidence: { peopleManagement: null, fullTimeSchedule: null },
   salaryMin: 70_000,
   salaryMax: 85_000,
   currency: "USD",
@@ -101,9 +106,11 @@ describe("compensation", () => {
 });
 
 describe("work arrangement", () => {
-  it("requires fully remote: hybrid-only and on-site-only jobs are rejected", () => {
-    expect(codes({ remoteStatus: "HYBRID", workArrangements: ["HYBRID"] })).toEqual(["work-arrangement-incompatible:REJECT"]);
-    expect(codes({ remoteStatus: "ONSITE", workArrangements: ["ONSITE"] })).toEqual(["work-arrangement-incompatible:REJECT"]);
+  // November 25, 2026 (Alex): Remote and Hybrid pass; on-site only is
+  // rejected wherever the job is (replacing the November 5 remote-only rule).
+  it("passes remote and hybrid jobs and rejects on-site-only ones", () => {
+    expect(codes({ remoteStatus: "HYBRID", workArrangements: ["HYBRID"] })).toEqual([]);
+    expect(codes({ remoteStatus: "ONSITE", workArrangements: ["ONSITE"] })).toEqual(["work-arrangement-onsite-only:REJECT"]);
   });
 
   it("accepts a job offering remote among its arrangements", () => {
@@ -174,7 +181,7 @@ describe("constraints with no deterministic triage rule (reported, not added)", 
 describe("combined outcome", () => {
   it("rejects when any constraint is definitely failed, otherwise reviews any open question", () => {
     // A definite failure wins over open questions.
-    expect(assess({ remoteStatus: "HYBRID", workArrangements: ["HYBRID"], salaryMin: null, salaryMax: null, currency: null }).outcome).toBe("REJECT");
+    expect(assess({ remoteStatus: "ONSITE", workArrangements: ["ONSITE"], salaryMin: null, salaryMax: null, currency: null }).outcome).toBe("REJECT");
     // Several open questions: one review with every reason kept.
     const held = assess({ salaryMin: null, salaryMax: null, currency: null, remoteStatus: null, workArrangements: [] });
     expect(held.outcome).toBe("NEEDS_REVIEW");

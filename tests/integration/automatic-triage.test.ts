@@ -51,7 +51,7 @@ const worker = createRetrievalWorker({
   transport: () => createFixtureTransport(responses),
   discovery: customerSuccessDiscoveryConfiguration,
   triage: createAutomaticTriage({
-    assess: (opportunityId) => evaluation.assessTriage(opportunityId),
+    assess: (opportunityId, options) => evaluation.assessTriage(opportunityId, options),
     existing: (opportunityId) => evaluation.getTriage(opportunityId),
   }),
   env: () => ({}),
@@ -121,6 +121,7 @@ function job(id: string, salary: TestJob["salary"], overrides: Partial<TestJob> 
     url: `https://boards.example.com/${token}/jobs/${id}`,
     salary,
     workplace: "REMOTE",
+    employment: "Full-time",
     ...overrides,
   };
 }
@@ -219,7 +220,7 @@ describe("automatic triage after configured-source retrieval", () => {
     await activateProfile();
     const url = `https://boards.example.com/${token}/jobs/88`;
     const saved = await manual.submit({
-      rawText: "Customer Success Manager. Own onboarding, adoption and renewals for SaaS customers.",
+      rawText: "Customer Success Manager. Employment type: Full-time. Own onboarding, adoption and renewals for SaaS customers.",
       title: "Customer Success Manager", company: `Acme ${token}`, sourceUrl: url, domain: "customer-success",
     });
     const source = await addSource();

@@ -79,6 +79,7 @@ export function EvaluationExperience({
   triage = null,
   capture = null,
   duplicate = "NONE",
+  evaluationExists = null,
 }: {
   opportunity: OpportunityPresentation;
   // False for archived/closed opportunities; the API enforces the same rule.
@@ -94,13 +95,20 @@ export function EvaluationExperience({
   // (November 23, 2026); without them the breakdown is not shown.
   capture?: CaptureStage | null;
   duplicate?: DuplicateStage;
+  // Whether the server found an evaluation (November 25, 2026). False: the
+  // unevaluated state is shown without asking the API for an evaluation that
+  // does not exist (which answers 404, logged by the browser as a console
+  // error); polling starts once a request is accepted. Null (unknown, e.g.
+  // the server check failed): the status is fetched as before, so a genuine
+  // loading failure is still reported.
+  evaluationExists?: boolean | null;
 }) {
   // `evaluation` is what is displayed; `latest` is the newest evaluation, which
   // drives status, failure details, and the queued-too-long notice.
   const [evaluation, setEvaluation] = useState<EvaluationPresentation | null>(null);
   const [latest, setLatest] = useState<EvaluationPresentation | null>(null);
   const [fallbackEvaluationId, setFallbackEvaluationId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(evaluationExists !== false);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -185,13 +193,15 @@ export function EvaluationExperience({
       },
     });
     poller.current = controller;
-    controller.start();
+    // Nothing to load when no evaluation exists: the initial state (not
+    // loading, no evaluation) is the normal unevaluated state.
+    if (evaluationExists !== false) controller.start();
     return () => {
       controller.stop();
       fallbackController.current?.abort();
       poller.current = null;
     };
-  }, [opportunity.id, router]);
+  }, [opportunity.id, router, evaluationExists]);
 
   function keepChecking() {
     setPollStopped(false);

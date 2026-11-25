@@ -191,6 +191,12 @@ The Customer Success salary Hard Filter consumes normalized Core facts rather th
   - one persisted triage record per opportunity keeps reasons, causal fields, profile version, fingerprint and manual choice; re-observation refreshes the automatic assessment without duplicating the opportunity or erasing provenance/manual choice;
   - Needs Review and Reject create zero evaluator/admission/deferral/semantic-operation rows. The evaluator's six-released/fifteen-withheld contract and Apply / Review / Skip remain unchanged.
 
+- Post-Feature-14B corrections (November 25, 2026; verified offline, awaiting approval):
+  - the dashboard's triage cards count and list Active jobs only; a move to the category a job is already in is reported as skipped, not failed;
+  - Customer Success triage checks seniority (above Mid rejects; ambiguous manager or executive titles wait for review), work arrangement (Onsite-only rejects), employment type (non-full-time rejects) and compensation tiers;
+  - triage re-runs when its inputs change (capture, profile, eligibility, corrections), keeping a history shown on the opportunity page;
+  - **Add missing information** on a Customer Success opportunity: confirm a fact the description states (with a quotation), edit or undo it; triage re-runs at once and a later capture never overwrites it.
+
 ### In Progress
 
 - Nothing is in progress: main-product features 1–18, final evaluator/product integration (`45d5fff`) and the new pre-evaluator triage enhancement (`5ac3c9d`) are complete. The next separate task is the Milestones 1–10 historical integrity audit, using `45d5fff` as the pre-triage reference.
@@ -345,7 +351,15 @@ pnpm profile:import:customer-success --activate   # or use "Create from the star
 pnpm app:doctor               # read-only check of everything above
 ```
 
-`pnpm prisma:generate` is required after every clean clone: the generated client (`database/generated/`) is not committed. `pnpm app:setup` runs it and applies all migrations (`prisma migrate deploy`).
+`pnpm prisma:generate` is required after every clean clone: the generated client (`database/generated/`) is not committed. `pnpm app:setup` runs it and applies all migrations (`prisma migrate deploy`). After pulling changes that add a migration (for example migration 31, November 25, 2026), run `pnpm prisma:generate` and `pnpm db:migrate` (or `pnpm app:setup`) and restart the app and workers. To allow Hybrid on an existing database, do **not** re-import the bundled profile with `--activate` (it would activate the bundled document as a whole and undo later Profile-page edits). Instead change only the allowed work arrangements of the active version, which saves and activates a new version and keeps everything else: on `/profile`, set **Allowed work arrangements** to Remote and Hybrid and save as active; or, with the app running:
+
+```bash
+BASE=$(curl -s http://127.0.0.1:3000/api/profile | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).active.userProfileId))')
+curl -s -X POST http://127.0.0.1:3000/api/profile/structured -H 'Content-Type: application/json' \
+  -d "{\"baseVersionId\":\"$BASE\",\"changes\":{\"domainPreferences.customerSuccess.workArrangement.allowed\":[\"REMOTE\",\"HYBRID\"]},\"activate\":true}"
+```
+
+The reply is `{"status":"CREATED",…,"activated":true}` (`ALREADY_IMPORTED` when nothing changed). Triage of affected jobs becomes stale and is assessed again after the save (and lazily on the opportunity page). Work eligibility and confirmed facts are not touched.
 
 `pnpm app:doctor` is strictly read-only. It checks Node, configuration (by variable name; values are never printed), database reachability, applied migrations, the generated client, the active profile, whether an evaluation worker is connected, the queue, and whether company names still need the deduplication backfill. It never changes data.
 
@@ -469,6 +483,9 @@ Set `OPENAI_API_KEY` (and keep the accepted AI and pricing defaults), start the 
 | `prisma migrate dev` reports a `Recommendation.evidenceReferences` change | Known, documented drift (awaiting a decision); use `pnpm db:migrate` (deploy). `pnpm db:verify-migrations` confirms it is the only difference. |
 | `Cannot find module …/generated/prisma` | Run `pnpm prisma:generate`. |
 | Dashboard logs "could not load AI usage totals" or "could not load opportunities" with `Cannot read properties of undefined (reading 'findMany')` | The generated Prisma client is older than `database/prisma/schema.prisma` (after a pull or checkout, `pnpm install` does not regenerate it). Run `pnpm prisma:generate` (or `pnpm app:setup`), then restart `pnpm dev` and the workers. `pnpm app:doctor` reports an out-of-date client (November 25, 2026). |
+| The dashboard logs "Opportunity dashboard could not load opportunities" | The log line now names the error (name, Prisma code, SQLSTATE, a redacted message) and the view and filters. `P1001`/`ECONNREFUSED`: PostgreSQL is down or restarting; start it and refresh. A `TypeError` about `findMany`: the generated client is out of date (see the row above). The server log is also replayed in the browser console in development. |
+| A job moved to a category it is already in shows "skipped" | Expected (November 25, 2026): "Already in Dismissed" and similar are skips, not failures; the other selected jobs are moved. |
+| `pnpm app:doctor` fails on the generated client right after `prisma format` | Fixed November 25, 2026: formatting differences are ignored; a failure now names the first differing schema line. Run `pnpm prisma:generate` if it persists. |
 | Hydration warning about `cz-shortcut-listen` (or another unknown `<body>` attribute) | A browser extension (here ColorZilla) adds the attribute before React loads; it is not the app's. The root layout ignores attribute differences on `<body>` only. |
 | The first dashboard load in `pnpm dev` takes minutes | Development mode compiles each route on its first request; later requests take about a second. For daily use, `pnpm build && pnpm start`. |
 | `pnpm app:doctor` warns about the evaluation policy version | `.env` pins `AI_EXECUTION_POLICY_VERSION`. Remove the line and restart the web app and worker. Evaluations already queued under another policy fail safely with `SEMANTIC_EXECUTION_POLICY_MISMATCH`; request them again. |

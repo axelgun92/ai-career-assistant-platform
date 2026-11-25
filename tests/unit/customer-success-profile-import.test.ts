@@ -26,7 +26,8 @@ describe("Alexandra Nugent Customer Success profile import data", () => {
     expect(context.evidence.length).toBeGreaterThan(0);
     expect(preferences.salary.passMinimum).toBe(60_000);
     expect(preferences.salary.reviewMinimum).toBe(55_000);
-    expect(preferences.workArrangement.allowed).toEqual(["REMOTE"]);
+    // November 25, 2026 (Alex): Remote and Hybrid; never On-site.
+    expect(preferences.workArrangement.allowed).toEqual(["REMOTE", "HYBRID"]);
   });
 
   it("uses the corrected tutor metrics and preserves role boundaries", () => {

@@ -20,6 +20,9 @@ export interface OpportunityActionWriter {
     opportunityId: string;
     action: OpportunityUserAction;
   }): Promise<GuardedUserActionResult>;
+  // The current lifecycle state, read when a move is refused, to tell a
+  // move to where the job already is (a skip) from a refusal.
+  currentStatus?(opportunityId: string): Promise<OpportunityLifecycleState | null>;
 }
 
 const actionRequestSchema = z.object({ action: opportunityUserActionSchema }).strict();
@@ -32,7 +35,11 @@ let actionWriter: OpportunityActionWriter | undefined;
 export function getOpportunityActionWriter(): OpportunityActionWriter {
   if (!actionWriter) {
     const applications = new PrismaApplicationRepository();
-    actionWriter = { applyUserAction: (input) => applications.applyLifecycleActionGuarded(input) };
+    const lifecycle = new PrismaOpportunityLifecycleRepository();
+    actionWriter = {
+      applyUserAction: (input) => applications.applyLifecycleActionGuarded(input),
+      currentStatus: async (opportunityId) => (await lifecycle.getLifecycleView(opportunityId))?.status ?? null,
+    };
   }
   return actionWriter;
 }

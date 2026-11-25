@@ -66,7 +66,7 @@ async function captureThroughUi(page: Page, token: string) {
   await expect(page).toHaveTitle(/New opportunity · AI Career Platform/, { timeout: 15_000 });
   await page.getByLabel("Raw opportunity or job-description text").fill([
     `${title} at Goldenco ${token}, a SaaS workflow platform.`,
-    "Remote. Applicants must reside in the United States.",
+    "Full-time. Remote. Applicants must reside in the United States.",
     "Salary $72,000-$88,000. No travel required.",
     "Own onboarding, adoption, education, retention, and business reviews.",
     "3+ years of Customer Success experience required.",

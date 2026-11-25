@@ -2080,3 +2080,58 @@ main {
 .duplicates-page {
   max-width: 76rem;
 }
+
+/* Information you confirmed, and the triage history (November 25, 2026) */
+.missing-information {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.missing-information h2 {
+  margin-top: 0;
+}
+
+.confirmed-facts {
+  padding-left: 1.1rem;
+}
+
+.confirmed-facts li {
+  margin-bottom: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.confirmed-facts blockquote {
+  margin: 0.35rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid #d1d5db;
+  color: #374151;
+}
+
+.missing-information-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 36rem;
+  margin-top: 0.75rem;
+}
+
+.missing-information-form label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.missing-information-form .checkbox-label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.triage-history {
+  margin: 1rem 0;
+}
+
+.triage-history li {
+  margin-bottom: 0.35rem;
+  overflow-wrap: anywhere;
+}

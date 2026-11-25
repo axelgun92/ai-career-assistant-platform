@@ -47,10 +47,18 @@ describe("which stored listings are triaged", () => {
     }
   });
 
-  it("a changed listing is triaged only when its opportunity has no assessment yet; an existing (or manual) one is kept", async () => {
-    const kept = fakes(assessed("REJECT"), { manualDecision: "EVALUATE" });
-    expect(await kept.triage({ outcome: "CHANGED", opportunityId: "o" })).toEqual({ status: "SKIPPED", reason: "ALREADY_ASSESSED" });
-    expect(kept.assess).not.toHaveBeenCalled();
+  // November 25, 2026: a changed listing of an opportunity already assessed
+  // is assessed again only when a hard-requirement input changed (the
+  // service keeps a manual decision); before, it always kept its assessment.
+  it("a changed listing is assessed again only when its inputs changed, and an unchanged one is kept", async () => {
+    const unchanged = fakes(async () => ({ ...assessed("REJECT"), unchanged: true }), { manualDecision: "EVALUATE" });
+    expect(await unchanged.triage({ outcome: "CHANGED", opportunityId: "o" })).toEqual({ status: "SKIPPED", reason: "ALREADY_ASSESSED" });
+    expect(unchanged.assess).toHaveBeenCalledWith("o", { onlyIfStale: true, trigger: "CAPTURE_CHANGED" });
+    const changed = fakes(assessed("EVALUATE"), { outcome: "NEEDS_REVIEW" });
+    expect(await changed.triage({ outcome: "CHANGED", opportunityId: "o" })).toEqual({ status: "REASSESSED", outcome: "EVALUATE" });
+    // A re-read whose saved facts were corrected counts as changed.
+    expect(await changed.triage({ outcome: "UNCHANGED", opportunityId: "o", normalizationCorrected: [{ field: "salaryMin" }] })).toEqual({ status: "REASSESSED", outcome: "EVALUATE" });
+    expect(await changed.triage({ outcome: "UNCHANGED", opportunityId: "o" })).toEqual({ status: "SKIPPED", reason: "UNCHANGED" });
     const fresh = fakes(assessed("NEEDS_REVIEW"));
     expect(await fresh.triage({ outcome: "CHANGED", opportunityId: "o" })).toEqual({ status: "ASSESSED", outcome: "NEEDS_REVIEW" });
   });

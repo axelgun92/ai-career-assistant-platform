@@ -24,3 +24,4 @@ export * from "./personal-analytics";
 export * from "./company-intelligence";
 export * from "./pre-evaluator-triage";
 export * from "./title-policy";
+export * from "./confirmed-facts";

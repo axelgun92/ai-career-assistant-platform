@@ -16,6 +16,7 @@ import { OpportunityList } from "@/components/dashboard/opportunity-list";
 import { OpportunitySelectionProvider, SelectionToolbar } from "@/components/dashboard/selection/opportunity-selection";
 import { applicationMoveState } from "@/server/opportunity-move-service";
 import { outsideTargetTitles } from "@/server/title-policy-service";
+import { dashboardQueryContext, safeErrorDetails } from "@/server/safe-error";
 import { UsageTotals } from "@/components/dashboard/usage-totals";
 import { ActiveFilters } from "@/components/dashboard/active-filters";
 import { NeedsAttention, PipelineOverview, TriageSummary } from "@/components/dashboard/dashboard-summary";
@@ -58,8 +59,11 @@ function viewCount(summary: DashboardSummary, view: OpportunityView): number {
   }
 }
 
-function logFailure(message: string, error: unknown) {
-  console.error(message, { errorName: error instanceof Error ? error.name : "UnknownError" });
+// Safe diagnostics (November 25, 2026): the error's name, code, redacted
+// message and causes, with the request's view, filter and page context;
+// never job text, search text, secrets or connection strings.
+function logFailure(message: string, error: unknown, context: Record<string, unknown> = {}) {
+  console.error(message, { ...safeErrorDetails(error), ...context });
 }
 
 export default async function HomePage({
@@ -78,7 +82,7 @@ export default async function HomePage({
   // triage summary's count and, with titles=outside, the list (November 22
   // and 25, 2026). Null when the titles could not be read.
   const outsideTitles = await outsideTargetTitles(new PrismaTitlePolicyRepository()).catch((error: unknown) => {
-    logFailure("Opportunity dashboard could not read the target job titles", error);
+    logFailure("Opportunity dashboard could not read the target job titles", error, { context: dashboardQueryContext(query) });
     return null;
   });
   try {
@@ -90,7 +94,7 @@ export default async function HomePage({
       pageSize: query.pageSize,
     });
   } catch (error) {
-    logFailure("Opportunity dashboard could not load opportunities", error);
+    logFailure("Opportunity dashboard could not load opportunities", error, { context: dashboardQueryContext(query) });
   }
 
   // Canonical URL: invalid or empty parameters are dropped, and a page past
@@ -152,7 +156,7 @@ export default async function HomePage({
       {summary ? (
         <TriageSummary
           summary={summary}
-          outsideTitles={outsideTitles ? { total: outsideTitles.ids.length, dismissed: outsideTitles.dismissed } : null}
+          outsideTitles={outsideTitles ? { active: outsideTitles.active, dismissed: outsideTitles.dismissed } : null}
         />
       ) : null}
 
@@ -192,7 +196,7 @@ export default async function HomePage({
           <div className="title-cleanup-banner" role="status">
             <p>
               Showing the opportunities whose titles are outside your target job titles
-              {outsideTitles ? ` (${outsideTitles.ids.length} in all views, ${outsideTitles.dismissed} in Dismissed)` : ""}. New automatic
+              {outsideTitles ? ` (${outsideTitles.active} in Active, ${outsideTitles.dismissed} in Dismissed; this list shows the ${opportunityViews[query.view].label} view)` : ""}. New automatic
               captures with such titles go to Dismissed by themselves; you can restore any of them, or move these ones yourself.
             </p>
             <Link href={opportunityHref(withChanges(query, { titles: undefined }))}>Show all titles</Link>
@@ -212,19 +216,25 @@ export default async function HomePage({
               companyNames={companyNames}
               salaryExclusions={result.salaryExclusions}
             />
-            {result.total === 0 && (filtered || (summary?.total ?? 0) > 0) ? (
-              // Something exists, but not here: distinguish "no matches" from
-              // the first-run "no opportunities yet" state.
-              <div className="empty-state" role="status">
-                <p>{filtered ? "No opportunities match these filters." : "No opportunities in this view."}</p>
-                {filtered ? <Link href={opportunityHref(clearFilters(query))}>Clear all filters</Link> : null}
-              </div>
-            ) : (
-              <OpportunitySelectionProvider
-                key={opportunityHref(query)}
-                rows={result.items.map((item) => ({ id: item.id, title: item.title ?? "Untitled opportunity" }))}
-              >
-                <SelectionToolbar dismissedView={query.view === "dismissed"} dismissedTotal={summary?.dismissed ?? 0} />
+            {/* The selection area stays mounted when an action empties the
+                list (November 25, 2026), so its result summary stays visible. */}
+            <OpportunitySelectionProvider
+              key={opportunityHref(query)}
+              rows={result.items.map((item) => ({
+                id: item.id,
+                title: item.title ?? "Untitled opportunity",
+                destinations: opportunityMoveOptions({ status: item.status as OpportunityLifecycleState, application: applicationMoveState(item.application) }),
+              }))}
+            >
+              <SelectionToolbar dismissedView={query.view === "dismissed"} dismissedTotal={summary?.dismissed ?? 0} />
+              {result.total === 0 && (filtered || (summary?.total ?? 0) > 0) ? (
+                // Something exists, but not here: distinguish "no matches" from
+                // the first-run "no opportunities yet" state.
+                <div className="empty-state" role="status">
+                  <p>{filtered ? "No opportunities match these filters." : "No opportunities in this view."}</p>
+                  {filtered ? <Link href={opportunityHref(clearFilters(query))}>Clear all filters</Link> : null}
+                </div>
+              ) : (
                 <OpportunityList
                   opportunities={result.items}
                   eligibility={eligibility}
@@ -235,8 +245,8 @@ export default async function HomePage({
                     ]),
                   )}
                 />
-              </OpportunitySelectionProvider>
-            )}
+              )}
+            </OpportunitySelectionProvider>
             <Pagination query={query} page={result.page} pageCount={result.pageCount} />
           </>
         )}

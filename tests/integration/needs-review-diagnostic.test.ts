@@ -51,7 +51,7 @@ const duties = [
   "Track health scores, lead escalations and turn customer feedback into product requests.",
   "You bring three or more years in customer success or account management at a B2B software company.",
   "You write clearly, run a calm meeting and enjoy teaching customers to get value from the product.",
-  "This is a fully remote role. Applicants must reside in the United States.",
+  "This is a full-time, fully remote role. Applicants must reside in the United States.",
 ].join("\n");
 
 async function opportunity(name: string, rawText: string, salary: string | null) {

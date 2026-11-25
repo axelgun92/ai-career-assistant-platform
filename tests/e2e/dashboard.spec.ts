@@ -69,7 +69,7 @@ async function createOpportunity(
       domain: "customer-success",
       rawText: [
         `${title} at ${company}, a SaaS workflow platform.`,
-        "Remote. Applicants must reside in the United States.",
+        "Full-time. Remote. Applicants must reside in the United States.",
         ...(options.requiresSalesforce
           ? ["Salary $72,000-$88,000."]
           : ["Salary $72,000-$88,000. No travel required."]),
@@ -103,7 +103,7 @@ test("search, filter, sort, and URL state survive refresh and back navigation", 
   const alpha = await createOpportunity(request, `Alpha Customer Success Manager ${token}`, `Alphaco ${token}`);
   const beta = await createOpportunity(
     request,
-    `Beta Onboarding Lead ${token}`,
+    `Beta Onboarding Specialist ${token}`,
     `Betaco ${token}`,
     { requiresSalesforce: true },
   );
@@ -118,7 +118,7 @@ test("search, filter, sort, and URL state survive refresh and back navigation", 
 
   await search(page, `betaco ${token}`);
   await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first()).toContainText("Beta Onboarding Lead");
+  await expect(rows(page).first()).toContainText("Beta Onboarding Specialist");
 
   await search(page, `alpha customer ${token}`);
   await expect(rows(page)).toHaveCount(1);
@@ -138,7 +138,7 @@ test("search, filter, sort, and URL state survive refresh and back navigation", 
   await page.getByLabel("Sort").selectOption("title");
   await expect(page).toHaveURL(/sort=title/);
   await expect(rows(page).nth(0)).toContainText("Alpha Customer Success Manager");
-  await expect(rows(page).nth(1)).toContainText("Beta Onboarding Lead");
+  await expect(rows(page).nth(1)).toContainText("Beta Onboarding Specialist");
   await expect(rows(page).nth(0)).toContainText("Apply");
   await expect(rows(page).nth(1)).toContainText("Review");
 

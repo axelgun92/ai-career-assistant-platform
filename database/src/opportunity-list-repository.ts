@@ -1,4 +1,6 @@
 import {
+  applyConfirmedFacts,
+  type ConfirmedFactField,
   followUpState,
   toIsoDate,
   utcToday,
@@ -448,6 +450,25 @@ const duplicateStatus = Prisma.sql`(
     AND (dr."opportunityId" = o."id" OR dr."relatedOpportunityId" = o."id")
 ) AS "duplicate"`;
 
+// The facts the user confirmed for the listed opportunities overlay the
+// captured ones (November 25, 2026), exactly as on the opportunity page and
+// in triage; one query for the page's rows.
+async function withConfirmedFacts(
+  client: { userConfirmedFact: { findMany: ReturnType<typeof getDatabaseClient>["userConfirmedFact"]["findMany"] } },
+  items: OpportunityListItem[],
+): Promise<OpportunityListItem[]> {
+  if (!items.length) return items;
+  const rows = await client.userConfirmedFact.findMany({
+    where: { opportunityId: { in: items.map((item) => item.id) }, revokedAt: null },
+    select: { opportunityId: true, fieldName: true, value: true },
+  });
+  if (!rows.length) return items;
+  return items.map((item) => {
+    const confirmed = rows.filter((row) => row.opportunityId === item.id).map((row) => ({ fieldName: row.fieldName as ConfirmedFactField, value: row.value }));
+    return confirmed.length ? applyConfirmedFacts(item, confirmed) : item;
+  });
+}
+
 function toItem(row: Row, today: string): OpportunityListItem {
   const nextFollowUpOn = row.nextFollowUpOn ? toIsoDate(row.nextFollowUpOn) : null;
   const latestIsRecommended = row.latestId !== null && row.latestId === row.recEvaluationId;
@@ -590,7 +611,7 @@ export class PrismaOpportunityListRepository {
         `;
         const today = utcToday();
         return {
-          items: rows.map((row) => toItem(row, today)),
+          items: await withConfirmedFacts(transaction, rows.map((row) => toItem(row, today))),
           total, page, requestedPage, pageCount, pageSize, salaryExclusions,
         };
       },

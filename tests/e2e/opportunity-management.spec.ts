@@ -118,6 +118,85 @@ test("dashboard: select, bulk Move to, row Move to, Restore, permanent deletion 
   expect((await request.post(`/api/opportunities/${ids[0]}/move`, { data: { destination: "DELETE" } })).status()).toBe(400);
 });
 
+// Category movement (November 25, 2026): every working category in turn, a
+// move to the category a job is already in reported as a skip (never a
+// failure), each result keyed by the opportunity (two listings share a title
+// and a reason here), and a bulk move followed by a refresh with no console
+// error.
+test("category movement: every category, skips for the current one, results per opportunity, and no console error", async ({ page, request }) => {
+  const problems: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") problems.push(message.text()); });
+  page.on("pageerror", (error) => problems.push(error.message));
+  const token = `C${Date.now()}`;
+  const title = `Customer Success Manager ${token}`;
+  const ids = [await createOpportunity(request, title, `Twinco ${token}`), await createOpportunity(request, title, `Twinco ${token}`)];
+  const third = await createOpportunity(request, `Onboarding Specialist ${token}`, `Movco ${token}`);
+
+  const move = async (view: string, destination: string, label: string, expected: string) => {
+    await page.goto(`/?view=${view}&q=${token}`);
+    await toolbar(page).getByRole("button", { name: "Select all on this page" }).click();
+    if (destination !== "RESTORE") await toolbar(page).getByLabel("Move selected to").selectOption(destination);
+    await toolbar(page).getByRole("button", { name: new RegExp(`^${label}`) }).click();
+    await expect(toolbar(page).getByText(expected)).toBeVisible();
+  };
+  // Active → Saved → Archived → Active → Dismissed. (The Active view also
+  // lists Saved jobs.)
+  await move("active", "SAVED", "Move 3 selected", "3 moved to Saved.");
+  await page.goto(`/?view=saved&q=${token}`);
+  await expect(rows(page)).toHaveCount(3);
+  await move("saved", "ARCHIVED", "Move 3 selected", "3 moved to Archived.");
+  await page.goto(`/?view=archived&q=${token}`);
+  await expect(rows(page)).toHaveCount(3);
+  await move("archived", "ACTIVE", "Move 3 selected", "3 moved to Active.");
+  await page.goto(`/?view=active&q=${token}`);
+  await expect(rows(page)).toHaveCount(3);
+
+  // Two of three dismissed, then all three selected in All: the two already
+  // in Dismissed are skipped, by opportunity, with the same title and reason.
+  for (const id of ids) expect((await request.post(`/api/opportunities/${id}/move`, { data: { destination: "DISMISSED" } })).status()).toBe(200);
+  await move("all", "DISMISSED", "Move 3 selected", "1 moved to Dismissed; 2 skipped (already there).");
+  const skipped = toolbar(page).locator("li[data-outcome=skipped]");
+  await expect(skipped).toHaveCount(2);
+  await expect(skipped).toHaveText([`${title}: Already in Dismissed`, `${title}: Already in Dismissed`]);
+  // The Dismissed view holds all three; Active none.
+  await page.goto(`/?view=dismissed&q=${token}`);
+  await expect(rows(page)).toHaveCount(3);
+  await page.goto(`/?view=active&q=${token}`);
+  await expect(rows(page)).toHaveCount(0);
+  // The API reports the skip as a success with its reason.
+  const again = await request.post(`/api/opportunities/${third}/move`, { data: { destination: "DISMISSED" } });
+  expect(again.status()).toBe(200);
+  expect(await again.json()).toMatchObject({ result: "ALREADY_THERE" });
+
+  // A bulk move, then a refresh: no console error.
+  await move("dismissed", "RESTORE", "Restore 3 selected", "3 moved to Restore");
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  expect(problems).toEqual([]);
+});
+
+// An opportunity with no evaluation (November 25, 2026): its page renders the
+// normal unevaluated state with no failed request and no console error
+// (collected from before navigation through hydration), and requests no
+// evaluation by itself.
+test("an unevaluated opportunity's page has no failed request and no console error", async ({ page, request }) => {
+  const problems: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error" || message.type() === "warning") problems.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => problems.push(error.message));
+  page.on("response", (response) => { if (response.status() >= 400) problems.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+  const token = `U${Date.now()}`;
+  const id = await createOpportunity(request, `Customer Success Manager ${token}`, `Uneval ${token}`);
+  await page.goto(`/opportunities/${id}`);
+  await expect(page.getByRole("heading", { name: "Not evaluated" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Evaluate Customer Success fit" })).toBeEnabled();
+  await page.waitForLoadState("networkidle");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Not evaluated" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(problems).toEqual([]);
+  expect((await request.get(`/api/opportunities/${id}/evaluation`)).status()).toBe(404);
+});
+
 test("Empty Dismissed deletes every dismissed opportunity after confirming the exact count", async ({ page, request }) => {
   const token = `E${Date.now()}`;
   for (const suffix of ["one", "two"]) {

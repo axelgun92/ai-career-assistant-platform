@@ -45,6 +45,16 @@ const employmentTypes: Record<string, EmploymentType> = {
   temp: "TEMPORARY",
   internship: "INTERNSHIP",
   intern: "INTERNSHIP",
+  // November 25, 2026: the French contract types a source states as its
+  // employment type ("Stage", "Alternance"), apprenticeships, and freelance
+  // work (a contract). Read only from a stated employment-type value, never
+  // from free text, where "stage" is an ordinary English word.
+  stage: "INTERNSHIP",
+  alternance: "APPRENTICESHIP",
+  apprenticeship: "APPRENTICESHIP",
+  apprentice: "APPRENTICESHIP",
+  freelance: "CONTRACT",
+  freelancer: "CONTRACT",
 };
 
 // Words that qualify an employment type without changing it

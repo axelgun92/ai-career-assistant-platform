@@ -25,6 +25,7 @@ export const employmentTypeChoices = [
   ["CONTRACT", "Contract"],
   ["TEMPORARY", "Temporary"],
   ["INTERNSHIP", "Internship"],
+  ["APPRENTICESHIP", "Apprenticeship / alternance"],
 ] as const;
 
 const lookup = (choices: ReadonlyArray<readonly [string, string]>) => {

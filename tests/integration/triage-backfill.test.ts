@@ -54,7 +54,7 @@ async function opportunity(name: string, title: string, salary: string | null) {
     location: "Remote - United States",
     ...(salary ? { compensationText: salary } : {}),
     domain: "customer-success",
-    rawText: [`${title} at a SaaS workflow platform.`, "Remote. Applicants must reside in the United States.", salary ? `Base salary ${salary}.` : "", "Own onboarding, adoption and renewals."].join("\n"),
+    rawText: [`${title} at a SaaS workflow platform.`, "Remote. Applicants must reside in the United States.", "Employment type: Full-time", salary ? `Base salary ${salary}.` : "", "Own onboarding, adoption and renewals."].join("\n"),
   });
   mine.add(detail.opportunity.id);
   cleanup.opportunityIds.push(detail.opportunity.id);
@@ -117,7 +117,7 @@ describe("the triage-only backfill", () => {
       evaluate: await opportunity("evaluate", "Customer Success Manager", "$72,000-$88,000"),
       review: await opportunity("review", "Onboarding Specialist", null),
       reject: await opportunity("reject", "Customer Education Specialist", "$45,000-$50,000"),
-      saved: await opportunity("saved", "Client Success Lead", "$72,000-$88,000"),
+      saved: await opportunity("saved", "Client Success Manager", "$72,000-$88,000"),
       late: await opportunity("late", "Customer Success Associate", null),
       assessed: await opportunity("assessed", "Customer Success Director", null),
       offTitle: await opportunity("off", "Payroll Support Representative", "$72,000-$88,000"),

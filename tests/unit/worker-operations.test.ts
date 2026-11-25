@@ -5,8 +5,10 @@ import {
 } from "../../apps/web/src/server/ai-configuration";
 import { customerSuccessProductionSemanticPolicyVersion } from "@ai-career/shared";
 import {
+  compareGeneratedClientSchema,
   formatDoctorChecks,
   generatedClientMatchesSchema,
+  schemaLayoutKey,
   runDoctorChecks,
   type DoctorReads,
 } from "../../apps/web/src/server/doctor";
@@ -404,10 +406,142 @@ describe("pnpm app:doctor checks", () => {
     expect(generatedClientMatchesSchema("no embedded schema", schema)).toBeNull();
     const checks = await runDoctorChecks({
       environment, nodeVersion: "22.1.0", migrationFolders: [], prismaClientGenerated: true, prismaClientCurrent: false, reads: null, now,
+      prismaClientDifference: { line: 9, schema: "model B {", generated: "(end of file)" },
     });
     expect(checks.find((check) => check.label === "Prisma client")).toEqual({
       level: "FAIL", label: "Prisma client",
-      detail: "out of date with database/prisma/schema.prisma; run pnpm prisma:generate, then restart the app and workers",
+      detail: 'out of date with database/prisma/schema.prisma; run pnpm prisma:generate, then restart the app and workers (first difference at schema line 9: schema has "model B {", the generated client has "(end of file)")',
+    });
+  });
+
+  // November 25, 2026: prisma generate embeds the schema column-aligned; a
+  // source edited by hand without "prisma format" differs only in layout.
+  it("accepts a client whose embedded schema differs only in Prisma's column alignment", () => {
+    const source = [
+      "model OpportunityUserAction {",
+      "  id            String                    @id @default(uuid()) @db.Uuid",
+      "  opportunityId String                    @db.Uuid",
+      "  automaticReason AutomaticDismissalReason?",
+      "\t// a comment   with  spacing",
+      "}",
+      "",
+      "",
+      "",
+      "enum AutomaticDismissalReason {",
+      "  TRIAGE_REJECT",
+      "}   ",
+    ].join("\n");
+    const formatted = [
+      "model OpportunityUserAction {",
+      "  id              String                    @id @default(uuid()) @db.Uuid",
+      "  opportunityId   String                    @db.Uuid",
+      "  automaticReason AutomaticDismissalReason?",
+      "  // a comment with spacing",
+      "}",
+      "",
+      "enum AutomaticDismissalReason {",
+      "  TRIAGE_REJECT",
+      "}",
+      "",
+    ].join("\r\n");
+    const generated = `const config = {\n  "inlineSchema": ${JSON.stringify(formatted)},\n}`;
+    expect(compareGeneratedClientSchema(generated, source)).toEqual({ status: "CURRENT" });
+    // Genuine differences are still found, with the line that differs.
+    expect(compareGeneratedClientSchema(generated, source.replace("TRIAGE_REJECT", "TRIAGE_REJECT\n  OUTSIDE_TARGET_TITLES"))).toEqual({
+      status: "STALE",
+      firstDifference: { line: 12, schema: "OUTSIDE_TARGET_TITLES", generated: "}" },
+    });
+    expect(compareGeneratedClientSchema(generated, source.replace("String                    @db.Uuid", "String? @db.Uuid")).status).toBe("STALE");
+    expect(compareGeneratedClientSchema(generated, source.replace("Uuid\n  automaticReason", "Uuid\n  automaticReasons")).status).toBe("STALE");
+    expect(schemaLayoutKey("a  b\r\n\r\n\r\nc\t d  ")).toBe("a b\nc d");
+  });
+
+  // November 25, 2026 (review): the comparison is token-aware. Layout is
+  // ignored; every semantic change, and any change inside a quoted value, is
+  // still found.
+  describe("token-aware schema comparison", () => {
+    const schema = [
+      "generator client {",
+      '  provider = "prisma-client"',
+      '  output   = "../generated/prisma"',
+      "}",
+      "",
+      "datasource db {",
+      '  provider = "postgresql"',
+      "}",
+      "",
+      "model Company {",
+      "  id            String        @id @default(uuid()) @db.Uuid",
+      '  name          String        @map("company name")',
+      "  opportunities Opportunity[]",
+      "}",
+      "",
+      "model Opportunity {",
+      "  id        String   @id @default(uuid()) @db.Uuid",
+      "  companyId String   @db.Uuid",
+      "  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)",
+      "  status    Status   @default(NORMALIZED)",
+      "  salaryMin Decimal? @db.Decimal(12, 2)",
+      "",
+      "  @@index([companyId])",
+      '  @@map("opportunities")',
+      "}",
+      "",
+      "enum Status {",
+      "  NORMALIZED",
+      "  SAVED",
+      "}",
+    ].join("\n");
+    const client = (text: string) => `const config = {\n  "inlineSchema": ${JSON.stringify(text)},\n}`;
+    const compare = (generatedText: string, source = schema) => compareGeneratedClientSchema(client(generatedText), source);
+
+    it("accepts field alignment, CRLF and blank-line differences", () => {
+      expect(compare(schema)).toEqual({ status: "CURRENT" });
+      const realigned = schema
+        .replace("id            String        @id", "id String @id")
+        .replace("companyId String   @db.Uuid", "companyId\tString\t\t@db.Uuid")
+        .replace('output   = "../generated/prisma"', 'output = "../generated/prisma"   ');
+      expect(compare(realigned)).toEqual({ status: "CURRENT" });
+      expect(compare(schema.replace(/\n/g, "\r\n"))).toEqual({ status: "CURRENT" });
+      expect(compare(schema.replace(/\n\n/g, "\n").replace("enum Status {", "\n\n\nenum Status {") + "\n\n")).toEqual({ status: "CURRENT" });
+    });
+
+    it("finds every semantic change", () => {
+      const changes: Array<[string, string, string]> = [
+        ["model", "model Company {", "model Companies {"],
+        ["field", "  salaryMin Decimal?", "  salaryMax Decimal?"],
+        ["type", "salaryMin Decimal?", "salaryMin Float?"],
+        ["optionality", "companyId String   @db.Uuid", "companyId String?  @db.Uuid"],
+        ["attribute", "@@index([companyId])", "@@unique([companyId])"],
+        ["native type", "@db.Decimal(12, 2)", "@db.Decimal(14, 2)"],
+        ["relation", "onDelete: Cascade", "onDelete: Restrict"],
+        ["enum value", "  SAVED", "  ARCHIVED"],
+        ["default", "@default(NORMALIZED)", "@default(SAVED)"],
+        ["model mapping", '@@map("opportunities")', '@@map("opportunity")'],
+        ["datasource", 'provider = "postgresql"', 'provider = "mysql"'],
+        ["generator", 'output   = "../generated/prisma"', 'output   = "../generated/client"'],
+      ];
+      for (const [label, from, to] of changes) {
+        expect(schema.includes(from), label).toBe(true);
+        const result = compare(schema.replace(from, to));
+        expect(result.status, label).toBe("STALE");
+      }
+      // The message names the schema's own line.
+      expect(compare(schema.replace("  SAVED", "  ARCHIVED"))).toEqual({
+        status: "STALE",
+        firstDifference: { line: 29, schema: "SAVED", generated: "ARCHIVED" },
+      });
+    });
+
+    it("never ignores whitespace inside a quoted value", () => {
+      for (const changed of ['@map("companyname")', '@map("company  name")', '@map(" company name")', '@map("company\tname")']) {
+        expect(compare(schema.replace('@map("company name")', changed)).status, changed).toBe("STALE");
+      }
+      // An escaped quote stays inside the value.
+      const escaped = schema.replace('@map("company name")', '@map("say \\"hi\\"  there")');
+      expect(compare(escaped, escaped)).toEqual({ status: "CURRENT" });
+      expect(compare(escaped.replace("hi\\\"  there", "hi\\\" there"), escaped).status).toBe("STALE");
+      expect(schemaLayoutKey('  name   String   @map("a  b")   // note   here')).toBe('name String @map("a  b") // note here');
     });
   });
 });

@@ -230,7 +230,11 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   titles) → November 25 Feature 14B final corrections (triage-to-lifecycle routing for every automatic
   source and the historical cleanup command, dashboard triage results, Possible Duplicates review with
   "same job", the duplicate-notice fix, identifier-first candidate lookup, stale-client doctor check;
-  migration 30; verified offline; approved by Alex and committed November 25) → Alex runs pnpm triage:route-historical on
+  migration 30; verified offline; approved by Alex and committed November 25) → November 25 post-Feature-14B
+  corrections (lifecycle-based working categories, skip-not-failure moves, Customer Success seniority /
+  work-arrangement / employment-type / compensation-tier triage rules, stale triage re-runs with history,
+  Add missing information with confirmed facts; migration 31; verified offline; awaiting Alex's approval)
+  → Alex runs pnpm triage:route-historical on
   the acceptance database → one LinkedIn Mode B live batch (unattended capture, continuation, title
   filter) → final end-to-end triage/evaluator acceptance → production readiness and merge
 → next: Milestones 1–10 historical integrity audit; do not rewrite history to imply triage existed at 45d5fff

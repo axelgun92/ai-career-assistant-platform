@@ -156,6 +156,15 @@ Supported results page (Alex's Chrome)
   - Mode B is complete for a site only when an approved automatic detail mechanism moves its batch jobs into real opportunities without Alex opening each one. Awaiting details never counts.
   - *(Earlier, November 3: "Neither is enabled or complete yet", pending F0 and P1.)*
 
+### Post-Feature-14B corrections and final product-integration fixes (November 25, 2026; verified offline; uncommitted, awaiting Alex's approval)
+
+- **Working categories follow the lifecycle:** the dashboard's triage cards count and list Active jobs only; moving a job out of Active takes it out of its category, and its triage result stays in its details and history. Moving a job to the category it is already in is reported as skipped ("Already in Dismissed"), never as a failure; mixed selections are handled per job, with results keyed by opportunity.
+- **Customer Success hard requirements in triage:** seniority above Mid rejects (ambiguous manager or executive titles wait for review; never inferred from years of experience), Onsite-only rejects (Remote and Hybrid pass), non-full-time employment rejects (a contract without a stated full-time schedule waits for review), and compensation tiers are judged by the applicable tier or all tiers together. Automatic acquisition skips clearly disallowed titles before reading the job page.
+- **Triage stays current:** a changed capture, profile, eligibility, rules version or user correction re-runs triage, keeping every assessment in a history shown on the opportunity page; re-assessment never moves a job or starts an evaluation.
+- **Add missing information:** on a Customer Success opportunity, facts the job description states but the capture missed can be confirmed (with a quotation and note), edited and undone; triage re-runs at once and the job moves to its category. A later capture never overwrites a confirmed fact; a disagreement is shown as a conflict.
+- **Reliability:** dashboard load failures log safe diagnostics (name, code, redacted message, view and filters); a development server keeps working after `pnpm prisma:generate`; `pnpm app:doctor` tolerates Prisma formatting differences and names the first genuine difference.
+- Migration 31 (additive). The evaluator is unchanged.
+
 ### Feature 14B final dashboard, deduplication and job-management corrections (November 25, 2026; verified offline; approved and committed)
 
 - **Where triaged jobs land:** every automatic source (configured and ATS sources, the LinkedIn adapter, LinkedIn and Welcome to the Jungle Mode B) keeps EVALUATE and NEEDS_REVIEW jobs Active and moves REJECT and off-title jobs to Dismissed, reversibly, with the reason shown on the job. Jobs with application history, any earlier lifecycle action or manual triage decision of the user's, or evaluation work in flight are never moved; deliberate captures are never moved.

@@ -4,12 +4,13 @@ import {
   readOnlyTransaction,
   readStoredSourceVersion,
   residencyRequirement,
+  storedCompensationTiers,
   storedEligibilityFacts,
   storedWorkArrangements,
   type StoredOpportunityFacts,
   type StoredSourceVersion,
 } from "@ai-career/database";
-import { htmlToText } from "@ai-career/normalization";
+import { htmlToText, readPositionEvidence } from "@ai-career/normalization";
 import type { createReadOnlyDatabaseClient } from "@ai-career/database";
 import { renormalizeStoredSourceVersion } from "./source-version-check";
 
@@ -136,10 +137,31 @@ export type Renormalize = (version: StoredSourceVersion) => Promise<{ opportunit
 
 const decimal = (value: unknown): number | null => (value === null || value === undefined ? null : Number(String(value)));
 
+// The position facts triage reads (November 25, 2026): the title, seniority,
+// employment type, compensation tiers and the explicit position evidence in
+// the title and description, as the triage service derives them. (Remote by
+// exception is read from field provenance by the service; the diagnostic
+// does not read provenance, so it never applies here.)
+type PositionSource = {
+  title?: string | null; seniority?: string | null; seniorityLabel?: string | null; employmentType?: string | null;
+  compensationTiers?: unknown; jobDescription?: string | null;
+};
+export function positionFactsOf(source: PositionSource): Partial<TriageFacts> {
+  return {
+    title: source.title ?? null,
+    seniority: (source.seniority ?? null) as TriageFacts["seniority"],
+    seniorityLabel: source.seniorityLabel ?? null,
+    employmentType: (source.employmentType ?? null) as TriageFacts["employmentType"],
+    compensationTiers: storedCompensationTiers(source.compensationTiers ?? []),
+    evidence: readPositionEvidence({ title: source.title ?? null, description: source.jobDescription ?? null }),
+  };
+}
+
 export function triageFactsOf(stored: Pick<StoredOpportunityFacts,
   "salaryMin" | "salaryMax" | "currency" | "compensationBasis" | "residencyRequirement" | "residencyRegions" | "remoteStatus" | "workArrangements" |
-  "location" | "workAuthorizationRequirement" | "workAuthorizationRegions" | "visaSponsorship" | "relocationSupport" | "employerOfRecordRegions">): TriageFacts {
+  "location" | "workAuthorizationRequirement" | "workAuthorizationRegions" | "visaSponsorship" | "relocationSupport" | "employerOfRecordRegions"> & PositionSource): TriageFacts {
   return {
+    ...positionFactsOf(stored),
     salaryMin: decimal(stored.salaryMin),
     salaryMax: decimal(stored.salaryMax),
     currency: stored.currency,
@@ -214,6 +236,7 @@ export async function readNeedsReviewCases(
             source: true, salaryMin: true, salaryMax: true, currency: true, compensationBasis: true, residencyRequirement: true, residencyRegions: true,
             remoteStatus: true, workArrangements: true, location: true, workAuthorizationRequirement: true, workAuthorizationRegions: true,
             visaSponsorship: true, relocationSupport: true, employerOfRecordRegions: true,
+            title: true, seniority: true, seniorityLabel: true, employmentType: true, compensationTiers: true, jobDescription: true,
             preEvaluatorTriage: { select: { outcome: true, manualDecision: true, reasons: true } },
           },
         });
@@ -370,6 +393,7 @@ export async function analyzeNeedsReview(
       try {
         const { opportunity } = await renormalize(version.version);
         const facts: TriageFacts = {
+          ...positionFactsOf(opportunity),
           salaryMin: decimal(opportunity.salaryMin), salaryMax: decimal(opportunity.salaryMax), currency: opportunity.currency,
           compensationBasis: opportunity.compensationBasis ?? null, residencyRequirement: opportunity.residencyRequirement ?? null,
           residencyRegions: opportunity.residencyRegions ?? [], remoteStatus: opportunity.remoteStatus ?? null,

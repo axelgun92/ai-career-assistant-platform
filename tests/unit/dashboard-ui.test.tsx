@@ -7,6 +7,7 @@ import {
   NeedsAttention,
   PipelineOverview,
   TriageSummary,
+  triageDismissedLinks,
   triageSummaryLinks,
 } from "../../apps/web/src/components/dashboard/dashboard-summary";
 import {
@@ -213,29 +214,25 @@ const summary: DashboardSummary = {
   bySourceType: [{ sourceType: "MANUAL", count: 18 }, { sourceType: null, count: 2 }],
   byPriorityBand: [{ band: "VERY_HIGH", count: 2 }, { band: "LOW", count: 6 }, { band: null, count: 4 }],
   followUpsDue: 3,
-  triage: { EVALUATE: { total: 155, dismissed: 0 }, NEEDS_REVIEW: { total: 20, dismissed: 2 }, REJECT: { total: 55, dismissed: 55 } },
+  triage: { EVALUATE: { active: 155, dismissed: 0 }, NEEDS_REVIEW: { active: 20, dismissed: 2 }, REJECT: { active: 0, dismissed: 55 } },
 };
 
-describe("triage results (November 25, 2026)", () => {
-  it("leads with Evaluate, Needs Review, Rejected and Outside target titles, each linking to its list in every view", () => {
-    const markup = decode(renderToStaticMarkup(<TriageSummary summary={summary} outsideTitles={{ total: 80, dismissed: 80 }} />));
-    expect(markup).toContain(`aria-label="Evaluate: 155" href="${triageSummaryLinks.evaluate}"`);
-    expect(markup).toContain(`aria-label="Needs Review: 20, 2 in Dismissed" href="${triageSummaryLinks.review}"`);
-    expect(markup).toContain(`aria-label="Rejected: 55, 55 in Dismissed" href="${triageSummaryLinks.reject}"`);
-    expect(markup).toContain(`aria-label="Outside target titles: 80, 80 in Dismissed" href="${triageSummaryLinks.outsideTitles}"`);
-    expect(text(markup)).toContain("These are triage results, not lifecycle views");
-    expect(triageSummaryLinks).toEqual({
-      evaluate: "/?view=all&triage=evaluate",
-      review: "/?view=all&triage=review",
-      reject: "/?view=all&triage=reject",
-      outsideTitles: "/?view=all&titles=outside",
-    });
-    // Without the target job titles the fourth count is left out, not guessed.
+describe("triage working categories (November 25, 2026)", () => {
+  it("counts and lists Active jobs by triage result, with Dismissed ones linked apart", () => {
+    const markup = decode(renderToStaticMarkup(<TriageSummary summary={summary} outsideTitles={{ active: 3, dismissed: 80 }} />));
+    expect(markup).toContain(`aria-label="Evaluate: 155 in Active" href="${triageSummaryLinks.evaluate}"`);
+    expect(markup).toContain(`aria-label="Needs Review: 20 in Active" href="${triageSummaryLinks.review}"`);
+    expect(markup).toContain(`aria-label="Rejected: 0 in Active" href="${triageSummaryLinks.reject}"`);
+    expect(markup).toContain(`aria-label="Outside target titles: 3 in Active" href="${triageSummaryLinks.outsideTitles}"`);
+    expect(markup).toContain(`href="${triageDismissedLinks.reject}">55 in Dismissed`);
+    expect(markup).toContain(`href="${triageDismissedLinks.outsideTitles}">80 in Dismissed`);
+    expect(triageSummaryLinks).toEqual({ evaluate: "/?triage=evaluate", review: "/?triage=review", reject: "/?triage=reject", outsideTitles: "/?titles=outside" });
+    expect(text(markup)).toContain("A job leaves its category when you move it out of Active");
     expect(text(renderToStaticMarkup(<TriageSummary summary={summary} outsideTitles={null} />))).not.toContain("Outside target titles");
   });
 
   it("reads and keeps the triage list in the URL", () => {
-    expect(parse("view=all&triage=reject").triage).toBe("reject");
+    expect(parse("triage=reject").triage).toBe("reject");
     expect(parse("triage=bogus").triage).toBeUndefined();
   });
 });

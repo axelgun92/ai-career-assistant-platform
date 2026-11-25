@@ -33,7 +33,7 @@ const compiledHelper = path.resolve("database/.e2e-extension-helper.mjs");
 const pairingLabel = `E2E browser ${Date.now()}`;
 const token = `X${Date.now()}`;
 const jobTitle = `Customer Success Manager ${token}`;
-const leadTitle = `Customer Success Lead ${token}`;
+const leadTitle = `Customer Success Associate ${token}`;
 const paths = {
   job: `/jobs/customer-success-${token}`,
   first: `/roles/lead-${token}-a`,
@@ -71,7 +71,7 @@ function unpackedExtensionId(directory: string) {
 
 const description = [
   `Customer Success Manager at Extensionco ${token}, a SaaS workflow platform.`,
-  "Remote. Applicants must reside in the United States. Salary $72,000-$88,000. No travel required.",
+  "Full-time. Remote. Applicants must reside in the United States. Salary $72,000-$88,000. No travel required.",
   "Own onboarding, adoption, education, retention, and business reviews. 3 years of Customer Success experience required.",
 ];
 

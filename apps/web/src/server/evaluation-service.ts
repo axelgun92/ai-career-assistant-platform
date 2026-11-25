@@ -38,6 +38,7 @@ import {
   getPreEvaluatorTriageService,
   type EvaluationTriageGate,
   type PreEvaluatorTriageView,
+  type TriageTrigger,
 } from "./pre-evaluator-triage-service";
 
 const evaluationRequestSchema = z
@@ -528,7 +529,7 @@ export function createEvaluationService(
     // runs, without admission, budget reservation, queueing or any provider
     // call. With no active profile nothing is triaged and no outcome is
     // invented; the job stays saved.
-    async assessTriage(opportunityIdValue: string): Promise<TriageAssessment> {
+    async assessTriage(opportunityIdValue: string, options: { trigger?: TriageTrigger; onlyIfStale?: boolean } = {}): Promise<TriageAssessment> {
       const opportunityId = z.uuid().parse(opportunityIdValue);
       if (!triageGate) return { status: "UNAVAILABLE", reason: "TRIAGE_UNAVAILABLE" };
       const opportunity = await loadEvaluableOpportunity(opportunityId);
@@ -544,7 +545,18 @@ export function createEvaluationService(
         if (error instanceof EvaluationApiError) return { status: "UNAVAILABLE", reason: error.code };
         throw error;
       }
-      return { status: "ASSESSED", triage: await triageGate.assess({ opportunityId, domain, profile }) };
+      // Reassessment (November 25, 2026): only when a material input changed
+      // (facts, confirmed facts, the profile, eligibility or the rules).
+      if (options.onlyIfStale && triageGate.staleness) {
+        const staleness = await triageGate.staleness({ opportunityId, domain, profile });
+        if (staleness === "CURRENT") {
+          const current = await triageGate.get(opportunityId);
+          if (current) return { status: "ASSESSED", triage: current, unchanged: true };
+        }
+        const trigger = options.trigger ?? (staleness === "PROFILE_CHANGED" ? "PROFILE_CHANGED" : staleness === null ? "INITIAL" : "INPUT_CHANGED");
+        return { status: "ASSESSED", triage: await triageGate.assess({ opportunityId, domain, profile, trigger }) };
+      }
+      return { status: "ASSESSED", triage: await triageGate.assess({ opportunityId, domain, profile, ...(options.trigger ? { trigger: options.trigger } : {}) }) };
     },
 
     async getTriage(opportunityIdValue: string) {
@@ -566,6 +578,18 @@ export function createEvaluationService(
 
     async getOpenDeferral(opportunityId: string) {
       return gate ? gate.findOpenDeferral(opportunityId) : null;
+    },
+
+    // Whether any evaluation exists for the opportunity (November 25, 2026):
+    // the opportunity page renders its unevaluated state from this instead
+    // of requesting an evaluation the API would answer 404 for. Never
+    // creates or requests an evaluation.
+    async hasEvaluation(opportunityIdValue: string): Promise<boolean> {
+      const opportunityId = z.uuid().parse(opportunityIdValue);
+      const opportunity = await dependencies.queries.findOpportunityForEvaluation(opportunityId);
+      if (!opportunity) return false;
+      const history = await dependencies.queries.listEvaluationHistory({ opportunityId, domain: opportunity.domain });
+      return history.length > 0;
     },
 
     async getLatestEvaluation(
@@ -672,7 +696,9 @@ export type EvaluationService = ReturnType<typeof createEvaluationService>;
 // The outcome of triaging a saved job (assessTriage): triaged, not triaged
 // for want of an active profile, or not available (with a safe code).
 export type TriageAssessment =
-  | { status: "ASSESSED"; triage: PreEvaluatorTriageView }
+  // unchanged: the stored assessment still matched its inputs, so it was
+  // kept (a reassessment only when something material changed).
+  | { status: "ASSESSED"; triage: PreEvaluatorTriageView; unchanged?: boolean }
   | { status: "NO_PROFILE" }
   | { status: "UNAVAILABLE"; reason: string };
 

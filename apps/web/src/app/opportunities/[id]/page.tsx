@@ -8,13 +8,16 @@ import { ExternalLink, safeExternalUrl } from "@/components/external-link";
 import { OpportunityActions } from "@/components/opportunity-actions";
 import { OpportunityProvenance } from "@/components/opportunity-provenance";
 import { PostingHistory, toPostingHistoryListing } from "@/components/posting-history";
-import { isNoLongerListed, normalizationCorrectionsOf } from "@ai-career/core";
+import { applyConfirmedFacts, isNoLongerListed, normalizationCorrectionsOf, type ConfirmedFactField } from "@ai-career/core";
 import { getListingHistory } from "@/server/retrieval-service";
 import { formatLifecycle } from "@/components/dashboard/format";
 import { getOpportunityLifecyclePresentation } from "@/server/opportunity-action-service";
 import { ProfileVersionHint } from "@/components/profile/profile-version-hint";
 import { ListingVersionHint } from "@/components/evaluation/listing-version-hint";
-import { findListingVersionHint, PrismaTriageRoutingRepository, PrismaUserEligibilityRepository } from "@ai-career/database";
+import { findListingVersionHint, PrismaConfirmedFactRepository, PrismaPreEvaluatorTriageRepository, PrismaTriageRoutingRepository, PrismaUserEligibilityRepository } from "@ai-career/database";
+import { MissingInformation } from "@/components/confirmed-facts/missing-information";
+import { suggestedConfirmableFields } from "@/components/confirmed-facts/suggested-fields";
+import { confirmedFactView } from "@/server/confirmed-fact-service";
 import { WorkEligibilityNote } from "@/components/eligibility/work-eligibility-note";
 import { getProfileService } from "@/server/profile-service";
 import { getBudgetService } from "@/server/budget-service";
@@ -25,6 +28,7 @@ import { getApplicationStore } from "@/server/application-service";
 import { getDuplicateStore } from "@/server/duplicate-service";
 import { getCompanyIntelligenceService } from "@/server/company-intelligence-service";
 import { getPreEvaluatorTriageService } from "@/server/pre-evaluator-triage-service";
+import { getEvaluationService } from "@/server/evaluation-service";
 import { DuplicateNotices } from "@/components/duplicate-notices";
 import { duplicateStageOf } from "@/components/processing-breakdown";
 import {
@@ -71,6 +75,29 @@ async function loadOpportunity(id: string) {
   if (!z.uuid().safeParse(id).success) return null;
   return getManualOpportunityService().getById(id);
 }
+
+const triageOutcomeLabel: Record<string, string> = { EVALUATE: "Evaluate", NEEDS_REVIEW: "Needs Review", REJECT: "Rejected" };
+const triageTriggerLabel: Record<string, string> = {
+  INITIAL: "first assessment",
+  CAPTURE_CHANGED: "the listing changed",
+  PROFILE_CHANGED: "your profile changed",
+  USER_CORRECTION: "you confirmed information",
+  RULES_CHANGED: "the triage rules changed",
+  INPUT_CHANGED: "an input changed",
+};
+
+// The facts table row each confirmed field overlays.
+const confirmedRowOf: Record<ConfirmedFactField, string> = {
+  salaryRange: "Salary",
+  currency: "Salary",
+  compensationBasis: "Salary",
+  applicableTier: "Salary",
+  residency: "Location eligibility",
+  workArrangements: "Work arrangement",
+  employmentType: "Employment type",
+  workAuthorization: "Work authorization",
+  seniority: "Seniority (as stated)",
+};
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -144,6 +171,15 @@ export default async function OpportunityPage({
         .then(({ active }) => (active ? { id: active.userProfileId, version: active.version } : null))
         .catch(() => null)
     : null;
+  // A stored assessment whose inputs changed (facts, confirmed facts, the
+  // profile, eligibility or the rules) is assessed again before it is shown,
+  // so the facts and the triage explanation always agree (November 25,
+  // 2026). An opportunity never triaged is left as it is.
+  if (await getPreEvaluatorTriageService().gate.get(detail.opportunity.id).catch(() => null)) {
+    await getEvaluationService()
+      .assessTriage(detail.opportunity.id, { onlyIfStale: true })
+      .catch((error: unknown) => console.error("Pre-evaluator triage could not be refreshed", { errorName: error instanceof Error ? error.name : "UnknownError" }));
+  }
   const triage = await getPreEvaluatorTriageService()
     .gate.get(detail.opportunity.id)
     .catch((error: unknown) => {
@@ -152,6 +188,21 @@ export default async function OpportunityPage({
       });
       return null;
     });
+
+  // Whether an evaluation exists, so an unevaluated job renders its normal
+  // state without a request the API answers 404 (November 25, 2026). A
+  // failed check leaves it unknown: the panel then loads as before and
+  // reports a genuine failure.
+  const evaluationExists = await getEvaluationService()
+    .hasEvaluation(detail.opportunity.id)
+    .catch((error: unknown) => {
+      console.error("Evaluation presence could not be checked", { errorName: error instanceof Error ? error.name : "UnknownError" });
+      return null;
+    });
+
+  // Every assessment, oldest first (November 25, 2026): the triage result
+  // stays in the job's history whatever lifecycle state it moves to.
+  const triageHistory = await new PrismaPreEvaluatorTriageRepository().history(detail.opportunity.id).catch(() => []);
 
   // A dismissal the app made itself, by triage-to-lifecycle routing.
   const automaticDismissal =
@@ -210,28 +261,39 @@ export default async function OpportunityPage({
       ? `${display(detail.opportunity.closingDate)} (as stated; earlier than the posting date, so the posting may restate a past deadline)`
       : detail.opportunity.closingDate;
   const onTargetStatement = employerOnTargetStatement(detail.fieldProvenance);
+  // Facts the user confirmed from the job description overlay the captured
+  // ones here exactly as in triage (November 25, 2026), marked as such.
+  const confirmedStore = new PrismaConfirmedFactRepository();
+  const [confirmedFacts, confirmedHistory, capturedNow] = await Promise.all([
+    confirmedStore.list(detail.opportunity.id).catch(() => []),
+    confirmedStore.history(detail.opportunity.id).catch(() => []),
+    confirmedStore.capturedFacts(detail.opportunity.id).catch(() => null),
+  ]);
+  const shown = applyConfirmedFacts({ ...detail.opportunity, fullTimeScheduleConfirmed: false }, confirmedFacts);
+  const confirmedRows = new Set(confirmedFacts.map((fact) => confirmedRowOf[fact.fieldName]));
+  const marked = (row: string, value: string | null) => (value && confirmedRows.has(row) ? `${value} (confirmed by you)` : value);
   const normalizedFields = [
     ["Lifecycle", formatLifecycle(detail.opportunity.status)],
     ["Domain", detail.opportunity.domain],
     ["Title", detail.opportunity.title],
     ["Company", detail.opportunity.companyName],
     ["Location", detail.opportunity.location],
-    ["Salary", formatSalary(detail.opportunity)],
+    ["Salary", marked("Salary", formatSalary(shown))],
     // The employer's on-target earnings beside its base salary, in its own
     // words: total pay (base plus variable), never labelled variable pay.
     ...(onTargetStatement ? [["On-target earnings (as stated; base + variable)", onTargetStatement] as const] : []),
     ["Posting date", postingDate],
     ["Closing date", closingDate],
-    ["Work arrangement", detail.opportunity.remoteStatus || detail.opportunity.workArrangements.length ? formatArrangementWithExceptions(detail.opportunity, detail.fieldProvenance) : null],
-    ["Work authorization", formatWorkAuthorization(detail.opportunity, geographyName)],
+    ["Work arrangement", marked("Work arrangement", shown.remoteStatus || shown.workArrangements.length ? formatArrangementWithExceptions(shown, confirmedRows.has("Work arrangement") ? [] : detail.fieldProvenance) : null)],
+    ["Work authorization", marked("Work authorization", formatWorkAuthorization(shown, geographyName))],
     // Where candidates must live, a separate fact from work authorization:
     // shown only when the posting states it.
-    ...(detail.opportunity.residencyRequirement || detail.opportunity.residencyExclusions.length
-      ? [["Location eligibility", formatResidencyEligibility(detail.opportunity.residencyRequirement, detail.opportunity.residencyRegions, detail.opportunity.residencyExclusions)] as const]
+    ...(shown.residencyRequirement || shown.residencyExclusions.length
+      ? [["Location eligibility", marked("Location eligibility", formatResidencyEligibility(shown.residencyRequirement, shown.residencyRegions, shown.residencyExclusions))] as const]
       : []),
     // The label as the posting states it, even when it names no single level.
-    ["Seniority (as stated)", detail.opportunity.seniorityLabel ?? (detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null)],
-    ["Employment type", detail.opportunity.employmentType ? employmentTypeLabel(detail.opportunity.employmentType) : null],
+    ["Seniority (as stated)", confirmedRows.has("Seniority (as stated)") && shown.seniority ? marked("Seniority (as stated)", seniorityLabel(shown.seniority)) : detail.opportunity.seniorityLabel ?? (detail.opportunity.seniority ? seniorityLabel(detail.opportunity.seniority) : null)],
+    ["Employment type", marked("Employment type", shown.employmentType ? `${employmentTypeLabel(shown.employmentType)}${shown.fullTimeScheduleConfirmed ? " (full-time schedule)" : ""}` : null)],
     // A requirement or a stated preference, in the posting's own words.
     ["Time zone", detail.opportunity.timeZoneRequirements],
   ] as const;
@@ -322,7 +384,33 @@ export default async function OpportunityPage({
       <ListingVersionHint hint={listingHint} />
       <WorkEligibilityNote relevance={workEligibility} />
 
+      {detail.opportunity.domain === "customer-success" ? (
+        <MissingInformation
+          opportunityId={detail.opportunity.id}
+          facts={confirmedFacts.map((fact) => confirmedFactView(fact, capturedNow))}
+          history={confirmedHistory.map((event) => ({ id: event.id, fieldName: event.fieldName, action: event.action, value: event.value, createdAt: event.createdAt.toISOString() }))}
+          tierLabels={(detail.opportunity.compensationTiers ?? []).map((tier) => tier.label)}
+          needsReview={triage?.outcome === "NEEDS_REVIEW"}
+          suggestedFields={triage?.outcome === "NEEDS_REVIEW" ? suggestedConfirmableFields(triage.reasons.map((reason) => reason.code)) : []}
+        />
+      ) : null}
+
+      {triageHistory.length > 1 ? (
+        <details className="triage-history">
+          <summary>Triage history ({triageHistory.length} assessments)</summary>
+          <ol>
+            {triageHistory.map((entry) => (
+              <li key={entry.id}>
+                {entry.assessedAt.toLocaleString()}: {triageOutcomeLabel[entry.outcome] ?? entry.outcome} ({triageTriggerLabel[entry.trigger] ?? entry.trigger})
+                {entry.reasons.length ? ` · ${entry.reasons.map((reason) => reason.message).join(" ")}` : ""}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
+
       <EvaluationExperience
+        evaluationExists={evaluationExists}
         evaluable={lifecycle?.evaluable ?? true}
         deferral={deferral}
         activeProfile={activeProfile}

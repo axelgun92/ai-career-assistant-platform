@@ -43,7 +43,7 @@ export function e2eJobPage(job: E2eBatchJob): string {
     company: job.company,
     description: [
       "<p>Customer Success Manager for a workflow SaaS platform.</p>",
-      "<p>This is a fully remote role. Applicants must reside in the United States.</p>",
+      "<p>This is a full-time, fully remote role. Applicants must reside in the United States.</p>",
       salary ? `<p>Base salary ${salary}.</p>` : "<p>Compensation is not stated.</p>",
       "<p>Own onboarding, adoption, education, and retention for a portfolio of B2B customers.</p>",
     ].join(""),

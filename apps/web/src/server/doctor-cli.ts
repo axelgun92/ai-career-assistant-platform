@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { createDoctorReads, formatDoctorChecks, generatedClientMatchesSchema, runDoctorChecks, type DoctorReads } from "./doctor";
+import { compareGeneratedClientSchema, createDoctorReads, formatDoctorChecks, runDoctorChecks, type DoctorReads, type GeneratedClientComparison } from "./doctor";
 
 // pnpm app:doctor — read-only setup and operations check. Run from the repo root.
 
@@ -9,13 +9,13 @@ const root = process.cwd();
 const migrationsDirectory = path.join(root, "database/prisma/migrations");
 const prismaClientGenerated = existsSync(path.join(root, "database/generated/prisma/client.ts"));
 
-function prismaClientCurrent(): boolean | undefined {
+function generatedClientComparison(): GeneratedClientComparison {
   try {
     const generated = readFileSync(path.join(root, "database/generated/prisma/internal/class.ts"), "utf8");
     const schema = readFileSync(path.join(root, "database/prisma/schema.prisma"), "utf8");
-    return generatedClientMatchesSchema(generated, schema) ?? undefined;
+    return compareGeneratedClientSchema(generated, schema);
   } catch {
-    return undefined;
+    return { status: "UNREADABLE" };
   }
 }
 
@@ -30,7 +30,8 @@ function migrationFolders(): string[] {
 async function main() {
   let reads: DoctorReads | null = null;
   let disconnect: () => Promise<void> = async () => undefined;
-  const clientCurrent = prismaClientGenerated ? prismaClientCurrent() : undefined;
+  const comparison = prismaClientGenerated ? generatedClientComparison() : null;
+  const clientCurrent = comparison === null || comparison.status === "UNREADABLE" ? undefined : comparison.status === "CURRENT";
   if (prismaClientGenerated && clientCurrent !== false && process.env.DATABASE_URL) {
     try {
       const database = await import("@ai-career/database");
@@ -52,6 +53,7 @@ async function main() {
       migrationFolders: migrationFolders(),
       prismaClientGenerated,
       prismaClientCurrent: clientCurrent,
+      ...(comparison?.status === "STALE" ? { prismaClientDifference: comparison.firstDifference } : {}),
       reads,
       now: new Date(),
     });

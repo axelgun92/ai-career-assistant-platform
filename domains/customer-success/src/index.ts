@@ -27,6 +27,7 @@ export {
   postingAgePriority,
 } from "./evaluation/opportunity-priority";
 export * from "./triage/pre-evaluator-triage";
+export * from "./triage/position-requirements";
 
 import { createCustomerSuccessEvaluator } from "./evaluator";
 

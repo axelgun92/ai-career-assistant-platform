@@ -95,7 +95,7 @@ const api = {
 const jobPageFor = (url: string): ServedPage => {
   const index = wttjF0Urls.indexOf(url as (typeof wttjF0Urls)[number]);
   if (index < 0) return { status: 404, html: "<h1>Not found</h1>" };
-  return { status: 200, html: wttjJobPage({ title: "Senior Customer Success Manager", company: companies[index]!, city: "Chicago", descriptionHtml: csmDescription(salaries[index]!) }) };
+  return { status: 200, html: wttjJobPage({ title: "Customer Success Manager", company: companies[index]!, city: "Chicago", descriptionHtml: csmDescription(salaries[index]!) }) };
 };
 
 let pairing: { id: string; label: string; tokenHint: string; createdAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
@@ -189,14 +189,14 @@ describe("Welcome to the Jungle Mode B (background tabs) on the test database", 
     const offFamily = (url: string): ServedPage => {
       const served = jobPageFor(url);
       if (url !== wttjF0Urls[0]) return served;
-      return { status: 200, html: wttjJobPage({ title: "Senior Account Executive", company: companies[0]!, city: "Chicago", descriptionHtml: csmDescription(salaries[0]!) }) };
+      return { status: 200, html: wttjJobPage({ title: "Account Executive", company: companies[0]!, city: "Chicago", descriptionHtml: csmDescription(salaries[0]!) }) };
     };
     const { state } = await saveAndRead(offFamily);
     expect(state?.finished?.reason).toBe("COMPLETED");
     const [held, ...rest] = await items();
     expect(held).toMatchObject({ status: "INGESTED", handoffOutcome: "NOT_SENT:OUTSIDE_ROLE_FAMILIES" });
     const opportunity = await database.opportunity.findUnique({ where: { id: held!.opportunityId! } });
-    expect(opportunity?.title).toBe("Senior Account Executive");
+    expect(opportunity?.title).toBe("Account Executive");
     expect(await database.fieldProvenance.count({ where: { opportunityId: held!.opportunityId! } })).toBeGreaterThan(0);
     // Nothing was triaged, admitted or queued for it.
     expect(await triageRepository.get(held!.opportunityId!)).toBeNull();

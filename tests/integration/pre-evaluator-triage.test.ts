@@ -65,6 +65,7 @@ async function capture(kind: "compatible" | "unknown" | "reject") {
     rawText: [
       "Customer Success Manager for a workflow SaaS platform.",
       "This is a fully remote role. Applicants must reside in the United States.",
+      "Employment type: Full-time",
       salaryLine,
       "Own onboarding, adoption, education, and retention.",
     ].join("\n"),

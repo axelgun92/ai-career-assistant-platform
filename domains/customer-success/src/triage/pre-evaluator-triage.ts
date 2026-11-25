@@ -12,9 +12,14 @@ import {
   type UserWorkEligibility,
 } from "@ai-career/core";
 import type { CustomerSuccessPreferences } from "../config/preferences";
-import { evaluateSalaryPolicy, sameLocationScope } from "../config/salary-policy";
+import { evaluateSalaryPolicy, sameLocationScope, type SalaryPolicyDecision } from "../config/salary-policy";
+import { employmentReasons, seniorityReasons, type PositionRequirementInput } from "./position-requirements";
 
-type TriageOpportunity = Pick<
+// The normalized facts triage reads (November 25, 2026: the position facts,
+// compensation tiers and the listing's explicit position evidence were
+// added, so every hard requirement the opportunity page can show is the one
+// triage decides on).
+export type TriageOpportunity = Pick<
   NormalizedOpportunity,
   | "salaryMin"
   | "salaryMax"
@@ -30,7 +35,13 @@ type TriageOpportunity = Pick<
   | "visaSponsorship"
   | "relocationSupport"
   | "employerOfRecordRegions"
->;
+> &
+  Partial<Pick<NormalizedOpportunity, "compensationTiers">> &
+  Partial<PositionRequirementInput> & {
+    // True when the stored arrangement's remote option is offered only by
+    // exception (an office-first posting): not a genuine remote option.
+    remoteByException?: boolean;
+  };
 
 const knownGeographyCodes = new Set([
   ...Object.keys(geographyCountryNames),
@@ -126,68 +137,124 @@ function residencyReasons(
   return [];
 }
 
-function salaryReasons(
+const salaryMessages: Record<SalaryPolicyDecision["reason"], string> = {
+  UNKNOWN_SALARY: "Base salary is Unknown.",
+  UNKNOWN_CURRENCY: "Salary currency is Unknown or unsupported.",
+  UNKNOWN_RESIDENCY: "Salary compatibility depends on an unresolved residency requirement.",
+  OTE_NOT_CONFIRMED_BASE: "The disclosed compensation includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary.",
+  CONFLICTING_SALARY: "The normalized salary bounds conflict.",
+  CONFLICTING_RESIDENCY: "The structured residency evidence conflicts.",
+  US_THRESHOLD: "The definite base-salary ceiling is below the U.S. hard minimum.",
+  US_REVIEW: "The salary is in the U.S. review band ($55,000-$59,999).",
+  NON_US_PASS: "The salary meets the non-U.S. pass threshold.",
+  NON_US_REVIEW: "The salary is in the non-U.S. review band.",
+  NON_US_CONDITIONAL_REVIEW: "The salary is in the conditional non-U.S. review band.",
+  NON_US_CONDITIONAL_UNKNOWN: "The salary is in the conditional band but location-cost viability is unresolved.",
+  BELOW_NON_US_MINIMUM: "The definite base-salary ceiling is below the non-U.S. hard minimum.",
+  NON_US_LOWER_COST_REVIEW: "The salary is below the non-U.S. minimum, but the eligible location is a configured lower-cost country.",
+  OPEN_MAXIMUM_UNKNOWN: "Only a salary ceiling is known and it does not establish compatibility.",
+};
+const salaryCode = (reason: SalaryPolicyDecision["reason"]) => `salary-${reason.toLowerCase().replace(/_/g, "-")}`;
+const salaryFields = ["salaryMin", "salaryMax", "currency", "compensationBasis", "compensationTiers", "residencyRequirement", "residencyRegions"];
+
+function salaryDecision(
+  range: { minimum: number | null; maximum: number | null; currency: string | null },
   opportunity: TriageOpportunity,
   preferences: CustomerSuccessPreferences,
-): PreEvaluatorTriageReason[] {
-  const decision = evaluateSalaryPolicy({
-    minimum: opportunity.salaryMin,
-    maximum: opportunity.salaryMax,
-    currency: opportunity.currency,
+): SalaryPolicyDecision {
+  return evaluateSalaryPolicy({
+    minimum: range.minimum,
+    maximum: range.maximum,
+    currency: range.currency,
     compensationBasis: opportunity.compensationBasis,
     residencyRequirement: opportunity.residencyRequirement,
     residencyRegions: opportunity.residencyRegions,
     substantiallyLowerCostCountries: preferences.salary.substantiallyLowerCostCountries,
   });
-  if (decision.result === "PASS") return [];
-  const messages: Record<typeof decision.reason, string> = {
-    UNKNOWN_SALARY: "Base salary is Unknown.",
-    UNKNOWN_CURRENCY: "Salary currency is Unknown or unsupported.",
-    UNKNOWN_RESIDENCY: "Salary compatibility depends on an unresolved residency requirement.",
-    OTE_NOT_CONFIRMED_BASE: "The disclosed compensation includes variable pay (such as OTE, target total cash or bonuses), not confirmed base salary.",
-    CONFLICTING_SALARY: "The normalized salary bounds conflict.",
-    CONFLICTING_RESIDENCY: "The structured residency evidence conflicts.",
-    US_THRESHOLD: "The definite base-salary ceiling is below the U.S. hard minimum.",
-    US_REVIEW: "The salary is in the U.S. review band ($55,000-$59,999).",
-    NON_US_PASS: "The salary meets the non-U.S. pass threshold.",
-    NON_US_REVIEW: "The salary is in the non-U.S. review band.",
-    NON_US_CONDITIONAL_REVIEW: "The salary is in the conditional non-U.S. review band.",
-    NON_US_CONDITIONAL_UNKNOWN: "The salary is in the conditional band but location-cost viability is unresolved.",
-    BELOW_NON_US_MINIMUM: "The definite base-salary ceiling is below the non-U.S. hard minimum.",
-    NON_US_LOWER_COST_REVIEW: "The salary is below the non-U.S. minimum, but the eligible location is a configured lower-cost country.",
-    OPEN_MAXIMUM_UNKNOWN: "Only a salary ceiling is known and it does not establish compatibility.",
-  };
-  const codes: Record<typeof decision.reason, string> = {
-    UNKNOWN_SALARY: "salary-unknown-salary",
-    UNKNOWN_CURRENCY: "salary-unknown-currency",
-    UNKNOWN_RESIDENCY: "salary-unknown-residency",
-    OTE_NOT_CONFIRMED_BASE: "salary-ote-not-confirmed-base",
-    CONFLICTING_SALARY: "salary-conflicting-salary",
-    CONFLICTING_RESIDENCY: "salary-conflicting-residency",
-    US_THRESHOLD: "salary-us-threshold",
-    US_REVIEW: "salary-us-review",
-    NON_US_PASS: "salary-non-us-pass",
-    NON_US_REVIEW: "salary-non-us-review",
-    NON_US_CONDITIONAL_REVIEW: "salary-non-us-conditional-review",
-    NON_US_CONDITIONAL_UNKNOWN: "salary-non-us-conditional-unknown",
-    BELOW_NON_US_MINIMUM: "salary-below-non-us-minimum",
-    NON_US_LOWER_COST_REVIEW: "salary-non-us-lower-cost-review",
-    OPEN_MAXIMUM_UNKNOWN: "salary-open-maximum-unknown",
-  };
+}
+
+// Compensation tiers (pay stated per place, zone or band; November 25,
+// 2026). The tiers the job's location or residency establishes are judged;
+// when none is established, every tier is potentially applicable: all pass
+// -> pass, all fail -> reject, otherwise review.
+export function applicableCompensationTiers(
+  tiers: NonNullable<TriageOpportunity["compensationTiers"]>,
+  opportunity: Pick<TriageOpportunity, "location" | "residencyRegions">,
+): { tiers: NonNullable<TriageOpportunity["compensationTiers"]>; established: boolean } {
+  const location = (opportunity.location ?? "").toLowerCase();
+  const matches = tiers.filter((tier) => {
+    const label = tier.label.toLowerCase().trim();
+    // The job's location names the tier ("Denver" in "Denver, CO"), or the
+    // tier names exactly the job's residency region ("UK" for GB). A wider
+    // residency ("US") never establishes a narrower tier ("New York").
+    if (label.length >= 3 && location.length > 0 && (location.includes(label) || label.includes(location))) return true;
+    const codes = parseGeographyList(tier.label);
+    return Boolean(codes && opportunity.residencyRegions.length > 0 && codes.some((code) => opportunity.residencyRegions.includes(code)));
+  });
+  return matches.length > 0 && matches.length < tiers.length ? { tiers: matches, established: true } : { tiers, established: false };
+}
+
+function tierSalaryReasons(opportunity: TriageOpportunity, preferences: CustomerSuccessPreferences): PreEvaluatorTriageReason[] {
+  const tiers = opportunity.compensationTiers ?? [];
+  const { tiers: applicable, established } = applicableCompensationTiers(tiers, opportunity);
+  const decisions = applicable.map((tier) => ({
+    tier,
+    decision: salaryDecision({ minimum: tier.minimum, maximum: tier.maximum, currency: tier.currency ?? opportunity.currency }, opportunity, preferences),
+  }));
+  const describe = (item: (typeof decisions)[number]) => `${item.tier.label}: ${item.decision.result.toLowerCase()}`;
+  const scope = established ? "The tier the job's location establishes" : `Every potentially applicable tier (${applicable.length})`;
+  const policy = decisions[0]?.decision.policyVersion ?? "";
+  if (decisions.every((item) => item.decision.result === "PASS")) return [];
+  if (decisions.every((item) => item.decision.result === "FAIL")) {
+    return [{
+      code: "salary-tiers-below-minimum",
+      fields: salaryFields,
+      disposition: "REJECT",
+      message: `${scope} is below the base-salary minimum (${decisions.map(describe).join("; ")}). Policy ${policy}.`,
+    }];
+  }
+  if (decisions.length === 1) {
+    const only = decisions[0]!.decision;
+    return [{ code: salaryCode(only.reason), fields: salaryFields, disposition: "NEEDS_REVIEW", message: `${salaryMessages[only.reason]} (tier ${decisions[0]!.tier.label}) Policy ${policy}.` }];
+  }
   return [{
-    code: codes[decision.reason],
-    fields: ["salaryMin", "salaryMax", "currency", "compensationBasis", "residencyRequirement", "residencyRegions"],
-    disposition: decision.result === "FAIL" ? "REJECT" : "NEEDS_REVIEW",
-    message: `${messages[decision.reason]} Policy ${decision.policyVersion}.`,
+    code: "salary-tiers-differ",
+    fields: salaryFields,
+    disposition: "NEEDS_REVIEW",
+    message: `The salary tiers give different results and the applicable tier is not established (${decisions.map(describe).join("; ")}). Policy ${policy}.`,
   }];
 }
 
-function arrangementReasons(
+function salaryReasons(
   opportunity: TriageOpportunity,
   preferences: CustomerSuccessPreferences,
 ): PreEvaluatorTriageReason[] {
+  // Usable tiers are salary evidence: the salary is never reported missing
+  // while the opportunity states pay per tier.
+  if (opportunity.salaryMin === null && opportunity.salaryMax === null && (opportunity.compensationTiers ?? []).length > 0) {
+    return tierSalaryReasons(opportunity, preferences);
+  }
+  const decision = salaryDecision({ minimum: opportunity.salaryMin, maximum: opportunity.salaryMax, currency: opportunity.currency }, opportunity, preferences);
+  if (decision.result === "PASS") return [];
+  return [{
+    code: salaryCode(decision.reason),
+    fields: salaryFields.filter((field) => field !== "compensationTiers"),
+    disposition: decision.result === "FAIL" ? "REJECT" : "NEEDS_REVIEW",
+    message: `${salaryMessages[decision.reason]} Policy ${decision.policyVersion}.`,
+  }];
+}
+
+// Customer Success work arrangement (November 25, 2026): Remote and Hybrid
+// pass; on-site only is rejected wherever the job is; several genuine
+// options pass when one is Remote or Hybrid; a remote option offered only by
+// exception is not a genuine one; unknown or conflicting evidence is
+// reviewed. These are the Customer Success hard rules themselves, so a
+// stored profile that still lists On-site, or omits Hybrid, does not change
+// them (the profile source now allows Remote and Hybrid only).
+function arrangementReasons(opportunity: TriageOpportunity): PreEvaluatorTriageReason[] {
   const valid = new Set(["REMOTE", "HYBRID", "ONSITE"]);
-  const offered = opportunity.workArrangements.length
+  const fields = ["remoteStatus", "workArrangements"];
+  const stated = opportunity.workArrangements.length
     ? [...new Set(opportunity.workArrangements)]
     : opportunity.remoteStatus
       ? [opportunity.remoteStatus]
@@ -196,28 +263,23 @@ function arrangementReasons(
     opportunity.remoteStatus !== null &&
     opportunity.workArrangements.length > 0 &&
     !opportunity.workArrangements.includes(opportunity.remoteStatus as "REMOTE" | "HYBRID" | "ONSITE");
-  if (conflict || offered.some((item) => !valid.has(item))) {
-    return [{
-      code: "work-arrangement-conflicting",
-      fields: ["remoteStatus", "workArrangements"],
-      disposition: "NEEDS_REVIEW",
-      message: "The structured work-arrangement evidence conflicts or is unsupported.",
-    }];
+  if (conflict || stated.some((item) => !valid.has(item))) {
+    return [{ code: "work-arrangement-conflicting", fields, disposition: "NEEDS_REVIEW", message: "The structured work-arrangement evidence conflicts or is unsupported." }];
   }
-  if (offered.length === 0) {
-    return [{
-      code: "work-arrangement-unknown",
-      fields: ["remoteStatus", "workArrangements"],
-      disposition: "NEEDS_REVIEW",
-      message: "Work arrangement is Unknown.",
-    }];
+  if (stated.length === 0) {
+    return [{ code: "work-arrangement-unknown", fields, disposition: "NEEDS_REVIEW", message: "Work arrangement is Unknown." }];
   }
-  if (!offered.some((item) => preferences.workArrangement.allowed.includes(item as "REMOTE" | "HYBRID" | "ONSITE"))) {
+  // A remote option offered only by exception is not a genuine option.
+  const genuine = opportunity.remoteByException ? stated.filter((item) => item !== "REMOTE") : stated;
+  const flexible = genuine.filter((item) => item === "REMOTE" || item === "HYBRID");
+  if (flexible.length === 0) {
     return [{
-      code: "work-arrangement-incompatible",
-      fields: ["remoteStatus", "workArrangements"],
+      code: "work-arrangement-onsite-only",
+      fields,
       disposition: "REJECT",
-      message: "Every stated work arrangement conflicts with the configured hard work-arrangement policy.",
+      message: opportunity.remoteByException
+        ? "The role is on-site; remote work is offered only by exception, which is not a genuine remote option."
+        : "The role is on-site only; Customer Success roles must be remote or hybrid.",
     }];
   }
   return [];
@@ -260,15 +322,30 @@ function authorizationReasons(
   return [];
 }
 
+// The version of these triage rules. It is part of every assessment's input
+// fingerprint, so a rule change makes earlier assessments stale and they are
+// assessed again (November 25, 2026: seniority, employment type, on-site
+// only, compensation tiers).
+export const customerSuccessTriageRulesVersion = "cs-triage-2026-11-25";
+
 export function triageCustomerSuccessOpportunity(input: {
   opportunity: TriageOpportunity;
   preferences: CustomerSuccessPreferences;
   eligibility: UserWorkEligibility | null;
 }): PreEvaluatorTriageAssessment {
+  const position: PositionRequirementInput = {
+    title: input.opportunity.title ?? null,
+    seniority: input.opportunity.seniority ?? null,
+    seniorityLabel: input.opportunity.seniorityLabel ?? null,
+    employmentType: input.opportunity.employmentType ?? null,
+    evidence: input.opportunity.evidence ?? { peopleManagement: null, fullTimeSchedule: null },
+  };
   const reasons = [
+    ...seniorityReasons(position),
+    ...employmentReasons(position),
     ...salaryReasons(input.opportunity, input.preferences),
     ...residencyReasons(input.opportunity, input.preferences),
-    ...arrangementReasons(input.opportunity, input.preferences),
+    ...arrangementReasons(input.opportunity),
     ...authorizationReasons(input.opportunity, input.eligibility),
   ];
   const outcome = reasons.some((reason) => reason.disposition === "REJECT")

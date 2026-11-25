@@ -70,6 +70,9 @@ export interface DoctorInputs {
   // False when the generated client was built from an older schema.prisma
   // (pnpm install never regenerates it). Undefined when not checked.
   prismaClientCurrent?: boolean;
+  // The first differing schema line, for the failure message (layout
+  // differences are already ignored).
+  prismaClientDifference?: { line: number; schema: string; generated: string };
   // Null when the database package could not be loaded.
   reads: DoctorReads | null;
   now: Date;
@@ -100,17 +103,113 @@ function minutes(ms: number) {
 // The generated client embeds the schema it was built from (as the
 // "inlineSchema" string in internal/class.ts). A client generated before the
 // checkout's latest schema change lacks the newer models, and the app then
-// fails at runtime with "Cannot read properties of undefined". Null when the
-// embedded schema cannot be read, so the check never guesses.
-export function generatedClientMatchesSchema(generatedClassSource: string, schemaSource: string): boolean | null {
+// fails at runtime with "Cannot read properties of undefined".
+//
+// `prisma generate` embeds the schema as Prisma formats it (fields aligned in
+// columns), so the comparison ignores layout only (November 25, 2026: a
+// correctly generated client was reported out of date for its column
+// alignment). It is token-aware, line by line:
+// - line endings (CRLF or LF) and blank lines are ignored;
+// - outside quoted strings, each run of spaces or tabs between tokens is one
+//   separator, and leading and trailing whitespace is ignored (alignment);
+// - inside a quoted string ("..."; escapes kept) every character, whitespace
+//   included, is significant: @map("foo bar") differs from @map("foobar")
+//   and from @map("foo  bar");
+// - a // comment's words are compared, with its spacing normalized as above.
+// Any other difference (a model, field, type, attribute, relation, enum
+// value, default, mapping, datasource or generator setting, or comment) is a
+// genuine mismatch.
+export interface SchemaLine {
+  // The 1-based line of the original text.
+  line: number;
+  text: string;
+}
+
+export function canonicalSchemaLines(schema: string): SchemaLine[] {
+  const lines: SchemaLine[] = [];
+  schema.replace(/\r\n?/g, "\n").split("\n").forEach((raw, index) => {
+    let text = "";
+    let pendingSpace = false;
+    let quoted = false;
+    for (let position = 0; position < raw.length; position += 1) {
+      const character = raw[position]!;
+      if (quoted) {
+        text += character;
+        if (character === "\\" && position + 1 < raw.length) {
+          position += 1;
+          text += raw[position]!;
+        } else if (character === '"') {
+          quoted = false;
+        }
+        continue;
+      }
+      if (character === " " || character === "\t") {
+        pendingSpace = true;
+        continue;
+      }
+      if (pendingSpace && text) text += " ";
+      pendingSpace = false;
+      if (character === "/" && raw[position + 1] === "/") {
+        // A comment: its words, with spacing normalized.
+        text += raw.slice(position).replace(/[ \t]+/g, " ").trimEnd();
+        break;
+      }
+      if (character === '"') quoted = true;
+      text += character;
+    }
+    if (text) lines.push({ line: index + 1, text });
+  });
+  return lines;
+}
+
+// The canonical text (for display and tests).
+export function schemaLayoutKey(schema: string): string {
+  return canonicalSchemaLines(schema).map((entry) => entry.text).join("\n");
+}
+
+export type GeneratedClientComparison =
+  | { status: "CURRENT" }
+  | { status: "STALE"; firstDifference: { line: number; schema: string; generated: string } }
+  | { status: "UNREADABLE" };
+
+// The schema the generated client embeds ("inlineSchema" in
+// internal/class.ts), or null when it cannot be read.
+export function embeddedGeneratedSchema(generatedClassSource: string): string | null {
   const match = /"inlineSchema":\s*("(?:[^"\\]|\\.)*")/.exec(generatedClassSource);
   if (!match) return null;
   try {
-    const embedded = JSON.parse(match[1]!) as unknown;
-    return typeof embedded === "string" ? embedded.replace(/\r\n/g, "\n") === schemaSource.replace(/\r\n/g, "\n") : null;
+    const embedded: unknown = JSON.parse(match[1]!);
+    return typeof embedded === "string" ? embedded : null;
   } catch {
     return null;
   }
+}
+
+export function compareGeneratedClientSchema(generatedClassSource: string, schemaSource: string): GeneratedClientComparison {
+  const embedded = embeddedGeneratedSchema(generatedClassSource);
+  if (embedded === null) return { status: "UNREADABLE" };
+  const generated = canonicalSchemaLines(embedded);
+  const schema = canonicalSchemaLines(schemaSource);
+  for (let index = 0; index < Math.max(generated.length, schema.length); index += 1) {
+    if (generated[index]?.text !== schema[index]?.text) {
+      return {
+        status: "STALE",
+        firstDifference: {
+          line: schema[index]?.line ?? (schema.at(-1)?.line ?? 0) + 1,
+          schema: schema[index]?.text ?? "(end of file)",
+          generated: generated[index]?.text ?? "(end of file)",
+        },
+      };
+    }
+  }
+  return { status: "CURRENT" };
+}
+
+// True when current, false when stale, null when the embedded schema cannot
+// be read (the check then never guesses).
+export function generatedClientMatchesSchema(generatedClassSource: string, schemaSource: string): boolean | null {
+  const comparison = compareGeneratedClientSchema(generatedClassSource, schemaSource);
+  return comparison.status === "UNREADABLE" ? null : comparison.status === "CURRENT";
 }
 
 export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck[]> {
@@ -134,7 +233,14 @@ export async function runDoctorChecks(inputs: DoctorInputs): Promise<DoctorCheck
 
   if (!inputs.prismaClientGenerated) add("FAIL", "Prisma client", "not generated; run pnpm prisma:generate");
   else if (inputs.prismaClientCurrent === false)
-    add("FAIL", "Prisma client", "out of date with database/prisma/schema.prisma; run pnpm prisma:generate, then restart the app and workers");
+    add(
+      "FAIL",
+      "Prisma client",
+      "out of date with database/prisma/schema.prisma; run pnpm prisma:generate, then restart the app and workers" +
+        (inputs.prismaClientDifference
+          ? ` (first difference at schema line ${inputs.prismaClientDifference.line}: schema has "${inputs.prismaClientDifference.schema.slice(0, 80)}", the generated client has "${inputs.prismaClientDifference.generated.slice(0, 80)}")`
+          : ""),
+    );
   else add("PASS", "Prisma client", "generated");
 
   const ai = aiConfigurationStatus(inputs.environment);

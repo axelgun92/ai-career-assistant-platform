@@ -2,6 +2,7 @@ import {
   isActiveApplication,
   isSubmitted,
   lifecycleActionGuard,
+  moveDestinationReached,
   opportunityMoveDestinationActions,
   opportunityMoveDestinationSchema,
   opportunityMoveOptions,
@@ -26,6 +27,9 @@ import type { OpportunityActionWriter } from "./opportunity-action-service";
 
 export type OpportunityMoveResult =
   | { opportunityId: string; result: "MOVED"; action: OpportunityUserAction; from: OpportunityLifecycleState; status: OpportunityLifecycleState }
+  // Already where the move would put it (a stale page or a mixed
+  // selection): skipped, nothing written, never a failure (November 25).
+  | { opportunityId: string; result: "ALREADY_THERE"; status: OpportunityLifecycleState; reason: string }
   | { opportunityId: string; result: "NOT_ALLOWED" | "BLOCKED_BY_APPLICATION" | "CONFLICT" | "NOT_FOUND" | "FAILED"; reason: string };
 
 export const opportunityMoveBulkLimit = 50;
@@ -89,13 +93,24 @@ export function createOpportunityMoveService(writer: OpportunityActionWriter) {
     }
   }
 
+  async function attempt(opportunityId: string, destination: OpportunityMoveDestination): Promise<OpportunityMoveResult> {
+    if (destination !== "RESTORE") return apply(opportunityId, opportunityMoveDestinationActions[destination]);
+    // Restore: back to the state before the opportunity was dismissed or
+    // archived; when the history does not say, to Active.
+    const restored = await apply(opportunityId, "RESTORE");
+    return restored.result === "NOT_ALLOWED" ? apply(opportunityId, "REACTIVATE") : restored;
+  }
+
   async function move(opportunityId: string, destination: OpportunityMoveDestination): Promise<OpportunityMoveResult> {
     try {
-      if (destination !== "RESTORE") return await apply(opportunityId, opportunityMoveDestinationActions[destination]);
-      // Restore: back to the state before the opportunity was dismissed or
-      // archived; when the history does not say, to Active.
-      const restored = await apply(opportunityId, "RESTORE");
-      return restored.result === "NOT_ALLOWED" ? await apply(opportunityId, "REACTIVATE") : restored;
+      const result = await attempt(opportunityId, destination);
+      if (result.result !== "NOT_ALLOWED" || !writer.currentStatus) return result;
+      // Refused by the lifecycle rules: a job already in the destination is
+      // a skip, never a failure.
+      const status = await writer.currentStatus(opportunityId);
+      return status && moveDestinationReached(status, destination)
+        ? { opportunityId, result: "ALREADY_THERE", status, reason: alreadyThereReason(destination) }
+        : result;
     } catch (error) {
       console.error("Opportunity move failed", { errorName: error instanceof Error ? error.name : "UnknownError" });
       return { opportunityId, result: "FAILED", reason: reasons.FAILED };
@@ -128,7 +143,11 @@ async function readBody(request: Request): Promise<{ ok: true; body: unknown } |
 }
 
 const statusOf = (result: OpportunityMoveResult) =>
-  result.result === "MOVED" ? 200 : result.result === "NOT_FOUND" ? 404 : result.result === "FAILED" ? 500 : 409;
+  result.result === "MOVED" || result.result === "ALREADY_THERE" ? 200 : result.result === "NOT_FOUND" ? 404 : result.result === "FAILED" ? 500 : 409;
+
+export function alreadyThereReason(destination: OpportunityMoveDestination): string {
+  return destination === "RESTORE" ? "Already active; nothing to restore" : `Already in ${destinationLabels[destination]}`;
+}
 
 export function createOpportunityMoveHandlers(service: ReturnType<typeof createOpportunityMoveService>) {
   return {
@@ -141,7 +160,7 @@ export function createOpportunityMoveHandlers(service: ReturnType<typeof createO
       const parsed = moveSchema.safeParse(read.body);
       if (!parsed.success) return Response.json({ error: "The move is invalid", code: "REQUEST_INVALID" }, { status: 400 });
       const result = await service.move(id.data, parsed.data.destination);
-      return Response.json(result.result === "MOVED" ? result : { ...result, error: result.reason }, { status: statusOf(result) });
+      return Response.json(result.result === "MOVED" || result.result === "ALREADY_THERE" ? result : { ...result, error: result.reason }, { status: statusOf(result) });
     },
     // POST /api/opportunities/bulk/move {destination, opportunityIds}: the
     // stated opportunities only; partial failures are reported one by one.
@@ -161,7 +180,8 @@ export function createOpportunityMoveHandlers(service: ReturnType<typeof createO
         destination: parsed.data.destination,
         requested: ids.length,
         moved: results.filter((item) => item.result === "MOVED").length,
-        failed: results.filter((item) => item.result !== "MOVED").length,
+        skipped: results.filter((item) => item.result === "ALREADY_THERE").length,
+        failed: results.filter((item) => item.result !== "MOVED" && item.result !== "ALREADY_THERE").length,
         results,
       });
     },

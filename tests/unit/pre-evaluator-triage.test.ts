@@ -6,6 +6,11 @@ import { customerSuccessTestPreferences } from "../fixtures/customer-success";
 type OpportunityInput = Parameters<typeof triageCustomerSuccessOpportunity>[0]["opportunity"];
 
 const compatible: OpportunityInput = {
+  title: "Customer Success Manager",
+  seniority: null,
+  seniorityLabel: null,
+  employmentType: "FULL_TIME",
+  evidence: { peopleManagement: null, fullTimeSchedule: null },
   salaryMin: 70_000,
   salaryMax: 85_000,
   currency: "USD",
@@ -117,7 +122,7 @@ describe("pre-evaluator triage", () => {
     const result = assess({ remoteStatus: "ONSITE", workArrangements: ["ONSITE"] });
     expect(result.outcome).toBe("REJECT");
     expect(result.reasons).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "work-arrangement-incompatible" }),
+      expect.objectContaining({ code: "work-arrangement-onsite-only" }),
     ]));
   });
 

@@ -86,6 +86,7 @@ const description = (salary: string | null) =>
   [
     "Customer Success Manager for a workflow SaaS platform.",
     "This is a fully remote role. Applicants must reside in the United States.",
+    "Employment type: Full-time",
     salary ? `Base salary ${salary}.` : "Compensation is not stated.",
     "Own onboarding, adoption, education, and retention for a portfolio of B2B customers.",
   ].join("\n");

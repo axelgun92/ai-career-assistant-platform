@@ -153,7 +153,7 @@ async function retrieve(names: string[]) {
     jobs: names.map((name): TestJob => {
       const salary = jobs[name] ?? null;
       return {
-        id: `${name}-${run}`, title, company: company(name), location: "Remote - United States", html: description, url: jobUrl(name), workplace: "REMOTE",
+        id: `${name}-${run}`, title, company: company(name), location: "Remote - United States", html: description, url: jobUrl(name), workplace: "REMOTE", employment: "Full-time",
         salary: salary ? { ...salary, currency: "USD", period: "YEAR" } : null,
       };
     }),

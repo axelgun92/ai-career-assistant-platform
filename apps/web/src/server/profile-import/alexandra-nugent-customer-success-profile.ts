@@ -21,8 +21,10 @@ const customerSuccessPreferences = defineCustomerSuccessPreferences({
     recurringCustomerOnsiteResult: "FAIL",
     fieldTravelResult: "FAIL",
   },
+  // November 25, 2026 (Alex): Remote and Hybrid pass, On-site is not
+  // allowed (pre-evaluator triage applies the same Customer Success rule).
   workArrangement: {
-    allowed: ["REMOTE"],
+    allowed: ["REMOTE", "HYBRID"],
     unknownResult: "UNKNOWN",
   },
   roleFamilies: {

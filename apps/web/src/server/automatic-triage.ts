@@ -28,12 +28,16 @@ import type { TriageRouting } from "./triage-routing";
 export type AutomaticTriageResult =
   | { status: "ASSESSED"; outcome: "EVALUATE" | "NEEDS_REVIEW" | "REJECT"; dismissed?: "TRIAGE_REJECT" | "OUTSIDE_TARGET_TITLES" }
   | { status: "SKIPPED"; reason: "ATTACHED" | "UNCHANGED" | "ALREADY_ASSESSED" }
+  // Assessed again because a changed capture changed a hard-requirement
+  // input (counted with its outcome; never routed again).
+  | { status: "REASSESSED"; outcome: "EVALUATE" | "NEEDS_REVIEW" | "REJECT" }
   | { status: "NO_PROFILE" }
   | { status: "UNAVAILABLE"; reason: string }
   | { status: "FAILED" };
 
 export interface AutomaticTriageDependencies {
-  assess(opportunityId: string): Promise<TriageAssessment>;
+  // onlyIfStale: assess again only when a material input changed.
+  assess(opportunityId: string, options?: { onlyIfStale?: boolean; trigger?: "CAPTURE_CHANGED" }): Promise<TriageAssessment>;
   // The opportunity's current triage record, if any.
   existing(opportunityId: string): Promise<unknown | null>;
   route?: TriageRouting;
@@ -46,12 +50,23 @@ export function createAutomaticTriage(dependencies: AutomaticTriageDependencies)
   return async function triageAfterIngestion(ingested: {
     outcome: RetrievedListingOutcome;
     opportunityId: string;
+    // Saved facts corrected by the current reading rules on a re-read.
+    normalizationCorrected?: readonly unknown[] | null;
   }): Promise<AutomaticTriageResult> {
-    if (ingested.outcome === "ATTACHED" || ingested.outcome === "UNCHANGED") {
-      return { status: "SKIPPED", reason: ingested.outcome };
+    const corrected = Boolean(ingested.normalizationCorrected?.length);
+    if (ingested.outcome === "ATTACHED" || (ingested.outcome === "UNCHANGED" && !corrected)) {
+      return { status: "SKIPPED", reason: ingested.outcome === "ATTACHED" ? "ATTACHED" : "UNCHANGED" };
     }
     try {
-      if (await dependencies.existing(ingested.opportunityId)) return { status: "SKIPPED", reason: "ALREADY_ASSESSED" };
+      // An opportunity already assessed is assessed again only when the
+      // changed capture changed a hard-requirement input (November 25, 2026;
+      // before, it kept its assessment). It is never routed again.
+      if (await dependencies.existing(ingested.opportunityId)) {
+        const reassessed = await dependencies.assess(ingested.opportunityId, { onlyIfStale: true, trigger: "CAPTURE_CHANGED" });
+        return reassessed.status === "ASSESSED" && !reassessed.unchanged
+          ? { status: "REASSESSED", outcome: reassessed.triage.outcome }
+          : { status: "SKIPPED", reason: "ALREADY_ASSESSED" };
+      }
       const assessment = await dependencies.assess(ingested.opportunityId);
       if (assessment.status === "ASSESSED") {
         const routed = dependencies.route ? await dependencies.route(ingested.opportunityId) : null;
@@ -80,7 +95,7 @@ export type AutomaticTriage = ReturnType<typeof createAutomaticTriage>;
 // listing was triaged or could not be; skipped listings are not counted.
 export function countAutomaticTriage(counts: RetrievalRunCounts, result: AutomaticTriageResult): void {
   if (result.status === "SKIPPED") return;
-  const key = result.status === "ASSESSED" ? result.outcome :
+  const key = result.status === "ASSESSED" || result.status === "REASSESSED" ? result.outcome :
     result.status === "NO_PROFILE" ? "noProfile" :
     result.status === "UNAVAILABLE" ? "unavailable" : "failed";
   const tally = (counts.triage ??= {});

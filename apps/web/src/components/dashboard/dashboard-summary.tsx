@@ -126,16 +126,23 @@ export function PipelineOverview({ summary }: { summary: Summary }) {
   );
 }
 
-// The triage summary (November 25, 2026): what the pre-evaluator triage and
-// the target job titles made of every saved job, whatever its lifecycle
-// state. Each count opens exactly its list in the All view, so jobs already
-// moved to Dismissed are included. These are triage results, not lifecycle
-// states: a job counted here can be Active, Saved or Dismissed.
+// The triage working categories (November 25, 2026): jobs in Active by
+// their triage result. A job leaves a category as soon as it leaves Active
+// (dismissed, archived, applied); its triage result stays in its details and
+// history, and the "in Dismissed" note links there instead. These are triage
+// results within Active, not lifecycle views.
 export const triageSummaryLinks = {
-  evaluate: "/?view=all&triage=evaluate",
-  review: "/?view=all&triage=review",
-  reject: "/?view=all&triage=reject",
-  outsideTitles: "/?view=all&titles=outside",
+  evaluate: "/?triage=evaluate",
+  review: "/?triage=review",
+  reject: "/?triage=reject",
+  outsideTitles: "/?titles=outside",
+} as const;
+
+export const triageDismissedLinks = {
+  evaluate: "/?view=dismissed&triage=evaluate",
+  review: "/?view=dismissed&triage=review",
+  reject: "/?view=dismissed&triage=reject",
+  outsideTitles: "/?view=dismissed&titles=outside",
 } as const;
 
 export function TriageSummary({
@@ -144,33 +151,36 @@ export function TriageSummary({
 }: {
   summary: Summary;
   // Null when the target job titles could not be read.
-  outsideTitles: { total: number; dismissed: number } | null;
+  outsideTitles: { active: number; dismissed: number } | null;
 }) {
   const items = [
-    { key: "evaluate", label: "Evaluate", count: summary.triage.EVALUATE, href: triageSummaryLinks.evaluate, help: "Passed triage; ready for evaluation" },
-    { key: "review", label: "Needs Review", count: summary.triage.NEEDS_REVIEW, href: triageSummaryLinks.review, help: "Held for your decision before evaluation" },
-    { key: "reject", label: "Rejected", count: summary.triage.REJECT, href: triageSummaryLinks.reject, help: "Rejected by triage before evaluation" },
-    ...(outsideTitles
-      ? [{ key: "outside", label: "Outside target titles", count: outsideTitles, href: triageSummaryLinks.outsideTitles, help: "Title outside your target job titles" }]
-      : []),
-  ];
+    { key: "evaluate", label: "Evaluate", count: summary.triage.EVALUATE, help: "Passed triage; ready for evaluation" },
+    { key: "review", label: "Needs Review", count: summary.triage.NEEDS_REVIEW, help: "Waiting for your decision or missing information" },
+    { key: "reject", label: "Rejected", count: summary.triage.REJECT, help: "Rejected by triage, still in Active" },
+    ...(outsideTitles ? [{ key: "outsideTitles", label: "Outside target titles", count: outsideTitles, help: "Title outside your target job titles, still in Active" }] : []),
+  ] as Array<{ key: keyof typeof triageSummaryLinks; label: string; count: { active: number; dismissed: number }; help: string }>;
   return (
     <section className="triage-summary" aria-labelledby="triage-summary-title">
-      <h2 id="triage-summary-title">Triage results</h2>
+      <h2 id="triage-summary-title">Triage results in Active</h2>
       <p className="field-help">
-        Every saved job, whatever its place in your pipeline. These are triage results, not lifecycle views; a job here can be
-        Active, Saved or Dismissed.
+        Active jobs by their triage result. A job leaves its category when you move it out of Active; its triage result stays in its
+        details.
       </p>
       <ul className="triage-summary-grid">
         {items.map((item) => (
           <li key={item.key} className={`triage-summary-item triage-summary-${item.key}`}>
-            <Link href={item.href} aria-label={`${item.label}: ${item.count.total}${item.count.dismissed ? `, ${item.count.dismissed} in Dismissed` : ""}`}>
-              <span className="attention-count">{item.count.total}</span>
+            <Link href={triageSummaryLinks[item.key]} aria-label={`${item.label}: ${item.count.active} in Active`}>
+              <span className="attention-count">{item.count.active}</span>
               <span className="attention-label">{item.label}</span>
             </Link>
             <span className="field-help">
               {item.help}
-              {item.count.dismissed ? ` · ${item.count.dismissed} in Dismissed` : ""}
+              {item.count.dismissed ? (
+                <>
+                  {" · "}
+                  <Link href={triageDismissedLinks[item.key]}>{item.count.dismissed} in Dismissed</Link>
+                </>
+              ) : null}
             </span>
           </li>
         ))}

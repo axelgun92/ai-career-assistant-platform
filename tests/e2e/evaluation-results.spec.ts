@@ -69,7 +69,7 @@ async function createOpportunity(
       rawText: (options.reviewScenario
         ? [
             "Customer Success Manager at a SaaS workflow platform.",
-            "Remote. Applicants must reside in the United States.",
+            "Full-time. Remote. Applicants must reside in the United States.",
             "Salary $72,000-$88,000.",
             "Own onboarding, adoption, education, retention, and business reviews.",
             "Collaborate with Product and hand technical escalations to Support.",
@@ -77,7 +77,7 @@ async function createOpportunity(
           ]
         : [
             "Customer Success Manager at a SaaS workflow platform.",
-            "Remote. Applicants must reside in the United States. Central or Eastern time preferred.",
+            "Full-time. Remote. Applicants must reside in the United States. Central or Eastern time preferred.",
             "Salary $72,000-$88,000. No travel required.",
             "Own onboarding, adoption, education, retention, and business reviews.",
             "Collaborate with Product and hand technical escalations to Support.",
