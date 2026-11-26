@@ -233,7 +233,12 @@ Task 1–9 completion pass (features 1–10): Task 8 complete (534a4c7); Task 9 
   migration 30; verified offline; approved by Alex and committed November 25) → November 25 post-Feature-14B
   corrections (lifecycle-based working categories, skip-not-failure moves, Customer Success seniority /
   work-arrangement / employment-type / compensation-tier triage rules, stale triage re-runs with history,
-  Add missing information with confirmed facts; migration 31; verified offline; awaiting Alex's approval)
+  Add missing information with confirmed facts; migration 31; approved and committed as 3097980)
+  → November 26 bulk paid evaluation from the Evaluate section (user-initiated, all-or-nothing,
+  every enabled limit including the output-token worst case counted once per provider call
+  in the current monthly window, one transaction under the
+  duplicate-spend and admission locks, existing queue and single worker; verified offline;
+  approved by Alex and committed November 26)
   → Alex runs pnpm triage:route-historical on
   the acceptance database → one LinkedIn Mode B live batch (unattended capture, continuation, title
   filter) → final end-to-end triage/evaluator acceptance → production readiness and merge

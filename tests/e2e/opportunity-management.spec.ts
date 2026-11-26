@@ -252,3 +252,119 @@ test("Profile: Target job titles with Test a title, saved and reset", async ({ p
   await page.getByRole("region", { name: "Target job titles (automatic capture)" }).getByRole("button", { name: "Reset to defaults" }).click();
   await expect(page.getByText("Reset to the default target job titles.")).toBeVisible();
 });
+
+// Bulk evaluation in the Evaluate section (November 26, 2026): jobs triaged
+// Evaluate are selected on the current page; a selection over an enabled
+// limit is refused in full with the limit named and a Budget link, nothing
+// queued; within the limits the confirmation queues every job (no worker
+// runs here, so no provider call); a selection that is no longer available
+// is listed and nothing is submitted. Desktop and phone width, with no
+// console error, failed request or horizontal overflow.
+test("bulk evaluation: limits checked first, all or nothing, confirmed, and unavailable jobs listed", async ({ page, request }) => {
+  const runHelper = async (...args: string[]) =>
+    (await execFileAsync(process.execPath, [compiledHelper, ...args], { cwd: process.cwd(), env: process.env })).stdout.trim();
+  const problems: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error" || message.type() === "warning") problems.push(`${message.type()}: ${message.text()} (${message.location().url})`); });
+  page.on("pageerror", (error) => problems.push(error.message));
+  page.on("response", (response) => { if (response.status() >= 400) problems.push(`${response.status()} ${new URL(response.url()).pathname}`); });
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+
+  const [profileId = "", previousActiveId = ""] = (await runHelper("create-profile")).split(" ");
+  const budgetSnapshot = await runHelper("budget-snapshot");
+  const token = `B${Date.now()}`;
+  const ids: string[] = [];
+  try {
+    for (const name of ["Alpha", "Beta", "Gamma"]) {
+      const company = `${name} Bulkco ${token}`;
+      const response = await request.post("/api/opportunities", {
+        data: {
+          title: `Customer Success Manager ${token}`,
+          company,
+          location: "Remote - United States",
+          compensationText: "$72,000-$88,000",
+          domain: "customer-success",
+          rawText: [
+            `Customer Success Manager at ${company}, a SaaS workflow platform.`,
+            "Full-time. Remote. Applicants must reside in the United States.",
+            "Salary $72,000-$88,000. No travel required.",
+            "Own onboarding, adoption, education, retention, and business reviews.",
+          ].join("\n"),
+        },
+      });
+      expect(response.status()).toBe(201);
+      const { opportunity } = (await response.json()) as { opportunity: { id: string } };
+      ids.push(opportunity.id);
+      opportunityIds.push(opportunity.id);
+      expect(await runHelper("assess-triage", opportunity.id)).toBe("EVALUATE");
+    }
+    const budget = (patch: Record<string, unknown>) =>
+      request.put("/api/budget", { data: { amount: 100, currency: "USD", timeZone: "UTC", reservePerEvaluation: 1, enforced: true, warningThresholds: [], ...patch } });
+    expect((await budget({ dailyEvaluationLimit: 2 })).status()).toBe(200);
+
+    const paid = page.getByRole("region", { name: "Paid evaluation" });
+    const evaluateSection = `/?triage=evaluate&q=${token}`;
+    await page.goto(evaluateSection);
+    await expect(rows(page)).toHaveCount(3);
+    await expect(paid.getByRole("button", { name: "Evaluate 0 selected…" })).toBeDisabled();
+    await toolbar(page).getByRole("button", { name: "Select all on this page" }).click();
+    await expect(toolbar(page).getByText("3 selected", { exact: true })).toBeVisible();
+
+    // Over the daily limit: refused in full, the limit named, a Budget link.
+    await paid.getByRole("button", { name: "Evaluate 3 selected…" }).click();
+    const warning = paid.getByRole("alert");
+    await expect(warning).toContainText("You selected 3 jobs, but your remaining daily limit allows 2 evaluations.");
+    await expect(warning.getByRole("link", { name: "Budget settings" })).toHaveAttribute("href", "/budget#budget-settings-title");
+    await expect(paid.getByRole("alertdialog")).toHaveCount(0);
+    expect(await overflow()).toBe(false);
+    for (const id of ids) expect((await request.get(`/api/opportunities/${id}/evaluation`)).status()).toBe(404);
+
+    // The same warning at phone width, without horizontal overflow.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await toolbar(page).getByRole("button", { name: "Select all on this page" }).click();
+    await paid.getByRole("button", { name: "Evaluate 3 selected…" }).click();
+    await expect(paid.getByRole("alert")).toContainText("remaining daily limit allows 2 evaluations");
+    expect(await overflow()).toBe(false);
+
+    // Within the limits: the confirmation, then every job queued.
+    expect((await budget({ dailyEvaluationLimit: null })).status()).toBe(200);
+    await paid.getByRole("button", { name: "Evaluate 3 selected…" }).click();
+    const dialog = paid.getByRole("alertdialog");
+    await expect(dialog).toContainText("Evaluate 3 selected jobs? They will be added to the evaluation queue and will use your configured AI budget.");
+    await expect(dialog).toContainText("Up to $3.00 will be reserved ($1.00 per evaluation).");
+    expect(await overflow()).toBe(false);
+    // Opening the confirmation created nothing.
+    for (const id of ids) expect((await request.get(`/api/opportunities/${id}/evaluation`)).status()).toBe(404);
+    await dialog.getByRole("button", { name: "Evaluate 3 jobs" }).click();
+    await expect(paid.getByRole("status")).toHaveText("3 evaluations queued. They will run one at a time. Refresh the page to see their latest statuses.");
+    // The one refresh after queueing lands: each row shows its queued status.
+    await expect(page.locator(".opportunity-row .status-label", { hasText: /^Evaluation queued$/ })).toHaveCount(3);
+    await expect(page.locator(".opportunity-row .status-label", { hasText: /^Not evaluated$/ })).toHaveCount(0);
+    for (const id of ids) {
+      const evaluation = (await (await request.get(`/api/opportunities/${id}/evaluation`)).json()) as { status: string };
+      expect(evaluation.status).toBe("PENDING");
+    }
+
+    // The same jobs again: no longer available, listed, nothing submitted.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(evaluateSection);
+    await toolbar(page).getByRole("button", { name: "Select all on this page" }).click();
+    await paid.getByRole("button", { name: "Evaluate 3 selected…" }).click();
+    const unavailable = paid.getByRole("alert");
+    await expect(unavailable).toContainText("nothing was submitted");
+    await expect(unavailable.getByRole("listitem")).toHaveCount(3);
+    await expect(unavailable.getByRole("listitem").first()).toContainText("Already queued or running");
+    await unavailable.getByRole("button", { name: "Deselect these jobs" }).click();
+    await expect(toolbar(page).getByText("0 selected", { exact: true })).toBeVisible();
+    // One evaluation each: the second request created no duplicate work.
+    for (const id of ids) {
+      const evaluation = (await (await request.get(`/api/opportunities/${id}/evaluation`)).json()) as { history: unknown[] };
+      expect(evaluation.history).toHaveLength(1);
+    }
+    expect(await overflow()).toBe(false);
+    expect(problems).toEqual([]);
+  } finally {
+    await runHelper("budget-restore", budgetSnapshot);
+    await runHelper("cleanup", "", profileId, previousActiveId);
+  }
+});

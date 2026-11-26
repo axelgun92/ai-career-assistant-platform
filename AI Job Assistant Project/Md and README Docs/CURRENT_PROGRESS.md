@@ -1,9 +1,48 @@
 # Current Progress
 
 **Project:** AI Career Platform / AI Job Assistant  
-**Last updated:** November 25, 2026
+**Last updated:** November 26, 2026
 
-## Post-Feature-14B Corrections and Final Product-Integration Fixes (November 25, 2026; on top of `9a3c459` on `integration/final-evaluator-product`; implemented and verified offline on `ai_career_assistant_test` only; uncommitted, awaiting Alex's review and approval; nothing run on the acceptance database)
+## Bulk Paid-Evaluation Selection in the Evaluate Section (November 26, 2026; on top of `3097980` on `integration/final-evaluator-product`; implemented and verified offline on `ai_career_assistant_test` only; approved by Alex and committed on `claude/gallant-pasteur-y1ou3i` and `integration/final-evaluator-product`; no paid provider call; nothing run on the acceptance database)
+
+- **Gap:** evaluations could only be requested one job at a time, from each job's page. The dashboard's Evaluate section (`/?triage=evaluate`) already had selection and bulk Move, but no evaluation action. The budget gate could admit only one job per locked transaction, and enqueueing ran in a separate transaction, so N single requests could never be all-or-nothing.
+- **Behavior (user-initiated):**
+  - In the Evaluate section a separate "Paid evaluation" panel sits below the selection toolbar, so it is never confused with Move. Its button, "Evaluate N selected…", is disabled with nothing selected.
+  - Selection is the existing one: individual checkboxes, or "Select all on this page" (current page only).
+  - The server first checks the whole selection, with nothing written and no provider call. If every job is eligible and the batch fits every enabled limit, a confirmation appears ("Evaluate N selected jobs? …will use your configured AI budget", plus the reservation when a budget is enforced).
+  - On confirm, the server rechecks everything and queues every job, or none.
+  - Over a limit: every exceeded limit is named with how many evaluations still fit (for example "your remaining weekly limit allows 7 evaluations"), with a Budget settings link.
+  - Jobs no longer available are listed by title with a reason ("Already queued or running", "Already evaluated", "Has a deferred request", "Held by triage", "Duplicate…", "Same listing as another selected job"). "Deselect these jobs" removes them; nothing is submitted.
+- **Eligibility mirrors the individual request:**
+  - the same lifecycle, normalized-content and domain checks;
+  - the active profile with its Customer Success preferences;
+  - the same triage gate call;
+  - the latest evaluation is none or FAILED (FAILED is retryable, even after an older completed one); latest COMPLETED, PENDING or RUNNING is refused;
+  - no live admission or open deferral (bulk refuses a deferred job instead of resuming it);
+  - the existing duplicate-spend twin rule, plus no two selected captures of one listing.
+  - Evaluations are created by the same `createEvaluationAndTask`, so the listing version and profile version are bound identically.
+- **Limits (`batchCapacity`, packages/core):**
+  - the monthly AI budget: how many reserves still fit, settled exactly on the single-admission rule;
+  - the daily and weekly evaluation limits;
+  - the monthly output-token limit at its worst case: each evaluation's call budget × its largest per-call output maximum. A batch is refused when the remaining allowance cannot hold it, even before the limit is reached.
+  - Output-token potential (`outputTokenPotential`, approved clarification): scoped to the current monthly budget window, and each provider call is counted once:
+    - a call made this window that reported its output tokens counts its actual tokens, which replace its estimate;
+    - a call made this window that reported none counts at its maximum;
+    - a call a queued or running evaluation has not yet made counts at its maximum (its call budget less every call it already made, in any window);
+    - an admission not yet enqueued counts at the current worst case.
+  - Unused potential is released when an evaluation completes, fails permanently or is deleted, or its admission is abandoned; only the calls it made remain. A retryable failure goes back to the queue and keeps its remaining calls. Queued evaluations have no cancel action in the product; a cancelled deferral never held any potential.
+  - Limits apply only when the budget is enforced; disabled limits are ignored. The app does not claim to know the OpenAI account balance.
+- **One transaction, one commit:** `withBatchAdmissionLocks` takes the duplicate-spend lock, then the admission lock (the established order). The final checks, the capacity check, all admissions and reservations, all evaluations and tasks, and each admission's consumption then happen inside it.
+- **After queueing:** the panel says "N evaluations queued. They will run one at a time. Refresh the page to see their latest statuses." The dashboard does not poll, so it never promises live row updates; it refreshes once, right after the queueing.
+- **Queue and worker:** the existing queue and single protected worker run the jobs one at a time, so a batch never starts parallel provider calls. Individual requests, Mode B hand-off, deferrals, resume and cancel are unchanged.
+- **API:**
+  - `POST /api/opportunities/bulk/evaluate/preflight` and `POST /api/opportunities/bulk/evaluate`, with 1–50 explicit IDs; duplicate IDs are refused.
+  - Statuses: READY (200), QUEUED (202), LIMITS_EXCEEDED and INELIGIBLE (200, distinguished by status, as the individual request answers 200 for its non-queued outcomes, so the browser logs no failed request), and 400 for an invalid selection.
+- **Also fixed:** the app declared no icon, so browsers requested `/favicon.ico` on every page, got a 404 and logged a console error (found by the bulk-evaluation E2E console check; re-verified before commit: without `icon.svg` the 404 console error appears, with it the page declares `/icon.svg`, which loads with 200 and no error). `apps/web/src/app/icon.svg` (a 32×32 SVG, the only change for this) is added.
+- **Also fixed (found by the final E2E run):** the opportunity page's "first found" date and the "confirmed by you" date were rendered with the browser's locale, so a viewer whose local date differed from the server's (the applications E2E runs in Pacific/Kiritimati, UTC+14) got a hydration error. The page then rendered again in the browser, which once dropped a click ("Reopen application"). Both dates now use the existing `formatDate` (YYYY-MM-DD, identical on server and browser), with a regression test.
+- **Not done (by instruction):** nothing on the acceptance database (no deploy or migration of the acceptance checkout yet); no historical routing; no LinkedIn Mode B batch; no paid provider call.
+
+## Post-Feature-14B Corrections and Final Product-Integration Fixes (November 25, 2026; on top of `9a3c459` on `integration/final-evaluator-product`; verified offline on `ai_career_assistant_test` only; approved by Alex and committed as `3097980`; nothing run on the acceptance database)
 
 - **Dashboard movement and working categories:**
   - Root cause of the DISMISS errors: the Rejected card linked to `view=all&triage=reject`, which listed dismissed jobs too; a bulk Dismiss of those was refused as not allowed and reported as a failure.

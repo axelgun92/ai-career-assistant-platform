@@ -156,7 +156,15 @@ Supported results page (Alex's Chrome)
   - Mode B is complete for a site only when an approved automatic detail mechanism moves its batch jobs into real opportunities without Alex opening each one. Awaiting details never counts.
   - *(Earlier, November 3: "Neither is enabled or complete yet", pending F0 and P1.)*
 
-### Post-Feature-14B corrections and final product-integration fixes (November 25, 2026; verified offline; uncommitted, awaiting Alex's approval)
+### Bulk paid evaluation from the Evaluate section (November 26, 2026; verified offline; approved and committed)
+
+- **What it does:** in the dashboard's Evaluate section, the user selects jobs (one at a time or all on the current page) and chooses "Evaluate N selected…".
+- **Before anything happens:** the server checks every selected job and every enabled Budget limit (monthly AI budget, daily and weekly evaluations, and the monthly output-token limit at its worst case, counting each provider call once, with reported usage replacing its estimate and unused potential released when an evaluation finishes) for the whole selection. Nothing is reserved, queued or spent before the user confirms.
+- **All or nothing:** every job is queued in one transaction, or none is, with each exceeded limit named and a Budget settings link, or with the jobs no longer available listed.
+- **After queueing:** "N evaluations queued. They will run one at a time. Refresh the page to see their latest statuses." (the dashboard does not refresh by itself).
+- **Unchanged:** jobs run through the existing queue and single worker, one at a time. Individual requests, Mode B hand-off and deferrals are unchanged.
+
+### Post-Feature-14B corrections and final product-integration fixes (November 25, 2026; verified offline; approved and committed as `3097980`)
 
 - **Working categories follow the lifecycle:** the dashboard's triage cards count and list Active jobs only; moving a job out of Active takes it out of its category, and its triage result stays in its details and history. Moving a job to the category it is already in is reported as skipped ("Already in Dismissed"), never as a failure; mixed selections are handled per job, with results keyed by opportunity.
 - **Customer Success hard requirements in triage:** seniority above Mid rejects (ambiguous manager or executive titles wait for review; never inferred from years of experience), Onsite-only rejects (Remote and Hybrid pass), non-full-time employment rejects (a contract without a stated full-time schedule waits for review), and compensation tiers are judged by the applicable tier or all tiers together. Automatic acquisition skips clearly disallowed titles before reading the job page.

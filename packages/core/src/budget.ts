@@ -175,6 +175,136 @@ export function throughputLimitsReached(
   return reached;
 }
 
+// Whole-batch admission (November 26, 2026): how many evaluations each
+// enabled limit still allows, from the same persisted inputs the single
+// admission reads under the admission lock. A batch is admitted only when
+// every enabled limit allows all of it. Limits apply only when the budget is
+// enforced (as for single admission, which defers only then); a null limit
+// is off.
+//
+// Output tokens are not reserved per evaluation, so the batch counts their
+// worst case: an evaluation can report at most its call budget times its
+// largest per-call output maximum (the call budget spans task retries, and
+// the provider enforces each call's maximum). `committedOutputTokens` is the
+// month's reported output plus the worst case still possible for work
+// already admitted, queued or running and for attempts not yet reported.
+export interface BatchLimitShortfall {
+  limit: UsageLimit;
+  // Evaluations this limit still allows now (0 when none).
+  remaining: number;
+}
+
+export type BatchCapacityResult =
+  | { fits: true }
+  | { fits: false; shortfalls: BatchLimitShortfall[] };
+
+export function largestCountWithin(available: number, perEvaluation: number): number {
+  const reserve = roundMoney(perEvaluation);
+  if (reserve <= 0) return available >= 0 ? Number.POSITIVE_INFINITY : 0;
+  // Start from the division, then settle exactly on the single-admission
+  // rule (roundMoney(count × reserve) <= available) in both directions.
+  let count = Math.max(0, Math.floor(roundMoney(available / reserve)));
+  while (count > 0 && roundMoney(count * reserve) > available) count -= 1;
+  while (roundMoney((count + 1) * reserve) <= available) count += 1;
+  return count;
+}
+
+export function batchCapacity(input: {
+  requested: number;
+  settings: {
+    enforced: boolean;
+    amount: number;
+    reservePerEvaluation: number;
+    dailyEvaluationLimit: number | null;
+    weeklyEvaluationLimit: number | null;
+    monthlyOutputTokenLimit: number | null;
+  } | null;
+  // The month's known spend and outstanding holds in the budget currency.
+  ledger: { knownSpent: number; held: number };
+  usage: Pick<ThroughputUsage, "dailyEvaluations" | "weeklyEvaluations">;
+  // Reported output tokens plus the worst case still possible for admitted,
+  // queued and running work.
+  committedOutputTokens: number;
+  // The most output tokens one new evaluation could report.
+  outputTokensPerEvaluation: number;
+}): BatchCapacityResult {
+  const { settings, requested } = input;
+  if (!settings || !settings.enforced) return { fits: true };
+  const shortfalls: BatchLimitShortfall[] = [];
+  const available = roundMoney(settings.amount - input.ledger.knownSpent - input.ledger.held);
+  const byBudget = largestCountWithin(available, settings.reservePerEvaluation);
+  if (byBudget < requested) shortfalls.push({ limit: "BUDGET", remaining: byBudget });
+  if (settings.dailyEvaluationLimit !== null) {
+    const remaining = Math.max(0, settings.dailyEvaluationLimit - input.usage.dailyEvaluations);
+    if (remaining < requested) shortfalls.push({ limit: "DAILY_EVALUATIONS", remaining });
+  }
+  if (settings.weeklyEvaluationLimit !== null) {
+    const remaining = Math.max(0, settings.weeklyEvaluationLimit - input.usage.weeklyEvaluations);
+    if (remaining < requested) shortfalls.push({ limit: "WEEKLY_EVALUATIONS", remaining });
+  }
+  if (settings.monthlyOutputTokenLimit !== null) {
+    const left = settings.monthlyOutputTokenLimit - input.committedOutputTokens;
+    const perEvaluation = Math.max(1, input.outputTokensPerEvaluation);
+    const remaining = left <= 0 ? 0 : Math.floor(left / perEvaluation);
+    if (remaining < requested) shortfalls.push({ limit: "MONTHLY_OUTPUT_TOKENS", remaining });
+  }
+  return shortfalls.length ? { fits: false, shortfalls } : { fits: true };
+}
+
+// The most output tokens one evaluation can report: its call budget times
+// the largest per-call output maximum of its routes (the default maximum and
+// every operation route), from its execution metadata or the current
+// configuration.
+export function worstCaseOutputTokens(input: {
+  callBudget: number;
+  maxOutputTokens: number;
+  operationMaximums?: readonly number[];
+}): number {
+  const largest = Math.max(input.maxOutputTokens, ...(input.operationMaximums ?? []));
+  return Math.max(0, input.callBudget) * Math.max(0, largest);
+}
+
+// Output-token potential committed in the current monthly budget window
+// (November 26, 2026). Every provider call is counted exactly once:
+//   - a call made in this window that reported its output tokens counts its
+//     actual tokens (the report replaces the estimate);
+//   - a call made in this window that reported none counts at its maximum;
+//   - a call not yet made by a queued or running evaluation counts at its
+//     maximum: its call budget less every call it already made (in any
+//     window, so a recorded call is never also counted as still to come);
+//   - an admission not yet turned into an evaluation counts at the current
+//     worst case.
+// A completed, permanently failed or deleted evaluation is no longer queued
+// or running, and an abandoned admission is no longer live, so their unused
+// potential is released; only the calls they actually made remain.
+// Calls made in an earlier window belong to that window and never count.
+export interface OutputTokenPotentialInput {
+  reportedOutputTokens: number;
+  unreportedCalls: ReadonlyArray<{ maximumOutputTokens: number }>;
+  activeEvaluations: ReadonlyArray<{ callBudget: number; callsMade: number; maximumOutputTokens: number }>;
+  liveAdmissions: number;
+  worstCasePerEvaluation: number;
+}
+
+export interface OutputTokenPotential {
+  reported: number;
+  unreported: number;
+  notYetMade: number;
+  admitted: number;
+  total: number;
+}
+
+export function outputTokenPotential(input: OutputTokenPotentialInput): OutputTokenPotential {
+  const reported = Math.max(0, input.reportedOutputTokens);
+  const unreported = input.unreportedCalls.reduce((sum, call) => sum + Math.max(0, call.maximumOutputTokens), 0);
+  const notYetMade = input.activeEvaluations.reduce(
+    (sum, evaluation) => sum + Math.max(0, evaluation.callBudget - evaluation.callsMade) * Math.max(0, evaluation.maximumOutputTokens),
+    0,
+  );
+  const admitted = Math.max(0, input.liveAdmissions) * Math.max(0, input.worstCasePerEvaluation);
+  return { reported, unreported, notYetMade, admitted, total: reported + unreported + notYetMade + admitted };
+}
+
 export interface CapacityEstimate {
   // Average recorded cost of recent completed evaluations; null (Unknown)
   // without any such evaluation.

@@ -17,6 +17,11 @@ import { getDatabaseClient } from "./client";
 
 export type DuplicateDatabaseClient = PrismaClient | Prisma.TransactionClient;
 
+// The duplicate-spend twin rule: an unresolved exact match, or a pair the
+// user confirmed is one job. Shared by blockingTwin and the bulk check.
+const isSpendTwin = (relationship: { decision: string; resolution: string | null }) =>
+  (relationship.decision === "MATCH" && relationship.resolution === null) || relationship.resolution === "SAME_JOB";
+
 // A duplicate relationship as the product shows and enforces it: engine
 // decisions persisted at capture or by the backfill, plus exact matches
 // detected live for pairs that predate deduplication.
@@ -364,6 +369,30 @@ export class PrismaDuplicateRepository {
     return relationship!;
   }
 
+  // Bulk evaluation (November 26, 2026): pairs of the given opportunities
+  // that are the same listing by the duplicate-spend rule (an unresolved
+  // exact match, or a pair the user confirmed is one job), so one batch can
+  // never pay twice for one listing. Each pair once, in input order.
+  async spendTwinPairsAmong(
+    opportunityIds: readonly string[],
+    client: DuplicateDatabaseClient = this.database,
+  ): Promise<Array<[string, string]>> {
+    const selected = new Set(opportunityIds);
+    const pairs: Array<[string, string]> = [];
+    const seen = new Set<string>();
+    for (const opportunityId of opportunityIds) {
+      // Sequential: the client may be one transaction's single connection.
+      for (const twin of (await this.relationships(opportunityId, client)).filter(isSpendTwin)) {
+        if (!selected.has(twin.otherOpportunityId)) continue;
+        const key = [opportunityId, twin.otherOpportunityId].sort().join(":");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pairs.push([opportunityId, twin.otherOpportunityId]);
+      }
+    }
+    return pairs;
+  }
+
   // The duplicate-spend check behind every paid evaluation request and
   // deferred resume: an opportunity that has never completed an evaluation
   // may not start one while an unresolved exact duplicate already has a
@@ -375,10 +404,7 @@ export class PrismaDuplicateRepository {
   ): Promise<{ opportunityId: string; title: string | null; companyName: string | null } | null> {
     const ownCompleted = await client.evaluation.count({ where: { opportunityId, status: "COMPLETED" } });
     if (ownCompleted > 0) return null;
-    const twins = (await this.relationships(opportunityId, client)).filter(
-      // An unresolved exact match, or a pair the user confirmed is one job.
-      (relationship) => (relationship.decision === "MATCH" && relationship.resolution === null) || relationship.resolution === "SAME_JOB",
-    );
+    const twins = (await this.relationships(opportunityId, client)).filter(isSpendTwin);
     for (const twin of twins) {
       const [spend] = await client.$queryRaw<Array<{ spend: boolean }>>`
         SELECT (

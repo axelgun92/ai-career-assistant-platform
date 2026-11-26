@@ -1976,6 +1976,35 @@ main {
   font-weight: 600;
 }
 
+/* Bulk paid evaluation in the Evaluate section (November 26, 2026): apart
+   from Move, with its own confirmation. */
+.bulk-evaluation {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background: #f8fafc;
+  min-width: 0;
+}
+
+.bulk-evaluation-label {
+  font-weight: 700;
+}
+
+.bulk-evaluation-confirmation {
+  border: 1px solid #1d4ed8;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: #eff6ff;
+}
+
+.bulk-evaluation .error-message ul,
+.bulk-evaluation .error-message li {
+  overflow-wrap: anywhere;
+}
+
 /* Possible duplicates (November 25, 2026) */
 .duplicates-count {
   margin: 0.5rem 0 1rem;

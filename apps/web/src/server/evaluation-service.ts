@@ -15,6 +15,7 @@ import {
   PrismaEvaluationQueryRepository,
   PrismaEvaluationRepository,
   PrismaEvaluationTaskRepository,
+  type AdmissionTransaction,
   type DeferredEvaluationRecord,
   withDuplicateSpendLock,
 } from "@ai-career/database";
@@ -30,7 +31,12 @@ import {
 } from "@ai-career/shared";
 import { z } from "zod";
 import { aiConfigurationStatus } from "./ai-configuration";
-import { getBudgetService, type EvaluationAdmissionGate } from "./budget-service";
+import {
+  getBudgetService,
+  type AdmitBatchResult,
+  type BatchIneligibleReason,
+  type EvaluationAdmissionGate,
+} from "./budget-service";
 import { EvaluationApiError } from "./evaluation-errors";
 import { evaluationQueueState } from "./evaluation-queue-state";
 import { semanticExecutorConfigFromEnvironment } from "./semantic-execution-config";
@@ -86,6 +92,11 @@ export interface AdmittedTaskEnqueuer {
   enqueueAdmitted(
     input: Parameters<EvaluationTaskRepository["enqueue"]>[0] & { admissionId: string },
   ): Promise<EvaluationTask>;
+  // The same work inside the bulk admission's transaction.
+  enqueueAdmittedIn(
+    transaction: AdmissionTransaction,
+    input: Parameters<EvaluationTaskRepository["enqueue"]>[0] & { admissionId: string },
+  ): Promise<EvaluationTask>;
 }
 
 export interface EvaluationServiceDependencies {
@@ -107,7 +118,10 @@ export interface EvaluationServiceDependencies {
   // that check with the admission it protects. Optional so evaluator-level
   // tests can run without a database.
   duplicates?: {
-    blockingTwin(opportunityId: string): Promise<{ opportunityId: string; title: string | null; companyName: string | null } | null>;
+    // With a transaction, the check runs inside the bulk admission's locks.
+    blockingTwin(opportunityId: string, client?: AdmissionTransaction): Promise<{ opportunityId: string; title: string | null; companyName: string | null } | null>;
+    // Bulk evaluation: selected jobs that are the same listing.
+    spendTwinPairsAmong?(opportunityIds: readonly string[], client?: AdmissionTransaction): Promise<Array<[string, string]>>;
   };
   duplicateSpendLock?: <T>(work: () => Promise<T>) => Promise<T>;
   // Product-only deterministic gate before admission. Optional for isolated
@@ -229,6 +243,32 @@ export function createEvaluationService(
       409,
     );
 
+  // What every admitted evaluation is created with (the single path and
+  // bulk evaluation alike): the evaluator, the pinned profile version, the
+  // execution metadata and the job's attempts.
+  function enqueueInputFor(input: { opportunityId: string; profile: { id: string; version: number } }) {
+    const { semanticConfig, jobMaxAttempts } = execution();
+    return {
+      opportunityId: input.opportunityId,
+      userProfileId: input.profile.id,
+      userProfileVersion: input.profile.version,
+      evaluator: createCustomerSuccessEvaluator(),
+      executionMetadata: {
+        provider: "openai",
+        model: semanticConfig.model,
+        maxOutputTokens: semanticConfig.maxOutputTokens,
+        semanticCallBudget: semanticConfig.callBudget,
+        pricingConfigurationVersion:
+          semanticConfig.pricing.version,
+        semanticExecutionPolicyVersion:
+          semanticConfig.executionPolicy?.version ?? null,
+        semanticOperationExecutionPolicy:
+          semanticConfig.executionPolicy?.operations ?? null,
+      },
+      maxAttempts: jobMaxAttempts,
+    };
+  }
+
   // Every new request and every deferred resume ends here, so the
   // duplicate-spend check covers both (Core TDD §33: recheck duplicate state
   // before release). Under the lock, the check and the admission, evaluation
@@ -262,27 +302,8 @@ export function createEvaluationService(
     profile: { id: string; version: number };
     resumeDeferralId?: string;
   }) {
-    const { semanticConfig, jobMaxAttempts } = execution();
-    const evaluator = createCustomerSuccessEvaluator();
-    const enqueueInput = {
-      opportunityId: input.opportunityId,
-      userProfileId: input.profile.id,
-      userProfileVersion: input.profile.version,
-      evaluator,
-      executionMetadata: {
-        provider: "openai",
-        model: semanticConfig.model,
-        maxOutputTokens: semanticConfig.maxOutputTokens,
-        semanticCallBudget: semanticConfig.callBudget,
-        pricingConfigurationVersion:
-          semanticConfig.pricing.version,
-        semanticExecutionPolicyVersion:
-          semanticConfig.executionPolicy?.version ?? null,
-        semanticOperationExecutionPolicy:
-          semanticConfig.executionPolicy?.operations ?? null,
-      },
-      maxAttempts: jobMaxAttempts,
-    };
+    const { semanticConfig } = execution();
+    const enqueueInput = enqueueInputFor(input);
     const queued = (task: { id: string; evaluationId: string; status: string }) => ({
       outcome: "QUEUED" as const,
       opportunityId: input.opportunityId,
@@ -483,6 +504,102 @@ export function createEvaluationService(
       }
 
       return admitAndEnqueue({ opportunityId, domain, profile });
+    },
+
+    // Bulk evaluation (November 26, 2026): several jobs requested together,
+    // all or nothing. Each job gets the checks the individual request makes
+    // (lifecycle, normalized content, domain, the active profile and its
+    // Customer Success preferences, the triage gate), then one transaction
+    // under the duplicate-spend and admission locks rechecks active,
+    // completed and deferred work and duplicate spend, checks the whole
+    // batch against every enabled limit and, for a submit, admits and queues
+    // every job. Unlike the individual request, a job whose latest
+    // evaluation completed, or with an open deferred request, is refused
+    // (re-evaluate or resume it on its own page). No provider call is made.
+    async requestEvaluationBatch(
+      opportunityIds: readonly string[],
+      options: { mode: "PREFLIGHT" | "SUBMIT"; beforeCommit?: () => Promise<void> },
+    ): Promise<AdmitBatchResult> {
+      if (!gate?.admitBatch) throw new Error("Bulk evaluation requires the admission gate");
+      const enqueueIn = dependencies.tasks.enqueueAdmittedIn?.bind(dependencies.tasks);
+      if (!enqueueIn) throw new Error("Bulk evaluation requires a task repository with enqueueAdmittedIn");
+      const { semanticConfig } = execution();
+      const domain = "customer-success";
+      const profile = await dependencies.queries.resolveUserProfile(null, domain);
+      if (!profile) {
+        throw new EvaluationApiError("USER_PROFILE_NOT_FOUND", "A usable versioned user profile is required", 422);
+      }
+
+      const ineligible: Array<{ opportunityId: string; reason: BatchIneligibleReason }> = [];
+      const reasonOf: Record<string, BatchIneligibleReason> = {
+        OPPORTUNITY_NOT_FOUND: "NOT_FOUND",
+        OPPORTUNITY_NOT_NORMALIZED: "NOT_NORMALIZED",
+        OPPORTUNITY_NOT_EVALUABLE: "NOT_EVALUABLE",
+        NORMALIZED_SOURCE_CONTENT_MISSING: "SOURCE_CONTENT_MISSING",
+        USER_PROFILE_NOT_FOUND: "PROFILE_UNUSABLE",
+        CUSTOMER_SUCCESS_CONFIGURATION_INVALID: "PROFILE_UNUSABLE",
+      };
+      for (const opportunityId of opportunityIds) {
+        try {
+          const opportunity = await loadEvaluableOpportunity(opportunityId);
+          if (opportunity.domain !== domain) {
+            ineligible.push({ opportunityId, reason: "DOMAIN_UNSUPPORTED" });
+            continue;
+          }
+          const subject = await dependencies.evaluations.loadSubject({ opportunityId, userProfileId: profile.id });
+          validateCustomerSuccessProfile(subject);
+          if (triageGate) {
+            // The same gate call the individual request makes before
+            // admission (a manual decision is kept).
+            const triage = await triageGate.assess({ opportunityId, domain, profile });
+            if (triage.outcome !== "EVALUATE") {
+              ineligible.push({ opportunityId, reason: triage.outcome === "REJECT" ? "TRIAGE_REJECTED" : "TRIAGE_NEEDS_REVIEW" });
+            }
+          }
+        } catch (error) {
+          const reason = error instanceof EvaluationApiError ? reasonOf[error.code] : undefined;
+          if (!reason) throw error;
+          ineligible.push({ opportunityId, reason });
+        }
+      }
+      if (ineligible.length) return { outcome: "INELIGIBLE", items: ineligible };
+
+      const operationMaximums = Object.values(semanticConfig.executionPolicy?.operations ?? {}).map(
+        (operation) => operation.maximumOutputTokens,
+      );
+      const duplicates = dependencies.duplicates;
+      return gate.admitBatch({
+        opportunityIds,
+        mode: options.mode,
+        execution: { callBudget: semanticConfig.callBudget, maxOutputTokens: semanticConfig.maxOutputTokens, operationMaximums },
+        // Duplicate spend, on the batch's transaction: a selected job whose
+        // exact duplicate already has an evaluation or a pending request
+        // (the individual rule, unchanged), and selected jobs that are the
+        // same listing.
+        check: async (transaction, ids) => {
+          if (!duplicates) return [];
+          const found: Array<{ opportunityId: string; reason: BatchIneligibleReason }> = [];
+          for (const opportunityId of ids) {
+            if (await duplicates.blockingTwin(opportunityId, transaction)) found.push({ opportunityId, reason: "DUPLICATE_OF_EVALUATED" });
+          }
+          for (const pair of (await duplicates.spendTwinPairsAmong?.(ids, transaction)) ?? []) {
+            for (const opportunityId of pair) found.push({ opportunityId, reason: "SAME_LISTING_SELECTED" });
+          }
+          return found;
+        },
+        enqueue: (transaction, item) => {
+          const input = enqueueInputFor({ opportunityId: item.opportunityId, profile });
+          // The user's per-evaluation call allowance can only lower the
+          // deployment maximum, exactly as for a single admission.
+          const semanticCallBudget = Math.min(semanticConfig.callBudget, item.evaluationCallLimit ?? semanticConfig.callBudget);
+          return enqueueIn(transaction, {
+            ...input,
+            executionMetadata: { ...input.executionMetadata, semanticCallBudget },
+            admissionId: item.admissionId,
+          });
+        },
+        ...(options.beforeCommit ? { beforeCommit: options.beforeCommit } : {}),
+      });
     },
 
     async decideTriage(opportunityIdValue: string, body: unknown) {

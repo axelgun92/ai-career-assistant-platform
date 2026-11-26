@@ -191,7 +191,12 @@ The Customer Success salary Hard Filter consumes normalized Core facts rather th
   - one persisted triage record per opportunity keeps reasons, causal fields, profile version, fingerprint and manual choice; re-observation refreshes the automatic assessment without duplicating the opportunity or erasing provenance/manual choice;
   - Needs Review and Reject create zero evaluator/admission/deferral/semantic-operation rows. The evaluator's six-released/fifteen-withheld contract and Apply / Review / Skip remain unchanged.
 
-- Post-Feature-14B corrections (November 25, 2026; verified offline, awaiting approval):
+- Bulk paid evaluation (November 26, 2026; verified offline; approved and committed):
+  - in the dashboard's Evaluate section (`/?triage=evaluate`), select jobs individually or with "Select all on this page" (the current page only), then choose **Evaluate N selected…** in the Paid evaluation panel;
+  - the server first checks the whole selection against every enabled Budget limit (monthly AI budget, evaluations per day and per week, and output tokens per month at their worst case: each provider call counts once, at its reported usage when known and otherwise its maximum, and an evaluation's unused calls stop counting when it finishes) and each job's eligibility; nothing is reserved, queued or spent before you confirm;
+  - it is all or nothing: on confirm every job is queued in one transaction, or none is, and the panel names each limit that would be exceeded (with a Budget settings link) or lists the jobs no longer available;
+  - queued jobs run through the existing queue and the single evaluation worker, one at a time; the dashboard does not refresh by itself, so refresh the page to see their latest statuses.
+- Post-Feature-14B corrections (November 25, 2026; approved and committed as `3097980`):
   - the dashboard's triage cards count and list Active jobs only; a move to the category a job is already in is reported as skipped, not failed;
   - Customer Success triage checks seniority (above Mid rejects; ambiguous manager or executive titles wait for review), work arrangement (Onsite-only rejects), employment type (non-full-time rejects) and compensation tiers;
   - triage re-runs when its inputs change (capture, profile, eligibility, corrections), keeping a history shown on the opportunity page;

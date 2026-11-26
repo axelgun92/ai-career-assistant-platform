@@ -1,3 +1,4 @@
+import { formatDate } from "./dashboard/format";
 import type { ProcessingStatus } from "./processing-status";
 
 // The opportunity page's processing breakdown (November 23, 2026): one line
@@ -53,7 +54,8 @@ export function ProcessingBreakdown({
           <dt>Capture</dt>
           <dd>
             {capture.normalized ? "Captured and normalized" : "Captured; not normalized yet"} ({observations}; first found{" "}
-            {new Date(capture.firstFoundAt).toLocaleDateString()}).
+            {/* A fixed format: the server and the browser render the same text in any time zone. */}
+            {formatDate(capture.firstFoundAt)}).
           </dd>
         </div>
         <div>

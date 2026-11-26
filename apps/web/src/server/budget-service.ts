@@ -1,20 +1,26 @@
 import {
   aiBudgetLimitReason,
   usageLimitReachedReason,
+  batchCapacity,
   budgetDecision,
   budgetPeriod,
   budgetSettingsSchema,
   capacityEstimate,
+  outputTokenPotential,
   roundMoney,
   throughputLimitsReached,
   volumeWindows,
   warningState,
+  worstCaseOutputTokens,
+  type BatchLimitShortfall,
+  type BudgetPeriod,
   type UsageLimit,
 } from "@ai-career/core";
 import {
   PrismaBudgetRepository,
   PrismaDeferredEvaluationRepository,
   PrismaEvaluationAdmissionRepository,
+  type AdmissionTransaction,
   type DeferredEvaluationRecord,
   type StoredBudgetSettings,
 } from "@ai-career/database";
@@ -75,6 +81,54 @@ export type AdmitResult =
   | { outcome: "DEFERRAL_NOT_OPEN" }
   | { outcome: "DEFERRED" | "STILL_DEFERRED"; deferral: DeferredEvaluationRecord; budget: BudgetSnapshot };
 
+// Bulk admission (November 26, 2026): why a selected job cannot be admitted
+// with the batch right now. Never a judgement on the job.
+export type BatchIneligibleReason =
+  | "NOT_FOUND"
+  | "NOT_EVALUABLE"
+  | "NOT_NORMALIZED"
+  | "SOURCE_CONTENT_MISSING"
+  | "DOMAIN_UNSUPPORTED"
+  | "PROFILE_UNUSABLE"
+  | "TRIAGE_NEEDS_REVIEW"
+  | "TRIAGE_REJECTED"
+  | "ALREADY_ACTIVE"
+  | "ALREADY_EVALUATED"
+  | "DEFERRED"
+  | "DUPLICATE_OF_EVALUATED"
+  | "SAME_LISTING_SELECTED";
+
+export interface BatchExecutionBasis {
+  // The deployment's per-evaluation call budget and per-call output maxima
+  // (the default and every operation route), for the output-token worst case.
+  callBudget: number;
+  maxOutputTokens: number;
+  operationMaximums: readonly number[];
+}
+
+export type AdmitBatchResult =
+  | { outcome: "READY"; count: number; reservation: { perEvaluation: number; total: number; currency: string } | null }
+  | { outcome: "QUEUED"; queued: Array<{ opportunityId: string; evaluationId: string; taskId: string }> }
+  | { outcome: "INELIGIBLE"; items: Array<{ opportunityId: string; reason: BatchIneligibleReason }> }
+  | { outcome: "LIMITS_EXCEEDED"; shortfalls: BatchLimitShortfall[] };
+
+export interface AdmitBatchInput {
+  opportunityIds: readonly string[];
+  mode: "PREFLIGHT" | "SUBMIT";
+  execution: BatchExecutionBasis;
+  // Further checks under the locks, on the same transaction (duplicate
+  // spend): the selected jobs that may not be admitted, with why.
+  check(transaction: AdmissionTransaction, opportunityIds: readonly string[]): Promise<Array<{ opportunityId: string; reason: BatchIneligibleReason }>>;
+  // Creates the evaluation and task for one admitted job and consumes its
+  // admission, on the same transaction.
+  enqueue(
+    transaction: AdmissionTransaction,
+    item: { opportunityId: string; admissionId: string; evaluationCallLimit: number | null },
+  ): Promise<{ evaluationId: string; id: string }>;
+  // Test hook: runs after every check and write, before the commit.
+  beforeCommit?: () => Promise<void>;
+}
+
 export interface EvaluationAdmissionGate {
   admit(input: {
     opportunityId: string;
@@ -89,6 +143,53 @@ export interface EvaluationAdmissionGate {
   getDeferral(id: string): Promise<DeferredEvaluationRecord | null>;
   cancelDeferral(id: string): Promise<boolean>;
   reservationForEvaluation(evaluationId: string): Promise<{ amount: number; currency: string } | null>;
+  // All-or-nothing admission of several jobs (bulk evaluation). Optional so
+  // gates without a database can omit it.
+  admitBatch?(input: AdmitBatchInput): Promise<AdmitBatchResult>;
+}
+
+// Per-call output maximum and call budget recorded on an evaluation, or the
+// given fallbacks when its metadata predates them.
+function recordedExecution(metadata: unknown, fallback: BatchExecutionBasis) {
+  const record = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : {};
+  const callBudget = typeof record.semanticCallBudget === "number" && record.semanticCallBudget > 0 ? record.semanticCallBudget : fallback.callBudget;
+  const maxOutputTokens = typeof record.maxOutputTokens === "number" && record.maxOutputTokens > 0 ? record.maxOutputTokens : fallback.maxOutputTokens;
+  const operations = record.semanticOperationExecutionPolicy && typeof record.semanticOperationExecutionPolicy === "object"
+    ? Object.values(record.semanticOperationExecutionPolicy as Record<string, unknown>)
+    : [];
+  const operationMaximums = operations
+    .map((operation) => (operation && typeof operation === "object" ? (operation as { maximumOutputTokens?: unknown }).maximumOutputTokens : null))
+    .filter((value): value is number => typeof value === "number" && value > 0);
+  const perCall = Math.max(maxOutputTokens, ...(operationMaximums.length ? operationMaximums : fallback.operationMaximums));
+  return { callBudget, perCall };
+}
+
+// The output-token potential committed in a monthly budget window, read
+// from persisted rows (see outputTokenPotential: each provider call counted
+// once, reported usage replacing its estimate, unused potential released when
+// an evaluation completes, fails permanently, is deleted or its admission is
+// abandoned). Evaluations queued before a settings change keep the call
+// budget and per-call maximum recorded with them.
+export async function committedOutputTokenPotential(input: {
+  budgets: Pick<PrismaBudgetRepository, "outputTokenCommitments">;
+  period: BudgetPeriod;
+  execution: BatchExecutionBasis;
+  perEvaluation: number;
+  transaction?: AdmissionTransaction;
+}) {
+  const commitments = await input.budgets.outputTokenCommitments({ period: input.period, transaction: input.transaction });
+  return outputTokenPotential({
+    reportedOutputTokens: commitments.reportedOutputTokens,
+    unreportedCalls: commitments.unreportedAttempts.map((attempt) => ({
+      maximumOutputTokens: recordedExecution(attempt.executionMetadata, input.execution).perCall,
+    })),
+    activeEvaluations: commitments.activeEvaluations.map((evaluation) => {
+      const recorded = recordedExecution(evaluation.executionMetadata, input.execution);
+      return { callBudget: recorded.callBudget, callsMade: evaluation.callsMade, maximumOutputTokens: recorded.perCall };
+    }),
+    liveAdmissions: commitments.liveAdmissions,
+    worstCasePerEvaluation: input.perEvaluation,
+  });
 }
 
 export interface BudgetServiceDependencies {
@@ -285,6 +386,109 @@ export function createBudgetService(dependencies: BudgetServiceDependencies = {}
           now: at,
         });
         return { outcome: "DEFERRED", deferral, budget };
+      });
+    },
+
+    // Bulk admission (November 26, 2026). One transaction holds the
+    // duplicate-spend lock and then the admission lock (the established
+    // order): every final check, the whole-batch capacity check and, for a
+    // submit, every admission, reservation, evaluation and task are one
+    // commit, or nothing. A preflight runs the same checks and writes
+    // nothing (beyond the usual release of stale admissions). Never creates
+    // a deferral: a batch that does not fit is refused, with every reason.
+    async admitBatch(input) {
+      const at = now();
+      return admissions.withBatchAdmissionLocks(async (transaction): Promise<AdmitBatchResult> => {
+        await recover(at, transaction);
+        const ineligible: Array<{ opportunityId: string; reason: BatchIneligibleReason }> = [];
+        for (const opportunityId of input.opportunityIds) {
+          // The same order as single admission (a live admission is read
+          // before the evaluation it becomes).
+          if (await admissions.findLiveForOpportunity(transaction, opportunityId)) {
+            ineligible.push({ opportunityId, reason: "ALREADY_ACTIVE" });
+            continue;
+          }
+          const latest = await admissions.latestEvaluationStatus(transaction, opportunityId);
+          if (latest === "PENDING" || latest === "RUNNING") {
+            ineligible.push({ opportunityId, reason: "ALREADY_ACTIVE" });
+            continue;
+          }
+          if (latest === "COMPLETED") {
+            ineligible.push({ opportunityId, reason: "ALREADY_EVALUATED" });
+            continue;
+          }
+          if (await deferrals.findOpenForOpportunity(opportunityId, transaction)) {
+            ineligible.push({ opportunityId, reason: "DEFERRED" });
+          }
+        }
+        const flagged = new Set(ineligible.map((item) => item.opportunityId));
+        for (const item of await input.check(transaction, input.opportunityIds)) {
+          if (!flagged.has(item.opportunityId)) {
+            flagged.add(item.opportunityId);
+            ineligible.push(item);
+          }
+        }
+        if (ineligible.length) return { outcome: "INELIGIBLE", items: ineligible };
+
+        const settings = await budgets.getSettings(transaction);
+        const requested = input.opportunityIds.length;
+        if (settings?.enforced) {
+          const period = budgetPeriod(at, settings.timeZone);
+          const windows = volumeWindows(at, settings.timeZone);
+          const [ledger, usage] = await Promise.all([
+            budgets.periodLedger({ period, currency: settings.currency, transaction }),
+            budgets.throughputUsage({ day: windows.day, week: windows.week, period, transaction }),
+          ]);
+          // The output-token worst case, only when that limit is set.
+          const callBudget = Math.min(input.execution.callBudget, settings.evaluationCallLimit ?? input.execution.callBudget);
+          const perEvaluation = worstCaseOutputTokens({
+            callBudget,
+            maxOutputTokens: input.execution.maxOutputTokens,
+            operationMaximums: input.execution.operationMaximums,
+          });
+          const committedOutputTokens = settings.monthlyOutputTokenLimit === null
+            ? usage.outputTokens
+            : (await committedOutputTokenPotential({ budgets, period, execution: input.execution, perEvaluation, transaction })).total;
+          const capacity = batchCapacity({
+            requested,
+            settings,
+            ledger,
+            usage,
+            committedOutputTokens,
+            outputTokensPerEvaluation: perEvaluation,
+          });
+          if (!capacity.fits) return { outcome: "LIMITS_EXCEEDED", shortfalls: capacity.shortfalls };
+        }
+        const reservation = settings?.enforced && settings.reservePerEvaluation > 0
+          ? {
+              perEvaluation: settings.reservePerEvaluation,
+              total: roundMoney(settings.reservePerEvaluation * requested),
+              currency: settings.currency,
+            }
+          : null;
+        if (input.mode === "PREFLIGHT") return { outcome: "READY", count: requested, reservation };
+
+        const queued: Array<{ opportunityId: string; evaluationId: string; taskId: string }> = [];
+        for (const opportunityId of input.opportunityIds) {
+          // Exactly what single admission writes: one admission with its
+          // reservation (when a budget is configured), then the evaluation
+          // and task that consume it.
+          const admission = await admissions.insert(transaction, {
+            opportunityId,
+            now: at,
+            reservation: settings
+              ? { amount: settings.reservePerEvaluation, currency: settings.currency, enforced: settings.enforced }
+              : undefined,
+          });
+          const task = await input.enqueue(transaction, {
+            opportunityId,
+            admissionId: admission.id,
+            evaluationCallLimit: settings?.evaluationCallLimit ?? null,
+          });
+          queued.push({ opportunityId, evaluationId: task.evaluationId, taskId: task.id });
+        }
+        if (input.beforeCommit) await input.beforeCommit();
+        return { outcome: "QUEUED", queued };
       });
     },
 

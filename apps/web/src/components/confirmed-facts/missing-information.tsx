@@ -10,6 +10,7 @@ import {
   seniorityValues,
   type ConfirmedFactField,
 } from "@ai-career/core";
+import { formatDate } from "../dashboard/format";
 import { employmentTypeLabel, seniorityLabel, workArrangementLabel } from "../opportunity-facts";
 
 // Add missing information (November 25, 2026): when triage holds a job for
@@ -230,7 +231,7 @@ export function MissingInformation({
           {facts.map((fact) => (
             <li key={fact.fieldName} data-field={fact.fieldName}>
               <strong>{confirmedFactLabels[fact.fieldName]}:</strong> {describeConfirmedValue(fact.fieldName, fact.value)}
-              <span className="field-help"> · confirmed by you {new Date(fact.confirmedAt).toLocaleDateString()}</span>
+              <span className="field-help"> · confirmed by you {formatDate(fact.confirmedAt)}</span>
               {fact.quotation ? <blockquote>{fact.quotation}</blockquote> : null}
               {fact.note ? <p className="field-help">Note: {fact.note}</p> : null}
               {fact.conflict ? (

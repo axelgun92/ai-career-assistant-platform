@@ -127,6 +127,16 @@ describe("opportunity page breakdown", () => {
     expect(visible).toContain("AI recommendation None yet: a recommendation needs a completed AI evaluation.");
   });
 
+  it("renders the first-found date the same on the server and in any browser time zone (no hydration mismatch)", () => {
+    // 23:30 UTC is already the next day in Pacific/Kiritimati (UTC+14), where
+    // a locale date would differ from the server's.
+    const late = new Date("2026-11-26T23:30:00.000Z");
+    const visible = text(renderToStaticMarkup(
+      <ProcessingBreakdown opportunityId="o" capture={{ normalized: true, observations: 1, firstFoundAt: late.toISOString() }} duplicate="NONE" status={status} />,
+    ));
+    expect(visible).toContain("(1 source observation; first found 2026-11-26).");
+  });
+
   it("says it is checking while the live evaluation status loads", () => {
     const visible = text(renderToStaticMarkup(
       <ProcessingBreakdown opportunityId="o" capture={{ normalized: true, observations: 1, firstFoundAt: at.toISOString() }} duplicate="NONE" status={status} checkingEvaluation />,

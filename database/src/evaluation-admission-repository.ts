@@ -1,5 +1,6 @@
 import { Prisma } from "../generated/prisma/client";
 import { getDatabaseClient } from "./client";
+import { duplicateSpendLockKey } from "./duplicate-spend-lock";
 
 // A live admission whose enqueue never happened (for example the process
 // died) may be abandoned after this long. Age only permits abandonment;
@@ -23,6 +24,25 @@ export class PrismaEvaluationAdmissionRepository {
         return work(transaction);
       },
       { maxWait: 15_000, timeout: 30_000 },
+    );
+  }
+
+  // Bulk admission (November 26, 2026): ONE transaction holding, in the
+  // established order, the duplicate-spend lock and then the admission lock,
+  // so the final duplicate and eligibility checks, the whole-batch capacity
+  // check and every admission, reservation, evaluation and task commit
+  // together (or roll back together). The duplicate-spend key is the one
+  // the single path holds as a session lock; session and transaction
+  // advisory locks on one key exclude each other, and both paths take the
+  // duplicate lock before the admission lock, so they cannot deadlock.
+  async withBatchAdmissionLocks<T>(work: (transaction: AdmissionTransaction) => Promise<T>): Promise<T> {
+    return this.database.$transaction(
+      async (transaction) => {
+        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${duplicateSpendLockKey.namespace}::int, ${duplicateSpendLockKey.key}::int)::text`;
+        await transaction.$queryRaw`SELECT pg_advisory_xact_lock(${admissionLockKey})::text`;
+        return work(transaction);
+      },
+      { maxWait: 15_000, timeout: 60_000 },
     );
   }
 
@@ -69,6 +89,18 @@ export class PrismaEvaluationAdmissionRepository {
     });
     const status = latest?.task?.status ?? latest?.status;
     return status === "PENDING" || status === "RUNNING";
+  }
+
+  // The latest evaluation's status, read exactly as hasActiveEvaluation and
+  // the single request path read it (newest by creation, the task's status
+  // when it has one); null when the opportunity has none.
+  async latestEvaluationStatus(transaction: AdmissionTransaction, opportunityId: string): Promise<string | null> {
+    const latest = await transaction.evaluation.findFirst({
+      where: { opportunityId },
+      orderBy: { createdAt: "desc" },
+      select: { status: true, task: { select: { status: true } } },
+    });
+    return latest ? (latest.task?.status ?? latest.status) : null;
   }
 
   async insert(

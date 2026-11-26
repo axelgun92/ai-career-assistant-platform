@@ -328,6 +328,58 @@ export class PrismaBudgetRepository {
     };
   }
 
+  // The persisted inputs of the output-token worst case (November 26, 2026,
+  // bulk evaluation): the window's reported output tokens; queued and
+  // running evaluations with their execution
+  // metadata and the calls they already made; the period's attempts that
+  // reported no output tokens, each with its evaluation's metadata (null for
+  // retained usage of a deleted opportunity); and live admissions not yet
+  // enqueued. The caller turns these into worst-case tokens.
+  //
+  // Each provider call is one attempt row, written once after the call with
+  // whatever usage it reported, so a call is either in this window's reported
+  // total, in its unreported list, or (not yet made) in an active
+  // evaluation's remaining budget: never two of them. callsMade counts the
+  // evaluation's attempts in every window, as the worker does for its call
+  // budget, so a call made last month is not counted as still to come.
+  async outputTokenCommitments(input: { period: BudgetPeriod; transaction?: AdmissionTransaction }): Promise<{
+    reportedOutputTokens: number;
+    activeEvaluations: Array<{ executionMetadata: unknown; callsMade: number }>;
+    unreportedAttempts: Array<{ executionMetadata: unknown | null }>;
+    liveAdmissions: number;
+  }> {
+    const client = input.transaction ?? this.database;
+    const [reported] = await client.$queryRaw<Array<{ output: bigint | null }>>`
+      SELECT SUM("outputTokens") AS output
+      FROM ${accountedAttempts} a
+      WHERE "createdAt" >= ${input.period.start} AND "createdAt" < ${input.period.end}
+    `;
+    const active = await client.$queryRaw<Array<{ executionMetadata: unknown; callsMade: bigint }>>`
+      SELECT e."executionMetadata",
+        (SELECT COUNT(*) FROM "SemanticOperationAttempt" a WHERE a."evaluationId" = e."id") AS "callsMade"
+      FROM "Evaluation" e
+      JOIN "EvaluationTask" t ON t."evaluationId" = e."id"
+      WHERE t."status" IN ('PENDING', 'RUNNING')
+    `;
+    const unreported = await client.$queryRaw<Array<{ executionMetadata: unknown | null }>>`
+      SELECT e."executionMetadata"
+      FROM "SemanticOperationAttempt" a
+      JOIN "Evaluation" e ON e."id" = a."evaluationId"
+      WHERE a."outputTokens" IS NULL AND a."createdAt" >= ${input.period.start} AND a."createdAt" < ${input.period.end}
+      UNION ALL
+      SELECT NULL
+      FROM "RetainedEvaluationUsage" r
+      WHERE r."outputTokens" IS NULL AND r."createdAt" >= ${input.period.start} AND r."createdAt" < ${input.period.end}
+    `;
+    const liveAdmissions = await client.evaluationAdmission.count({ where: { evaluationId: null, abandonedAt: null } });
+    return {
+      reportedOutputTokens: Number(reported?.output ?? 0),
+      activeEvaluations: active.map((row) => ({ executionMetadata: row.executionMetadata, callsMade: Number(row.callsMade) })),
+      unreportedAttempts: unreported.map((row) => ({ executionMetadata: row.executionMetadata })),
+      liveAdmissions,
+    };
+  }
+
   async periodTokenUsage(period: BudgetPeriod): Promise<PeriodTokenUsage> {
     const [row] = await this.database.$queryRaw<Array<Record<string, bigint | null>>>`
       SELECT

@@ -100,16 +100,23 @@ export class PrismaEvaluationTaskRepository implements EvaluationTaskRepository 
   // admission was already consumed or abandoned, the transaction rolls back,
   // so an abandoned admission can never produce an Evaluation.
   async enqueueAdmitted(input: EnqueueEvaluationInput & { admissionId: string }) {
-    const task = await this.database.$transaction(async (transaction) => {
-      const created = await createEvaluationAndTask(transaction, input);
-      const consumed = await transaction.evaluationAdmission.updateMany({
-        where: { id: input.admissionId, evaluationId: null, abandonedAt: null },
-        data: { evaluationId: created.evaluationId, attachedAt: new Date() },
-      });
-      if (consumed.count !== 1) throw new AdmissionNotConsumableError(input.admissionId);
-      return created;
-    });
+    const task = await this.database.$transaction((transaction) => this.enqueueAdmittedIn(transaction, input));
     return evaluationTaskSchema.parse(task);
+  }
+
+  // The same work inside a caller's transaction (November 26, 2026): bulk
+  // admission creates every evaluation and task, and consumes every
+  // admission, in the one transaction that admitted them, so the whole batch
+  // commits or rolls back together. Identical to enqueueAdmitted otherwise
+  // (the same evaluation, bound to the same listing version).
+  async enqueueAdmittedIn(transaction: Prisma.TransactionClient, input: EnqueueEvaluationInput & { admissionId: string }) {
+    const created = await createEvaluationAndTask(transaction, input);
+    const consumed = await transaction.evaluationAdmission.updateMany({
+      where: { id: input.admissionId, evaluationId: null, abandonedAt: null },
+      data: { evaluationId: created.evaluationId, attachedAt: new Date() },
+    });
+    if (consumed.count !== 1) throw new AdmissionNotConsumableError(input.admissionId);
+    return evaluationTaskSchema.parse(created);
   }
 
   async claimNext(input: { leaseSeconds: number }) {

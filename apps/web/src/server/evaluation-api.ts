@@ -3,7 +3,7 @@ import { EvaluationApiError } from "./evaluation-errors";
 import type { EvaluationService } from "./evaluation-service";
 import { getEvaluationService } from "./evaluation-service";
 
-function safeError(error: unknown) {
+export function safeError(error: unknown) {
   if (error instanceof EvaluationApiError) {
     return Response.json(
       { error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },

@@ -90,6 +90,22 @@ try {
         update: { userProfileId: previous },
       });
     }
+  } else if (command === "assess-triage") {
+    // Bulk evaluation E2E (November 26, 2026): triages a saved job with the
+    // product's own triage (the same gate an evaluation request runs) and
+    // the active profile, without admission, queueing or a provider call,
+    // so it appears in the dashboard's Evaluate section.
+    const { createEvaluationService } = await import("../../apps/web/src/server/evaluation-service");
+    const { createPreEvaluatorTriageService } = await import("../../apps/web/src/server/pre-evaluator-triage-service");
+    const { PrismaEvaluationQueryRepository, PrismaPreEvaluatorTriageRepository } = await import("../../database/src/index");
+    const service = createEvaluationService({
+      queries: new PrismaEvaluationQueryRepository(),
+      evaluations: new PrismaEvaluationRepository(),
+      tasks: new PrismaEvaluationTaskRepository(),
+      triageGate: createPreEvaluatorTriageService({ repository: new PrismaPreEvaluatorTriageRepository() }).gate,
+    });
+    const result = await service.assessTriage(process.argv[3]!);
+    process.stdout.write(result.status === "ASSESSED" ? result.triage.outcome : result.status);
   } else if (command === "budget-snapshot") {
     // The budget is global: specs that change it snapshot and restore it.
     const row = await database.budgetSetting.findUnique({ where: { id: "global" } });

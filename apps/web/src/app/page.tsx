@@ -14,6 +14,7 @@ import {
 } from "@ai-career/database";
 import { OpportunityList } from "@/components/dashboard/opportunity-list";
 import { OpportunitySelectionProvider, SelectionToolbar } from "@/components/dashboard/selection/opportunity-selection";
+import { BulkEvaluation } from "@/components/dashboard/selection/bulk-evaluation";
 import { applicationMoveState } from "@/server/opportunity-move-service";
 import { outsideTargetTitles } from "@/server/title-policy-service";
 import { dashboardQueryContext, safeErrorDetails } from "@/server/safe-error";
@@ -227,6 +228,9 @@ export default async function HomePage({
               }))}
             >
               <SelectionToolbar dismissedView={query.view === "dismissed"} dismissedTotal={summary?.dismissed ?? 0} />
+              {/* Bulk paid evaluation (November 26, 2026): the Evaluate
+                  section only (Active jobs whose triage result is Evaluate). */}
+              {query.view === "active" && query.triage === "evaluate" ? <BulkEvaluation /> : null}
               {result.total === 0 && (filtered || (summary?.total ?? 0) > 0) ? (
                 // Something exists, but not here: distinguish "no matches" from
                 // the first-run "no opportunities yet" state.

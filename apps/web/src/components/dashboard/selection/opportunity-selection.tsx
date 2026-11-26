@@ -25,6 +25,8 @@ interface SelectionState {
   toggle(id: string): void;
   selectAll(): void;
   clear(): void;
+  // Removes these from the selection (bulk evaluation's "Deselect these").
+  deselect(ids: readonly string[]): void;
   busy: boolean;
   run(work: () => Promise<string | null>): Promise<void>;
   message: SelectionMessage | null;
@@ -88,6 +90,12 @@ export function OpportunitySelectionProvider({ rows, children }: { rows: readonl
         }),
       selectAll: () => setSelected(new Set(rows.map((row) => row.id))),
       clear: () => setSelected(new Set()),
+      deselect: (ids) =>
+        setSelected((current) => {
+          const next = new Set(current);
+          for (const id of ids) next.delete(id);
+          return next;
+        }),
       busy,
       async run(work) {
         setBusy(true);
@@ -103,6 +111,12 @@ export function OpportunitySelectionProvider({ rows, children }: { rows: readonl
     [rows, selected, busy, message],
   );
   return <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>;
+}
+
+// The current page's selection, for actions outside the toolbar (bulk
+// evaluation); null outside a provider.
+export function useSelection(): SelectionState | null {
+  return useContext(SelectionContext);
 }
 
 export function RowSelect({ id, title }: { id: string; title: string }) {
