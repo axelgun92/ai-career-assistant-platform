@@ -1,4 +1,5 @@
-import type { NormalizedOpportunity } from "@ai-career/core";
+import { originatingVersion, residencyRequirement, storedCompensationTiers, storedEligibilityFacts, storedWorkArrangements } from "./manual-opportunity-repository";
+import { correctedFactLabels, normalizationCorrectionsOf, type NormalizedOpportunity } from "@ai-career/core";
 import {
   evaluationSnapshotSchema,
   persistedStageResultSchema,
@@ -16,7 +17,68 @@ function asInputJson(value: JsonValue | unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+// Product-owned normalized facts that are not part of the accepted evaluator
+// input contract remain hidden, including their provenance. Salary bounds,
+// currency, residency, and compensation basis were deliberately released at
+// final evaluator/product integration; all other normalized product facts stay
+// withheld until a later coordinated adoption.
+export const fieldsWithheldFromEvaluator = [
+  "remoteStatus",
+  "seniority",
+  "department",
+  "employmentType",
+  "closingDate",
+  "timeZoneRequirements",
+  // Explicit work-authorization facts remain separate from residency and are
+  // not evaluator input in the accepted salary policy.
+  "workAuthorizationRequirement",
+  "workAuthorizationRegions",
+  "visaSponsorship",
+  "relocationSupport",
+  "employerOfRecordRegions",
+  // Added with the cross-source correction (October 26, 2026): the stated
+  // seniority label. Withheld like the normalized level.
+  "seniorityLabel",
+  // Every arrangement the posting offers (withheld like remoteStatus).
+  "workArrangements",
+  // Added with the final cross-source batch (October 27, 2026): labelled
+  // regional pay tiers (withheld like salaryMin/salaryMax), and variable pay
+  // stated on its own, newly read (it was always null before).
+  "compensationTiers",
+  "bonus",
+] as const;
+
+// What the evaluator received for each withheld field before it existed.
+const withheldValues = {
+  remoteStatus: null,
+  seniority: null,
+  department: null,
+  employmentType: null,
+  closingDate: null,
+  timeZoneRequirements: null,
+  workAuthorizationRequirement: null,
+  workAuthorizationRegions: [],
+  visaSponsorship: null,
+  relocationSupport: null,
+  employerOfRecordRegions: [],
+  seniorityLabel: null,
+  workArrangements: [],
+  compensationTiers: [],
+  bonus: null,
+} satisfies Pick<NormalizedOpportunity, (typeof fieldsWithheldFromEvaluator)[number]>;
+
+const withheldFromEvaluator = new Set<string>(fieldsWithheldFromEvaluator);
+
 function mapOpportunity(
+  record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
+): NormalizedOpportunity & { id: string } {
+  return {
+    ...mapOpportunityFields(record),
+    ...withheldValues,
+  };
+}
+
+function mapOpportunityFields(
   record: Prisma.OpportunityGetPayload<{ include: { company: true } }>,
 ): NormalizedOpportunity & { id: string } {
   return {
@@ -41,12 +103,19 @@ function mapOpportunity(
     department: record.department,
     employmentType: record.employmentType,
     seniority: record.seniority,
+    seniorityLabel: record.seniorityLabel,
     location: record.location,
     remoteStatus: record.remoteStatus,
+    workArrangements: storedWorkArrangements(record.workArrangements),
     timeZoneRequirements: record.timeZoneRequirements,
+    residencyRequirement: residencyRequirement(record.residencyRequirement),
+    residencyRegions: record.residencyRegions,
+    residencyExclusions: record.residencyExclusions ?? [],
+    ...storedEligibilityFacts(record),
     salaryMin: record.salaryMin?.toNumber() ?? null,
     salaryMax: record.salaryMax?.toNumber() ?? null,
     salaryText: record.salaryText,
+    compensationTiers: storedCompensationTiers(record.compensationTiers),
     bonus: record.bonus,
     equity: record.equity,
     currency: record.currency,
@@ -164,10 +233,22 @@ function mapEvaluation(record: EvaluationRecord): EvaluationSnapshot {
 export class PrismaEvaluationRepository implements EvaluationRepository {
   private readonly database = getDatabaseClient();
 
+  // The evaluated source version (Core TDD §51, v1.15). An evaluation is
+  // bound, when it is created, to the current version of the opportunity's
+  // originating listing; its subject is that version as it stood then: the
+  // provenance rows current at binding (later superseded or not) and, if the
+  // listing changed afterwards, the facts and description those rows and that
+  // record state. Without an evaluation (eligibility checks) it is the
+  // current version. An evaluation created before the binding existed
+  // evaluated the opportunity's first source record.
   async loadSubject(input: {
     opportunityId: string;
     userProfileId: string | null;
+    evaluationId?: string;
   }): Promise<EvaluationSubject | null> {
+    const bound = input.evaluationId
+      ? await this.database.evaluation.findUnique({ where: { id: input.evaluationId }, select: { sourceRecordId: true, createdAt: true } })
+      : null;
     const [opportunity, userProfile] = await Promise.all([
       this.database.opportunity.findUnique({
         where: { id: input.opportunityId },
@@ -186,8 +267,49 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
 
     if (!opportunity || (input.userProfileId && !userProfile)) return null;
 
+    const origin = await originatingVersion(this.database, opportunity.id);
+    const boundAt = bound?.createdAt ?? null;
+    const subjectSourceRecordId = bound
+      ? bound.sourceRecordId ?? origin?.origin.id ?? null
+      : origin?.currentId ?? null;
+    // Provenance current at binding: created by then, and not superseded by
+    // then. Without a binding, the current rows.
+    const provenanceRows = opportunity.fieldProvenance.filter((row) =>
+      boundAt
+        ? row.createdAt <= boundAt && (row.supersededAt === null || row.supersededAt > boundAt)
+        : row.supersededAt === null,
+    );
+    const mapped = mapOpportunity(opportunity);
+    // The listing changed after binding: the evaluator sees the bound
+    // version's facts and description, not the newer projection.
+    const changedSinceBinding = boundAt !== null && opportunity.fieldProvenance.some((row) => row.supersededAt !== null && row.supersededAt > boundAt);
+    if (changedSinceBinding) {
+      const asOf = (fieldName: string) => provenanceRows.find((row) => row.fieldName === fieldName)?.normalizedValue ?? null;
+      const textOf = (fieldName: string) => {
+        const value = asOf(fieldName);
+        return typeof value === "string" ? value : null;
+      };
+      const boundRecord = opportunity.sourceRecords.find((source) => source.id === subjectSourceRecordId);
+      const postingDate = textOf("postingDate");
+      Object.assign(mapped, {
+        title: textOf("title"),
+        companyName: textOf("company.name"),
+        location: textOf("location"),
+        salaryText: textOf("salaryText"),
+        postingDate: postingDate ? new Date(postingDate) : null,
+        jobDescription: boundRecord?.rawDescription ?? textOf("jobDescription"),
+      });
+    }
+    // A posting date dated from a stated age ("2 weeks ago") is approximate,
+    // a fact newly derived by the cross-source correction (October 26, 2026):
+    // withheld from the evaluator, as if unstated, until its use is approved.
+    const approximatePostingDate = (row: { fieldName: string; sourceField: string }) =>
+      row.fieldName === "postingDate" && row.sourceField.endsWith("relative-posted-age");
+    if (provenanceRows.some(approximatePostingDate)) mapped.postingDate = null;
+
     return {
-      opportunity: mapOpportunity(opportunity),
+      opportunity: mapped,
+      subjectSourceRecordId,
       rawSources: opportunity.sourceRecords.map((source) => ({
         id: source.id,
         source: source.source,
@@ -196,16 +318,18 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
         rawDescription: source.rawDescription,
         rawPayload: source.rawPayload,
       })),
-      provenance: opportunity.fieldProvenance.map((provenance) => ({
-        id: provenance.id,
-        sourceRecordId: provenance.sourceRecordId,
-        fieldName: provenance.fieldName,
-        sourceField: provenance.sourceField,
-        kind: provenance.kind,
-        normalizedValue: provenance.normalizedValue,
-        sourceReference: provenance.sourceReference,
-        sourceText: provenance.sourceText,
-      })),
+      provenance: provenanceRows
+        .filter((provenance) => !withheldFromEvaluator.has(provenance.fieldName) && !approximatePostingDate(provenance))
+        .map((provenance) => ({
+          id: provenance.id,
+          sourceRecordId: provenance.sourceRecordId,
+          fieldName: provenance.fieldName,
+          sourceField: provenance.sourceField,
+          kind: provenance.kind,
+          normalizedValue: provenance.normalizedValue,
+          sourceReference: provenance.sourceReference,
+          sourceText: provenance.sourceText,
+        })),
       userProfile: userProfile
         ? {
             id: userProfile.id,
@@ -219,6 +343,12 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
               locationPreferences: userProfile.locationPreferences,
               compensationPreferences: userProfile.compensationPreferences,
               workPreferences: userProfile.workPreferences,
+              // Structured limitations reach the evaluator only when the
+              // pinned version stores them; versions without limitations
+              // are delivered exactly as before.
+              ...(userProfile.limitations === null
+                ? {}
+                : { limitations: userProfile.limitations }),
               companyPreferences: userProfile.companyPreferences,
               domainPreferences: userProfile.domainPreferences,
             },
@@ -234,9 +364,12 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
     evaluator: DomainEvaluatorDefinition<unknown, unknown>;
     executionMetadata: Record<string, JsonValue>;
   }) {
+    const version = await originatingVersion(this.database, input.opportunityId);
     const evaluation = await this.database.evaluation.create({
       data: {
         opportunityId: input.opportunityId,
+        // Bound to the version being evaluated (Core TDD §51, v1.15).
+        sourceRecordId: version?.currentId ?? null,
         userProfileId: input.userProfileId,
         domain: input.evaluator.domain,
         evaluationVersion: input.evaluator.evaluationVersion,
@@ -534,4 +667,51 @@ export class PrismaEvaluationRepository implements EvaluationRepository {
       }
     });
   }
+}
+
+// Informational only (Core TDD §51, v1.15): whether the opportunity's latest
+// completed evaluation evaluated an earlier version of its originating
+// listing than the current one. Nothing is reevaluated.
+export async function findListingVersionHint(opportunityId: string) {
+  const database = getDatabaseClient();
+  const evaluation = await database.evaluation.findFirst({
+    where: { opportunityId, status: "COMPLETED" },
+    orderBy: [{ completedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      sourceRecordId: true,
+      completedAt: true,
+      createdAt: true,
+      semanticOperations: { select: { sourceRecordId: true }, orderBy: { createdAt: "asc" }, take: 1 },
+    },
+  });
+  if (!evaluation) return null;
+  const version = await originatingVersion(database, opportunityId);
+  if (!version) return null;
+  // Before the binding existed, an evaluation evaluated the first record.
+  const evaluatedId = evaluation.sourceRecordId ?? evaluation.semanticOperations[0]?.sourceRecordId ?? version.origin.id;
+  const evaluatedAt = evaluation.completedAt ?? evaluation.createdAt;
+  if (evaluatedId === version.currentId) {
+    // D1: the same version, whose saved facts a normalization correction
+    // changed after this evaluation (informational; nothing is reevaluated).
+    const current = await database.sourceRecord.findUnique({ where: { id: version.currentId }, select: { sourceMetadata: true, createdAt: true } });
+    const later = normalizationCorrectionsOf(current?.sourceMetadata).filter((correction) => correction.at > evaluatedAt);
+    if (!later.length) return null;
+    return {
+      evaluatedAt,
+      evaluatedVersionSeenAt: current?.createdAt ?? null,
+      currentVersionSeenAt: current?.createdAt ?? null,
+      correctedAt: later.at(-1)!.at,
+      correctedFacts: correctedFactLabels(later.flatMap((correction) => correction.fields)),
+    };
+  }
+  const records = await database.sourceRecord.findMany({
+    where: { id: { in: [evaluatedId, version.currentId] } },
+    select: { id: true, createdAt: true },
+  });
+  const seen = (id: string) => records.find((record) => record.id === id)?.createdAt ?? null;
+  return {
+    evaluatedAt,
+    evaluatedVersionSeenAt: seen(evaluatedId),
+    currentVersionSeenAt: seen(version.currentId),
+  };
 }

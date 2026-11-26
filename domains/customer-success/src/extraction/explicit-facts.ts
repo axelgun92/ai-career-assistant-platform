@@ -1,10 +1,12 @@
-import type { CoreEvaluationContext } from "@ai-career/evaluation";
+import { evaluatedSource, type CoreEvaluationContext } from "@ai-career/evaluation";
 import type { EvidenceRecordDraft } from "@ai-career/evidence";
+import { parseCompensation } from "@ai-career/normalization";
 import type {
   CustomerSuccessDomainData,
 } from "../evaluator";
-import type {
-  CustomerSuccessJdReconstruction,
+import {
+  deterministicRequirementCriterionId,
+  type CustomerSuccessJdReconstruction,
 } from "../schemas/maps";
 
 type ExplicitFacts = Pick<
@@ -16,7 +18,9 @@ type ExplicitFacts = Pick<
 };
 
 function sourceContext(context: CoreEvaluationContext<CustomerSuccessDomainData>) {
-  const source = context.rawSources[0];
+  // The source version this evaluation evaluates (never a position in the
+  // list of every stored version).
+  const source = evaluatedSource(context);
   const descriptionProvenance = context.provenance.find(
     (item) => item.fieldName === "jobDescription",
   );
@@ -30,30 +34,36 @@ function evidence(input: {
   claim: string;
   sourceField: string;
   sourceText: string;
+  provenanceFieldName?: string;
+  provenance?: CoreEvaluationContext<CustomerSuccessDomainData>["provenance"][number] | null;
+  origin?: EvidenceRecordDraft["origin"];
 }): EvidenceRecordDraft {
   const { source, descriptionProvenance } = sourceContext(input.context);
+  const fieldProvenance =
+    input.provenance ??
+    (input.provenanceFieldName
+      ? input.context.provenance.find(
+          (item) => item.fieldName === input.provenanceFieldName,
+        )
+      : null);
   return {
     referenceId: input.referenceId,
     criterionId: input.criterionId,
     claim: input.claim,
     sourceType: source?.sourceType ?? "MANUAL",
-    sourceRecordId: source?.id ?? null,
-    provenanceId: descriptionProvenance?.id ?? null,
-    sourceField: input.sourceField,
-    sourceReference: source?.sourceUrl ?? "manual-submission",
-    sourceText: input.sourceText,
+    sourceRecordId: fieldProvenance?.sourceRecordId ?? source?.id ?? null,
+    provenanceId: fieldProvenance?.id ?? descriptionProvenance?.id ?? null,
+    sourceField: fieldProvenance?.sourceField ?? input.sourceField,
+    sourceReference:
+      fieldProvenance?.sourceReference ??
+      source?.sourceUrl ??
+      "manual-submission",
+    sourceText: fieldProvenance?.sourceText ?? input.sourceText,
     evidenceType: "EXPLICIT_JOB_FACT",
-    origin: "EXPLICIT",
+    origin: input.origin ?? "EXPLICIT",
     evidenceLevel: "CONFIRMED",
     collectedAt: null,
   };
-}
-
-function parseMoney(value: string): number | null {
-  const match = value.match(/\$\s*([0-9]{2,3}(?:,[0-9]{3})?|[0-9]{2,3})\s*(k)?/i);
-  if (!match?.[1]) return null;
-  const parsed = Number(match[1].replaceAll(",", ""));
-  return match[2] ? parsed * 1_000 : parsed;
 }
 
 function parseSalary(
@@ -63,18 +73,16 @@ function parseSalary(
   const supplied = context.opportunity.salaryText;
   const candidate = supplied ?? text;
   const competitive = /\bcompetitive (?:salary|compensation|pay)\b/i.test(candidate);
-  const range = candidate.match(
-    /\$\s*([0-9]{2,3}(?:,[0-9]{3})?|[0-9]{2,3})\s*(k)?\s*(?:-|–|—|to)\s*\$?\s*([0-9]{2,3}(?:,[0-9]{3})?|[0-9]{2,3})\s*(k)?/i,
-  );
-  const normalize = (amount: string, thousands: string | undefined) =>
-    Number(amount.replaceAll(",", "")) * (thousands ? 1_000 : 1);
-  const minimum =
-    context.opportunity.salaryMin ??
-    (range?.[1] ? normalize(range[1], range[2]) : parseMoney(candidate));
-  const maximum =
-    context.opportunity.salaryMax ??
-    (range?.[3] ? normalize(range[3], range[4]) : minimum);
-  if (minimum === null && competitive) {
+  const fallback =
+    context.opportunity.salaryMin === null &&
+    context.opportunity.salaryMax === null &&
+    context.opportunity.currency === null
+      ? parseCompensation(candidate, null)
+      : null;
+  const minimum = context.opportunity.salaryMin ?? fallback?.minimum ?? null;
+  const maximum = context.opportunity.salaryMax ?? fallback?.maximum ?? null;
+  const currency = context.opportunity.currency ?? fallback?.currency ?? null;
+  if (minimum === null && maximum === null && competitive) {
     const item = evidence({
       context,
       referenceId: "salary-competitive",
@@ -94,7 +102,7 @@ function parseSalary(
       evidence: [item],
     };
   }
-  if (minimum === null) {
+  if (minimum === null && maximum === null) {
     return {
       salary: {
         minimum: null,
@@ -106,25 +114,94 @@ function parseSalary(
       evidence: [],
     };
   }
-  const sourceText = supplied ?? range?.[0] ?? `$${minimum}`;
+  const sourceText = supplied ?? candidate;
   const item = evidence({
     context,
     referenceId: "salary-disclosed",
     criterionId: "salary",
-    claim: `The disclosed salary range begins at ${minimum}.`,
+    claim: `The normalized annual salary is ${minimum ?? "Unknown"} to ${maximum ?? "Unknown"} ${currency ?? "with Unknown currency"}.`,
     sourceField: supplied ? "salaryText" : "jobDescription",
     sourceText,
+    provenanceFieldName:
+      minimum !== null ? "salaryMin" : maximum !== null ? "salaryMax" : undefined,
+    origin: "DERIVED",
   });
+  const currencyProvenance = context.provenance.find(
+    (provenance) => provenance.fieldName === "currency",
+  );
+  const currencyEvidence =
+    currency !== null && currencyProvenance
+      ? evidence({
+          context,
+          referenceId: "salary-currency-normalized",
+          criterionId: "salary",
+          claim: `The normalized salary currency is ${currency}.`,
+          sourceField: currencyProvenance.sourceField,
+          sourceText: currencyProvenance.sourceText ?? currency,
+          provenance: currencyProvenance,
+          origin:
+            currencyProvenance.kind === "DIRECT" ? "EXPLICIT" : "DERIVED",
+        })
+      : null;
+  const basis = context.opportunity.compensationBasis;
+  const basisProvenance = context.provenance.find(
+    (provenance) => provenance.fieldName === "compensationBasis",
+  );
+  const basisEvidence =
+    basis !== null
+      ? evidence({
+          context,
+          referenceId: "salary-compensation-basis",
+          criterionId: "salary",
+          claim: `The normalized compensation basis is ${basis}.`,
+          sourceField: basisProvenance?.sourceField ?? "compensationBasis",
+          sourceText: basisProvenance?.sourceText ?? supplied ?? sourceText,
+          provenance: basisProvenance,
+          origin:
+            basisProvenance?.kind === "DIRECT" ? "EXPLICIT" : "DERIVED",
+        })
+      : null;
+  const evidenceRecords = [item, currencyEvidence, basisEvidence].filter(
+    (record): record is EvidenceRecordDraft => record !== null,
+  );
   return {
     salary: {
       minimum,
       maximum,
-      currency: context.opportunity.currency ?? "USD",
+      currency,
       disclosure: "DISCLOSED",
-      evidenceReferences: [item.referenceId],
+      evidenceReferences: evidenceRecords.map((record) => record.referenceId),
     },
-    evidence: [item],
+    evidence: evidenceRecords,
   };
+}
+
+function residencyEvidence(
+  context: CoreEvaluationContext<CustomerSuccessDomainData>,
+): EvidenceRecordDraft[] {
+  const requirement = context.opportunity.residencyRequirement;
+  if (requirement == null) return [];
+  const residencyRegions = context.opportunity.residencyRegions ?? [];
+  const provenance = context.provenance.filter((item) =>
+    ["residencyRequirement", "residencyRegions"].includes(item.fieldName),
+  );
+  const candidates = provenance.length > 0 ? provenance : [null];
+  return candidates.map((item, index) =>
+    evidence({
+      context,
+      referenceId: `residency-normalized-${index + 1}`,
+      criterionId: "residency",
+      claim: `The normalized residency policy is ${requirement}; eligible regions are ${residencyRegions.join(", ") || "not stated"}.`,
+      sourceField: item?.sourceField ?? "residencyRequirement",
+      sourceText:
+        item?.sourceText ??
+        context.opportunity.location ??
+        context.opportunity.jobDescription ??
+        requirement,
+      provenance: item,
+      origin: item?.kind === "DIRECT" ? "EXPLICIT" : "DERIVED",
+    }),
+  );
 }
 
 function matchingSentence(text: string, pattern: RegExp): string | null {
@@ -291,6 +368,28 @@ function requirementCategory(value: string) {
   return "CAPABILITY" as const;
 }
 
+// Section labels such as "Required" or "Nice to Have" match the candidate
+// pattern but state no requirement. A line made only of these closed-set label
+// words is a heading, not a requirement.
+const requirementLabelWords = new Set([
+  "required",
+  "requirements",
+  "preferred",
+  "ideal",
+  "ideally",
+  "nice",
+  "to",
+  "have",
+  "must",
+  "qualifications",
+  "bonus",
+]);
+
+function isRequirementLabel(value: string) {
+  const words = value.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => requirementLabelWords.has(word));
+}
+
 function parseRequirements(
   context: CoreEvaluationContext<CustomerSuccessDomainData>,
   text: string,
@@ -301,6 +400,7 @@ function parseRequirements(
     .filter(
       (value) =>
         value.length >= 8 &&
+        !isRequirementLabel(value) &&
         /\brequired\b|\bmust have\b|\bpreferred\b|\bideal(?:ly)?\b|nice to have|\d+(?:\s*(?:-|–|—|to)\s*\d+)?\+?\s+years? of experience/i.test(
           value,
         ),
@@ -321,7 +421,7 @@ function parseRequirements(
     const item = evidence({
       context,
       referenceId,
-      criterionId: "candidate-requirement",
+      criterionId: deterministicRequirementCriterionId,
       claim: "The job states a candidate requirement.",
       sourceField: "jobDescription",
       sourceText: candidate,
@@ -346,6 +446,9 @@ function parseRequirements(
         : /experience/i.test(candidate)
           ? "Experience area stated in source text"
           : null,
+      // Deterministic extraction asserts no experience-level or startup
+      // semantics.
+      requiresStartupExperience: false,
       evidenceReferences: [referenceId],
       ambiguity: {
         isAmbiguous: strength === "AMBIGUOUS",
@@ -364,6 +467,7 @@ export function extractExplicitCustomerSuccessFacts(
   text: string,
 ): ExplicitFacts {
   const salary = parseSalary(context, text);
+  const residency = residencyEvidence(context);
   const location = parseLocation(context, text);
   const travel = parseTravel(context, text);
   const requirements = parseRequirements(context, text);
@@ -374,6 +478,7 @@ export function extractExplicitCustomerSuccessFacts(
     requirements: requirements.requirements,
     evidence: [
       ...salary.evidence,
+      ...residency,
       ...location.evidence,
       ...travel.evidence,
       ...requirements.evidence,

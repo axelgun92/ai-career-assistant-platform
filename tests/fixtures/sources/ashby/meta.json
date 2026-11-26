@@ -1,0 +1,50 @@
+{
+  "adapter": "ashby",
+  "request": "GET https://api.ashbyhq.com/posting-api/job-board/ashby?includeCompensation=true",
+  "httpStatus": 200,
+  "contentType": "application/json; charset=utf-8",
+  "capturedAt": "2026-10-17T23:07:55Z",
+  "fullResponse": {
+    "bytes": 2100234,
+    "sha256": "5cc0fc257d2040ab415f433b1f12553f1942de38cd42dc030b74442b55a4fefc",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 63 items",
+  "items": [
+    {
+      "responseIndex": 44,
+      "id": "893cd08a-929c-4077-b39c-64bc34f347ea",
+      "title": "Founding Customer Success Manager - APAC",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 13,
+      "id": "55078a90-f1f0-4190-9d2a-c14d1cbc5486",
+      "title": "Product Support Specialist - Australia",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 46,
+      "id": "dfc35159-ffe5-4d42-bea3-552b5dc17628",
+      "title": "Enterprise Solutions Engineering Manager",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation.",
+  "sanitization": [],
+  "selectionNote": "Many Ashby descriptions open with a named hiring manager introducing themselves (some with a personal LinkedIn link); only postings without such introductions, emails or phone numbers were kept.",
+  "fixtureFile": "response.json"
+}

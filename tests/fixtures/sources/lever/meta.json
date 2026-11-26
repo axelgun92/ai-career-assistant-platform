@@ -1,0 +1,58 @@
+{
+  "adapter": "lever",
+  "request": "GET https://api.lever.co/v0/postings/palantir?mode=json",
+  "httpStatus": 200,
+  "contentType": "application/json; charset=utf-8",
+  "capturedAt": "2026-10-17T23:07:54Z",
+  "fullResponse": {
+    "bytes": 6020551,
+    "sha256": "320ac3d7fdfcc8f1751e7a33e3989b253788eea991b302f54dd671f7d3941a47",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 310 items",
+  "items": [
+    {
+      "responseIndex": 67,
+      "id": "00c2c97b-8514-4617-9883-e53e486b6dcd",
+      "title": "Forward Deployed Enablement Engineer - Customer Success",
+      "personalDataScan": {
+        "emails": [
+          "accommodations@palantir.com"
+        ],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 0,
+      "id": "6ed76ce8-4156-4b60-b120-403538bd66cd",
+      "title": "Administrative Business Partner",
+      "personalDataScan": {
+        "emails": [
+          "accommodations@palantir.com"
+        ],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 6,
+      "id": "1345438c-ebfc-4fa5-b545-30c1414f317c",
+      "title": "Backend Software Engineer - Defense",
+      "personalDataScan": {
+        "emails": [
+          "accommodations@palantir.com"
+        ],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation.",
+  "sanitization": [],
+  "retainedContactData": [
+    "accommodations@palantir.com: the employer's organizational accommodations address, present in the standard footer of nearly every posting; not a personal address, so it is kept unchanged."
+  ],
+  "fixtureFile": "response.json"
+}

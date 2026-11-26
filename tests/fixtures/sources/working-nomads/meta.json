@@ -1,0 +1,49 @@
+{
+  "adapter": "working-nomads",
+  "request": "GET https://www.workingnomads.com/api/exposed_jobs/",
+  "httpStatus": 200,
+  "contentType": "application/json",
+  "capturedAt": "2026-10-17T23:07:57Z",
+  "fullResponse": {
+    "bytes": 221142,
+    "sha256": "3b889d0c1900ba112a158cb958f428fee8c15bcb8f18aeade08b3464df22fd9a",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 49 items",
+  "items": [
+    {
+      "responseIndex": 5,
+      "id": "https://www.workingnomads.com/job/go/1936318/",
+      "title": "Remote Financial Services Agent (Independent Contractor) – Inbound Card & Account Support",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 0,
+      "id": "https://www.workingnomads.com/job/go/1944774/",
+      "title": "Video Creator (100% remote)",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 2,
+      "id": "https://www.workingnomads.com/job/go/1939844/",
+      "title": "Language specialist",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation.",
+  "sanitization": [],
+  "fixtureFile": "response.json"
+}

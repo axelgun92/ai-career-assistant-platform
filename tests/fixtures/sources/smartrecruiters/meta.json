@@ -1,0 +1,112 @@
+{
+  "adapter": "smartrecruiters",
+  "request": "GET https://api.smartrecruiters.com/v1/companies/BoschGroup/postings?limit=10",
+  "httpStatus": 200,
+  "contentType": "application/json; charset=utf-8",
+  "capturedAt": "2026-10-18T13:37:14Z",
+  "fullResponse": {
+    "bytes": 29777,
+    "sha256": "3846ef3ff6e54d9e89e1bdf201a8532b438ba9d49fba335e2b041dd2fcdd24b5",
+    "keptInGit": false,
+    "note": "The byte-faithful full response is kept outside the repository."
+  },
+  "trimmedTo": "3 of 10 items",
+  "items": [
+    {
+      "responseIndex": 9,
+      "id": "744000156080369",
+      "title": "Senior Account Manager- Semiconductors",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 1,
+      "id": "744000156179119",
+      "title": "Head of PR and Corporate Communications",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    },
+    {
+      "responseIndex": 3,
+      "id": "744000156169547",
+      "title": "电机开发研发科学家Research Scientist on Electrical Machine_CR",
+      "personalDataScan": {
+        "emails": [],
+        "phoneLike": false,
+        "personalIntroduction": false
+      }
+    }
+  ],
+  "serialization": "Items are reproduced value-for-value from the response; the JSON is re-serialized with 2-space indentation. offset, limit and totalFound are kept as received (totalFound 5079).",
+  "sanitization": [],
+  "selectionNote": "Some list postings carry a creator object with a recruiter's name; only postings without one were kept. The first target (Visa) returned an empty board and was replaced by BoschGroup with approval.",
+  "detail": {
+    "request": "GET https://api.smartrecruiters.com/v1/companies/BoschGroup/postings/744000156080369",
+    "file": "detail-744000156080369.json",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T13:37:29Z",
+    "fullResponse": {
+      "bytes": 9951,
+      "sha256": "79612c7237b402b1c2ae3ff8443fe9243b66cc185f8d408bad96e4a4d9cf97f2",
+      "keptInGit": true,
+      "note": "The detail response is kept complete (value-for-value); its creator name is empty."
+    },
+    "personalDataScan": {
+      "emails": [],
+      "phoneLike": false,
+      "personalIntroduction": false
+    }
+  },
+  "fixtureFile": "response.json",
+  "page2": {
+    "request": "GET https://api.smartrecruiters.com/v1/companies/BoschGroup/postings?limit=10&offset=10",
+    "file": "response-page-2.json",
+    "httpStatus": 200,
+    "capturedAt": "2026-10-18T14:55:40Z",
+    "fullResponse": {
+      "bytes": 30294,
+      "sha256": "849caaeff8c2e7a653d6ab88b4e1a3b82008a9c2c76985705393739be7e4c132",
+      "keptInGit": false
+    },
+    "trimmedTo": "3 of 10 items",
+    "items": [
+      {
+        "responseIndex": 0,
+        "id": "744000156079459",
+        "title": "Sr. Key Account Manager - The Home Depot",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 1,
+        "id": "744000156079119",
+        "title": "Supervisor de Almacén",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      },
+      {
+        "responseIndex": 5,
+        "id": "744000156070702",
+        "title": "Production Worker",
+        "personalDataScan": {
+          "emails": [],
+          "phoneLike": false,
+          "personalIntroduction": false
+        }
+      }
+    ],
+    "note": "The single approved offset-paging verification request. The response echoes offset 10 and limit 10, totalFound is unchanged (5079), its 10 postings do not overlap page 1 and continue page 1's newest-first releasedDate order, and the item shape matches page 1 (no page-2 item carries a creator object). offset, limit and totalFound are kept as received."
+  }
+}

@@ -73,6 +73,14 @@ function createProfile(input?: { directStatement?: string }) {
       ],
       companyPreferences: null,
       domainPreferences: null,
+      limitations: [
+        {
+          id: "limitation-1",
+          statement: "I do not have Salesforce experience.",
+          category: "TOOL",
+          disclaimedExperienceSpecificity: null,
+        },
+      ],
     },
   };
 }
@@ -222,14 +230,20 @@ describe("Customer Success Resume Match pipeline", () => {
         }
         for (const assessment of transport.requirementAssessments) {
           for (const source of ["jdEvidence", "profileEvidence"] as const) {
-            const partition = assessment[source];
-            const reference = partition.assessmentOnlyReferences.shift();
-            if (reference) partition.decisionImpactReferences.push(reference);
+            const selection = assessment[source];
+            if (selection.evidenceAssignments[0]) {
+              selection.evidenceAssignments[0].purpose = "DECISION_IMPACT";
+            }
           }
         }
         if (overlap) {
-          const assessment = transport.requirementAssessments.find((item) => item.profileEvidence.decisionImpactReferences.length > 0)!;
-          assessment.profileEvidence.assessmentOnlyReferences.push(assessment.profileEvidence.decisionImpactReferences[0]!);
+          const assessment = transport.requirementAssessments.find(
+            (item) => item.profileEvidence.evidenceAssignments.length > 0,
+          )!;
+          assessment.profileEvidence.evidenceAssignments.push({
+            ...assessment.profileEvidence.evidenceAssignments[0]!,
+            purpose: "ASSESSMENT_ONLY",
+          });
         }
         expect(createSemanticResumeMatchTransportSchema(providerInput.schemaEvidence, input.requirementMap).safeParse(transport).success).toBe(true);
         const executor = createSemanticExecutor({
@@ -262,6 +276,12 @@ describe("Customer Success Resume Match pipeline", () => {
       expect(result.evaluation.stageResults[6]).toMatchObject({ status: "FAILED", failureCode: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false, attempt: 1 });
       expect(result.evaluation.stageResults.slice(0, 6).every((stage) => stage.status === "COMPLETED")).toBe(true);
       expect(fixture.stats.opportunityPriorityCalls).toBe(0);
+      expect(result.recommendation).toBeUndefined();
+      expect(
+        result.evaluation.stageResults
+          .slice(7)
+          .every((stage) => stage.status !== "COMPLETED"),
+      ).toBe(true);
       return;
     }
     expect(result.evaluation.stageResults[6]?.status, result.evaluation.stageResults[6]?.errorMessage ?? undefined).toBe("COMPLETED");
@@ -436,7 +456,7 @@ describe("Customer Success requirement matching", () => {
     );
   });
 
-  it("uses Genuine Gap only with explicit profile evidence and retains strength", async () => {
+  it("uses Genuine Gap only with a structured profile limitation and retains strength", async () => {
     const { result } = await run({
       resumeMatch: {
         requirementClassifications: [
@@ -457,7 +477,7 @@ describe("Customer Success requirement matching", () => {
         matchedExperienceSpecificity: "UNSUPPORTED",
       }),
     );
-    expect(gap?.profileEvidenceReferences[0]).toMatch(/^cs-profile-skills-/);
+    expect(gap?.profileEvidenceReferences[0]).toMatch(/^cs-profile-limitations-/);
   });
 
   it("keeps insufficient profile evidence Unknown rather than a gap or zero", async () => {
@@ -937,6 +957,120 @@ describe("Customer Success seniority contradictions and failure isolation", () =
     };
     const { result } = await run({ operations: invalid });
     expect(result.evaluation.stageResults[6]?.status).toBe("FAILED");
+  });
+
+  it("fails closed when a current execution receives a JD map that predates experience levels", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    let resumeMatchCalls = 0;
+    // A persisted v5 map: a JD Reconstruction EXPERIENCE requirement with the
+    // retired direct-work boolean and no experience level.
+    const legacy: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async reconstructJobDescription(input) {
+        const reconstruction = await fixture.semanticOperations.reconstructJobDescription(input);
+        const reference = reconstruction.evidence[0]!.referenceId;
+        return {
+          ...reconstruction,
+          requirements: [
+            ...reconstruction.requirements,
+            {
+              requirement: "Direct customer-facing work",
+              category: "EXPERIENCE" as const,
+              strength: "REQUIRED" as const,
+              statedYears: 2,
+              statedYearsMaximum: null,
+              statedYearsOpenEnded: true,
+              experienceSpecificity: "Customer-facing work",
+              requiresDirectWorkExperience: true,
+              requiresStartupExperience: false,
+              evidenceReferences: [reference],
+              ambiguity: { isAmbiguous: false, explanation: null },
+            },
+          ],
+        };
+      },
+      async evaluateResumeMatch(input) {
+        resumeMatchCalls += 1;
+        return fixture.semanticOperations.evaluateResumeMatch(input);
+      },
+    };
+    const { result } = await run({ operations: legacy });
+    const hardFilters = result.evaluation.stageResults.find((stage) => stage.stageId === "hard-filters")!;
+    // Historical maps remain readable: the stage that produced it completed.
+    expect(hardFilters.status).toBe("COMPLETED");
+    expect(JSON.stringify(hardFilters.result)).toContain('"requiresDirectWorkExperience":true');
+    const resumeMatch = result.evaluation.stageResults.find((stage) => stage.stageId === "resume-match")!;
+    expect([resumeMatch.status, resumeMatch.failureCode, resumeMatch.retryable])
+      .toEqual(["FAILED", "RESUME_MATCH_PREREQUISITE_OUTDATED", false]);
+    expect(resumeMatch.errorMessage).toContain("regenerate JD Reconstruction");
+    expect(resumeMatchCalls).toBe(0);
+  });
+
+  it("fails closed when a persisted map has experience levels but predates source-statement provenance", async () => {
+    const fixture = createCustomerSuccessFixtureOperations({ scenario: "strong" });
+    let resumeMatchCalls = 0;
+    // A persisted v6 map: structured experience level and an authored
+    // ambiguity flag on an explicit strength, but no statement provenance.
+    const v6: CustomerSuccessSemanticOperations = {
+      ...fixture.semanticOperations,
+      async reconstructJobDescription(input) {
+        const reconstruction = (await fixture.semanticOperations.reconstructJobDescription(input)) as {
+          evidence: Array<{ referenceId: string }>;
+          requirements: unknown[];
+        };
+        const reference = reconstruction.evidence[0]!.referenceId;
+        return {
+          ...reconstruction,
+          requirements: [
+            ...reconstruction.requirements,
+            {
+              requirement: "2+ years of customer-facing work experience; Customer Success experience in SaaS ideally",
+              category: "EXPERIENCE" as const,
+              strength: "REQUIRED" as const,
+              statedYears: 2,
+              statedYearsMaximum: null,
+              statedYearsOpenEnded: true,
+              experienceSpecificity: "Customer-facing work",
+              minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING" as const,
+              requiresStartupExperience: false,
+              evidenceReferences: [reference],
+              ambiguity: { isAmbiguous: true, explanation: "Mixed required and ideal strength." },
+            },
+          ],
+        };
+      },
+      async evaluateResumeMatch(input) {
+        resumeMatchCalls += 1;
+        return fixture.semanticOperations.evaluateResumeMatch(input);
+      },
+    };
+    const { result } = await run({ operations: v6 });
+    const hardFilters = result.evaluation.stageResults.find((stage) => stage.stageId === "hard-filters")!;
+    // History stays readable: the stored map is not rewritten.
+    expect(hardFilters.status).toBe("COMPLETED");
+    const stored = (hardFilters.result!.data as { reconstruction: { requirements: Array<Record<string, unknown>> } })
+      .reconstruction.requirements.find((requirement) => requirement.minimumExperienceSpecificity === "BROADER_CUSTOMER_FACING" &&
+        requirement.sourceStatement === undefined)!;
+    expect([stored.sourceStatement, (stored.ambiguity as { isAmbiguous: boolean }).isAmbiguous]).toEqual([undefined, true]);
+    const resumeMatch = result.evaluation.stageResults.find((stage) => stage.stageId === "resume-match")!;
+    expect([resumeMatch.status, resumeMatch.failureCode, resumeMatch.retryable])
+      .toEqual(["FAILED", "RESUME_MATCH_PREREQUISITE_OUTDATED", false]);
+    expect(resumeMatch.errorMessage).toContain("source-statement");
+    expect(resumeMatchCalls).toBe(0);
+  });
+
+  it("does not treat deterministically extracted EXPERIENCE requirements as outdated", async () => {
+    // The default job states "3-5 years of Customer Success experience
+    // required.", which deterministic extraction turns into an EXPERIENCE
+    // requirement that states no level by design.
+    const { result } = await run();
+    const hardFilters = result.evaluation.stageResults.find((stage) => stage.stageId === "hard-filters")!;
+    const requirements = (hardFilters.result!.data as {
+      reconstruction: { requirements: Array<{ category: string; minimumExperienceSpecificity?: string; ambiguity: { isAmbiguous: boolean } }> };
+    }).reconstruction.requirements;
+    expect(requirements.some((requirement) => requirement.category === "EXPERIENCE" &&
+      !requirement.ambiguity.isAmbiguous && requirement.minimumExperienceSpecificity === undefined)).toBe(true);
+    expect(result.evaluation.stageResults.find((stage) => stage.stageId === "resume-match")!.status).toBe("COMPLETED");
   });
 
   it("rejects omission of an explicit required requirement", async () => {

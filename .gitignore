@@ -12,3 +12,18 @@ test-results/
 !.env.example
 
 database/generated/
+
+# Bundled E2E helpers (created and removed by specs)
+database/.e2e-*.mjs
+
+# Built browser extension (pnpm extension:build)
+apps/extension/dist/
+
+# Retrieval-worker diagnostics, page evidence and evidence packages are kept
+# outside the repository by design (the tools refuse any folder inside a Git
+# checkout); these patterns are a backstop against copying them in by hand.
+retrieval-worker-*.jsonl
+*.rendered.html
+*.served.html
+aija-evidence/
+aija-failure-*/

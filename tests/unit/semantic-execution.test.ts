@@ -8,6 +8,8 @@ import {
   customerSuccessJdReconstructionInstructions,
   customerSuccessResumeMatchPromptVersion,
   customerSuccessJdReconstructionSchema,
+  requirementCategorySchema,
+  requirementExperienceLevelSchema,
   createResumeMatchProviderInputProjection,
   createProductionCustomerSuccessSemanticOperations,
   organizationalMaturityCalibration,
@@ -57,6 +59,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testSemanticPricing } from "../fixtures/semantic-pricing";
+import { toRequirementStatementTransport } from "../fixtures/customer-success";
 
 const config = {
   apiKey: "test-key-not-a-secret",
@@ -95,9 +98,14 @@ const openAiStructuredOutputLimits = {
   largeEnumStringCharacters: 15_000,
 } as const;
 
+// cs-jd-reconstruction-v7 records requirements as source statements: one
+// verbatim evidence record, the declared strengths and experience levels, and
+// atomic qualifications whose ambiguity is derived from strength. The
+// experience level and startup field remain only on EXPERIENCE qualifications.
+// v6 control: 11,613 schema bytes, 1,147 instruction bytes.
 const state2JdReconstructionControl = {
-  schemaBytes: 8_705,
-  instructionBytes: 1_147,
+  schemaBytes: 12_158,
+  instructionBytes: 1_311,
   representativeResponseBytes: 18_278,
 } as const;
 
@@ -302,19 +310,26 @@ function validJdReconstructionTransport(): SemanticReconstructionTransport {
       })),
       other: [],
     },
-    requirements: [
+    requirementStatements: [
       {
-        requirement: "Customer onboarding experience",
-        category: "EXPERIENCE" as const,
-        strength: "REQUIRED" as const,
-        statedYears: 2,
-        statedYearsMaximum: 4,
-        statedYearsOpenEnded: false,
-        experienceSpecificity: "Customer onboarding",
-        evidenceReferences: ["jd-1"],
-        ambiguity: { isAmbiguous: false, explanation: null },
-        assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
-        compoundExplanation: null,
+        evidenceReference: "jd-1",
+        statementStrengths: ["REQUIRED" as const],
+        statementExperienceLevels: ["ANY_WORK_EXPERIENCE" as const],
+        qualifications: [
+          {
+            requirement: "Customer onboarding experience",
+            category: "EXPERIENCE" as const,
+            strengthAssessment: { strength: "REQUIRED" as const },
+            statedYears: 2,
+            statedYearsMaximum: 4,
+            statedYearsOpenEnded: false,
+            experienceSpecificity: "Customer onboarding",
+            minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" as const,
+            requiresStartupExperience: false,
+            assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+            compoundExplanation: null,
+          },
+        ],
       },
     ],
     ownershipMap: {
@@ -343,6 +358,28 @@ function validJdReconstructionTransport(): SemanticReconstructionTransport {
       },
     ],
     contradictions: [],
+  };
+}
+
+// The Requirement Map entry the base transport's single statement flattens to.
+function validJdReconstructionDomainRequirement() {
+  return {
+    requiresStartupExperience: false,
+    requirement: "Customer onboarding experience",
+    category: "EXPERIENCE" as const,
+    strength: "REQUIRED" as const,
+    statedYears: 2,
+    statedYearsMaximum: 4,
+    statedYearsOpenEnded: false,
+    experienceSpecificity: "Customer onboarding",
+    minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" as const,
+    evidenceReferences: ["jd-1"],
+    ambiguity: { isAmbiguous: false, explanation: null },
+    sourceStatement: {
+      statementIndex: 0,
+      statementStrengths: ["REQUIRED" as const],
+      statementExperienceLevels: ["ANY_WORK_EXPERIENCE" as const],
+    },
   };
 }
 
@@ -467,8 +504,18 @@ function validProviderResumeMatchTransport() {
     requirementAssessments: [
       {
         ...assessment,
-        jdEvidence: { decisionImpactReferences: [] as string[], assessmentOnlyReferences: jdEvidenceReferences },
-        profileEvidence: { decisionImpactReferences: [] as string[], assessmentOnlyReferences: profileEvidenceReferences },
+        jdEvidence: {
+          evidenceAssignments: jdEvidenceReferences.map((evidenceReference) => ({
+            evidenceReference,
+            purpose: "ASSESSMENT_ONLY" as const,
+          })),
+        },
+        profileEvidence: {
+          evidenceAssignments: profileEvidenceReferences.map((evidenceReference) => ({
+            evidenceReference,
+            purpose: "ASSESSMENT_ONLY" as const,
+          })),
+        },
       },
     ],
   };
@@ -483,12 +530,46 @@ function decisiveProviderResumeMatchTransport() {
     requirementAssessments: [
       {
         ...assessment,
-        jdEvidence: { decisionImpactReferences: decisionImpactEvidence.jdEvidenceReferences, assessmentOnlyReferences: [] as string[] },
-        profileEvidence: { decisionImpactReferences: decisionImpactEvidence.profileEvidenceReferences, assessmentOnlyReferences: [] as string[] },
+        jdEvidence: {
+          evidenceAssignments: decisionImpactEvidence.jdEvidenceReferences.map((evidenceReference) => ({
+            evidenceReference,
+            purpose: "DECISION_IMPACT" as const,
+          })),
+        },
+        gapEvidence: {
+          evidenceAssignments: decisionImpactEvidence.profileEvidenceReferences.map((evidenceReference) => ({
+            evidenceReference,
+            purpose: "DECISION_IMPACT" as const,
+          })),
+        } as ReturnType<typeof providerEvidenceSelection>,
+        profileEvidence: providerEvidenceSelection(),
       },
     ],
   };
 }
+
+function providerEvidenceSelection(
+  assessmentOnlyReferences: string[] = [],
+  decisionImpactReferences: string[] = [],
+) {
+  return {
+    evidenceAssignments: [
+      ...decisionImpactReferences.map((evidenceReference) => ({
+        evidenceReference,
+        purpose: "DECISION_IMPACT" as const,
+      })),
+      ...assessmentOnlyReferences.map((evidenceReference) => ({
+        evidenceReference,
+        purpose: "ASSESSMENT_ONLY" as const,
+      })),
+    ],
+  };
+}
+
+type TestResumeMatchLimitation = {
+  category: z.infer<typeof requirementCategorySchema>;
+  disclaimedExperienceSpecificity: z.infer<typeof requirementExperienceLevelSchema> | null;
+};
 
 function resumeMatchAvailableEvidence(
   additional: Array<{
@@ -497,6 +578,7 @@ function resumeMatchAvailableEvidence(
     evidenceType?: string;
     claim?: string;
     sourceText?: string;
+    limitation?: TestResumeMatchLimitation;
   }> = [],
 ) {
   return [
@@ -509,6 +591,20 @@ function resumeMatchAvailableEvidence(
       referenceId: "profile-1",
       sourceType: "USER_PROFILE",
       evidenceType: "TRANSFERABLE_EXPERIENCE",
+      claim: "The profile explicitly states that customer onboarding experience is not verified.",
+      sourceText: "Customer onboarding experience is not verified.",
+    },
+    // A structured limitation relevant to the default EXPERIENCE requirement.
+    {
+      referenceId: "profile-limitation",
+      sourceType: "USER_PROFILE",
+      evidenceType: "PROFILE_LIMITATION",
+      claim: "I have never held a customer onboarding role.",
+      sourceText: "I have never held a customer onboarding role.",
+      limitation: {
+        category: "EXPERIENCE",
+        disclaimedExperienceSpecificity: "ANY_WORK_EXPERIENCE",
+      } as TestResumeMatchLimitation,
     },
     ...additional.map((evidence) => ({
       evidenceType:
@@ -541,6 +637,7 @@ function withResumeMatchProviderReferences(
     "profileEvidenceReferences",
     "decisionImpactReferences",
     "assessmentOnlyReferences",
+    "evidenceReference",
     "evidenceReferencesA",
     "evidenceReferencesB",
   ]);
@@ -550,7 +647,9 @@ function withResumeMatchProviderReferences(
     return Object.fromEntries(
       Object.entries(input).map(([key, child]) => [
         key,
-        evidenceKeys.has(key) && Array.isArray(child)
+        key === "evidenceReference" && typeof child === "string"
+          ? references.get(child) ?? child
+          : evidenceKeys.has(key) && Array.isArray(child)
           ? child.map((reference) => references.get(String(reference)) ?? reference)
           : project(child),
       ]),
@@ -576,9 +675,11 @@ function decisiveResumeMatchTransport() {
         decisionImpact: "DECISIVE_DISQUALIFIER" as const,
         decisionImpactExplanation:
           "The required qualification is decisively unsupported.",
+        // Gap proof is the structured limitation relevant to the requirement.
+        profileEvidenceReferences: ["profile-limitation"],
         decisionImpactEvidence: {
           jdEvidenceReferences: ["jd-1"],
-          profileEvidenceReferences: ["profile-1"],
+          profileEvidenceReferences: ["profile-limitation"],
         },
       },
     ],
@@ -602,6 +703,15 @@ function authoritativeResumeMatchRequirements() {
       },
     },
   ];
+}
+
+// The default requirement with the experience level JD Reconstruction states;
+// gap proof requires a stated level.
+function leveledResumeMatchRequirements() {
+  return authoritativeResumeMatchRequirements().map((requirement) => ({
+    ...requirement,
+    minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" as const,
+  }));
 }
 
 function mixedAuthoritativeResumeMatchRequirements() {
@@ -825,7 +935,7 @@ describe("production semantic execution", () => {
         const value = { ...validProviderResumeMatchTransport(), requirementAssessments: [{
           ...validProviderResumeMatchTransport().requirementAssessments[0]!,
           classification, matchedExperienceSpecificity: specificity, experienceEvidenceBasis: basis,
-          profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: [`profile-${type}`] },
+          profileEvidence: providerEvidenceSelection([`profile-${type}`]),
           supportedPortion: "Supported portion", unsupportedPortion: "Unsupported portion",
         }] };
         const expected = classificationAllows && typeAllows;
@@ -834,7 +944,7 @@ describe("production semantic execution", () => {
         if (expected) expect(conversion).not.toThrow();
         // The same compatibility constraints apply when evidence supports impact.
         const impactValue = { ...value, requirementAssessments: [{ ...value.requirementAssessments[0]!,
-          profileEvidence: { decisionImpactReferences: [`profile-${type}`], assessmentOnlyReferences: [] },
+          profileEvidence: providerEvidenceSelection([], [`profile-${type}`]),
         }] };
         expect(schema.safeParse(impactValue).success, `impact: ${classification}/${specificity}/${basis}/${type}`).toBe(expected);
         const impactConversion = () =>
@@ -932,8 +1042,7 @@ describe("production semantic execution", () => {
       experienceEvidenceBasis: "UNKNOWN",
       decisionImpact: "NON_DECISIVE",
       profileEvidence: {
-        decisionImpactReferences: [],
-        assessmentOnlyReferences: [],
+        evidenceAssignments: [],
       },
     })).success).toBe(true);
   });
@@ -947,6 +1056,11 @@ describe("production semantic execution", () => {
     const requirements = Array.from({ length: 24 }, (_, i) => ({
       ...authoritativeResumeMatchRequirements()[0]!,
       category: (["EXPERIENCE", "INDUSTRY", "CAPABILITY", "TOOL"] as const)[i % 4]!,
+      // The default limitation disclaims ANY_WORK_EXPERIENCE, which carries no
+      // subject key: it proves a gap only for the one requirement at that level.
+      ...(i % 4 === 0
+        ? { minimumExperienceSpecificity: i === 0 ? "ANY_WORK_EXPERIENCE" as const : "BROADER_CUSTOMER_FACING" as const }
+        : {}),
     }));
     const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
     const first = auditOpenAiProviderSchema(schema);
@@ -969,37 +1083,70 @@ describe("production semantic execution", () => {
     expect(JSON.stringify(auditOpenAiProviderSchema(other).jsonSchema)).not.toContain("candidate-59");
     for (const item of evidence.filter((entry) => entry.sourceType === "USER_PROFILE")) {
       const value = decisiveProviderResumeMatchTransport();
-      value.requirementAssessments[0]!.profileEvidence.decisionImpactReferences = [item.referenceId];
+      if (item.referenceId !== "profile-limitation") {
+        value.requirementAssessments[0]!.profileEvidence =
+          providerEvidenceSelection([item.referenceId]);
+      }
+      // The structured limitation is carried by gapEvidence; every other
+      // profile record remains available as assessment context.
       expect(schema.safeParse(value).success).toBe(true);
+      const { gapEvidence: _gapEvidence, ...withoutProof } =
+        value.requirementAssessments[0]!;
+      expect(schema.safeParse({
+        ...value,
+        requirementAssessments: [{
+          ...withoutProof,
+          profileEvidence: providerEvidenceSelection([], [item.referenceId]),
+        }],
+      }).success).toBe(false);
     }
   });
 
   it("restores assessment-only and impact evidence separately without changing match meaning", () => {
     const evidence = resumeMatchAvailableEvidence([
       { referenceId: "jd-context", sourceType: "JOB_DESCRIPTION" },
-      { referenceId: "profile-context", sourceType: "USER_PROFILE" },
+      {
+        referenceId: "profile-context",
+        sourceType: "USER_PROFILE",
+        claim: "Customer onboarding experience is not established.",
+        sourceText: "Customer onboarding experience is not established.",
+      },
     ]);
     for (const decisive of [false, true]) {
       const value = decisive ? decisiveProviderResumeMatchTransport() : validProviderResumeMatchTransport();
-      value.requirementAssessments[0]!.jdEvidence = { decisionImpactReferences: ["jd-1"], assessmentOnlyReferences: ["jd-context"] };
-      value.requirementAssessments[0]!.profileEvidence = { decisionImpactReferences: ["profile-1"], assessmentOnlyReferences: ["profile-context"] };
-      const domain = semanticResumeMatchFromTransport(value, authoritativeResumeMatchRequirements(), evidence);
+      value.requirementAssessments[0]!.jdEvidence =
+        providerEvidenceSelection(["jd-context"], ["jd-1"]);
+      // A gap carries its structured limitation as gap proof and other profile
+      // records as context; other classifications cite profile evidence only.
+      const impactProfile = decisive ? "profile-limitation" : "profile-1";
+      if (decisive) {
+        (value.requirementAssessments[0] as { gapEvidence?: unknown }).gapEvidence =
+          providerEvidenceSelection([], ["profile-limitation"]);
+        value.requirementAssessments[0]!.profileEvidence =
+          providerEvidenceSelection(["profile-context"]);
+      } else {
+        value.requirementAssessments[0]!.profileEvidence =
+          providerEvidenceSelection(["profile-context"], ["profile-1"]);
+      }
+      const domain = semanticResumeMatchFromTransport(value, leveledResumeMatchRequirements(), evidence);
       const assessment = domain.requirementAssessments[0]!;
       expect(assessment.jdEvidenceReferences).toEqual(["jd-1", "jd-context"]);
-      expect(assessment.profileEvidenceReferences).toEqual(["profile-1", "profile-context"]);
-      expect(assessment.decisionImpactEvidenceReferences).toEqual(["jd-1", "profile-1"]);
+      expect(assessment.profileEvidenceReferences).toEqual([impactProfile, "profile-context"]);
+      expect(assessment.decisionImpactEvidenceReferences).toEqual(["jd-1", impactProfile]);
       expect(domain.score).toBe(value.score);
       expect(assessment.classification).toBe(value.requirementAssessments[0]!.classification);
     }
   });
 
-  it("binds direct-work, employment and decisive-gap eligibility to authoritative requirements", () => {
-    const base = authoritativeResumeMatchRequirements()[0]!;
+  it("binds experience-level, employment and decisive-gap eligibility to authoritative requirements", () => {
+    const base = leveledResumeMatchRequirements()[0]!;
+    const unleveled = authoritativeResumeMatchRequirements()[0]!;
     const requirements = [
       base,
-      { ...base, requirement: "Direct customer work", strength: "PREFERRED" as const },
-      { ...base, requirement: "Nonprofit specialization", category: "INDUSTRY" as const, strength: "NICE_TO_HAVE" as const },
-      { ...base, category: "TOOL" as const, strength: "IDEAL" as const },
+      // Experience-level legality comes from the structured field, not the wording.
+      { ...base, requirement: "Customer work", minimumExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS" as const, strength: "PREFERRED" as const },
+      { ...unleveled, requirement: "Nonprofit specialization", category: "INDUSTRY" as const, strength: "NICE_TO_HAVE" as const },
+      { ...unleveled, category: "TOOL" as const, strength: "IDEAL" as const },
       { ...base, ambiguity: { isAmbiguous: true, explanation: "Undefined criterion" } },
     ];
     const evidence = resumeMatchAvailableEvidence([
@@ -1028,8 +1175,7 @@ describe("production semantic execution", () => {
             supportedPortion: null,
             unsupportedPortion: null,
             profileEvidence: {
-              decisionImpactReferences: [],
-              assessmentOnlyReferences: [],
+              evidenceAssignments: [],
             },
           }),
       };
@@ -1040,20 +1186,25 @@ describe("production semantic execution", () => {
       semanticResumeMatchFromTransport(candidate(fields), requirements, evidence);
     for (const index of [0, 1, 2]) {
       const fields = { requirementIndex: index, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
-        experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["skill"] }, supportedPortion: "Knowledge", unsupportedPortion: "Employment" };
+        experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: providerEvidenceSelection(["skill"]), supportedPortion: "Knowledge", unsupportedPortion: "Employment" };
       expect(accepts(fields)).toBe(false);
     }
     const toolKnowledge = { requirementIndex: 3, classification: "PARTIAL_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
-      experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["skill"] }, supportedPortion: "Knowledge", unsupportedPortion: "Unverified use" };
+      experienceEvidenceBasis: "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE", profileEvidence: providerEvidenceSelection(["skill"]), supportedPortion: "Knowledge", unsupportedPortion: "Unverified use" };
     expect(accepts(toolKnowledge)).toBe(true);
     expect(() => converts(toolKnowledge)).not.toThrow();
     for (const index of [1, 2]) {
       expect(accepts({ requirementIndex: index })).toBe(false);
-      const direct = { requirementIndex: index, classification: "STRONG_MATCH", matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
-        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["direct"] } };
+      // An INDUSTRY match is requirement-specific; a Customer Success ladder
+      // label describes a different subject.
+      const direct = { requirementIndex: index, classification: "STRONG_MATCH",
+        matchedExperienceSpecificity: index === 2 ? "REQUIREMENT_SPECIFIC" : "DIRECT_CUSTOMER_SUCCESS",
+        experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE", profileEvidence: providerEvidenceSelection(["direct"]) };
       expect(accepts(direct)).toBe(true);
       expect(() => converts(direct)).not.toThrow();
     }
+    expect(accepts({ requirementIndex: 2, classification: "STRONG_MATCH", matchedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+      experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE", profileEvidence: providerEvidenceSelection(["direct"]) })).toBe(false);
     for (const index of [0, 1, 2, 3, 4, 5]) {
       const gap = decisiveProviderResumeMatchTransport();
       gap.requirementAssessments[0]!.requirementIndex = index;
@@ -1066,10 +1217,12 @@ describe("production semantic execution", () => {
         )).not.toThrow();
       }
       const fields = gap.requirementAssessments[0]!;
+      // The default limitation disclaims a non-ladder EXPERIENCE subject, so it
+      // is relevant only to the EXPERIENCE requirement without a ladder level.
       for (const decisionImpact of ["NON_DECISIVE", "MATERIAL_UNCERTAINTY"]) {
         const nonDecisive = { ...gap, requirementAssessments: [{ ...fields, decisionImpact }] };
-        expect(schema.safeParse(nonDecisive).success).toBe(index < 4);
-        if (index < 4) {
+        expect(schema.safeParse(nonDecisive).success).toBe(index === 0);
+        if (index === 0) {
           expect(() => semanticResumeMatchFromTransport(
             candidate(nonDecisive.requirementAssessments[0]!),
             requirements,
@@ -1078,7 +1231,7 @@ describe("production semantic execution", () => {
         }
       }
       const unknown = { requirementIndex: index, classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
-        experienceEvidenceBasis: "UNKNOWN", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: [] } };
+        experienceEvidenceBasis: "UNKNOWN", profileEvidence: providerEvidenceSelection() };
       expect(accepts(unknown)).toBe(index < 4);
       if (index < 4) expect(() => converts(unknown)).not.toThrow();
     }
@@ -1106,23 +1259,28 @@ describe("production semantic execution", () => {
     const base = validProviderResumeMatchTransport();
     const unknown = { ...base, requirementAssessments: [{ ...base.requirementAssessments[0]!,
       classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN", experienceEvidenceBasis: "UNKNOWN",
-      profileEvidence: { decisionImpactReferences: [] as string[], assessmentOnlyReferences: [] as string[] },
+      profileEvidence: providerEvidenceSelection(),
     }] };
     expect(schema.safeParse(unknown).success).toBe(true);
     // Contextual profile evidence is allowed for Unknown; it does not assert a match.
-    unknown.requirementAssessments[0]!.profileEvidence.assessmentOnlyReferences = ["profile-1"];
+    unknown.requirementAssessments[0]!.profileEvidence =
+      providerEvidenceSelection(["profile-1"]);
     expect(schema.safeParse(unknown).success).toBe(true);
     for (const reference of ["jd-1", "missing-profile"]) {
-      unknown.requirementAssessments[0]!.profileEvidence.assessmentOnlyReferences = [reference];
+      unknown.requirementAssessments[0]!.profileEvidence =
+        providerEvidenceSelection([reference]);
       expect(schema.safeParse(unknown).success).toBe(false);
       const gap = decisiveProviderResumeMatchTransport();
-      gap.requirementAssessments[0]!.profileEvidence.decisionImpactReferences = [reference];
+      gap.requirementAssessments[0]!.profileEvidence =
+        providerEvidenceSelection([], [reference]);
       expect(schema.safeParse(gap).success).toBe(false);
     }
-    unknown.requirementAssessments[0]!.profileEvidence.assessmentOnlyReferences = [];
-    unknown.requirementAssessments[0]!.jdEvidence.assessmentOnlyReferences = ["profile-1"];
+    unknown.requirementAssessments[0]!.profileEvidence = providerEvidenceSelection();
+    unknown.requirementAssessments[0]!.jdEvidence =
+      providerEvidenceSelection(["profile-1"]);
     expect(schema.safeParse(unknown).success).toBe(false);
-    unknown.requirementAssessments[0]!.jdEvidence.assessmentOnlyReferences = ["jd-1"];
+    unknown.requirementAssessments[0]!.jdEvidence =
+      providerEvidenceSelection(["jd-1"]);
     const noProfile = createSemanticResumeMatchTransportSchema(evidence.filter((item) => item.sourceType !== "USER_PROFILE"), authoritativeResumeMatchRequirements());
     expect(noProfile.shape.requirementAssessments.safeParse(unknown.requirementAssessments).success).toBe(true);
     expect(noProfile.shape.requirementAssessments.safeParse(decisiveProviderResumeMatchTransport().requirementAssessments).success).toBe(false);
@@ -1384,37 +1542,72 @@ describe("production semantic execution", () => {
       expect(evidenceProperties).not.toHaveProperty(deterministicField);
     }
     const serializedSchema = JSON.stringify(jsonSchema);
-    const requirementItem = (
-      properties.requirements as Record<string, unknown>
-    ).items as Record<string, unknown>;
+    const statementItem = (
+      properties.requirementStatements as Record<string, unknown>
+    ).items as Record<string, any>;
+    // One source statement: one evidence record, the strengths and levels it
+    // declares, and its atomic qualifications.
+    expect(Object.keys(statementItem.properties)).toEqual([
+      "evidenceReference",
+      "statementStrengths",
+      "statementExperienceLevels",
+      "qualifications",
+    ]);
+    expect(statementItem.properties.statementStrengths.minItems).toBe(1);
+    expect(statementItem.properties.qualifications.minItems).toBe(1);
+    const requirementItem = statementItem.properties.qualifications
+      .items as Record<string, unknown>;
     const requirementOptions = requirementItem.anyOf as Array<
       Record<string, unknown>
     >;
-    expect(requirementOptions).toHaveLength(2);
+    // Specialization fields exist only on EXPERIENCE branches, so the
+    // provider grammar cannot express direct-work or startup semantics for
+    // INDUSTRY or any other category.
+    expect(requirementOptions).toHaveLength(4);
+    const definitions = jsonSchema.$defs as Record<string, any>;
+    // Ambiguity is derived from strength: an explanation exists only for an
+    // AMBIGUOUS strength, and no explicit strength can carry one.
+    expect(definitions.qualificationStrength.anyOf.map(
+      (variant: { properties: Record<string, unknown> }) => Object.keys(variant.properties),
+    )).toEqual([["strength"], ["strength", "ambiguityExplanation"]]);
+    expect(definitions.qualificationStrength.anyOf[0].properties.strength.enum)
+      .toEqual(["REQUIRED", "PREFERRED", "IDEAL", "NICE_TO_HAVE"]);
+    expect(definitions.qualificationStrength.anyOf[1].properties.strength.const)
+      .toBe("AMBIGUOUS");
     expect(
       requirementOptions.map((option) => {
         const optionProperties = option.properties as Record<
           string,
           Record<string, unknown>
         >;
+        const category = optionProperties.category!;
         return {
-          assessmentUnit: optionProperties.assessmentUnit.const,
+          categories: category.const !== undefined
+            ? [category.const]
+            : definitions[String(category.$ref).split("/").at(-1)!]!.enum,
+          specialization: ["minimumExperienceSpecificity", "requiresStartupExperience"]
+            .filter((field) => field in optionProperties && (option.required as string[]).includes(field)),
+          assessmentUnit: optionProperties.assessmentUnit!.const,
           compoundExplanation: optionProperties.compoundExplanation,
         };
       }),
     ).toEqual([
-      {
-        assessmentUnit: "INDEPENDENT_QUALIFICATION",
-        compoundExplanation: { type: "null" },
-      },
-      {
-        assessmentUnit: "SINGLE_COMPOUND_CONCEPT",
-        compoundExplanation: {
-          type: "string",
-          minLength: 1,
-          pattern: "\\S",
-        },
-      },
+      ...[
+        { assessmentUnit: "INDEPENDENT_QUALIFICATION", compoundExplanation: { type: "null" } },
+        { assessmentUnit: "SINGLE_COMPOUND_CONCEPT", compoundExplanation: { type: "string", minLength: 1, pattern: "\\S" } },
+      ].map((unit) => ({
+        categories: requirementCategorySchema.options.filter((category) => category !== "EXPERIENCE"),
+        specialization: [],
+        ...unit,
+      })),
+      ...[
+        { assessmentUnit: "INDEPENDENT_QUALIFICATION", compoundExplanation: { type: "null" } },
+        { assessmentUnit: "SINGLE_COMPOUND_CONCEPT", compoundExplanation: { type: "string", minLength: 1, pattern: "\\S" } },
+      ].map((unit) => ({
+        categories: ["EXPERIENCE"],
+        specialization: ["minimumExperienceSpecificity", "requiresStartupExperience"],
+        ...unit,
+      })),
     ]);
     expect(serializedSchema).toContain('"absenceBasis"');
     expect(serializedSchema).toContain('"EXPLICIT_EXCLUSION"');
@@ -1422,9 +1615,12 @@ describe("production semantic execution", () => {
     expect(serializedSchema).toContain('"INDEPENDENT_QUALIFICATION"');
     expect(serializedSchema).toContain('"SINGLE_COMPOUND_CONCEPT"');
     expect(serializedSchema).toContain('"compoundExplanation"');
+    expect(serializedSchema).toContain('"minimumExperienceSpecificity"');
+    expect(serializedSchema).not.toContain('"requiresDirectWorkExperience"');
+    expect(serializedSchema).toContain('"requiresStartupExperience"');
     expect(metrics.bytes).toBe(state2JdReconstructionControl.schemaBytes);
     expect(createHash("sha256").update(serializedSchema).digest("hex")).toBe(
-      "4d2b3831bc1d67bc7562b4184fb33ee5fe3c4789ee477da1aa8d78cf0fb066ee",
+      "7acf8c244b88407fdf4d74684f867c0f270b6b5a1afcbcd14e1a4af077244d0b",
     );
     expect(Buffer.byteLength(customerSuccessJdReconstructionInstructions)).toBe(
       state2JdReconstructionControl.instructionBytes,
@@ -1434,14 +1630,18 @@ describe("production semantic execution", () => {
         .update(customerSuccessJdReconstructionInstructions)
         .digest("hex"),
     ).toBe(
-      "286b6a646eda7dd969186a5f50ea0dac8f2ee5cc3d201af4c52efedd2b834466",
+      "ec5a553b6e6670ef0428466840e6a7804cad989caa81f43162df0d06268d5955",
     );
     expect(customerSuccessJdReconstructionInstructions).toContain(
       "absenceBasis EXPLICIT_EXCLUSION",
     );
     expect(customerSuccessJdReconstructionInstructions).toContain(
-      "Keep independently assessable candidate qualifications as separate",
+      "independently assessable qualifications are separate INDEPENDENT_QUALIFICATION entries",
     );
+    expect(customerSuccessJdReconstructionInstructions).toContain(
+      "a different strength or level is always a separate qualification",
+    );
+    expect(serializedSchema).not.toContain('"isAmbiguous"');
     expect(customerSuccessJdReconstructionInstructions).toContain(
       "Use SINGLE_COMPOUND_CONCEPT only when the elements form one concept",
     );
@@ -1518,6 +1718,7 @@ describe("production semantic execution", () => {
         provenanceId,
         sourceReference: "https://example.test/jobs/123",
         collectedAt: null,
+        sourceContent: transport.evidence.map((item) => item.sourceText).join("\n"),
       }),
     );
 
@@ -1739,7 +1940,7 @@ describe("production semantic execution", () => {
         evidenceType: "requirement",
       },
     ];
-    separate.requirements = separate.evidence.map((evidenceRecord) => ({
+    separate.requirementStatements = toRequirementStatementTransport(separate.evidence.map((evidenceRecord) => ({
       requirement: evidenceRecord.claim,
       category: "CAPABILITY" as const,
       strength: "REQUIRED" as const,
@@ -1751,7 +1952,7 @@ describe("production semantic execution", () => {
       ambiguity: { isAmbiguous: false, explanation: null },
       assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
       compoundExplanation: null,
-    }));
+    }))) as never;
     separate.roleMetadata.evidenceReferences = ["jd-relationship"];
     separate.ownershipMap.functions[0]!.evidenceReferences = [
       "jd-relationship",
@@ -1801,14 +2002,14 @@ describe("production semantic execution", () => {
     ).toHaveLength(4);
 
     const compound = validJdReconstructionTransport();
-    compound.requirements[0] = {
-      ...compound.requirements[0]!,
+    compound.requirementStatements[0]!.qualifications[0] = {
+      ...compound.requirementStatements[0]!.qualifications[0]!,
       requirement:
         "Communicate complex customer topics clearly by video and in writing.",
       assessmentUnit: "SINGLE_COMPOUND_CONCEPT",
       compoundExplanation:
         "Video and writing are communication modes within one competency.",
-    };
+    } as never;
     const compoundDomain = semanticReconstructionFromTransport(compound);
     expect(compoundDomain.requirements).toHaveLength(1);
     expect(compoundDomain.requirements[0]).not.toHaveProperty("assessmentUnit");
@@ -1827,7 +2028,7 @@ describe("production semantic execution", () => {
       sourceText,
       evidenceType: "requirement",
     });
-    transport.requirements = [
+    transport.requirementStatements = toRequirementStatementTransport([
       {
         requirement: "2+ years of customer-facing work experience",
         category: "EXPERIENCE",
@@ -1836,6 +2037,8 @@ describe("production semantic execution", () => {
         statedYearsMaximum: null,
         statedYearsOpenEnded: true,
         experienceSpecificity: "Customer-facing work experience",
+        minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING",
+        requiresStartupExperience: false,
         evidenceReferences: ["jd-mixed-strength"],
         ambiguity: { isAmbiguous: false, explanation: null },
         assessmentUnit: "INDEPENDENT_QUALIFICATION",
@@ -1851,12 +2054,21 @@ describe("production semantic execution", () => {
         statedYearsOpenEnded: false,
         experienceSpecificity:
           "Customer Success, Onboarding, or Training experience in SaaS",
+        minimumExperienceSpecificity: "DIRECT_SAAS_CUSTOMER_SUCCESS",
+        requiresStartupExperience: false,
         evidenceReferences: ["jd-mixed-strength"],
         ambiguity: { isAmbiguous: false, explanation: null },
         assessmentUnit: "INDEPENDENT_QUALIFICATION",
         compoundExplanation: null,
       },
-    ];
+    ]) as never;
+    // One source statement declares both strengths and both levels.
+    expect(transport.requirementStatements).toHaveLength(1);
+    expect(transport.requirementStatements[0]).toMatchObject({
+      evidenceReference: "jd-mixed-strength",
+      statementStrengths: ["REQUIRED", "IDEAL"],
+      statementExperienceLevels: ["BROADER_CUSTOMER_FACING", "DIRECT_SAAS_CUSTOMER_SUCCESS"],
+    });
 
     expect(
       semanticReconstructionTransportSchema.safeParse(transport).success,
@@ -1891,6 +2103,12 @@ describe("production semantic execution", () => {
     ).toBe(true);
     expect(domain.evidence.filter((item) => item.referenceId === "jd-mixed-strength"))
       .toHaveLength(1);
+    // Neither qualification is ambiguous: each has an explicit strength.
+    expect(domain.requirements.map((item) => item.ambiguity.isAmbiguous)).toEqual([false, false]);
+    expect(domain.requirements.map((item) => item.sourceStatement)).toEqual([
+      { statementIndex: 0, statementStrengths: ["REQUIRED", "IDEAL"], statementExperienceLevels: ["BROADER_CUSTOMER_FACING", "DIRECT_SAAS_CUSTOMER_SUCCESS"] },
+      { statementIndex: 0, statementStrengths: ["REQUIRED", "IDEAL"], statementExperienceLevels: ["BROADER_CUSTOMER_FACING", "DIRECT_SAAS_CUSTOMER_SUCCESS"] },
+    ]);
 
     const providerInput = createResumeMatchProviderInputProjection(
       domain.evidence,
@@ -1914,7 +2132,7 @@ describe("production semantic execution", () => {
   it("enforces the State 2 requirement-grouping transport contract", () => {
     const transport = validJdReconstructionTransport();
     const requirements = Array.from({ length: 14 }, (_, index) => ({
-      ...transport.requirements[0]!,
+      ...transport.requirementStatements[0]!.qualifications[0]!,
       requirement: `Requirement ${index + 1}`,
       assessmentUnit:
         index % 2 === 0
@@ -1924,10 +2142,14 @@ describe("production semantic execution", () => {
         index % 2 === 0 ? "The elements form one assessable concept." : null,
     }));
 
+    const statement = (qualifications: unknown[]) => [{
+      ...transport.requirementStatements[0]!,
+      qualifications,
+    }];
     expect(
       semanticReconstructionTransportSchema.safeParse({
         ...transport,
-        requirements,
+        requirementStatements: statement(requirements),
       }).success,
     ).toBe(true);
 
@@ -1940,7 +2162,7 @@ describe("production semantic execution", () => {
       expect(
         semanticReconstructionTransportSchema.safeParse({
           ...transport,
-          requirements: [invalid],
+          requirementStatements: statement([invalid]),
         }).success,
       ).toBe(false);
     }
@@ -1954,29 +2176,24 @@ describe("production semantic execution", () => {
       assessmentUnit:
         | "INDEPENDENT_QUALIFICATION"
         | "SINGLE_COMPOUND_CONCEPT",
-    ): SemanticReconstructionTransport["requirements"][number] => {
-      const base = {
-        ...transport.requirements[0]!,
-        requirement: text,
-        category: "CAPABILITY" as const,
-        strength,
-        statedYears: null,
-        statedYearsMaximum: null,
-        statedYearsOpenEnded: false,
-        experienceSpecificity: null,
-        evidenceReferences: ["jd-1"],
-      };
-      return assessmentUnit === "INDEPENDENT_QUALIFICATION"
-        ? { ...base, assessmentUnit, compoundExplanation: null }
-        : {
-            ...base,
-            assessmentUnit,
-            compoundExplanation:
-              "The listed elements form one jointly assessed qualification.",
-          };
-    };
+    ) => ({
+      requirement: text,
+      category: "CAPABILITY" as const,
+      strength,
+      statedYears: null,
+      statedYearsMaximum: null,
+      statedYearsOpenEnded: false,
+      experienceSpecificity: null,
+      evidenceReferences: ["jd-1"],
+      ambiguity: { isAmbiguous: false, explanation: null },
+      assessmentUnit,
+      compoundExplanation:
+        assessmentUnit === "INDEPENDENT_QUALIFICATION"
+          ? null
+          : "The listed elements form one jointly assessed qualification.",
+    });
 
-    transport.requirements = [
+    transport.requirementStatements = toRequirementStatementTransport([
       requirement(
         "Familiarity with G Suite, Zoom, Slack, Intercom, and Canva",
         "REQUIRED",
@@ -2012,7 +2229,9 @@ describe("production semantic execution", () => {
         "REQUIRED",
         "INDEPENDENT_QUALIFICATION",
       ),
-    ];
+    ]) as never;
+    // Requirements quoting one source statement form one statement group.
+    expect(transport.requirementStatements).toHaveLength(1);
 
     const domain = semanticReconstructionFromTransport(transport);
     expect(domain.requirements).toHaveLength(7);
@@ -2046,15 +2265,17 @@ describe("production semantic execution", () => {
 
   it("rejects merged or duplicate provider requirements before domain construction", () => {
     const merged = validJdReconstructionTransport() as unknown as {
-      requirements: Array<Record<string, unknown>>;
+      requirementStatements: Array<Record<string, unknown>>;
     };
-    merged.requirements[0]!.evidenceReferences = ["jd-1", "jd-2"];
+    merged.requirementStatements[0]!.evidenceReference = ["jd-1", "jd-2"];
     expect(
       semanticReconstructionTransportSchema.safeParse(merged).success,
     ).toBe(false);
 
     const duplicate = validJdReconstructionTransport();
-    duplicate.requirements.push({ ...duplicate.requirements[0]! });
+    duplicate.requirementStatements[0]!.qualifications.push({
+      ...duplicate.requirementStatements[0]!.qualifications[0]!,
+    });
     expect(() => semanticReconstructionFromTransport(duplicate)).toThrowError(
       expect.objectContaining({
         code: "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID",
@@ -2097,8 +2318,8 @@ describe("production semantic execution", () => {
     );
 
     const reversedYears = validJdReconstructionTransport();
-    reversedYears.requirements[0] = {
-      ...reversedYears.requirements[0]!,
+    reversedYears.requirementStatements[0]!.qualifications[0] = {
+      ...reversedYears.requirementStatements[0]!.qualifications[0]!,
       statedYears: 5,
       statedYearsMaximum: 3,
     };
@@ -2188,15 +2409,7 @@ describe("production semantic execution", () => {
       ownership: "UNKNOWN",
       evidenceReferences: [],
     });
-    expect(result.requirements).toEqual(
-      transport.requirements.map(
-        ({
-          assessmentUnit: _assessmentUnit,
-          compoundExplanation: _compoundExplanation,
-          ...requirement
-        }) => requirement,
-      ),
-    );
+    expect(result.requirements).toEqual([validJdReconstructionDomainRequirement()]);
     expect(result.ownershipMap.functions.customerSuccess).toEqual({
       relationship: "OWNS",
       evidenceReferences: ["jd-1"],
@@ -2261,19 +2474,26 @@ describe("production semantic execution", () => {
         ),
         other: [],
       },
-      requirements: [
+      requirementStatements: [
         {
-          requirement: "Customer onboarding experience",
-          category: "EXPERIENCE" as const,
-          strength: "REQUIRED" as const,
-          statedYears: null,
-          statedYearsMaximum: null,
-          statedYearsOpenEnded: false,
-          experienceSpecificity: "Customer onboarding",
-          evidenceReferences: ["jd-work"],
-          ambiguity: { isAmbiguous: false, explanation: null },
-          assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
-          compoundExplanation: null,
+          evidenceReference: "jd-work",
+          statementStrengths: ["REQUIRED" as const],
+          statementExperienceLevels: ["ANY_WORK_EXPERIENCE" as const],
+          qualifications: [
+            {
+              requirement: "Customer onboarding experience",
+              category: "EXPERIENCE" as const,
+              strengthAssessment: { strength: "REQUIRED" as const },
+              statedYears: null,
+              statedYearsMaximum: null,
+              statedYearsOpenEnded: false,
+              experienceSpecificity: "Customer onboarding",
+              minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" as const,
+              requiresStartupExperience: false,
+              assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
+              compoundExplanation: null,
+            },
+          ],
         },
       ],
       ownershipMap: {
@@ -2308,7 +2528,12 @@ describe("production semantic execution", () => {
       ],
     };
 
-    const domain = semanticReconstructionFromTransport(transport);
+    const domain = semanticReconstructionFromTransport(
+      transport,
+      validJdReconstructionEvidenceSource({
+        sourceContent: "Own onboarding and collaborate with Product. Onboarding is handled by another team.",
+      }),
+    );
 
     expect(Object.keys(domain.responsibilityMap.areas)).toHaveLength(
       responsibilityAreas.length,
@@ -2329,15 +2554,12 @@ describe("production semantic execution", () => {
         evidenceReferences: ["jd-work"],
       },
     });
-    expect(domain.requirements).toEqual(
-      transport.requirements.map(
-        ({
-          assessmentUnit: _assessmentUnit,
-          compoundExplanation: _compoundExplanation,
-          ...requirement
-        }) => requirement,
-      ),
-    );
+    expect(domain.requirements).toEqual([{
+      ...validJdReconstructionDomainRequirement(),
+      statedYears: null,
+      statedYearsMaximum: null,
+      evidenceReferences: ["jd-work"],
+    }]);
     expect(domain.evidence.map((item) => item.referenceId)).toEqual([
       "jd-work",
       "jd-conflict",
@@ -2459,7 +2681,7 @@ describe("production semantic execution", () => {
         experienceEvidenceBasis: input.basis,
         supportedPortion: input.classification === "PARTIAL_MATCH" ? "A supported portion." : null,
         unsupportedPortion: input.classification === "PARTIAL_MATCH" ? "An unsupported portion." : null,
-        profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: [input.reference] },
+        profileEvidence: providerEvidenceSelection([input.reference]),
       } as never];
       return value;
     };
@@ -2554,10 +2776,8 @@ describe("production semantic execution", () => {
 
   it("rejects duplicate requirement profile evidence before authoritative restoration", () => {
     const transport = validProviderResumeMatchTransport();
-    transport.requirementAssessments[0]!.profileEvidence.assessmentOnlyReferences = [
-      "profile-1",
-      "profile-1",
-    ];
+    transport.requirementAssessments[0]!.profileEvidence =
+      providerEvidenceSelection(["profile-1", "profile-1"]);
 
     expect(() =>
       semanticResumeMatchFromTransport(
@@ -2568,9 +2788,34 @@ describe("production semantic execution", () => {
     ).toThrowError(expect.objectContaining({
       code: "RESUME_MATCH_EVIDENCE_INVALID",
       message:
-        "Requirement 0 profile evidence contains duplicate evidence references (within assessment-only partition)",
+        "Requirement 0 profile evidence contains duplicate evidence references (within assessment-only purpose)",
       retryable: false,
     }));
+  });
+
+  it("replays the latest live sibling-partition overlap as an unchanged nonretryable rejection", () => {
+    const transport = validProviderResumeMatchTransport();
+    transport.requirementAssessments[0]!.profileEvidence = {
+      decisionImpactReferences: ["profile-1"],
+      assessmentOnlyReferences: ["profile-1"],
+    } as never;
+    const snapshot = JSON.stringify(transport);
+
+    expect(createSemanticResumeMatchTransportSchema(
+      resumeMatchAvailableEvidence(),
+      authoritativeResumeMatchRequirements(),
+    ).safeParse(transport).success).toBe(false);
+    expect(() => semanticResumeMatchFromTransport(
+      transport,
+      authoritativeResumeMatchRequirements(),
+      resumeMatchAvailableEvidence(),
+    )).toThrowError(expect.objectContaining({
+      code: "RESUME_MATCH_EVIDENCE_INVALID",
+      message:
+        "Requirement 0 profile evidence contains duplicate evidence references (across decision-impact and assessment-only purposes)",
+      retryable: false,
+    }));
+    expect(JSON.stringify(transport)).toBe(snapshot);
   });
 
   it("accepts multiple unique profile references from the selected evidence-basis catalog", () => {
@@ -2583,10 +2828,8 @@ describe("production semantic execution", () => {
     ]);
     const schema = createSemanticResumeMatchTransportSchema(evidence);
     const transport = validProviderResumeMatchTransport();
-    transport.requirementAssessments[0]!.profileEvidence.assessmentOnlyReferences = [
-      "profile-1",
-      "profile-transferable-2",
-    ];
+    transport.requirementAssessments[0]!.profileEvidence =
+      providerEvidenceSelection(["profile-1", "profile-transferable-2"]);
 
     expect(schema.safeParse(transport).success).toBe(true);
     expect(() =>
@@ -2621,7 +2864,7 @@ describe("production semantic execution", () => {
       );
     }
     expect(() => semanticResumeMatchFromTransport(
-      decisiveResumeMatchTransport(), authoritativeResumeMatchRequirements(), evidence,
+      decisiveResumeMatchTransport(), leveledResumeMatchRequirements(), evidence,
     )).not.toThrow();
   });
 
@@ -2664,8 +2907,12 @@ describe("production semantic execution", () => {
     expect(references.length).toBeGreaterThan(6);
     expect(references.filter((reference) => reference.siblings.length > 0))
       .toEqual([]);
-    expect(generatedSchema).toContain('"decisionImpactReferences"');
-    expect(generatedSchema).toContain('"assessmentOnlyReferences"');
+    expect(generatedSchema).toContain('"evidenceAssignments"');
+    expect(generatedSchema).toContain('"evidenceReference"');
+    expect(generatedSchema).toContain('"DECISION_IMPACT"');
+    expect(generatedSchema).toContain('"ASSESSMENT_ONLY"');
+    expect(generatedSchema).not.toContain('"decisionImpactReferences"');
+    expect(generatedSchema).not.toContain('"assessmentOnlyReferences"');
     expect(assessmentSchema).not.toContain('"decisionImpactEvidenceIndexes"');
     expect(assessmentSchema).not.toContain('"jdEvidenceIndexes"');
     expect(assessmentSchema).not.toContain('"profileEvidenceIndexes"');
@@ -2677,8 +2924,10 @@ describe("production semantic execution", () => {
   it("restores partitioned evidence to the unchanged assessment and decision-impact Core identifiers", () => {
     const evidence = resumeMatchAvailableEvidence();
     const transport = validProviderResumeMatchTransport();
-    transport.requirementAssessments[0]!.jdEvidence = { decisionImpactReferences: ["jd-1"], assessmentOnlyReferences: [] };
-    transport.requirementAssessments[0]!.profileEvidence = { decisionImpactReferences: ["profile-1"], assessmentOnlyReferences: [] };
+    transport.requirementAssessments[0]!.jdEvidence =
+      providerEvidenceSelection([], ["jd-1"]);
+    transport.requirementAssessments[0]!.profileEvidence =
+      providerEvidenceSelection([], ["profile-1"]);
 
     expect(
       createSemanticResumeMatchTransportSchema(
@@ -2713,12 +2962,12 @@ describe("production semantic execution", () => {
     ]);
     const transport = validProviderResumeMatchTransport();
     const first = transport.requirementAssessments[0]!;
-    first.profileEvidence = { decisionImpactReferences: ["profile-1"], assessmentOnlyReferences: [] };
+    first.profileEvidence = providerEvidenceSelection([], ["profile-1"]);
     const second = {
       ...first,
       requirementIndex: 1,
-      jdEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["jd-2"] },
-      profileEvidence: { decisionImpactReferences: ["profile-2"], assessmentOnlyReferences: [] },
+      jdEvidence: providerEvidenceSelection(["jd-2"]),
+      profileEvidence: providerEvidenceSelection([], ["profile-2"]),
     };
     transport.requirementAssessments = [first, second];
 
@@ -2761,22 +3010,24 @@ describe("production semantic execution", () => {
     const transport = decisiveProviderResumeMatchTransport();
     const domain = semanticResumeMatchFromTransport(
       transport,
-      authoritativeResumeMatchRequirements(),
+      leveledResumeMatchRequirements(),
       evidence,
     );
     expect(
       domain.requirementAssessments[0]!.decisionImpactEvidenceReferences,
-    ).toEqual(["jd-1", "profile-1"]);
+    ).toEqual(["jd-1", "profile-limitation"]);
 
-    const schema = createSemanticResumeMatchTransportSchema(evidence, authoritativeResumeMatchRequirements());
-    for (const source of ["jdEvidence", "profileEvidence"] as const) {
+    const schema = createSemanticResumeMatchTransportSchema(evidence, leveledResumeMatchRequirements());
+    for (const source of ["jdEvidence", "gapEvidence"] as const) {
       const missing = structuredClone(transport);
-      missing.requirementAssessments[0]![source].assessmentOnlyReferences = missing.requirementAssessments[0]![source].decisionImpactReferences;
-      missing.requirementAssessments[0]![source].decisionImpactReferences = [];
+      missing.requirementAssessments[0]![source].evidenceAssignments =
+        missing.requirementAssessments[0]![source].evidenceAssignments.map(
+          (assignment) => ({ ...assignment, purpose: "ASSESSMENT_ONLY" as const }),
+        );
       expect(schema.safeParse(missing).success).toBe(true);
       expect(() => semanticResumeMatchFromTransport(
         missing,
-        authoritativeResumeMatchRequirements(),
+        leveledResumeMatchRequirements(),
         evidence,
       )).toThrowError(expect.objectContaining({
         code: "RESUME_MATCH_EVIDENCE_INVALID",
@@ -2790,15 +3041,349 @@ describe("production semantic execution", () => {
     for (const source of ["jdEvidence", "profileEvidence"] as const) {
       for (const across of [false, true]) {
         const transport = validProviderResumeMatchTransport();
-        const partition = transport.requirementAssessments[0]![source];
-        const reference = partition.assessmentOnlyReferences[0]!;
-        if (across) partition.decisionImpactReferences = [reference];
-        else partition.assessmentOnlyReferences.push(reference);
+        const selection = transport.requirementAssessments[0]![source];
+        const assignment = selection.evidenceAssignments[0]!;
+        selection.evidenceAssignments.push({
+          ...assignment,
+          purpose: across ? "DECISION_IMPACT" : assignment.purpose,
+        });
         expect(() => semanticResumeMatchFromTransport(transport, authoritativeResumeMatchRequirements(), evidence)).toThrowError(
           expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }),
         );
       }
     }
+  });
+
+  it("rejects distinct provider identities that restore to one Core identity across purposes", () => {
+    // One profile record, so every profile identity restores to core-profile.
+    const completeEvidence = resumeMatchAvailableEvidence()
+      .filter((evidence) => evidence.evidenceType !== "PROFILE_LIMITATION")
+      .map((evidence) => ({
+      ...evidence,
+      referenceId: evidence.sourceType === "USER_PROFILE"
+        ? "core-profile"
+        : "core-jd",
+      criterionId: "resume-match",
+      sourceRecordId: null,
+      provenanceId: null,
+      sourceField: evidence.sourceType === "USER_PROFILE" ? "experience" : "jobDescription",
+      sourceReference: "resume-match:test",
+      sourceText: evidence.sourceText ?? evidence.claim ?? null,
+      origin: "EXPLICIT" as const,
+      evidenceLevel: "CONFIRMED" as const,
+      collectedAt: null,
+    }));
+    const baseProjection = createResumeMatchProviderInputProjection(completeEvidence);
+    const projection = {
+      ...baseProjection,
+      schemaEvidence: [
+        ...baseProjection.schemaEvidence,
+        {
+          ...baseProjection.schemaEvidence.find(
+            (evidence) => evidence.sourceType === "USER_PROFILE",
+          )!,
+          referenceId: "profile-alias",
+        },
+      ],
+      coreReferenceByProviderReference: new Map([
+        ...baseProjection.coreReferenceByProviderReference,
+        ["profile-alias", "core-profile"],
+      ]),
+    };
+    const providerValue = withResumeMatchProviderReferences(
+      validProviderResumeMatchTransport(),
+      resumeMatchAvailableEvidence(),
+    ) as ReturnType<typeof validProviderResumeMatchTransport>;
+    providerValue.requirementAssessments[0]!.profileEvidence.evidenceAssignments.push({
+      evidenceReference: "profile-alias",
+      purpose: "DECISION_IMPACT",
+    });
+
+    expect(createSemanticResumeMatchTransportSchema(
+      projection.schemaEvidence,
+      authoritativeResumeMatchRequirements(),
+    ).safeParse(providerValue).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(
+      providerValue,
+      authoritativeResumeMatchRequirements(),
+      completeEvidence,
+      semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+      projection,
+    )).toThrowError(expect.objectContaining({
+      code: "RESUME_MATCH_EVIDENCE_INVALID",
+      message:
+        "Requirement 0 profile evidence contains duplicate evidence references (across decision-impact and assessment-only purposes)",
+      retryable: false,
+    }));
+  });
+
+  // Gap relevance is structural: a limitation proves a gap only for a
+  // requirement of its own category and, for EXPERIENCE, only when its
+  // disclaimed ladder level covers the requirement's minimum level.
+  const limitationRecord = (
+    referenceId: string,
+    category: z.infer<typeof requirementCategorySchema>,
+    disclaimedExperienceSpecificity: z.infer<typeof requirementExperienceLevelSchema> | null,
+    statement = "I do not have this.",
+  ) => ({
+    referenceId, sourceType: "USER_PROFILE", evidenceType: "PROFILE_LIMITATION",
+    claim: statement, sourceText: statement,
+    limitation: { category, disclaimedExperienceSpecificity },
+  });
+  const gapAssessment = (requirementIndex: number, proof: string[], context: string[] = []) => ({
+    ...decisiveProviderResumeMatchTransport().requirementAssessments[0]!,
+    requirementIndex,
+    decisionImpact: "NON_DECISIVE",
+    gapEvidence: providerEvidenceSelection(proof),
+    profileEvidence: providerEvidenceSelection(context),
+  });
+  const unknownAssessment = (requirementIndex: number) => ({
+    ...validProviderResumeMatchTransport().requirementAssessments[0]!,
+    requirementIndex,
+    classification: "UNKNOWN",
+    matchedExperienceSpecificity: "UNKNOWN",
+    experienceEvidenceBasis: "UNKNOWN",
+    decisionImpact: "NON_DECISIVE",
+    supportedPortion: null,
+    unsupportedPortion: null,
+    profileEvidence: providerEvidenceSelection(),
+  });
+  const onlyAt = (count: number, index: number, assessment: Record<string, unknown>) => ({
+    ...validProviderResumeMatchTransport(),
+    requirementAssessments: Array.from({ length: count }, (_, candidate) =>
+      candidate === index ? assessment : unknownAssessment(candidate)),
+  });
+  const levels = ["DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS",
+    "RELATED_CUSTOMER_RELATIONSHIP", "BROADER_CUSTOMER_FACING", "ANY_WORK_EXPERIENCE"] as const;
+
+  it("admits an EXPERIENCE limitation only when its disclaimed level covers the requirement", () => {
+    for (const required of levels) {
+      for (const disclaimed of levels) {
+        const requirement = [{ ...authoritativeResumeMatchRequirements()[0]!, minimumExperienceSpecificity: required }];
+        // Only this limitation: a second ANY-level limitation would trip the
+        // uniqueness guard, which has its own matrix below.
+        const evidence = resumeMatchAvailableEvidence([limitationRecord("limit", "EXPERIENCE", disclaimed)])
+          .filter((item) => item.referenceId !== "profile-limitation");
+        const schema = createSemanticResumeMatchTransportSchema(evidence, requirement);
+        // Disclaiming a rung also disclaims every more specific rung; the
+        // non-ladder rung matches only itself.
+        const admitted = required === "ANY_WORK_EXPERIENCE" || disclaimed === "ANY_WORK_EXPERIENCE"
+          ? required === disclaimed
+          : levels.indexOf(required) <= levels.indexOf(disclaimed);
+        const value = onlyAt(1, 0, gapAssessment(0, ["limit"]));
+        const label = `${required} / ${disclaimed}`;
+        expect(schema.safeParse(value).success, label).toBe(admitted);
+        const convert = () => semanticResumeMatchFromTransport(value, requirement, evidence);
+        if (admitted) expect(convert, label).not.toThrow();
+        else expect(convert, label).toThrowError(expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }));
+      }
+    }
+    // The live SaaS limitation proves only SaaS Customer Success requirements.
+    const evidence = resumeMatchAvailableEvidence([limitationRecord("saas", "EXPERIENCE", "DIRECT_SAAS_CUSTOMER_SUCCESS")]);
+    const requirements = levels.map((level) => ({ ...authoritativeResumeMatchRequirements()[0]!, minimumExperienceSpecificity: level }));
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    expect(levels.map((_, index) => schema.safeParse(onlyAt(levels.length, index, gapAssessment(index, ["saas"]))).success))
+      .toEqual([true, false, false, false, false]);
+  });
+
+  it("preserves explicit Genuine Gaps for every non-EXPERIENCE category by category, never by wording", () => {
+    const categories = requirementCategorySchema.options.filter((category) => category !== "EXPERIENCE");
+    const base = authoritativeResumeMatchRequirements()[0]!;
+    const requirements = categories.map((category) => ({ ...base, category, experienceSpecificity: null }));
+    const evidence = resumeMatchAvailableEvidence([
+      ...categories.map((category) => limitationRecord(`limit-${category}`, category, null)),
+      { referenceId: "preference", sourceType: "USER_PROFILE", evidenceType: "WORK_PREFERENCE",
+        claim: "I do not want to travel.", sourceText: "I do not want to travel." },
+      { referenceId: "negative-wording", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_EXPERIENCE",
+        claim: "I have never used Salesforce and do not hold a degree.", sourceText: "I have never used Salesforce and do not hold a degree." },
+    ]);
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+    categories.forEach((category, index) => {
+      for (const proofCategory of categories) {
+        const value = onlyAt(categories.length, index, gapAssessment(index, [`limit-${proofCategory}`]));
+        expect(schema.safeParse(value).success, `${category} / ${proofCategory}`).toBe(proofCategory === category);
+      }
+      // Decisive only for REQUIRED requirements, with the relevant limitation.
+      expect(schema.safeParse(onlyAt(categories.length, index, {
+        ...gapAssessment(index, []), decisionImpact: "DECISIVE_DISQUALIFIER",
+        gapEvidence: providerEvidenceSelection([], [`limit-${category}`]),
+      })).success, category).toBe(true);
+      // Preferences and negatively worded ordinary records are never gap proof.
+      for (const proof of ["preference", "negative-wording"]) {
+        expect(schema.safeParse(onlyAt(categories.length, index, gapAssessment(index, [proof]))).success).toBe(false);
+      }
+      // The relevant limitation may sit beside ordinary context, never beside another limitation.
+      expect(schema.safeParse(onlyAt(categories.length, index, gapAssessment(index, [`limit-${category}`], ["negative-wording"]))).success).toBe(true);
+    });
+    const preferred = requirements.map((requirement) => ({ ...requirement, strength: "PREFERRED" as const }));
+    expect(createSemanticResumeMatchTransportSchema(evidence, preferred).safeParse(onlyAt(categories.length, 0, {
+      ...gapAssessment(0, []), decisionImpact: "DECISIVE_DISQUALIFIER",
+      gapEvidence: providerEvidenceSelection([], [`limit-${categories[0]}`]),
+    })).success).toBe(false);
+    // Without a structured limitation, missing evidence stays Unknown.
+    const withoutLimitations = resumeMatchAvailableEvidence().filter((item) => item.evidenceType !== "PROFILE_LIMITATION");
+    const unknownOnly = createSemanticResumeMatchTransportSchema(withoutLimitations, requirements);
+    expect(JSON.stringify(z.toJSONSchema(unknownOnly, { unrepresentable: "any" }))).not.toContain('"gapEvidence"');
+    expect(unknownOnly.safeParse(onlyAt(categories.length, 0, unknownAssessment(0))).success).toBe(true);
+    // Rewording limitations and requirements never changes the grammar.
+    const reworded = createSemanticResumeMatchTransportSchema(
+      evidence.map((item) => ({ ...item, claim: "Reworded.", sourceText: "Reworded." })),
+      requirements.map((requirement) => ({ ...requirement, requirement: "Reworded requirement" })),
+    );
+    expect(z.toJSONSchema(reworded, { unrepresentable: "any" })).toEqual(z.toJSONSchema(schema, { unrepresentable: "any" }));
+  });
+
+  it("rejects unrelated limitations in historical grouped and flat outputs with explicit diagnostics", () => {
+    const requirement = [{ ...authoritativeResumeMatchRequirements()[0]!, category: "TOOL" as const }];
+    const evidence = resumeMatchAvailableEvidence([
+      limitationRecord("tool-limit", "TOOL", null),
+      limitationRecord("language-limit", "LANGUAGE", null),
+    ]);
+    const legacy = (references: string[]) => {
+      const { gapEvidence: _proof, ...assessment } = gapAssessment(0, []);
+      return onlyAt(1, 0, { ...assessment, profileEvidence: providerEvidenceSelection(references) });
+    };
+    expect(semanticResumeMatchFromTransport(legacy(["tool-limit", "profile-1"]), requirement, evidence)
+      .requirementAssessments[0]).toMatchObject({ classification: "GENUINE_GAP", profileEvidenceReferences: ["tool-limit", "profile-1"] });
+    expect(() => semanticResumeMatchFromTransport(legacy(["language-limit", "profile-1"]), requirement, evidence))
+      .toThrowError(expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        message: "Requirement 0 claims a Genuine Gap without a relevant profile limitation",
+        retryable: false,
+      }));
+    const flat = (references: string[]) => {
+      const value = decisiveResumeMatchTransport();
+      const { decisionImpactEvidence: _impact, ...assessment } = value.requirementAssessments[0]!;
+      return { ...value, requirementAssessments: [{ ...assessment, decisionImpact: "NON_DECISIVE",
+        decisionImpactEvidenceReferences: [], profileEvidenceReferences: references }] };
+    };
+    expect(() => semanticResumeMatchFromTransport(flat(["tool-limit"]), requirement, evidence)).not.toThrow();
+    expect(() => semanticResumeMatchFromTransport(flat(["language-limit"]), requirement, evidence))
+      .toThrowError(expect.objectContaining({ message: "Requirement 0 claims a Genuine Gap without a relevant profile limitation" }));
+    expect(() => semanticResumeMatchFromTransport(flat(["tool-limit", "language-limit"]), requirement, evidence))
+      .toThrowError(expect.objectContaining({ message: "Requirement 0 cites a profile limitation that is not relevant to the requirement" }));
+    // A limitation is never positive evidence.
+    const positive = onlyAt(1, 0, {
+      ...validProviderResumeMatchTransport().requirementAssessments[0]!,
+      classification: "STRONG_MATCH", matchedExperienceSpecificity: "REQUIREMENT_SPECIFIC",
+      experienceEvidenceBasis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
+      profileEvidence: providerEvidenceSelection(["tool-limit"]),
+    });
+    expect(createSemanticResumeMatchTransportSchema(evidence, requirement).safeParse(positive).success).toBe(false);
+  });
+
+  // Live diagnostic 7149563, self-contained: the six requirements the provider
+  // answered with Genuine Gaps citing one SaaS-employment limitation, with the
+  // structured fields JD Reconstruction now authors and the profile's evidence
+  // types. The exact artifacts are replayed separately when available.
+  const liveRequirements = () => {
+    const base = authoritativeResumeMatchRequirements()[0]!;
+    return [
+      { ...base, requirement: "2+ years of customer-facing work experience", minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING" as const },
+      { ...base, requirement: "Customer Success, Onboarding, or Training experience in a SaaS environment", strength: "IDEAL" as const, minimumExperienceSpecificity: "DIRECT_SAAS_CUSTOMER_SUCCESS" as const },
+      { ...base, requirement: "Empathy and interest in fostering collaborative relationships", category: "CAPABILITY" as const, experienceSpecificity: null },
+      { ...base, requirement: "Proactive process-improvement approach", category: "CAPABILITY" as const, experienceSpecificity: null },
+      { ...base, requirement: "Experience working remotely", strength: "NICE_TO_HAVE" as const, minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE" as const },
+      { ...base, requirement: "2+ years of customer-facing work experience, ideally in Customer Success in SaaS", category: "INDUSTRY" as const, strength: "IDEAL" as const },
+    ];
+  };
+  const liveEvidence = () => resumeMatchAvailableEvidence([
+    { referenceId: "aggregate", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_EXPERIENCE", claim: "Five years of customer-facing, consultative work." },
+    { referenceId: "retail-engagement", sourceType: "USER_PROFILE", evidenceType: "RELATED_EXPERIENCE", claim: "Customer engagement associate running monthly consultations." },
+    { referenceId: "remote-tutoring", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_EXPERIENCE", claim: "Self-employed remote tutor for international learners." },
+    { referenceId: "relationships", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_SKILL", claim: "Relationship management and retention with recurring clients." },
+    { referenceId: "process", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_SKILL", claim: "Process improvement that cut manual preparation by 30%." },
+    limitationRecord("saas-limitation", "EXPERIENCE", "DIRECT_SAAS_CUSTOMER_SUCCESS",
+      "No source verifies direct SaaS Customer Success Manager employment or SaaS account ownership."),
+  ]).filter((item) => item.referenceId !== "profile-limitation");
+  const positive = (index: number, classification: string, specificity: string, basis: string, references: string[], extra: Record<string, unknown> = {}) => ({
+    ...validProviderResumeMatchTransport().requirementAssessments[0]!,
+    requirementIndex: index, classification, matchedExperienceSpecificity: specificity,
+    experienceEvidenceBasis: basis, profileEvidence: providerEvidenceSelection(references), ...extra,
+  });
+
+  it("makes the 7149563 outcomes expressible: requirement-level positives and only the relevant SaaS gap", () => {
+    const requirements = liveRequirements();
+    const evidence = liveEvidence();
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+    const accepts = (index: number, assessment: Record<string, unknown>) => {
+      const value = onlyAt(requirements.length, index, assessment);
+      const parsed = schema.safeParse(value).success;
+      if (parsed) semanticResumeMatchFromTransport(value, requirements, evidence);
+      return parsed;
+    };
+    const direct = "DIRECT_OR_RELATED_WORK_EXPERIENCE";
+    const broader = "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE";
+    const skill = "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE";
+    // The SaaS limitation is gap proof for requirement 1 only.
+    expect(requirements.map((_, index) => accepts(index, gapAssessment(index, ["saas-limitation"]))))
+      .toEqual([false, true, false, false, false, false]);
+    // 0: retail engagement directly meets customer-facing work.
+    expect(accepts(0, positive(0, "STRONG_MATCH", "RELATED_CUSTOMER_RELATIONSHIP", direct, ["retail-engagement"]))).toBe(true);
+    expect(accepts(0, positive(0, "STRONG_MATCH", "BROADER_CUSTOMER_FACING", broader, ["aggregate"]))).toBe(true);
+    // 1: transferable training evidence is a truthful partial match; never strong.
+    expect(accepts(1, positive(1, "PARTIAL_MATCH", "BROADER_CUSTOMER_FACING", broader, ["aggregate"],
+      { supportedPortion: "Training and onboarding work.", unsupportedPortion: "SaaS environment." }))).toBe(true);
+    expect(accepts(1, positive(1, "STRONG_MATCH", "BROADER_CUSTOMER_FACING", broader, ["aggregate"]))).toBe(false);
+    expect(accepts(1, positive(1, "TRANSFERABLE_MATCH", "TRANSFERABLE", broader, ["aggregate"]))).toBe(false);
+    // 5 and 7: capabilities met on their own subject, no Customer Success label needed.
+    expect(accepts(2, positive(2, "STRONG_MATCH", "RELATED_CUSTOMER_RELATIONSHIP", direct, ["retail-engagement"]))).toBe(true);
+    expect(accepts(2, positive(2, "STRONG_MATCH", "REQUIREMENT_SPECIFIC", skill, ["relationships"]))).toBe(true);
+    expect(accepts(3, positive(3, "STRONG_MATCH", "REQUIREMENT_SPECIFIC", skill, ["process"]))).toBe(true);
+    // 13: remote tutoring directly meets remote work.
+    expect(accepts(4, positive(4, "STRONG_MATCH", "REQUIREMENT_SPECIFIC", broader, ["remote-tutoring"]))).toBe(true);
+    // A ladder requirement cannot use the off-ladder label, and vice versa a
+    // ladder label must be one the record can establish.
+    expect(accepts(0, positive(0, "STRONG_MATCH", "REQUIREMENT_SPECIFIC", broader, ["aggregate"]))).toBe(false);
+    expect(accepts(0, positive(0, "STRONG_MATCH", "RELATED_CUSTOMER_RELATIONSHIP", broader, ["aggregate"]))).toBe(false);
+    // 15: the deterministic INDUSTRY composite keeps its legality and gets no gap.
+    expect(accepts(5, unknownAssessment(5))).toBe(true);
+    expect(accepts(5, positive(5, "PARTIAL_MATCH", "RELATED_CUSTOMER_RELATIONSHIP", direct, ["retail-engagement"],
+      { supportedPortion: "Customer-facing work.", unsupportedPortion: "SaaS Customer Success." }))).toBe(false);
+  });
+
+  it("keeps 7149563 legality identical under rewording and moves it only with structure", () => {
+    const evidence = liveEvidence();
+    const requirements = liveRequirements();
+    const reworded = requirements.map((requirement) => ({
+      ...requirement,
+      requirement: "Direct SaaS Customer Success Manager employment with account ownership",
+      experienceSpecificity: "Direct SaaS Customer Success Manager employment",
+    }));
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
+    expect(z.toJSONSchema(createSemanticResumeMatchTransportSchema(evidence, reworded), { unrepresentable: "any" }))
+      .toEqual(z.toJSONSchema(schema, { unrepresentable: "any" }));
+    // Changing only the structured level of requirement 0 to SaaS Customer
+    // Success makes the SaaS limitation relevant and removes the retail match.
+    const structural = requirements.map((requirement, index) =>
+      index === 0 ? { ...requirement, minimumExperienceSpecificity: "DIRECT_SAAS_CUSTOMER_SUCCESS" as const } : requirement);
+    const structuralSchema = createSemanticResumeMatchTransportSchema(evidence, structural);
+    expect(structuralSchema.safeParse(onlyAt(6, 0, gapAssessment(0, ["saas-limitation"]))).success).toBe(true);
+    expect(structuralSchema.safeParse(onlyAt(6, 0, positive(0, "STRONG_MATCH", "RELATED_CUSTOMER_RELATIONSHIP",
+      "DIRECT_OR_RELATED_WORK_EXPERIENCE", ["retail-engagement"]))).success).toBe(false);
+  });
+
+  it("never assumes an experience level for a requirement that does not state one", () => {
+    const unleveled = authoritativeResumeMatchRequirements()[0]!;
+    const historical = [{ ...unleveled, requiresDirectWorkExperience: true }];
+    expect(semanticResumeMatchRequirementsForProvider(historical)[0]).not.toHaveProperty("requiresDirectWorkExperience");
+    const evidence = resumeMatchAvailableEvidence();
+    const schemaJson = (requirements: Parameters<typeof createSemanticResumeMatchTransportSchema>[1]) =>
+      z.toJSONSchema(createSemanticResumeMatchTransportSchema(evidence, requirements), { unrepresentable: "any" });
+    // The retired boolean carries no meaning: a historical requirement is read
+    // exactly like one that states no level.
+    expect(schemaJson(historical)).toEqual(schemaJson([unleveled]));
+    // No level is assumed: unlike ANY_WORK_EXPERIENCE, no limitation can prove
+    // a gap for it, so it can only be matched or stay Unknown.
+    expect(JSON.stringify(schemaJson([unleveled]))).not.toContain('"gapEvidence"');
+    expect(JSON.stringify(schemaJson(leveledResumeMatchRequirements()))).toContain('"gapEvidence"');
+    expect(() => semanticResumeMatchFromTransport(decisiveResumeMatchTransport(), [unleveled], evidence))
+      .toThrowError(expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        message: "Requirement 0 claims a Genuine Gap without a relevant profile limitation",
+      }));
   });
 
   it("exhaustively preserves or rejects two-reference partition assignments for both sources", () => {
@@ -2810,17 +3395,24 @@ describe("production semantic execution", () => {
     const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
     for (const source of ["jdEvidence", "profileEvidence"] as const) {
       const references = source === "jdEvidence" ? ["jd-1", "jd-context"] : ["profile-1", "profile-context"];
-      // 0 omitted, 1 impact, 2 assessment-only, 3 illegally in both.
+      // 0 omitted, 1 impact, 2 assessment-only, 3 illegally assigned twice.
       for (let first = 1; first <= 3; first++) for (let second = 0; second <= 3; second++) {
         const value = validProviderResumeMatchTransport();
         const states = [first, second];
-        const partition = {
-          decisionImpactReferences: references.filter((_, i) => (states[i]! & 1) !== 0),
-          assessmentOnlyReferences: references.filter((_, i) => (states[i]! & 2) !== 0),
+        const selection = {
+          evidenceAssignments: references.flatMap((evidenceReference, i) => [
+            ...((states[i]! & 1) !== 0
+              ? [{ evidenceReference, purpose: "DECISION_IMPACT" as const }]
+              : []),
+            ...((states[i]! & 2) !== 0
+              ? [{ evidenceReference, purpose: "ASSESSMENT_ONLY" as const }]
+              : []),
+          ]),
         };
-        value.requirementAssessments[0]![source] = partition;
+        value.requirementAssessments[0]![source] = selection;
         const original = JSON.stringify(value);
-        // JSON Schema cannot express cross-array disjointness: conversion must.
+        // JSON Schema cannot express uniqueness by one object field: conversion
+        // validates the provider and restored Core identities.
         expect(schema.safeParse(value).success).toBe(true);
         if (states.includes(3)) {
           expect(() => semanticResumeMatchFromTransport(value, requirements, evidence)).toThrowError(
@@ -2830,17 +3422,19 @@ describe("production semantic execution", () => {
           const result = semanticResumeMatchFromTransport(value, requirements, evidence);
           const assessment = result.requirementAssessments[0]!;
           expect(source === "jdEvidence" ? assessment.jdEvidenceReferences : assessment.profileEvidenceReferences)
-            .toEqual([...partition.decisionImpactReferences, ...partition.assessmentOnlyReferences]);
-          expect(assessment.decisionImpactEvidenceReferences).toEqual(partition.decisionImpactReferences);
+            .toEqual(selection.evidenceAssignments.map((assignment) => assignment.evidenceReference));
+          expect(assessment.decisionImpactEvidenceReferences).toEqual(
+            selection.evidenceAssignments
+              .filter((assignment) => assignment.purpose === "DECISION_IMPACT")
+              .map((assignment) => assignment.evidenceReference),
+          );
         }
         expect(JSON.stringify(value)).toBe(original);
       }
     }
     const auditedSchema = JSON.stringify(auditOpenAiProviderSchema(schema).jsonSchema);
-    expect(auditedSchema).toContain(
-      "Unique references supporting this assessment's decision impact",
-    );
-    expect(auditedSchema).toContain("Unique references supporting only the assessment");
+    expect(auditedSchema).toContain("Evidence assignments for one source and requirement");
+    expect(auditedSchema).toContain("Never repeat or reassign one reference");
   });
 
   it("reports all invalid partitions without leaking references or repairing input", () => {
@@ -2848,8 +3442,13 @@ describe("production semantic execution", () => {
     value.requirementAssessments.push({ ...structuredClone(value.requirementAssessments[0]!), requirementIndex: 1 });
     for (const assessment of value.requirementAssessments) {
       for (const source of ["jdEvidence", "profileEvidence"] as const) {
-        const partition = assessment[source];
-        partition.decisionImpactReferences = [...partition.assessmentOnlyReferences];
+        const selection = assessment[source];
+        selection.evidenceAssignments.push({
+          ...selection.evidenceAssignments[0]!,
+          purpose: selection.evidenceAssignments[0]!.purpose === "DECISION_IMPACT"
+            ? "ASSESSMENT_ONLY"
+            : "DECISION_IMPACT",
+        });
       }
     }
     const before = JSON.stringify(value);
@@ -2892,6 +3491,59 @@ describe("production semantic execution", () => {
     )).toThrowError(expect.objectContaining({ code: "RESUME_MATCH_EVIDENCE_INVALID", retryable: false }));
   });
 
+  it("binds source-separated global evidence fields to their provider catalogs", () => {
+    const evidence = resumeMatchAvailableEvidence();
+    const schema = createSemanticResumeMatchTransportSchema(
+      evidence,
+      authoritativeResumeMatchRequirements(),
+    );
+    const valid = validProviderResumeMatchTransport();
+    expect(schema.safeParse(valid).success).toBe(true);
+
+    for (const mutate of [
+      (value: typeof valid) => {
+        value.scoreEvidence.jdEvidenceReferences = ["profile-1"];
+      },
+      (value: typeof valid) => {
+        value.scoreEvidence.profileEvidenceReferences = ["jd-1"];
+      },
+      (value: typeof valid) => {
+        value.effectiveSeniority.evidence.jdEvidenceReferences = ["profile-1"];
+      },
+      (value: typeof valid) => {
+        value.effectiveSeniority.evidence.profileEvidenceReferences = ["jd-1"];
+      },
+      (value: typeof valid) => {
+        value.positioningRecommendations[0]!.evidence.jdEvidenceReferences = [
+          "profile-1",
+        ];
+      },
+      (value: typeof valid) => {
+        value.positioningRecommendations[0]!.evidence.profileEvidenceReferences = [
+          "jd-1",
+        ];
+      },
+    ]) {
+      const wrongSource = structuredClone(valid);
+      mutate(wrongSource);
+      expect(schema.safeParse(wrongSource).success).toBe(false);
+      expect(() => semanticResumeMatchFromTransport(
+        wrongSource,
+        authoritativeResumeMatchRequirements(),
+        evidence,
+      )).toThrowError(expect.objectContaining({
+        code: "RESUME_MATCH_EVIDENCE_INVALID",
+        retryable: false,
+      }));
+    }
+
+    for (const reference of ["jd-1", "profile-1"]) {
+      const sourceNeutral = structuredClone(valid);
+      sourceNeutral.strongStrengths[0]!.evidenceReferences = [reference];
+      expect(schema.safeParse(sourceNeutral).success).toBe(true);
+    }
+  });
+
   it("does not silently project the legacy provider relationship that escaped assessment evidence", () => {
     const evidence = resumeMatchAvailableEvidence([
       { referenceId: "other-profile", sourceType: "USER_PROFILE" },
@@ -2923,7 +3575,7 @@ describe("production semantic execution", () => {
     );
   });
 
-  it("binds industry match variants to authoritative requirement indexes and direct evidence", () => {
+  it("binds industry match variants to authoritative requirement indexes and work-experience evidence", () => {
     for (const specialization of ["nonprofit", "SMB", "fundraising/development", "SaaS"]) {
       const requirements = [
         ...authoritativeResumeMatchRequirements(),
@@ -2932,6 +3584,11 @@ describe("production semantic execution", () => {
       ];
       const evidence = resumeMatchAvailableEvidence([
         { referenceId: "specialized-direct", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
+        {
+          referenceId: "industry-limitation", sourceType: "USER_PROFILE", evidenceType: "PROFILE_LIMITATION",
+          claim: `I have never worked in ${specialization}.`,
+          limitation: { category: "INDUSTRY", disclaimedExperienceSpecificity: null },
+        },
       ]);
       const schema = createSemanticResumeMatchTransportSchema(evidence, requirements);
       const value = validProviderResumeMatchTransport();
@@ -2955,8 +3612,7 @@ describe("production semantic execution", () => {
             supportedPortion: null,
             unsupportedPortion: null,
             profileEvidence: {
-              decisionImpactReferences: [],
-              assessmentOnlyReferences: [],
+              evidenceAssignments: [],
             },
           },
         ],
@@ -2970,14 +3626,18 @@ describe("production semantic execution", () => {
       value.requirementAssessments = [ordinary];
       expect(schema.safeParse(value).success).toBe(true);
       expect(() => semanticResumeMatchFromTransport(complete(ordinary), requirements, evidence)).not.toThrow();
+      // An INDUSTRY match is REQUIREMENT_SPECIFIC; a TRANSFERABLE label is not.
       const specialized = { ...partial,
         requirementIndex: 1,
+        matchedExperienceSpecificity: "REQUIREMENT_SPECIFIC",
         experienceEvidenceBasis: "DIRECT_OR_RELATED_WORK_EXPERIENCE",
-        profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: ["specialized-direct"] },
+        profileEvidence: providerEvidenceSelection(["specialized-direct"]),
       };
-      value.requirementAssessments = [specialized];
+      value.requirementAssessments = [{ ...specialized, matchedExperienceSpecificity: "TRANSFERABLE" } as never];
+      expect(schema.safeParse(value).success).toBe(false);
+      value.requirementAssessments = [specialized as never];
       expect(schema.safeParse(value).success).toBe(true);
-      expect(() => semanticResumeMatchFromTransport(complete(specialized), requirements, evidence)).not.toThrow();
+      expect(() => semanticResumeMatchFromTransport(complete(specialized as never), requirements, evidence)).not.toThrow();
       const emptyDirectCatalog = createSemanticResumeMatchTransportSchema(
         resumeMatchAvailableEvidence(), requirements,
       );
@@ -2990,10 +3650,19 @@ describe("production semantic execution", () => {
       const nonDecisiveGap = { ...gapFields, requirementIndex: 1,
         decisionImpact: "NON_DECISIVE" as const,
       };
-      expect(schema.safeParse({ ...value, requirementAssessments: [nonDecisiveGap] }).success).toBe(true);
-      expect(schema.safeParse({ ...value, requirementAssessments: [{ ...partial,
+      // An INDUSTRY gap needs an INDUSTRY limitation; the EXPERIENCE one is unrelated.
+      expect(schema.safeParse({ ...value, requirementAssessments: [nonDecisiveGap] }).success).toBe(false);
+      expect(schema.safeParse({ ...value, requirementAssessments: [{
+        ...nonDecisiveGap, gapEvidence: providerEvidenceSelection(["industry-limitation"]),
+      }] }).success).toBe(true);
+      const unknown = { ...partial,
         classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
-        experienceEvidenceBasis: "UNKNOWN", profileEvidence: { decisionImpactReferences: [], assessmentOnlyReferences: [] },
+        experienceEvidenceBasis: "UNKNOWN", profileEvidence: providerEvidenceSelection(),
+      };
+      // An Unknown carries no supported or unsupported portion.
+      expect(schema.safeParse({ ...value, requirementAssessments: [unknown] }).success).toBe(false);
+      expect(schema.safeParse({ ...value, requirementAssessments: [{
+        ...unknown, supportedPortion: null, unsupportedPortion: null,
       }] }).success).toBe(true);
     }
   });
@@ -3046,63 +3715,81 @@ describe("production semantic execution", () => {
     }));
   });
 
-  it("rejects generic experience and certification evidence as specialized industry matches", () => {
+  // INDUSTRY is matched relative to its own subject. Any actual work-experience
+  // record can establish it, including work the profile labels RELATED or
+  // TRANSFERABLE relative to Customer Success; whether that work belongs to the
+  // industry is the provider's bounded judgment. Skills, certifications,
+  // coursework, tools, self-study and readiness never can.
+  it("matches INDUSTRY requirements from work-experience records only, requirement-specifically", () => {
     const industryRequirement = [{
       ...authoritativeResumeMatchRequirements()[0]!,
-      requirement: "Direct SaaS industry experience",
+      requirement: "Background in nonprofit development or fundraising",
       category: "INDUSTRY" as const,
-      experienceSpecificity: "Direct SaaS work experience",
+      strength: "NICE_TO_HAVE" as const,
+      experienceSpecificity: "Nonprofit development or fundraising",
     }];
-    const transport = validResumeMatchTransport();
-    const base = transport.requirementAssessments[0]!;
-    const specializedPartial = {
-      ...base,
-      classification: "PARTIAL_MATCH" as const,
-      matchedExperienceSpecificity: "RELATED_CUSTOMER_RELATIONSHIP" as const,
-      supportedPortion: "Some specialization is directly supported.",
-      unsupportedPortion: "The complete specialization is not supported.",
-      experienceEvidenceBasis:
-        "DIRECT_OR_RELATED_WORK_EXPERIENCE" as const,
-    };
-    const withAssessment = (assessment: typeof specializedPartial) => ({
-      ...transport,
-      requirementAssessments: [assessment],
+    const records = [
+      { referenceId: "direct-work", sourceType: "USER_PROFILE", evidenceType: "DIRECT_EXPERIENCE" },
+      { referenceId: "related-work", sourceType: "USER_PROFILE", evidenceType: "RELATED_EXPERIENCE" },
+      { referenceId: "nonprofit-teaching", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_EXPERIENCE",
+        claim: "Development and fundraising work for a nonprofit school.", sourceText: "Development and fundraising work for a nonprofit school." },
+      { referenceId: "fundraising-certificate", sourceType: "USER_PROFILE", evidenceType: "SKILL",
+        claim: "Certificate in Fundraising Management.", sourceText: "Certificate in Fundraising Management." },
+      { referenceId: "fundraising-readiness", sourceType: "USER_PROFILE", evidenceType: "TRANSFERABLE_SKILL",
+        claim: "Ready to learn nonprofit development.", sourceText: "Ready to learn nonprofit development." },
+    ];
+    const evidence = resumeMatchAvailableEvidence(records);
+    const schema = createSemanticResumeMatchTransportSchema(evidence, industryRequirement);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+    const base = validProviderResumeMatchTransport().requirementAssessments[0]!;
+    const assessment = (fields: Record<string, unknown>) => ({
+      ...validProviderResumeMatchTransport(),
+      requirementAssessments: [{ ...base, supportedPortion: null, unsupportedPortion: null, ...fields }],
     });
-
-    for (const evidenceType of ["TRANSFERABLE_EXPERIENCE", "SKILL"] as const) {
-      expect(() =>
-        semanticResumeMatchFromTransport(
-          withAssessment({
-            ...specializedPartial,
-            experienceEvidenceBasis:
-              evidenceType === "SKILL"
-                ? "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE"
-                : "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE",
-          } as typeof specializedPartial),
-          industryRequirement,
-          resumeMatchAvailableEvidence().map((evidence) =>
-            evidence.referenceId === "profile-1"
-              ? { ...evidence, evidenceType }
-              : evidence,
-          ),
-        ),
-      ).toThrowError(expect.objectContaining({
-        code: "RESUME_MATCH_EVIDENCE_INVALID",
-        retryable: false,
-      }));
+    const outcome = (fields: Record<string, unknown>) => {
+      const value = assessment(fields);
+      const accepted = schema.safeParse(value).success;
+      let converted = true;
+      try {
+        semanticResumeMatchFromTransport(value, industryRequirement, evidence);
+      } catch {
+        converted = false;
+      }
+      expect(converted, JSON.stringify(fields)).toBe(accepted);
+      return accepted;
+    };
+    const strong = (reference: string, basis: string) => ({
+      classification: "STRONG_MATCH", matchedExperienceSpecificity: "REQUIREMENT_SPECIFIC",
+      experienceEvidenceBasis: basis, profileEvidence: providerEvidenceSelection([reference]),
+    });
+    // TRANSFERABLE industry work directly satisfies the requirement.
+    expect(outcome(strong("nonprofit-teaching", "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"))).toBe(true);
+    expect(outcome(strong("profile-1", "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"))).toBe(true);
+    expect(outcome(strong("related-work", "DIRECT_OR_RELATED_WORK_EXPERIENCE"))).toBe(true);
+    expect(outcome(strong("direct-work", "DIRECT_OR_RELATED_WORK_EXPERIENCE"))).toBe(true);
+    expect(outcome({ ...strong("nonprofit-teaching", "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE"),
+      classification: "PARTIAL_MATCH", supportedPortion: "Nonprofit development", unsupportedPortion: "Grant fundraising" })).toBe(true);
+    // A declared basis must still describe the cited record.
+    expect(outcome(strong("nonprofit-teaching", "DIRECT_OR_RELATED_WORK_EXPERIENCE"))).toBe(false);
+    // Certifications, coursework, tools, self-study and readiness never establish it.
+    for (const reference of ["fundraising-certificate", "fundraising-readiness"]) {
+      for (const basis of ["DIRECT_OR_RELATED_WORK_EXPERIENCE", "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE", "REQUIREMENT_RELEVANT_SKILL_OR_KNOWLEDGE"]) {
+        expect(outcome(strong(reference, basis))).toBe(false);
+        expect(outcome({ ...strong(reference, basis), classification: "PARTIAL_MATCH",
+          supportedPortion: "Related knowledge", unsupportedPortion: "Industry work" })).toBe(false);
+      }
     }
-
-    expect(() =>
-      semanticResumeMatchFromTransport(
-        withAssessment(specializedPartial),
-        industryRequirement,
-        resumeMatchAvailableEvidence().map((evidence) =>
-          evidence.referenceId === "profile-1"
-            ? { ...evidence, evidenceType: "DIRECT_EXPERIENCE" }
-            : evidence,
-        ),
-      ),
-    ).not.toThrow();
+    // The match is requirement-specific: Customer Success ladder labels and
+    // transfer describe another subject.
+    for (const specificity of ["DIRECT_SAAS_CUSTOMER_SUCCESS", "DIRECT_CUSTOMER_SUCCESS", "RELATED_CUSTOMER_RELATIONSHIP", "BROADER_CUSTOMER_FACING"]) {
+      expect(outcome({ ...strong("direct-work", "DIRECT_OR_RELATED_WORK_EXPERIENCE"), matchedExperienceSpecificity: specificity })).toBe(false);
+    }
+    expect(outcome({ classification: "TRANSFERABLE_MATCH", matchedExperienceSpecificity: "TRANSFERABLE",
+      experienceEvidenceBasis: "BROADER_OR_TRANSFERABLE_WORK_EXPERIENCE", profileEvidence: providerEvidenceSelection(["nonprofit-teaching"]) })).toBe(false);
+    // Unrelated work stays expressible as Unknown, never forced positive; and a
+    // positive cannot be assembled from non-work records alone.
+    expect(outcome({ classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN", experienceEvidenceBasis: "UNKNOWN",
+      profileEvidence: providerEvidenceSelection([], ["direct-work"]) })).toBe(true);
   });
 
   it("keeps startup specialization Unknown without startup-specific work evidence", () => {
@@ -3112,6 +3799,7 @@ describe("production semantic execution", () => {
       category: "EXPERIENCE" as const,
       strength: "NICE_TO_HAVE" as const,
       experienceSpecificity: "Early-stage startup experience",
+      requiresStartupExperience: true,
     }];
     const completeEvidence = resumeMatchAvailableEvidence().map((evidence) => ({
       ...evidence,
@@ -3166,10 +3854,7 @@ describe("production semantic execution", () => {
       experienceEvidenceBasis: "UNKNOWN",
       supportedPortion: null,
       unsupportedPortion: null,
-      profileEvidence: {
-        decisionImpactReferences: [],
-        assessmentOnlyReferences: [],
-      },
+      profileEvidence: providerEvidenceSelection(),
     });
     expect(schema.safeParse(unknown).success).toBe(true);
     const domain = semanticResumeMatchFromTransport(
@@ -3196,6 +3881,7 @@ describe("production semantic execution", () => {
       category: "EXPERIENCE" as const,
       strength: "NICE_TO_HAVE" as const,
       experienceSpecificity: "Early-stage startup experience",
+      requiresStartupExperience: true,
     }];
     const completeEvidence = resumeMatchAvailableEvidence().map((evidence) => ({
       ...evidence,
@@ -3260,7 +3946,10 @@ describe("production semantic execution", () => {
         {
           referenceId: "profile-gap",
           sourceType: "USER_PROFILE",
-          evidenceType: "TRANSFERABLE_EXPERIENCE",
+          evidenceType: "PROFILE_LIMITATION",
+          claim: "The profile does not verify direct SaaS work experience.",
+          sourceText: "Direct SaaS work experience is not verified.",
+          limitation: { category: "INDUSTRY", disclaimedExperienceSpecificity: null },
         },
         {
           referenceId: "profile-certification",
@@ -3699,7 +4388,11 @@ describe("production semantic execution", () => {
   });
 
   it("restores provider-local citations in narratives without changing ordinary text", () => {
-    const completeEvidence = resumeMatchAvailableEvidence().map((evidence, index) => ({
+    // Citation numbering below assumes no limitation record in the catalog.
+    const completeEvidence = resumeMatchAvailableEvidence([
+      { referenceId: "jd-2", sourceType: "JOB_DESCRIPTION" },
+      { referenceId: "profile-2", sourceType: "USER_PROFILE" },
+    ]).filter((evidence) => evidence.evidenceType !== "PROFILE_LIMITATION").map((evidence, index) => ({
       ...evidence,
       referenceId: evidence.sourceType === "USER_PROFILE"
         ? `core-profile-evidence-${index}`
@@ -3721,7 +4414,7 @@ describe("production semantic execution", () => {
       resumeMatchAvailableEvidence(),
     ) as ReturnType<typeof validProviderResumeMatchTransport>;
     providerValue.scoreExplanation =
-      "Supported by [jd-0], profile-0, and their combined evidence.";
+      "Supported by [jd-0, profile-0] and their combined evidence.";
     providerValue.summary =
       "An ordinary profile-based summary and JD-ready note remain unchanged.";
     const requirements = authoritativeResumeMatchRequirements().map(
@@ -3738,7 +4431,7 @@ describe("production semantic execution", () => {
       projection,
     );
     expect(domain.scoreExplanation).toBe(
-      "Supported by [core-jd-evidence-0], core-profile-evidence-1, and their combined evidence.",
+      "Supported by [core-jd-evidence-0] [core-profile-evidence-1] and their combined evidence.",
     );
     expect(domain.summary).toBe(
       "An ordinary profile-based summary and JD-ready note remain unchanged.",
@@ -3749,19 +4442,51 @@ describe("production semantic execution", () => {
       "core-profile-evidence-1",
     ]);
 
-    for (const invalidCitation of ["[jd-x]", "[jd-999]", "profile-999"]) {
-      const invalid = structuredClone(providerValue);
-      invalid.summary = `Invalid citation ${invalidCitation}.`;
-      expect(() => semanticResumeMatchFromTransport(
-        invalid,
+    for (const [citation, expected] of [
+      ["[jd-0]", "[core-jd-evidence-0]"],
+      ["[jd-0,jd-1]", "[core-jd-evidence-0] [core-jd-evidence-2]"],
+      ["[jd-0, jd-1]", "[core-jd-evidence-0] [core-jd-evidence-2]"],
+      ["[ profile-0 , profile-1 ]", "[core-profile-evidence-1] [core-profile-evidence-3]"],
+      ["[jd-0, profile-0]", "[core-jd-evidence-0] [core-profile-evidence-1]"],
+    ] as const) {
+      const grouped = structuredClone(providerValue);
+      grouped.summary = `Supported by ${citation}.`;
+      const restored = semanticResumeMatchFromTransport(
+        grouped,
         requirements,
         completeEvidence,
         semanticResumeMatchJobEvidenceCatalog(completeEvidence),
         projection,
-      )).toThrowError(expect.objectContaining({
-        code: "RESUME_MATCH_EVIDENCE_INVALID",
-        retryable: false,
-      }));
+      );
+      expect(restored.summary).toBe(`Supported by ${expected}.`);
+    }
+
+    // Narrative citations are display-only: malformed or unresolvable citation
+    // text never changes acceptance or any structured field.
+    for (const [displayCitation, expected] of [
+      ["[jd-x]", "[jd-x]"],
+      ["[JD-0]", "[JD-0]"],
+      ["[jd-999]", "[jd-999]"],
+      ["profile-999", "profile-999"],
+      ["[jd-0; jd-1]", "[core-jd-evidence-0; core-jd-evidence-2]"],
+      ["[jd-0 - jd-1]", "[core-jd-evidence-0 - core-jd-evidence-2]"],
+      ["[jd-0, note]", "[core-jd-evidence-0, note]"],
+      ["[see jd-0]", "[see core-jd-evidence-0]"],
+      ["[jd-0,]", "[core-jd-evidence-0,]"],
+      ["[jd-0, jd-0]", "[core-jd-evidence-0, core-jd-evidence-0]"],
+      ["[jd-0,,profile-0]", "[core-jd-evidence-0,,core-profile-evidence-1]"],
+    ] as const) {
+      const display = structuredClone(providerValue);
+      display.summary = `Display citation ${displayCitation}.`;
+      const restored = semanticResumeMatchFromTransport(
+        display,
+        requirements,
+        completeEvidence,
+        semanticResumeMatchJobEvidenceCatalog(completeEvidence),
+        projection,
+      );
+      expect(restored.summary).toBe(`Display citation ${expected}.`);
+      expect({ ...restored, summary: domain.summary }).toEqual(domain);
     }
   });
 
@@ -4827,7 +5552,7 @@ describe("production semantic execution", () => {
       await promise.catch(() => undefined);
     };
     const reconstructed = await operations.reconstructJobDescription({
-      untrustedJobDescription: "UNTRUSTED-JD-INSTRUCTION",
+      untrustedJobDescription: "UNTRUSTED-JD-INSTRUCTION Own customer onboarding.",
       normalizedTitle: "CSM",
       companyName: "Example",
       sourceRecordId: null,
@@ -4924,7 +5649,7 @@ describe("production semantic execution", () => {
       semanticOpportunityPriorityTransportSchema,
       semanticGhostJobRiskTransportSchema,
     ].map((schema) => z.toJSONSchema(schema, { unrepresentable: "any" })));
-    expect(captured[0]?.untrustedSourceContent).toBe("UNTRUSTED-JD-INSTRUCTION");
+    expect(captured[0]?.untrustedSourceContent).toBe("UNTRUSTED-JD-INSTRUCTION Own customer onboarding.");
     expect(JSON.stringify(captured[0]?.trustedContext)).not.toContain(
       "UNTRUSTED-JD-INSTRUCTION",
     );
@@ -5027,5 +5752,254 @@ describe("production semantic execution", () => {
     expect(priorityOperation.trustedContext).not.toHaveProperty(
       "availableEvidence",
     );
+  });
+});
+
+// A. Source-statement groups: one verbatim evidence record, the declared
+// strengths and experience levels, and distinct atomic qualifications.
+describe("JD Reconstruction source-statement groups", () => {
+  const source = "Required: 2+ years of customer-facing work experience, ideally in a Customer Success role in a SaaS environment. Salesforce or HubSpot required, Gainsight preferred. Spanish required; Portuguese a nice to have. Communicate clearly by video and in writing. Experience with nonprofits. Own customer onboarding.";
+  const quotes = {
+    mixed: "2+ years of customer-facing work experience, ideally in a Customer Success role in a SaaS environment",
+    tools: "Salesforce or HubSpot required, Gainsight preferred",
+    languages: "Spanish required; Portuguese a nice to have",
+    compound: "Communicate clearly by video and in writing",
+    unlabeled: "Experience with nonprofits",
+  };
+  const qualification = (
+    requirement: string,
+    strength: string,
+    fields: Record<string, unknown> = {},
+  ) => {
+    const category = (fields.category as string | undefined) ?? "CAPABILITY";
+    return {
+      requirement,
+      category,
+      strengthAssessment: strength === "AMBIGUOUS"
+        ? { strength, ambiguityExplanation: "The source states no strength." }
+        : { strength },
+      statedYears: null,
+      statedYearsMaximum: null,
+      statedYearsOpenEnded: false,
+      experienceSpecificity: null,
+      ...(category === "EXPERIENCE"
+        ? { minimumExperienceSpecificity: "ANY_WORK_EXPERIENCE", requiresStartupExperience: false }
+        : {}),
+      assessmentUnit: "INDEPENDENT_QUALIFICATION",
+      compoundExplanation: null,
+      ...fields,
+    };
+  };
+  const withStatement = (
+    key: keyof typeof quotes,
+    statement: { statementStrengths: string[]; statementExperienceLevels?: string[]; qualifications: unknown[] },
+  ) => {
+    const transport = validJdReconstructionTransport() as unknown as Record<string, any>;
+    transport.evidence.push({ ...transport.evidence[0], referenceId: `jd-${key}`, sourceText: quotes[key], evidenceType: "requirement" });
+    transport.requirementStatements = [{
+      evidenceReference: `jd-${key}`,
+      statementExperienceLevels: [],
+      ...statement,
+    }];
+    return transport;
+  };
+  const convert = (transport: unknown) =>
+    semanticReconstructionFromTransport(transport, validJdReconstructionEvidenceSource({ sourceContent: source }));
+  const rejects = (transport: unknown, code: string) =>
+    expect(() => convert(transport)).toThrowError(expect.objectContaining({ code, retryable: false }));
+
+  it.each([
+    ["simple", "unlabeled", ["REQUIRED"], [], [qualification("Nonprofit experience", "REQUIRED")]],
+    ["multiple qualifications of one strength", "tools", ["REQUIRED", "PREFERRED"], [], [
+      qualification("Salesforce", "REQUIRED", { category: "TOOL" }),
+      qualification("HubSpot", "REQUIRED", { category: "TOOL" }),
+      qualification("Gainsight", "PREFERRED", { category: "TOOL" }),
+    ]],
+    ["REQUIRED + IDEAL with two levels", "mixed", ["REQUIRED", "IDEAL"], ["BROADER_CUSTOMER_FACING", "DIRECT_SAAS_CUSTOMER_SUCCESS"], [
+      qualification("2+ years of customer-facing work experience", "REQUIRED", { category: "EXPERIENCE", statedYears: 2, statedYearsOpenEnded: true, minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING" }),
+      qualification("Customer Success experience in SaaS", "IDEAL", { category: "EXPERIENCE", minimumExperienceSpecificity: "DIRECT_SAAS_CUSTOMER_SUCCESS" }),
+    ]],
+    ["REQUIRED + PREFERRED", "tools", ["REQUIRED", "PREFERRED"], [], [
+      qualification("Salesforce or HubSpot", "REQUIRED", { category: "TOOL" }),
+      qualification("Gainsight", "PREFERRED", { category: "TOOL" }),
+    ]],
+    ["REQUIRED + NICE_TO_HAVE", "languages", ["REQUIRED", "NICE_TO_HAVE"], [], [
+      qualification("Spanish", "REQUIRED", { category: "LANGUAGE" }),
+      qualification("Portuguese", "NICE_TO_HAVE", { category: "LANGUAGE" }),
+    ]],
+    ["compound concept", "compound", ["REQUIRED"], [], [
+      qualification("Communicate clearly by video and in writing", "REQUIRED", {
+        assessmentUnit: "SINGLE_COMPOUND_CONCEPT", compoundExplanation: "Video and writing are modes of one competency." }),
+    ]],
+    ["AMBIGUOUS", "unlabeled", ["AMBIGUOUS"], ["ANY_WORK_EXPERIENCE"], [
+      qualification("Experience with nonprofits", "AMBIGUOUS", { category: "EXPERIENCE" }),
+    ]],
+  ] as const)("converts a %s statement", (_name, key, statementStrengths, statementExperienceLevels, qualifications) => {
+    const transport = withStatement(key, {
+      statementStrengths: [...statementStrengths],
+      statementExperienceLevels: [...statementExperienceLevels],
+      qualifications: [...qualifications],
+    });
+    expect(semanticReconstructionTransportSchema.safeParse(transport).success).toBe(true);
+    const requirements = convert(transport).requirements;
+    expect(requirements).toHaveLength(qualifications.length);
+    for (const [index, requirement] of requirements.entries()) {
+      expect(requirement.strength).toBe((qualifications[index]!.strengthAssessment as { strength: string }).strength);
+      // Ambiguity is derived structurally from strength.
+      expect(requirement.ambiguity.isAmbiguous).toBe(requirement.strength === "AMBIGUOUS");
+      expect(requirement.ambiguity.explanation).toBe(requirement.strength === "AMBIGUOUS" ? "The source states no strength." : null);
+      expect(requirement.evidenceReferences).toEqual([`jd-${key}`]);
+      expect(requirement.sourceStatement).toEqual({ statementIndex: 0, statementStrengths, statementExperienceLevels });
+      expect(requirement).not.toHaveProperty("assessmentUnit");
+      expect(requirement).not.toHaveProperty("strengthAssessment");
+    }
+  });
+
+  it("rejects omitted, merged, undeclared and repeated qualifications", () => {
+    const mixed = (qualifications: unknown[], statementStrengths = ["REQUIRED", "IDEAL"],
+      statementExperienceLevels = ["BROADER_CUSTOMER_FACING", "DIRECT_SAAS_CUSTOMER_SUCCESS"]) =>
+      withStatement("mixed", { statementStrengths, statementExperienceLevels, qualifications });
+    const tenure = qualification("2+ years of customer-facing work experience", "REQUIRED", { category: "EXPERIENCE", minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING" });
+    const saas = qualification("Customer Success experience in SaaS", "IDEAL", { category: "EXPERIENCE", minimumExperienceSpecificity: "DIRECT_SAAS_CUSTOMER_SUCCESS" });
+    // Different strengths (and levels) merged into one entry.
+    rejects(mixed([tenure]), "JD_RECONSTRUCTION_STATEMENT_INVALID");
+    // A declared level without its qualification, and an undeclared level.
+    rejects(mixed([tenure, { ...saas, minimumExperienceSpecificity: "BROADER_CUSTOMER_FACING" }]), "JD_RECONSTRUCTION_STATEMENT_INVALID");
+    rejects(mixed([tenure, saas], ["REQUIRED", "IDEAL"], ["BROADER_CUSTOMER_FACING"]), "JD_RECONSTRUCTION_STATEMENT_INVALID");
+    // An undeclared strength, and a repeated declaration.
+    rejects(mixed([tenure, saas], ["REQUIRED"], ["BROADER_CUSTOMER_FACING", "DIRECT_SAAS_CUSTOMER_SUCCESS"]), "JD_RECONSTRUCTION_STATEMENT_INVALID");
+    rejects(mixed([tenure, saas], ["REQUIRED", "IDEAL", "IDEAL"]), "JD_RECONSTRUCTION_STATEMENT_INVALID");
+    // Repeated qualification within a statement.
+    rejects(mixed([tenure, saas, { ...saas }]), "JD_RECONSTRUCTION_REQUIREMENT_IDENTITY_INVALID");
+    // Omitted qualifications or strengths are not expressible.
+    expect(semanticReconstructionTransportSchema.safeParse(mixed([])).success).toBe(false);
+    expect(semanticReconstructionTransportSchema.safeParse(mixed([tenure, saas], [])).success).toBe(false);
+    // An explicit strength cannot author ambiguity; AMBIGUOUS must explain.
+    expect(semanticReconstructionTransportSchema.safeParse(mixed([
+      { ...tenure, strengthAssessment: { strength: "REQUIRED", ambiguityExplanation: "Ideally softens it." } }, saas,
+    ])).success).toBe(false);
+    expect(semanticReconstructionTransportSchema.safeParse(mixed([
+      { ...tenure, strengthAssessment: { strength: "AMBIGUOUS" } }, saas,
+    ])).success).toBe(false);
+    expect(semanticReconstructionTransportSchema.safeParse(mixed([
+      { ...tenure, ambiguity: { isAmbiguous: false, explanation: null } }, saas,
+    ])).success).toBe(false);
+    expect(() => convert(mixed([tenure, saas]))).not.toThrow();
+  });
+
+  // C. Requirement quotes are grounded verbatim (case- and whitespace-
+  // insensitive); responsibility quotes are not.
+  it("grounds requirement statement quotes verbatim and leaves responsibility quotes ungrounded", () => {
+    const transport = withStatement("unlabeled", { statementStrengths: ["REQUIRED"], qualifications: [qualification("Nonprofit experience", "REQUIRED")] });
+    transport.evidence.at(-1).sourceText = "  EXPERIENCE   with\nnonprofits ";
+    expect(() => convert(transport)).not.toThrow();
+    transport.evidence.at(-1).sourceText = "Experience with nonprofit organizations";
+    rejects(transport, "JD_RECONSTRUCTION_REQUIREMENT_GROUNDING_INVALID");
+    transport.evidence.at(-1).sourceText = null;
+    rejects(transport, "JD_RECONSTRUCTION_REQUIREMENT_GROUNDING_INVALID");
+    const unknownReference = withStatement("unlabeled", { statementStrengths: ["REQUIRED"], qualifications: [qualification("Nonprofit experience", "REQUIRED")] });
+    unknownReference.requirementStatements[0].evidenceReference = "missing";
+    rejects(unknownReference, "JD_RECONSTRUCTION_REQUIREMENT_GROUNDING_INVALID");
+    // A paraphrased responsibility quote is still accepted.
+    const paraphrased = validJdReconstructionTransport() as unknown as Record<string, any>;
+    paraphrased.evidence.push({ ...paraphrased.evidence[0], referenceId: "jd-paraphrase", sourceText: "Owns onboarding end to end." });
+    paraphrased.responsibilityMap.areas[0] = { ...paraphrased.responsibilityMap.areas[0], prominence: "PRIMARY", ownership: "OWNS", evidenceReferences: ["jd-paraphrase"] };
+    expect(() => semanticReconstructionFromTransport(paraphrased)).not.toThrow();
+  });
+});
+
+// I. Category-only limitation relevance (no subject keys yet) admits a gap only
+// for a unique limitation and a unique requirement under that key; otherwise
+// the requirement fails safe to Unknown.
+describe("same-category limitation uniqueness guard", () => {
+  const limitation = (referenceId: string, category: string, level: string | null) => ({
+    referenceId, sourceType: "USER_PROFILE", evidenceType: "PROFILE_LIMITATION",
+    claim: "I do not have this.", sourceText: "I do not have this.",
+    limitation: { category, disclaimedExperienceSpecificity: level } as TestResumeMatchLimitation,
+  });
+  const requirement = (category: string, level?: string) => ({
+    ...authoritativeResumeMatchRequirements()[0]!,
+    category: category as "INDUSTRY",
+    ...(category === "EXPERIENCE" ? { minimumExperienceSpecificity: (level ?? "ANY_WORK_EXPERIENCE") as "ANY_WORK_EXPERIENCE" } : {}),
+  });
+  const gap = (index: number, proof: string) => ({
+    ...decisiveProviderResumeMatchTransport().requirementAssessments[0]!,
+    requirementIndex: index,
+    decisionImpact: "NON_DECISIVE",
+    gapEvidence: providerEvidenceSelection([proof]),
+    profileEvidence: providerEvidenceSelection(),
+  });
+  const unknown = (index: number) => ({
+    ...validProviderResumeMatchTransport().requirementAssessments[0]!,
+    requirementIndex: index, classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN",
+    experienceEvidenceBasis: "UNKNOWN", supportedPortion: null, unsupportedPortion: null,
+    profileEvidence: providerEvidenceSelection(),
+  });
+  const outcome = (requirements: unknown[], limitations: ReturnType<typeof limitation>[], index: number, proof: string) => {
+    const evidence = resumeMatchAvailableEvidence(limitations).filter((item) => item.referenceId !== "profile-limitation");
+    const value = { ...validProviderResumeMatchTransport(), requirementAssessments: requirements.map((_, candidate) =>
+      candidate === index ? gap(candidate, proof) : unknown(candidate)) };
+    const schema = createSemanticResumeMatchTransportSchema(evidence, requirements as never);
+    expect(auditOpenAiProviderSchema(schema).violations).toEqual([]);
+    const accepted = schema.safeParse(value).success;
+    let converted = true;
+    try { semanticResumeMatchFromTransport(value, requirements as never, evidence); } catch { converted = false; }
+    expect(converted).toBe(accepted);
+    // The fail-safe outcome, Unknown, always remains expressible.
+    expect(schema.safeParse({ ...value, requirementAssessments: requirements.map((_, candidate) => unknown(candidate)) }).success).toBe(true);
+    return accepted;
+  };
+
+  it.each([
+    ["INDUSTRY", undefined, null],
+    ["TOOL", undefined, null],
+    ["EXPERIENCE", "ANY_WORK_EXPERIENCE", "ANY_WORK_EXPERIENCE"],
+  ] as const)("guards %s relevance by uniqueness", (category, level, disclaimed) => {
+    // One limitation, one requirement: admitted.
+    expect(outcome([requirement(category, level)], [limitation("a", category, disclaimed)], 0, "a")).toBe(true);
+    // One limitation reused across two same-key requirements: neither.
+    for (const index of [0, 1]) {
+      expect(outcome([requirement(category, level), requirement(category, level)], [limitation("a", category, disclaimed)], index, "a")).toBe(false);
+    }
+    // Two same-key limitations for one requirement: neither.
+    for (const proof of ["a", "b"]) {
+      expect(outcome([requirement(category, level)], [limitation("a", category, disclaimed), limitation("b", category, disclaimed)], 0, proof)).toBe(false);
+    }
+    // Requirements under other keys do not count.
+    expect(outcome([requirement(category, level), requirement("LANGUAGE"), requirement("EXPERIENCE", "DIRECT_CUSTOMER_SUCCESS")],
+      [limitation("a", category, disclaimed)], 0, "a")).toBe(true);
+  });
+
+  it("does not guard ladder EXPERIENCE limitations, whose level is a structural subject", () => {
+    const requirements = [requirement("EXPERIENCE", "DIRECT_SAAS_CUSTOMER_SUCCESS"), requirement("EXPERIENCE", "DIRECT_SAAS_CUSTOMER_SUCCESS")];
+    for (const index of [0, 1]) {
+      expect(outcome(requirements, [limitation("saas", "EXPERIENCE", "DIRECT_SAAS_CUSTOMER_SUCCESS")], index, "saas")).toBe(true);
+    }
+  });
+});
+
+// G. Unknown is exclusive of supported and unsupported portions in new
+// outputs, on the grouped provider path and the flat transport path alike;
+// stored results are not rewritten.
+describe("Unknown and Partial exclusivity", () => {
+  it("rejects portions on Unknown in new outputs and keeps stored results readable", () => {
+    const flat = validResumeMatchTransport();
+    const withPortions = { ...flat, requirementAssessments: [{ ...flat.requirementAssessments[0]!,
+      classification: "UNKNOWN", matchedExperienceSpecificity: "UNKNOWN", experienceEvidenceBasis: "UNKNOWN",
+      profileEvidenceReferences: [], supportedPortion: "Some onboarding", unsupportedPortion: "SaaS onboarding" }] };
+    expect(semanticResumeMatchTransportSchema.safeParse(withPortions).success).toBe(true);
+    expect(() => semanticResumeMatchFromTransport(withPortions, authoritativeResumeMatchRequirements(), resumeMatchAvailableEvidence()))
+      .toThrowError(expect.objectContaining({ code: "RESUME_MATCH_AUTHORITATIVE_RESULT_INVALID", retryable: false }));
+    const withoutPortions = { ...withPortions, requirementAssessments: [{ ...withPortions.requirementAssessments[0]!,
+      supportedPortion: null, unsupportedPortion: null }] };
+    const converted = semanticResumeMatchFromTransport(withoutPortions, authoritativeResumeMatchRequirements(), resumeMatchAvailableEvidence());
+    // A stored Unknown with portions still parses under the domain contract.
+    expect(semanticResumeMatchSchema.safeParse({ ...converted, requirementAssessments: [{ ...converted.requirementAssessments[0]!,
+      supportedPortion: "Some onboarding", unsupportedPortion: "SaaS onboarding" }] }).success).toBe(true);
+    // The truthful form of partial content is a Partial Match.
+    const partial = { ...flat, requirementAssessments: [{ ...flat.requirementAssessments[0]!,
+      classification: "PARTIAL_MATCH", supportedPortion: "Some onboarding", unsupportedPortion: "SaaS onboarding" }] };
+    expect(semanticResumeMatchFromTransport(partial, authoritativeResumeMatchRequirements(), resumeMatchAvailableEvidence())
+      .requirementAssessments[0]).toMatchObject({ classification: "PARTIAL_MATCH", supportedPortion: "Some onboarding" });
   });
 });

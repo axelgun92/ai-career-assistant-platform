@@ -1,16 +1,24 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Career Platform",
+  title: { default: "AI Career Platform", template: "%s · AI Career Platform" },
   description: "Evidence-based career opportunity evaluation platform",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      {/* Browser extensions (e.g. ColorZilla: cz-shortcut-listen) add attributes
+          to <body> before hydration; that mismatch is not the app's. */}
+      <body suppressHydrationWarning>
+        <SiteHeader />
+        <div id="main-content" tabIndex={-1}>
+          {children}
+        </div>
+      </body>
     </html>
   );
 }

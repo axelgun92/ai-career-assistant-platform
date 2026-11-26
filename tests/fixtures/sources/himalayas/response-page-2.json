@@ -1,0 +1,140 @@
+{
+  "comments": "21/08/2026: Cursor pagination is now available and is the preferred way to page through the feed. Pass the nextCursor value from each response back as ?cursor=. It is faster than offset and will never return the same job twice. The offset parameter is deprecated and will be removed in a future release. 13/03/2026: The API has been updated to include the companySlug field in the response.",
+  "updatedAt": 1792276935,
+  "offset": 0,
+  "limit": 20,
+  "totalCount": 128074,
+  "nextCursor": "MjAyNi0xMC0xN1QyMjozNjowMS4yMjgzNThafDI0MTkyMzM",
+  "jobs": [
+    {
+      "title": "FBS US Life Insurance Actuary",
+      "excerpt": "FBS – Farmer Business Services is part of Farmers operations with the purpose of building a global approach to identifying, recruiting, hiring, and retaining top talent.",
+      "companyName": "Capgemini Technology Services",
+      "companySlug": "capgemini-technology-services",
+      "companyLogo": "",
+      "employmentType": "Full Time",
+      "minSalary": null,
+      "maxSalary": null,
+      "salaryPeriod": "annual",
+      "seniority": [
+        "Senior"
+      ],
+      "currency": null,
+      "locationRestrictions": [
+        "Brazil"
+      ],
+      "timezoneRestrictions": [
+        -5,
+        -4,
+        -3,
+        -2
+      ],
+      "categories": [
+        "Actuary",
+        "Life-Insurance-Actuary",
+        "Actuarial-Analyst",
+        "Insurance-Actuary",
+        "Life-Actuary",
+        "Life-Insurance-Actuarial"
+      ],
+      "parentCategories": [],
+      "description": "<p>FBS – Farmer Business Services is part of Farmers operations with the purpose of building a global approach to identifying, recruiting, hiring, and retaining top talent. By combining international reach with US expertise, we build diverse and high-performing teams that are equipped to thrive in today’s competitive marketplace.</p><p>We believe that the foundation of every successful business lies in having the right people with the right skills. That is where we come in—helping Farmers build a winning team that delivers consistent and sustainable results.</p><p>Since we don’t have a local legal entity, we’ve partnered with Capgemini, which acts as the Employer of Record. Capgemini is responsible for managing local payroll and benefits.</p><h3>What to expect on your journey with us:</h3><ul><li>A solid and innovative company with a strong market presence</li></ul><ul><li>A dynamic, diverse, and multicultural work environment</li></ul><ul><li>Leaders with deep market knowledge and strategic vision</li></ul><ul><li>Continuous learning and development</li></ul><p>This position oversees actuarial functions with a focus on financial projections of U.S. product liability cashflows. The role focuses on model development, testing, governance and consistency among various model stakeholders. This position leverages in-depth actuarial knowledge and understanding of the business to solve more complex issues and deliver strategic recommendations that align with business objectives. The position performs work independently while receiving guidance from a direct people leader and guiding more junior staff.</p><h3>Responsibilities</h3><ul>\n<li>Collaborates with stakeholders, teams, and other departments to resolve more complex actuarial issues. Guides the preparation of financial projections to enable leadership to assess financial implications and overall impact of business decisions. Accountable for timely and accurate delivery of actuarial deliverables. Interprets data and formulas to extract valuable insights for management. Analyzes operational performance and presents findings and recommendations for optimization. May represent the actuarial department with external stakeholders.</li>\n<li>Independently develops and implements solutions to more complex actuarial issues. Oversees project workflows, provides robust feedback to stakeholders and management, and ensures timely and effective completion of work. Delivers on plans and priorities while guiding projects and/or teams to achieve successful outcomes and business objectives.</li>\n<li>Advocates for improvements to assumption formulas, procedures, and programs. Anticipates the impact of changes and ensures recommendations align with broader business objectives.</li>\n<li>Oversees the integration of new and updated products into financial projection system. Ensures actuarial modeling systems comply with controls and standards including updates for IT, product, and regulatory changes.</li>\n<li>Stays informed about industry trends, emerging actuarial practices, and regulatory changes to contribute effectively to work within team, department, or across departments. Acts as a subject matter specialist to mentor and train less experienced actuarial staff by providing guidance on fundamental actuarial principles and practices. Performs other duties as assigned.</li>\n</ul><h3>Requirements</h3><ul>\n<li>6+ years of experience working in relevant roles</li>\n<li>Advance experience working with actuarial projection software like MG-ALFA or equivalent (Axis or Profit)</li>\n<li>Experience working with Python, R, SAS or similar</li>\n<li>Strong understanding of actuarial modeling</li>\n<li>Familiarity with U.S. Life/Annuity product designs and features. </li>\n<li>Able to analyze complex data, interpret trends, and develop actuarial models and assumptions. </li>\n<li>Deep understanding on Financial Modeling within Alpha database</li>\n</ul><h3>Benefits</h3><p>This position comes with a competitive compensation and benefits package.</p><ul><li>A competitive salary and performance-based bonuses.</li></ul><ul><li>Comprehensive benefits package.</li></ul><ul><li>Flexible work arrangements (remote and/or office-based).</li></ul><ul><li>You will also enjoy a dynamic and inclusive work culture within a globally renowned group.</li></ul><ul><li>Private Health Insurance.</li></ul><ul><li>Paid Time Off.</li></ul><ul><li>Training &amp; Development opportunities in partnership with renowned companies.</li></ul><p>Originally posted on <a href=\"https://himalayas.app\">Himalayas</a></p>",
+      "pubDate": 1792276935,
+      "expiryDate": 1797460935,
+      "applicationLink": "https://himalayas.app/companies/capgemini-technology-services/jobs/fbs-us-life-insurance-actuary",
+      "guid": "https://himalayas.app/companies/capgemini-technology-services/jobs/fbs-us-life-insurance-actuary"
+    },
+    {
+      "title": "HealthTech Co-Founder / Head of Engineering (100 % remote) (m/f/d)",
+      "excerpt": "We are looking to hire ambitious entrepreneurs to start and scale their own startups.",
+      "companyName": "EWOR GmbH",
+      "companySlug": "ewor-gmbh",
+      "companyLogo": "https://cdn-images.himalayas.app/mzfjnameg78wsqgnqdccysf7eg22",
+      "employmentType": "Full Time",
+      "minSalary": null,
+      "maxSalary": null,
+      "salaryPeriod": "annual",
+      "seniority": [
+        "Director",
+        "Executive"
+      ],
+      "currency": null,
+      "locationRestrictions": [
+        "Austria"
+      ],
+      "timezoneRestrictions": [
+        1
+      ],
+      "categories": [
+        "Co-Founder",
+        "Startup-Founder",
+        "Entrepreneur",
+        "Head-of-Engineering",
+        "Technical-Cofounder",
+        "Head-Of-Engineering-Healthcare-AI",
+        "HealthTech-Co-Founder",
+        "Director-Of-AI-Engineering-Healthcare-SaaS",
+        "VP-Of-Engineering-AI-Healthcare-Products"
+      ],
+      "parentCategories": [
+        "Management",
+        "Developer"
+      ],
+      "description": "<p>We are looking to hire ambitious entrepreneurs to start and scale their own startups.</p><p>We are serial entrepreneurs, for example Paul Müller (founder Adjust, €1.2B exit) and Petter Made (founder SumUp, €8B) who are eager to support outlier personalities and serial entrepreneurs to build €1B+ companies.</p><h3>Our offer:</h3><ul>\n<li>A salary while you build your startup as you will directly be employed by us. Alternatively, you can opt for up to <strong>€500k</strong> in funding.</li>\n<li>\n<strong>1:1 sparring with unicorn founders</strong> on a weekly basis</li>\n<li>\n<strong>Community</strong>: Access to the top 0.1% of founders, peers and investors</li>\n<li>\n<strong>Team building</strong>: Hiring top notch talent supported through our network (over 50,000 professionals)</li>\n<li>\n<strong>Distribution</strong>: Support in reaching product-market-fit and building up a sales force / marketing machine</li>\n<li>\n<strong>Funding support</strong> for securing a multi-million euro funding round within 12 months (on average, EWOR Fellows raise &gt; €2M after our Grand Pitch)</li>\n</ul><p>One of our fellows set a record for Europe’s largest pre-seed round by a first-time founder, securing a €12M pre-seed investment.</p><h3>Tasks</h3><ul>\n<li>You will own, build, and run your startup in fields such as HealthTech</li>\n<li>You will embark on an extensive personal development journey crafted by unicorn founders and follow a fully customised programme enhancing your goal, time, and energy management</li>\n<li>You will receive support in hiring through our network to over 50,000 professionals and advice as well as best practices from serial entrepreneurs</li>\n<li>You will receive intensive coaching to make your startup ready to raise millions in funding</li>\n<li>You will iterate your product with us until having reached product-market-fit and receive support in building up a sales force or creating a marketing engine respectively</li>\n</ul><h3>Requirements</h3><ul>\n<li>You are based in Europe or the Americas or open to relocate</li>\n<li>You are willing to take full responsibility for your own startup and scale it to €100M+ in revenues</li>\n<li>You have excellent communication skills in the English language</li>\n</ul><p>Join us and build a €1B+ company with us!</p><p>Originally posted on <a href=\"https://himalayas.app\">Himalayas</a></p>",
+      "pubDate": 1792276871,
+      "expiryDate": 1797460871,
+      "applicationLink": "https://himalayas.app/companies/ewor-gmbh/jobs/healthtech-co-founder-head-of-engineering-100-remote-m-f-d-4549241642",
+      "guid": "https://himalayas.app/companies/ewor-gmbh/jobs/healthtech-co-founder-head-of-engineering-100-remote-m-f-d-4549241642"
+    },
+    {
+      "title": "Data, Analytics & Decision Science - Summer 2027 Internship Pathway (Remote, US)",
+      "excerpt": "Lumen is the trusted network for the AI‑powered world, connecting people, data, and applications through our expansive fiber network and connected ecosystem.",
+      "companyName": "CenturyLink",
+      "companySlug": "centurylink",
+      "companyLogo": "https://cdn-images.himalayas.app/osqrrufwljt595myhntnoip8puic",
+      "employmentType": "Intern",
+      "minSalary": 26,
+      "maxSalary": 46,
+      "salaryPeriod": "hourly",
+      "seniority": [
+        "Entry-level"
+      ],
+      "currency": "USD",
+      "locationRestrictions": [
+        "United States"
+      ],
+      "timezoneRestrictions": [
+        -10,
+        -9,
+        -8,
+        -7,
+        -6,
+        -5,
+        14
+      ],
+      "categories": [
+        "Data-Analyst",
+        "Analytics-Intern",
+        "Business-Analyst-Intern",
+        "Data-Science-Intern",
+        "Decision-Science-Intern",
+        "Summer-Internship-In-Data-Science",
+        "AI-Analytics-Intern",
+        "Internship-Data-Engineer",
+        "AI-Data-Science-Intern",
+        "Data-Analytics-Intern",
+        "Data-Scientist-Intern",
+        "Data-Operations-Intern",
+        "Data-Engineer-Intern"
+      ],
+      "parentCategories": [
+        "Data Science"
+      ],
+      "description": "<p>Lumen is the trusted network for the AI‑powered world, connecting people, data, and applications through our expansive fiber network and connected ecosystem. We enable secure, high‑performance connectivity across cloud, edge, and AI workloads for enterprises, governments, and communities.</p><p>At Lumen, you’ll work on infrastructure customers rely on today and build for what’s next, where performance, security, and resilience matter.</p><p>This is a high accountability environment where bold ideas drive real innovation for our customers, partners, and industry. The work is challenging, expectations are clear, and trust is built into how we operate. If you’re ready to take ownership, deliver meaningful impact, and help shape the future of AI‑ready connectivity, join us today.</p><div>\n<div>\n<div><h2><b>Build What’s Next at Lumen</b></h2></div>\n<div>\n<p>Lumen’s paid, 10-week summer internship program gives you meaningful work, mentorship, professional development, and connections with peers and leaders.</p>\n<p>To help you find the best fit, explore the pathway roles:</p>\n<p><strong>AI &amp; Automation Builders<br>AI Product &amp; Business Innovation</strong></p>\n<p><strong>Cybersecurity, Risk &amp; Digital Trust<br>Data, Analytics &amp; Decision Science<br>Enterprise Knowledge &amp; Intelligence Systems</strong></p>\n<p>Each pathway connects you with multiple roles that share related skills and interests, so you can discover more ways to build what’s next at Lumen.</p>\n</div>\n</div>\n<div>\n<div><h2><b>One Application, Multiple Opportunities</b></h2></div>\n<div><p>Apply once to be considered for multiple internships that use data, analytics, and informed decision-making to solve business challenges. As you move through the process, you’ll meet hiring teams and explore assignments aligned with your interests and strengths.</p></div>\n</div>\n<div>\n<div><h2><b>Your Impact</b></h2></div>\n<div>\n<p>Data becomes valuable when it leads to better decisions and action. In the roles you may be considered for, you’ll turn complex information into insights that help teams understand performance, identify opportunities, and solve business challenges.</p>\n<p>Assignments may span analytics, reporting, forecasting, business intelligence, strategy, operations, finance, marketing, or workforce planning—giving you a chance to build dashboards, uncover trends, and translate findings into clear recommendations.</p>\n</div>\n</div>\n<div>\n<div><h2><b>What You May Work On</b></h2></div>\n<div><ul>\n<li>Analyze customer, operational, financial, or workforce data to identify trends, risks, and opportunities<br>•  Develop dashboards, reports, and visualizations that help leaders make informed business decisions<br>•  Support forecasting, strategic planning, and performance measurement initiatives<br>•  Partner with stakeholders to translate data into actionable recommendations and business insights<br>•  Explore opportunities to improve efficiency and decision-making through analytics, automation, and AI-enabled solutions</li>\n</ul></div>\n</div>\n<div>\n<div><h2><b>What You’ll Bring</b></h2></div>\n<div>\n<p>We're seeking students who are energized by solving problems, asking questions, and continuously learning. </p>\n<p>Successful candidates often demonstrate: </p>\n<ul>\n<li>Strong analytical and critical-thinking skills</li>\n</ul>\n<h3>•  Curiosity and intellectual curiosity</h3>\n<ul>\n<li>Problem-solving ability and sound judgment<br>•  Effective communication and collaboration skills<br>•  Comfort navigating ambiguity and complex challenges<br>•  Interest in data, analytics, technology, AI, or business strategy<br>•  Initiative, adaptability, and a growth mindset</li>\n</ul>\n<p>Prior experience with analytics, statistics, visualization tools, programming languages, research methods, or business analysis may be helpful, but is not required. </p>\n</div>\n</div>\n<div>\n<div><h2><b>Education &amp; Eligibility</b></h2></div>\n<div>\n<p>You must be enrolled at an accredited college or university at the time of the internship. We primarily seek rising seniors graduating between August 2027 and June 2028; students graduating in 2029 may also be considered.</p>\n<p>Students from a variety of academic backgrounds may be a strong fit, including: </p>\n<ul>\n<li>Data Science, Analytics, Statistics, or Mathematics<br>•  Finance, Accounting, Economics, or Business Administration<br>•  Computer Science, Information Systems, or Engineering</li>\n</ul>\n<p>Students from other disciplines with demonstrated analytical abilities and an interest in data-driven problem solving are also encouraged to apply. </p>\n</div>\n</div>\n<div>\n<div><h2><b>Compensation</b></h2></div>\n<div>\n<h3>Intern pay ranges: $26–$46 per hour.</h3>\n<p>Compensation is based on your academic level, role classification (technical vs. non-technical), experience, and geographic location.</p>Learn more about Lumen's:BenefitsBonus Structure</div>\n</div>\n<div>\n<div><h2><b>Selection Process</b></h2></div>\n<div>\n<p>We believe potential matters as much as experience. During the selection process, we’ll consider how you approach problems, communicate ideas, learn, collaborate, show business curiosity, and demonstrate initiative and growth potential.</p>\n<h3>#intern</h3>\n</div>\n</div>\n</div><h3>Requisition #: 344125</h3><h3>Life at Lumen</h3><p>Life at Lumen is human and connected, even in a fast moving, AI‑focused organization. We set clear expectations and trust people to meet them. With real support and shared accountability, teams collaborate better, move faster, and deliver meaningful outcomes. </p><p>Our Lumen 8 behaviors guide how we interact, make decisions, and work together, shaping a culture built to perform and win.  </p><p>To learn more about Life at Lumen and how we live the Lumen 8, please visit:  <br></p><h3>Background Screening</h3><p>If you are selected for a position, there will be a background screen, which may include checks for criminal records and/or motor vehicle reports and/or drug screening, depending on the position requirements. For more information on these checks, please refer to the Post Offer section of our FAQ page. Job-related concerns identified during the background screening may disqualify you from the new position or your current role. Background results will be evaluated on a case-by-case basis.</p><p>Pursuant to the San Francisco Fair Chance Ordinance, we will consider for employment qualified applicants with arrest and conviction records.</p><h3>Equal Employment Opportunities</h3><p>We are committed to providing equal employment opportunities to all persons regardless of race, color, ancestry, citizenship, national origin, religion, veteran status, disability, genetic characteristic or information, age, gender, sexual orientation, gender identity, gender expression, marital status, family status, pregnancy, or other legally protected status (collectively, “protected statuses”). We do not tolerate unlawful discrimination in any employment decisions, including recruiting, hiring, compensation, promotion, benefits, discipline, termination, job assignments or training.</p><h3>Privacy Notice</h3><p>Lumen is committed to protecting the privacy and security of personal information collected during the recruitment and hiring process. Our Applicant Privacy Notice explains how we collect, use, disclose, and protect applicant information, as well as how individuals may request access to or deletion of their personal data.</p><p>To review Lumen’s Global Employment Applicant and Talent Community Privacy Notice, please visit:<br></p><h3>Disclaimer</h3><p>The job responsibilities described above indicate the general nature and level of work performed by employees within this classification. It is not intended to include a comprehensive inventory of all duties and responsibilities for this job. Job duties and responsibilities are subject to change based on evolving business needs and conditions.</p><p>In any materials you submit, you may redact or remove age-identifying information such as age, date of birth, or dates of school attendance or graduation. You will not be penalized for redacting or removing this information.</p><p>Please be advised that Lumen does not require any form of payment from job applicants during the recruitment process. All legitimate job openings will be posted on our official website or communicated through official company email addresses. If you encounter any job offers that request payment in exchange for employment at Lumen, they are not for employment with us, but may relate to another company with a similar name.</p><p>Originally posted on <a href=\"https://himalayas.app\">Himalayas</a></p>",
+      "pubDate": 1792276865,
+      "expiryDate": 1797460864,
+      "applicationLink": "https://himalayas.app/companies/centurylink/jobs/data-analytics-decision-science-summer-2027-internship-pathway-remote-us",
+      "guid": "https://himalayas.app/companies/centurylink/jobs/data-analytics-decision-science-summer-2027-internship-pathway-remote-us"
+    }
+  ]
+}

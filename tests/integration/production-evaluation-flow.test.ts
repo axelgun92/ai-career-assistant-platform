@@ -1,8 +1,10 @@
 import {
   createCustomerSuccessFixtureOperations,
+  toRequirementStatementTransport,
   customerSuccessTestPreferences,
   toOrganizationalMaturityProviderTransport,
   toAlexFitProviderTransport,
+  toBurnoutRiskProviderTransport,
   toOpportunityPriorityProviderTransport,
   toResumeMatchProviderTransport,
   type ResumeMatchFixtureOptions,
@@ -10,6 +12,7 @@ import {
 import type {
   SemanticReconstruction,
   SemanticAlexFit,
+  SemanticBurnoutRisk,
   SemanticOrganizationalMaturity,
   SemanticResumeMatch,
   SemanticOpportunityPriority,
@@ -126,14 +129,59 @@ function deterministicTransport(input: {
       switch (request.operationId) {
         case "customer-success.jd-reconstruction": {
           const reconstruction =
-            await fixture.semanticOperations.reconstructJobDescription({
+            (await fixture.semanticOperations.reconstructJobDescription({
               ...(trusted as never),
               untrustedJobDescription: payload.untrustedSourceContent!,
-            });
+            })) as SemanticReconstruction;
+          const gapRequested =
+            input.resumeMatch?.requirementClassifications?.[0] === "GENUINE_GAP";
+          const structured = gapRequested
+            ? {
+                ...reconstruction,
+                requirements: [
+                  ...reconstruction.requirements,
+                  {
+                    requirement: "3+ years of Customer Success experience required.",
+                    category: "EXPERIENCE" as const,
+                    strength: "REQUIRED" as const,
+                    statedYears: 3,
+                    statedYearsMaximum: null,
+                    statedYearsOpenEnded: true,
+                    experienceSpecificity: "Customer Success",
+                    minimumExperienceSpecificity:
+                      "DIRECT_CUSTOMER_SUCCESS" as const,
+                    requiresStartupExperience: false,
+                    evidenceReferences: ["semantic-cs-years"],
+                    ambiguity: { isAmbiguous: false, explanation: null },
+                    sourceStatement: {
+                      statementIndex: 0,
+                      statementStrengths: ["REQUIRED" as const],
+                      statementExperienceLevels: [
+                        "DIRECT_CUSTOMER_SUCCESS" as const,
+                      ],
+                    },
+                  },
+                ],
+                evidence: [
+                  ...reconstruction.evidence,
+                  {
+                    ...reconstruction.evidence[0]!,
+                    referenceId: "semantic-cs-years",
+                    criterionId: "jd-reconstruction",
+                    claim:
+                      "The posting requires three or more years of direct Customer Success experience.",
+                    sourceText:
+                      "3+ years of Customer Success experience required.",
+                    evidenceType: "REQUIREMENT",
+                  },
+                ],
+              }
+            : reconstruction;
+          const { requirements: _requirements, ...sections } = structured;
           output = {
-            ...reconstruction,
+            ...sections,
             responsibilityMap: {
-              areas: Object.entries(reconstruction.responsibilityMap.areas).map(
+              areas: Object.entries(structured.responsibilityMap.areas).map(
                 ([area, assessment]) =>
                   assessment.prominence === "ABSENT"
                     ? {
@@ -143,30 +191,20 @@ function deterministicTransport(input: {
                       }
                     : { area, ...assessment },
               ),
-              other: reconstruction.responsibilityMap.other,
+              other: structured.responsibilityMap.other,
             },
-            requirements: reconstruction.requirements.map((requirement) => {
-              if (requirement.evidenceReferences.length !== 1) {
-                throw new Error(
-                  "JD reconstruction fixture requirements must have one atomic evidence reference",
-                );
-              }
-              return {
-                ...requirement,
-                evidenceReferences: [requirement.evidenceReferences[0]!],
-                assessmentUnit: "INDEPENDENT_QUALIFICATION" as const,
-                compoundExplanation: null,
-              };
-            }),
+            requirementStatements: toRequirementStatementTransport(
+              structured.requirements,
+            ),
             ownershipMap: {
               functions: Object.entries(
-                reconstruction.ownershipMap.functions,
+                structured.ownershipMap.functions,
               ).map(([functionName, assessment]) => ({
                 function: functionName,
                 ...assessment,
               })),
             },
-            evidence: reconstruction.evidence.map((evidence) => ({
+            evidence: structured.evidence.map((evidence) => ({
               sourceIndex: 0,
               referenceId: evidence.referenceId,
               claim: evidence.claim,
@@ -204,10 +242,13 @@ function deterministicTransport(input: {
           } as never) as SemanticAlexFit, trusted.availableEvidenceCatalog as Parameters<typeof toAlexFitProviderTransport>[1]);
           break;
         case "customer-success.burnout-risk":
-          output = await fixture.semanticOperations.evaluateBurnoutRisk({
-            ...trusted,
-            preferences: payload.userConfiguration,
-          } as never);
+          output = toBurnoutRiskProviderTransport(
+            (await fixture.semanticOperations.evaluateBurnoutRisk({
+              ...trusted,
+              preferences: payload.userConfiguration,
+            } as never)) as SemanticBurnoutRisk,
+            trusted.availableEvidence as Parameters<typeof toBurnoutRiskProviderTransport>[1],
+          );
           break;
         case "customer-success.resume-match":
           {
@@ -395,6 +436,15 @@ async function createProductionSubject(input: {
       compensationPreferences: null,
       workPreferences: [
         { id: "work-1", statement: "Prefers strategic asynchronous work." },
+      ],
+      limitations: [
+        {
+          id: "limitation-direct-customer-success-years",
+          statement:
+            "No source verifies three years of direct Customer Success experience.",
+          category: "EXPERIENCE",
+          disclaimedExperienceSpecificity: "DIRECT_CUSTOMER_SUCCESS",
+        },
       ],
       companyPreferences: null,
       domainPreferences: {
@@ -790,11 +840,14 @@ describe("production evaluation vertical slice", () => {
         },
       },
     });
+    // Nothing was entered on the form. The job text's explicit "Salary:"
+    // line is the only fact the shared job-text fallback can read (title,
+    // company and location are not stated in it).
     expect(persistedOpportunity).toMatchObject({
       title: null,
       companyId: null,
       location: null,
-      salaryText: null,
+      salaryText: "Salary: $70,000 per year.",
     });
     expect(persistedOpportunity.jobDescription).not.toBeNull();
     expect(persistedOpportunity.sourceRecords).toHaveLength(1);
@@ -1026,12 +1079,15 @@ describe("production evaluation vertical slice", () => {
     expect(result.recommendation.recommendation).toMatch(/APPLY|REVIEW|SKIP/);
   });
 
+  // Requirement 1 in this JD is a preferred TOOL requirement. The Resume Match
+  // compatibility model (fe8b0d2) rejects a DIRECT_CUSTOMER_SUCCESS work match
+  // for a tool, so the non-decisive counterweight is a valid transferable match.
   it.each([
     {
       name: "materially ambiguous required gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["MATERIAL_UNCERTAINTY", "NON_DECISIVE"],
       } satisfies ResumeMatchFixtureOptions,
       impact: "MATERIAL_UNCERTAINTY",
@@ -1040,8 +1096,8 @@ describe("production evaluation vertical slice", () => {
     {
       name: "decisive required gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["DECISIVE_DISQUALIFIER", "NON_DECISIVE"],
       } satisfies ResumeMatchFixtureOptions,
       impact: "DECISIVE_DISQUALIFIER",
@@ -1050,8 +1106,8 @@ describe("production evaluation vertical slice", () => {
     {
       name: "non-decisive required gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["NON_DECISIVE", "NON_DECISIVE"],
       } satisfies ResumeMatchFixtureOptions,
       impact: "NON_DECISIVE",
@@ -1060,8 +1116,8 @@ describe("production evaluation vertical slice", () => {
     {
       name: "contradicted would-be decisive gap",
       resumeMatch: {
-        requirementClassifications: ["GENUINE_GAP", "STRONG_MATCH"],
-        matchedExperienceSpecificities: ["UNSUPPORTED", "DIRECT_CUSTOMER_SUCCESS"],
+        requirementClassifications: ["GENUINE_GAP", "TRANSFERABLE_MATCH"],
+        matchedExperienceSpecificities: ["UNSUPPORTED", "TRANSFERABLE"],
         decisionImpacts: ["DECISIVE_DISQUALIFIER", "NON_DECISIVE"],
         contradiction: "INFLATED_YEARS",
       } satisfies ResumeMatchFixtureOptions,
@@ -1069,8 +1125,11 @@ describe("production evaluation vertical slice", () => {
       expected: "REVIEW",
     },
   ])("persists a $name recommendation as $expected", async ({ resumeMatch, impact, expected }) => {
-    const { response } = await runFlow({ resumeMatch });
-    expect(response.status).toBe("COMPLETED");
+    const { response, task } = await runFlow({ resumeMatch });
+    expect(
+      response.status,
+      JSON.stringify({ task, stages: response.stages.filter((stage) => stage.status !== "COMPLETED"), operations: response.operations.filter((operation) => operation.status !== "SUCCESS") }),
+    ).toBe("COMPLETED");
     expect(response.recommendation?.decision).toBe(expected);
     const result = response.result as {
       resumeMatch: {
@@ -1198,6 +1257,14 @@ describe("production evaluation vertical slice", () => {
       jobMaxAttempts: 2,
     });
     const first = await service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id });
+    // A second request while the first is still queued is refused (no
+    // duplicate paid evaluation); finish the first task through the queue API.
+    await expect(
+      service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id }),
+    ).rejects.toMatchObject({ code: "EVALUATION_ALREADY_ACTIVE" });
+    const claimed = await tasks.claimNext({ leaseSeconds: 60 });
+    expect(claimed?.evaluationId).toBe(first.evaluationId);
+    await tasks.complete(claimed!.id);
     const second = await service.requestEvaluation(opportunity.opportunity.id, { userProfileId: profile.id });
     expect(second.evaluationId).not.toBe(first.evaluationId);
     expect(await database.evaluation.count({ where: { opportunityId: opportunity.opportunity.id } })).toBe(2);

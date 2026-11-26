@@ -139,7 +139,7 @@ export function CustomerSuccessResults(props: {
     <div className="results-experience">
       <header className="opportunity-hero">
         <p className="eyebrow">Customer Success evaluation</p>
-        <h1>{opportunity.title}</h1>
+        <h2 className="opportunity-hero-title">{opportunity.title}</h2>
         <p className="company-name">{opportunity.company}</p>
         <dl className="opportunity-facts">
           <div><dt>Salary</dt><dd>{opportunity.salary}</dd></div>

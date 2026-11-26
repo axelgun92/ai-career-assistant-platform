@@ -106,6 +106,7 @@ export function createCustomerSuccessEvaluationProcessor(input: {
       const subject = await input.evaluations.loadSubject({
         opportunityId: snapshot.opportunityId,
         userProfileId: snapshot.userProfileId,
+        evaluationId: snapshot.id,
       });
       if (!subject?.userProfile) {
         await input.evaluations.finishEvaluation({

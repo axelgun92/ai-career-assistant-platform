@@ -13,6 +13,7 @@ import {
   type CustomerSuccessSemanticOperations,
 } from "@ai-career/customer-success";
 import { createEvaluationExecutor } from "@ai-career/evaluation";
+import { parseCompensation, parseResidency } from "@ai-career/normalization";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
@@ -128,6 +129,16 @@ async function run(input?: {
   subject.opportunity.industry = "Software";
   subject.opportunity.salaryText = input?.salaryText ?? "$70,000-$90,000";
   subject.opportunity.jobDescription = input?.rawText ?? defaultJobDescription;
+  const compensation = parseCompensation(subject.opportunity.salaryText);
+  subject.opportunity.salaryMin = compensation.minimum;
+  subject.opportunity.salaryMax = compensation.maximum;
+  subject.opportunity.currency = compensation.currency;
+  const residency = parseResidency({
+    location: null,
+    rawText: subject.opportunity.jobDescription,
+  });
+  subject.opportunity.residencyRequirement = residency.requirement;
+  subject.opportunity.residencyRegions = residency.regions;
   subject.opportunity.postingDate = input?.postingDate ?? null;
   subject.rawSources[0]!.source = input?.sourceName ?? "manual-input";
   subject.rawSources[0]!.rawDescription = subject.opportunity.jobDescription;
@@ -199,6 +210,78 @@ describe("Customer Success Milestone 8 pipeline", () => {
     const { fixture } = await run();
     expect(fixture.stats.reconstructionCalls).toBe(1);
     expect(fixture.stats.opportunityPriorityReceivedValidatedInputs).toBe(true);
+  });
+
+  it("keeps a contextual Organizational Maturity Unknown neutral through priority and finalization", async () => {
+    const baseline = await run();
+    const mixed = await run({
+      transformOperations(operations) {
+        return {
+          ...operations,
+          async evaluateOrganizationalMaturity(input) {
+            const maturity = await operations.evaluateOrganizationalMaturity(
+              input,
+            );
+            return {
+              ...maturity,
+              ownershipAndCrossFunctionalDesign: {
+                ...maturity.ownershipAndCrossFunctionalDesign,
+                roleBoundaries: {
+                  conclusion:
+                    "Customer Success ownership is established for the documented lifecycle work.",
+                  unknown: false,
+                  evidenceReferences: ["actual-work"],
+                },
+              },
+              unknowns: [
+                ...maturity.unknowns,
+                {
+                  code: "implementation-boundaries-unknown",
+                  description:
+                    "The narrower implementation boundary remains unresolved.",
+                  materiality:
+                    "This reduces completeness without becoming a strength or concern.",
+                  evidenceReferences: ["actual-work"],
+                },
+              ],
+            };
+          },
+        };
+      },
+    });
+
+    expect(mixed.result.evaluation.status).toBe("COMPLETED");
+    expect(mixed.fixture.stats.burnoutRiskCalls).toBe(1);
+    expect(mixed.fixture.stats.opportunityPriorityCalls).toBe(1);
+    expect(mixed.result.domainResult?.organizationalMaturity).toMatchObject({
+      evaluated: true,
+      maturity: {
+        score: 84,
+        unknowns: expect.arrayContaining([
+          expect.objectContaining({
+            code: "implementation-boundaries-unknown",
+          }),
+        ]),
+      },
+    });
+    expect(mixed.result.domainResult?.organizationalMaturity).toMatchObject({
+      maturity: {
+        positiveSignals:
+          baseline.result.domainResult?.organizationalMaturity.evaluated &&
+          baseline.result.domainResult.organizationalMaturity.maturity
+            .positiveSignals,
+        weakSignals:
+          baseline.result.domainResult?.organizationalMaturity.evaluated &&
+          baseline.result.domainResult.organizationalMaturity.maturity
+            .weakSignals,
+      },
+    });
+    expect(mixed.result.domainResult?.opportunityPriority).toEqual(
+      baseline.result.domainResult?.opportunityPriority,
+    );
+    expect(mixed.result.domainResult?.recommendation.recommendation).toBe(
+      baseline.result.domainResult?.recommendation.recommendation,
+    );
   });
 
   it("returns valid NOT_EVALUATED stages after a hard-filter failure", async () => {
@@ -755,14 +838,24 @@ describe("Customer Success final recommendation precedence", () => {
     expect(result.domainResult!.recommendation.recommendation).toBe("REVIEW");
   });
 
-  it("uses Review for a borderline hard filter or supported posting-history concern", async () => {
+  it("uses Skip for a below-threshold U.S. salary, Review for the U.S. review band, and Review for a supported posting-history concern", async () => {
     const salary = await run({
+      salaryText: "$50,000-$54,000",
+      rawText: defaultJobDescription.replace(
+        "$70,000-$90,000",
+        "$50,000-$54,000",
+      ),
+    });
+    // Salary policy v4 (November 5, 2026, approved): $55,000-$59,999 is reviewed.
+    const band = await run({
       salaryText: "$57,000-$59,000",
       rawText: defaultJobDescription.replace(
         "$70,000-$90,000",
         "$57,000-$59,000",
       ),
     });
+    expect(band.result.domainResult!.hardFilters.salary.result).toBe("REVIEW");
+    expect(band.result.domainResult!.recommendation.recommendation).toBe("REVIEW");
     const ghost = await run({
       history: [
         { type: "REPOSTED", description: "The listing was reposted." },
@@ -774,7 +867,7 @@ describe("Customer Success final recommendation precedence", () => {
       ghostJobRisk: { classification: "POSSIBLE" },
     });
     expect(salary.result.domainResult!.recommendation.recommendation).toBe(
-      "REVIEW",
+      "SKIP",
     );
     expect(ghost.result.domainResult!.recommendation.recommendation).toBe(
       "REVIEW",

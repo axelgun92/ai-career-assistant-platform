@@ -184,6 +184,11 @@ export interface EvaluationProvenanceContext {
 
 export interface EvaluationSubject {
   opportunity: NormalizedOpportunity & { id: string };
+  // The source version being evaluated (Core TDD §51, v1.15): the current
+  // version of the opportunity's originating listing when the evaluation was
+  // requested. Domains read the description and its evidence from this
+  // record, never from a position in rawSources.
+  subjectSourceRecordId?: string | null;
   rawSources: EvaluationSourceContext[];
   provenance: EvaluationProvenanceContext[];
   userProfile: {
@@ -201,6 +206,8 @@ export interface CoreEvaluationContext<TDomainData> {
   ruleVersion: string;
   promptVersion: string | null;
   opportunity: EvaluationSubject["opportunity"];
+  // See EvaluationSubject.subjectSourceRecordId.
+  subjectSourceRecordId: string | null;
   rawSources: EvaluationSourceContext[];
   provenance: EvaluationProvenanceContext[];
   userProfile: EvaluationSubject["userProfile"];
@@ -242,9 +249,13 @@ export interface CoreEvaluationResult<TResult> {
 }
 
 export interface EvaluationRepository {
+  // With an evaluationId, the subject is the source version that evaluation
+  // is bound to, as it stood when it was bound; without one, the current
+  // version.
   loadSubject(input: {
     opportunityId: string;
     userProfileId: string | null;
+    evaluationId?: string;
   }): Promise<EvaluationSubject | null>;
   createEvaluation(input: {
     opportunityId: string;
@@ -304,3 +315,12 @@ export type RecommendationPersistence = z.infer<
 export type PersistedRecommendation = z.infer<
   typeof persistedRecommendationSchema
 >;
+
+// The source record an evaluation evaluates: the bound version, or (for a
+// context built without one) the first raw source.
+export function evaluatedSource<TDomainData>(context: Pick<CoreEvaluationContext<TDomainData>, "rawSources" | "subjectSourceRecordId">) {
+  return (
+    (context.subjectSourceRecordId ? context.rawSources.find((source) => source.id === context.subjectSourceRecordId) : undefined) ??
+    context.rawSources[0]
+  );
+}
